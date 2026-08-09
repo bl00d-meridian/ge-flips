@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reset watchlist</title>
+<style>
+body{background:#14120e;color:#d9cfba;font:14px/1.6 "Segoe UI",system-ui,sans-serif;
+     display:flex;min-height:100vh;margin:0;align-items:center;justify-content:center}
+.card{background:#1e1a14;border:1px solid #3b3226;border-radius:5px;padding:22px 26px;max-width:520px}
+h1{font-size:16px;color:#e8b64c;margin:0 0 12px}
+.ok{color:#78bf5e}.dim{color:#8b8172;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Resetting watchlist</h1>
+  <div id="out">working…</div>
+  <div class="dim" id="cd"></div>
+</div>
+<script>
+(function(){
+  const K="gef.v1", out=document.getElementById("out"), lines=[];
+  try{
+    const raw=localStorage.getItem(K);
+    if(!raw){ lines.push("No saved data — nothing to reset."); }
+    else{
+      const db=JSON.parse(raw);
+      const n=(db.watch||[]).length;
+      db.watch=[];                       // scout repopulates on first refresh
+      db.planPriority=[]; db.planDemoted=[]; db.planDate="";
+      db.scoutOn=true;
+      localStorage.setItem(K,JSON.stringify(db));
+      lines.push('<span class="ok">Cleared '+n+' watchlist item'+(n===1?'':'s')+'.</span>');
+      lines.push('Auto-scout is ON — the list rebuilds itself from the live screen within seconds of the tracker loading.');
+      lines.push('<span class="dim">Flips, positions, bank value, targets and settings were left untouched.</span>');
+    }
+  }catch(e){ lines.push("Could not reset: "+e.message); }
+  out.innerHTML=lines.join("<br>");
+  let n=3; const cd=document.getElementById("cd");
+  setInterval(function(){ cd.textContent="Opening the tracker in "+n+"…"; if(n--<=0) location.replace("index.html"); },1000);
+})();
+</script>
+</body>
+</html>

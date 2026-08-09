@@ -1,0 +1,2715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two-Touch Flip Tracker</title>
+<style>
+:root{
+  --bg:#14120e; --panel:#1e1a14; --panel2:#282219; --line:#3b3226;
+  --gold:#e8b64c; --gold-dim:#a8873a; --text:#d9cfba; --dim:#8b8172;
+  --green:#78bf5e; --red:#cf5a4e; --blue:#7fa9d4; --amber:#d9a441;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums;font-family:"Consolas","SF Mono",ui-monospace,monospace}
+a{color:var(--blue)}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:.02em}
+h2{font-size:15px;color:var(--gold);text-transform:uppercase;letter-spacing:.08em}
+h3{font-size:13px;color:var(--gold-dim);text-transform:uppercase;letter-spacing:.06em}
+.wrap{max-width:1180px;margin:0 auto;padding:0 14px 60px}
+
+/* ---- header ---- */
+header{
+  background:linear-gradient(#241f17,#1a1610);
+  border-bottom:2px solid var(--line);
+  position:sticky;top:0;z-index:30;
+}
+.hbar{max-width:1180px;margin:0 auto;padding:9px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{font-size:16px;font-weight:700;color:var(--gold);text-shadow:0 1px 0 #000;white-space:nowrap}
+.brand small{display:block;font-size:10px;color:var(--dim);font-weight:400;letter-spacing:.05em;text-transform:uppercase}
+.hstat{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:12px;color:var(--dim)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px currentColor;flex:none}
+.dot.stale{background:var(--amber)} .dot.bad{background:var(--red)} .dot.load{background:var(--blue)}
+
+/* ---- controls ---- */
+button,select,input{font:inherit;color:var(--text)}
+button{
+  background:linear-gradient(#332b20,#241e16); border:1px solid var(--line);
+  border-radius:3px; padding:5px 11px; cursor:pointer; transition:.12s;
+}
+button:hover{border-color:var(--gold-dim);color:var(--gold)}
+button:active{transform:translateY(1px)}
+button.primary{background:linear-gradient(#5a4620,#3d2f15);border-color:var(--gold-dim);color:var(--gold)}
+button.sm{padding:2px 7px;font-size:12px}
+button.ghost{background:none;border-color:transparent;color:var(--dim)}
+button.ghost:hover{color:var(--red)}
+input,select{background:#141109;border:1px solid var(--line);border-radius:3px;padding:4px 7px;min-width:0}
+input:focus,select:focus{outline:none;border-color:var(--gold-dim)}
+input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+label.f{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+label.cb{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim);cursor:pointer}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.seg button{border:none;border-radius:0;background:#191510;color:var(--dim);padding:4px 12px;font-size:12px}
+.seg button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--gold)}
+
+/* ---- tabs ---- */
+nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:14px 0 0;flex-wrap:wrap}
+nav.tabs button{
+  border-radius:3px 3px 0 0;border-bottom:none;background:#191510;color:var(--dim);
+  padding:7px 14px;font-size:13px;position:relative;top:1px;
+}
+nav.tabs button.on{background:var(--panel);color:var(--gold);border-color:var(--line);border-bottom:1px solid var(--panel)}
+section.tab{display:none;padding-top:16px}
+section.tab.on{display:block}
+
+/* ---- panels ---- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin-bottom:14px}
+.panel>.ph{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.panel>.ph .sub{font-size:12px;color:var(--dim)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+
+/* ---- tables ---- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  text-align:right;padding:5px 7px;color:var(--gold-dim);font-size:10.5px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+th:first-child,td:first-child{text-align:left}
+th.s{cursor:pointer;user-select:none}
+th.s:hover{color:var(--gold)}
+th.s.on{color:var(--gold)}
+td{padding:5px 7px;text-align:right;border-bottom:1px solid #262017;white-space:nowrap}
+tbody tr:hover{background:#241e16}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pos{color:var(--green)} .neg{color:var(--red)} .dim{color:var(--dim)}
+.name{max-width:230px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+.badge{
+  display:inline-block;font-size:9.5px;padding:1px 5px;border-radius:2px;margin-left:5px;
+  text-transform:uppercase;letter-spacing:.05em;vertical-align:1px;
+}
+.b-warn{background:#4a2e12;color:var(--amber);border:1px solid #6b431b}
+.b-risk{background:#4a1f1c;color:var(--red);border:1px solid #6b2b26}
+.b-tax{background:#1d3a20;color:var(--green);border:1px solid #2a5430}
+.b-ok{background:#1c3446;color:var(--blue);border:1px solid #2a4a63}
+svg.spark{display:block}
+tr.worst td{background:#3a1b18}
+
+/* ---- stats ---- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:8px 10px}
+.stat .k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:17px;color:var(--gold);font-variant-numeric:tabular-nums;margin-top:2px}
+.stat .v.sm{font-size:13px;color:var(--text)}
+
+/* ---- progress ---- */
+.bar{height:22px;background:#141109;border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#6b4f9e,#a07fd6);transition:width .5s}
+.bar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;text-shadow:0 1px 2px #000;font-variant-numeric:tabular-nums}
+.bar.thin{height:8px}
+.bar.thin i{background:linear-gradient(90deg,#4d7a3a,#78bf5e)}
+
+/* ---- checklist ---- */
+.ck{list-style:none;margin:0;padding:0}
+.ck li{
+  display:flex;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:3px;
+  margin-bottom:6px;background:var(--panel2);align-items:flex-start;cursor:pointer;transition:.12s;
+}
+.ck li:hover{border-color:var(--gold-dim)}
+.ck li.done{opacity:.45}
+.ck li.done .t{text-decoration:line-through}
+.ck .n{
+  flex:none;width:20px;height:20px;border-radius:50%;border:1px solid var(--gold-dim);
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gold);
+}
+.ck li.done .n{background:var(--gold-dim);color:#141109;border-color:var(--gold-dim)}
+.ck .t{font-size:13.5px}
+.ck .d{font-size:11.5px;color:var(--dim);margin-top:2px}
+.ck .inline{margin-top:6px;padding-left:2px;border-left:2px solid var(--gold-dim);padding:4px 0 4px 8px}
+.ck .inline div{font-size:12px;color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ---- misc ---- */
+.err{background:#3a1b18;border:1px solid #6b2b26;color:#e6a49c;padding:8px 12px;border-radius:3px;margin:12px 0;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.warnbar{background:#3a2e13;border:1px solid #6b551b;color:#e8cf92;padding:7px 12px;border-radius:3px;margin:10px 0;font-size:12.5px}
+.note{font-size:11.5px;color:var(--dim);line-height:1.5}
+.ac{position:relative;flex:1;min-width:170px}
+.ac ul{
+  position:absolute;z-index:20;top:100%;left:0;right:0;margin:2px 0 0;padding:0;list-style:none;
+  background:#1c1811;border:1px solid var(--gold-dim);border-radius:3px;max-height:210px;overflow:auto;
+}
+.ac li{padding:7px 9px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:10px}
+.ac li:hover,.ac li.sel{background:#3a2f1c;color:var(--gold)}
+.ac input{width:100%}
+.empty{padding:22px;text-align:center;color:var(--dim);font-size:13px}
+.est-tag,.stale-tag,.auto-tag,.test-tag{
+  font-style:normal;border-radius:2px;padding:0 4px;font-size:9px;
+  letter-spacing:.04em;margin-left:4px;white-space:nowrap;
+}
+.est-tag{color:var(--amber);background:#392a11;border:1px solid #5c431a}
+.stale-tag{color:#e89a92;background:#3d1c19;border:1px solid #6b2b26}
+.auto-tag{color:var(--blue);background:#16293a;border:1px solid #2a4a63}
+.test-tag{color:var(--green);background:#17301a;border:1px solid #2a5430}
+input.est{color:var(--dim);font-style:italic;border-style:dashed}
+input.stale{color:#e89a92;font-style:italic;border-style:dashed;border-color:#6b2b26}
+input.clamped{border-color:#2a4a63}
+tfoot td{border-top:2px solid var(--line);border-bottom:none;font-weight:600;padding-top:8px}
+#toast{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  background:#2b241b;border:1px solid var(--gold-dim);color:var(--gold);
+  padding:8px 15px;border-radius:4px;font-size:13px;z-index:100;
+  opacity:0;pointer-events:none;transition:opacity .25s;box-shadow:0 4px 14px #0009;
+  display:flex;gap:12px;align-items:center;max-width:92vw;
+}
+#toast.on{opacity:1;pointer-events:auto}
+#toast button{padding:2px 9px;font-size:12px}
+/* ---- plan ---- */
+.plan-note{background:#2a2113;border:1px solid #4a3a1c;border-radius:3px;padding:8px 11px;font-size:12.5px;color:var(--amber)}
+ol.plan{list-style:none;counter-reset:pick;margin:12px 0 0;padding:0}
+ol.plan li{
+  counter-increment:pick;background:var(--panel2);border:1px solid var(--line);
+  border-left:3px solid var(--gold-dim);border-radius:3px;padding:9px 12px;margin-bottom:7px;
+  display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;
+}
+ol.plan li .body{flex:1;min-width:220px}
+ol.plan li::before{content:counter(pick) ". ";color:var(--gold);font-weight:700}
+ol.plan .why{font-size:11.5px;color:var(--dim);margin-top:3px}
+ol.plan b.buy{color:var(--green);letter-spacing:.06em}
+ol.plan b.sell{color:var(--amber);letter-spacing:.06em}
+#planBench{margin-top:12px}
+#planBench summary{cursor:pointer;color:var(--dim);font-size:12.5px;padding:5px 0;user-select:none}
+#planBench summary:hover{color:var(--gold)}
+.bench-row{display:flex;justify-content:space-between;gap:14px;padding:4px 8px;border-bottom:1px solid #262017;font-size:12.5px}
+.bench-row .r{color:var(--dim);text-align:right}
+#planFoot{margin-top:10px;font-size:12.5px;color:var(--dim)}
+ol.plan li.placed{opacity:.5;border-left-color:var(--green)}
+ol.plan li.next{opacity:.62;border-left-color:#3f4a5c;border-style:dashed}
+ol.plan li.next .body{font-size:13px}
+.nexthead{margin:16px 0 6px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+.nexthead b{color:var(--blue);letter-spacing:.05em;text-transform:uppercase;font-size:11px}
+.picker{margin-top:7px;padding:7px 9px;background:#141109;border:1px solid var(--gold-dim);border-radius:3px;width:100%}
+.picker .h{font-size:11.5px;color:var(--gold);margin-bottom:5px}
+.picker button{margin:2px 4px 2px 0}
+.plan-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:flex-start}
+#famDebug{margin-top:10px}
+#famDebug summary{cursor:pointer;color:var(--dim);font-size:12px;padding:4px 0;user-select:none}
+#famDebug summary:hover{color:var(--gold)}
+.fam-row{display:flex;gap:10px;padding:3px 8px;border-bottom:1px solid #262017;font-size:12px}
+.fam-row .k{color:var(--blue);min-width:150px}
+.b-seed{background:#43331a;color:#e0b667;border:1px solid #6b5320}
+#staleOpen{background:#2a2113;border:1px solid #4a3a1c;border-radius:3px;padding:8px 11px;margin-bottom:10px;font-size:12.5px}
+#staleOpen .row2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
+hr{border:none;border-top:1px solid var(--line);margin:12px 0}
+.hide{display:none!important}
+@media(max-width:760px){
+  .sec{display:none!important}
+  .wrap{padding:0 8px 60px}
+  .panel{padding:10px}
+  .name{max-width:150px}
+  nav.tabs button{padding:7px 10px;font-size:12px}
+}
+@media(max-width:620px){
+  .hstat{width:100%;margin-left:0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hbar">
+    <div class="brand">Two-Touch Flip Tracker<small>OSRS Grand Exchange</small></div>
+    <div class="hstat">
+      <span class="dot load" id="dot"></span>
+      <span id="status">starting…</span>
+      <button class="sm" id="refresh">↻ Refresh</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="errbox"></div>
+  <div id="warnbox"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="scan" class="on">Scanner</button>
+    <button data-tab="watch">Watchlist</button>
+    <button data-tab="log">Flip Log</button>
+    <button data-tab="routine">Routine</button>
+    <button data-tab="shadow">Shadow Fund</button>
+  </nav>
+
+  <!-- ═══════════ SCANNER ═══════════ -->
+  <section class="tab on" id="tab-scan">
+    <div class="panel">
+      <div class="ph"><h2>Filters</h2><span class="sub">Guide defaults: vol ≥1,000/hr · max buy 2M · sorted by post-tax ROI</span>
+        <span style="margin-left:auto"><button class="sm" id="fReset">Reset to guide</button></span>
+      </div>
+      <div class="row">
+        <label class="f">Min 1h volume<input type="number" id="fVol" step="100" style="width:92px"></label>
+        <label class="f">Min unit price<input type="number" id="fMin" step="50" style="width:96px"></label>
+        <label class="f">Max buy price<input type="number" id="fMax" step="100000" style="width:110px"></label>
+        <label class="f">Min ROI %<input type="number" id="fRoi" step="0.1" style="width:76px"></label>
+        <label class="f">Min margin gp<input type="number" id="fMar" step="1" style="width:86px"></label>
+        <label class="f">Max data age (min)<input type="number" id="fAge" step="5" style="width:86px"></label>
+        <label class="f">Members<select id="fMem"><option value="any">Any</option><option value="p2p">P2P</option><option value="f2p">F2P</option></select></label>
+        <label class="f">Show<select id="fRows"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+        <label class="cb"><input type="checkbox" id="fLim"> Known buy limit only</label>
+        <label class="cb"><input type="checkbox" id="fCons"> Consumables only (guide tier)</label>
+      </div>
+      <div class="note" style="margin-top:9px">
+        Buy at <em>instasell</em> (low), sell at <em>instabuy</em> (high). Margin is net of GE tax.
+        <b>Min volume now gates on the thinner side of the book</b> — a round trip needs sellers to buy from
+        <em>and</em> buyers to sell to, so the sum of both sides overstated liquidity roughly 2×.
+        <br><strong>Min unit price</strong> ships at 0 to match the guide exactly, but ROI-sorting is dominated by 20–50 gp items whose
+        "spread" is a 1 gp rounding artifact. Set it to ~150–300 to see items your capital can actually deploy into.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Scanner</h2><span class="sub" id="scanCount"></span></div>
+      <div class="tw"><table id="scanTable">
+        <thead><tr>
+          <th class="s" data-k="name">Item</th>
+          <th class="s" data-k="buy">Buy</th>
+          <th class="s" data-k="sell">Sell</th>
+          <th class="s sec" data-k="tax">Tax</th>
+          <th class="s" data-k="margin">Margin</th>
+          <th class="s on" data-k="roi">ROI %</th>
+          <th class="s sec" data-k="margin1h" title="Margin rebuilt from 1h average high/low — a spread that survives an hour of averaging is real">1h margin</th>
+          <th class="s sec" data-k="limit">Limit</th>
+          <th class="s sec" data-k="perLimit">Profit / limit</th>
+          <th class="s" data-k="volSide">Vol (thin side)</th>
+          <th class="s sec" data-k="imbalance" title="Share of volume on the sell-into-you side. 0.50 is balanced.">Bal</th>
+          <th class="s sec" data-k="age">Age</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="scanBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Conversion spreads</h2><span class="sub" id="convCount"></span></div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Play</th><th>Route</th><th>Margin / unit</th><th>ROI %</th><th>Vol (thin leg)</th><th></th>
+        </tr></thead>
+        <tbody id="convBody"></tbody>
+      </table></div>
+      <div class="note" style="margin-top:8px">
+        Spreads anchored by a real in-game conversion, so they mean-revert instead of needing prediction.
+        <b>Decant</b>: buy the cheap-per-dose variant, decant free at Bob Barter (GE), sell the dear one — margin shown per dose, taxes included.
+        <b>Clean</b>: buy grimy, clean (needs the Herblore level, one click per herb — count your minutes), sell clean.
+        Both legs must clear your scanner volume floor on the thin side.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ WATCHLIST ═══════════ -->
+  <section class="tab" id="tab-watch">
+    <div class="panel">
+      <div class="ph"><h2 id="planTitle">Today's Plan</h2><span class="sub" id="planSub"></span>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <span class="seg" id="planMode">
+            <button data-pm="buy" class="on">☀ Buy plan</button>
+            <button data-pm="sell">☾ Sell plan</button>
+          </span>
+          <button class="sm" id="planCopy">⧉ Copy</button>
+        </span>
+      </div>
+      <div id="staleOpen"></div>
+      <div class="row" style="margin-bottom:10px">
+        <label class="f">Offers<input type="number" id="szSlots" min="1" max="8" style="width:58px"></label>
+        <label class="f">Day horizon (h)<input type="number" id="szH" min="4" max="16" style="width:64px"></label>
+        <label class="f">Reserve (gp)<input type="number" id="szRes" step="500000" min="0" style="width:110px"></label>
+        <span class="note" style="align-self:center;max-width:520px">
+          Sizing assumes offers sit the whole horizon: liquidity budget = hours × flow × 15% capture,
+          and buy limits roll every 4h while an offer stands. The reserve is never allocated.
+        </span>
+      </div>
+      <div class="plan-note" id="planHint"></div>
+      <ol class="plan" id="planList"></ol>
+      <div id="planFoot"></div>
+      <details id="planBench">
+        <summary id="benchSummary">Benched — 0 items</summary>
+        <div id="benchBody"></div>
+      </details>
+      <details id="famDebug">
+        <summary>Item families (debug) — how correlation grouping resolved</summary>
+        <div id="famBody"></div>
+      </details>
+      <div class="note" style="margin-top:10px">
+        Proposal only. Nothing is placed or logged until you press a button here.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Open positions</h2><span class="sub" id="posSub"></span>
+        <span style="margin-left:auto"><button class="sm ghost" id="posClear">Clear all</button></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Item</th><th>Qty</th><th>Bought at</th><th>Cost</th>
+          <th>Sell now</th><th>Unrealized</th><th class="sec">Age</th><th></th><th></th>
+        </tr></thead>
+        <tbody id="posBody"></tbody>
+        <tfoot id="posFoot"></tfoot>
+      </table></div>
+      <div class="note" style="margin-top:8px">
+        Created only when you press <b>mark placed</b> on a plan line. Committed capital is subtracted from the
+        stack before the next plan sizes anything, and <b>close</b> prefills the flip log — it never logs for you.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Watchlist</h2><span class="sub" id="watchStack"></span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="sm" id="scoutTog" title="Auto-scout screens the whole market on sustained post-tax ROI and keeps the list topped up. It only adds and removes its own entries — items you added, tested, hold, or flipped recently are never touched."></button>
+          <button class="sm" id="wSpark">↻ Redraw charts</button>
+        </span>
+      </div>
+      <div class="note" id="scoutMsg" style="margin-bottom:8px"></div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Item</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th>
+          <th title="Your margin-tested prices override live data everywhere">Tested</th>
+          <th class="sec">Limit</th><th>Plan qty</th><th>Position</th><th class="sec">Profit</th>
+          <th class="sec">Vol (thin)</th><th class="sec">7-day</th><th class="sec">Trend</th>
+          <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
+          <th></th><th></th>
+        </tr></thead>
+        <tbody id="watchBody"></tbody>
+        <tfoot id="watchFoot"></tfoot>
+      </table></div>
+      <div class="note" style="margin-top:9px">
+        Plan qty is auto-clamped to <b>min(one-third of stack, 4-hour buy limit)</b> — <span id="stackNote">—</span>.
+        Type over it; anything above the cap is re-clamped on commit.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ FLIP LOG ═══════════ -->
+  <section class="tab" id="tab-log">
+    <div class="panel">
+      <div class="ph"><h2>Log a completed round trip</h2><span class="sub">Every one, including the duds</span></div>
+      <div class="row">
+        <div class="ac" id="acLog" style="max-width:250px"><input placeholder="Item…"></div>
+        <label class="f">Qty<input type="number" id="lQty" value="1" min="1" style="width:80px"></label>
+        <label class="f"><span>Buy each <i class="est-tag hide" id="tagBuy">est.</i></span><input type="number" id="lBuy" style="width:104px"></label>
+        <label class="f"><span>Sell each <i class="est-tag hide" id="tagSell">est.</i></span><input type="number" id="lSell" style="width:104px"></label>
+        <button class="sm" id="lRefresh" title="Re-pull live prices into any field still marked est.">↻ prices</button>
+        <span id="lFresh" class="note" style="align-self:center"></span>
+        <label class="f">Date<input type="date" id="lDate" style="width:140px"></label>
+        <label class="f">Note<input id="lNote" placeholder="optional" style="width:150px"></label>
+        <button class="primary" id="lAdd">+ Log flip</button>
+        <span id="lPreview" class="note" style="align-self:center"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Results</h2>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span id="exportChip" class="note"></span>
+          <label class="f">Min / touch<input type="number" id="lMins" value="7" min="1" style="width:64px"></label>
+          <button class="sm" id="lExport">⭳ Export JSON</button>
+          <button class="sm" id="lImport">⭱ Import JSON</button>
+          <input type="file" id="lFile" accept="application/json,.json" class="hide">
+        </span>
+      </div>
+      <div class="stats" id="logStats"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
+        <span class="sub" id="worstNote" style="margin-left:auto"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th><th>gp / touch</th>
+        <th title="Measured from the position lifecycle: profit ÷ hours the flip actually occupied a GE slot">gp / slot-h</th>
+        <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th><th></th></tr></thead>
+        <tbody id="logByItem"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>All flips</h3></div>
+      <div class="tw"><table>
+        <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Buy</th><th>Sell</th><th class="sec">Tax</th><th>Profit</th><th class="sec">ROI %</th><th class="sec">Note</th><th></th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ ROUTINE ═══════════ -->
+  <section class="tab" id="tab-routine">
+    <div class="panel">
+      <div class="ph"><h2>Two-touch routine</h2><span class="sub" id="ckDate"></span>
+        <span style="margin-left:auto"><button class="sm" id="ckReset">Reset today</button></span>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="primary" id="mMorning">☀ Morning mode</button>
+        <button class="primary" id="mEvening">☾ Evening mode</button>
+        <button id="mWeekly">📓 Weekly review</button>
+      </div>
+      <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
+      <h3 id="ckTitle" style="margin-bottom:8px"></h3>
+      <ul class="ck" id="ckList"></ul>
+      <div class="note" id="ckFoot" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ SHADOW FUND ═══════════ -->
+  <section class="tab" id="tab-shadow">
+    <div class="panel">
+      <div class="ph"><h2>Shadow fund</h2><span class="sub" id="shadowSub">live price from /latest</span></div>
+      <div class="bar" style="height:30px"><i id="shBar" style="width:0"></i><span id="shBarTxt"></span></div>
+      <div class="stats" style="margin-top:12px" id="shStats"></div>
+      <div class="row" style="margin-top:12px">
+        <label class="f">Bank value right now (gp)<input type="number" id="shBank" step="100000" style="width:160px"></label>
+        <button class="sm" id="shBankNow" title="Re-stamp the bank figure as current, so already-counted profit isn't added twice">Mark as current</button>
+        <span class="note" style="align-self:center;max-width:520px" id="bankNote"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Other gear targets</h2><span class="sub">live prices</span></div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="ac" id="acTarget" style="max-width:280px"><input placeholder="Add a target item…"></div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Target</th><th>Live price</th><th class="sec">Progress</th><th>%</th><th>Still needed</th><th class="sec">Flips @ current avg</th><th></th></tr></thead>
+        <tbody id="tgtBody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <div class="panel">
+    <div class="ph"><h3>Tax rules implemented</h3></div>
+    <div class="note">
+      <strong>2% of the sale price</strong>, deducted when the sell fills, <strong>rounded down</strong> per item,
+      <strong>capped at 5,000,000 gp per item</strong>. Rate rose from 1% to 2% on <strong>29 May 2025</strong>.
+      Items selling below 50 gp owe nothing, and <strong>48 items are explicitly exempt</strong>, tagged
+      <span class="badge b-tax">no tax</span>. Verified against the
+      <a href="https://oldschool.runescape.wiki/w/Grand_Exchange#Convenience_fee_and_item_sink" target="_blank" rel="noopener">OSRS Wiki</a>.
+      Data: <a href="https://prices.runescape.wiki/api/v1/osrs" target="_blank" rel="noopener">RuneLite / OSRS Wiki real-time prices</a>
+      — polled no faster than 60s, with backoff when the API is unhappy.
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   Two-Touch Flip Tracker — single file, no deps, all client-side.
+   ═══════════════════════════════════════════════════════════════ */
+
+const API = "https://prices.runescape.wiki/api/v1/osrs";
+const MAP_KEY   = "gef.map.v2";  // schema-versioned: a trim-shape change must not read a stale cache
+const MAP_TTL   = 24 * 3600e3;
+const POLL_MS   = 60e3;          // never faster than 60s (API etiquette)
+const POLL_MAX  = 15 * 60e3;     // backoff ceiling
+const HOUR_MS   = 5 * 60e3;
+const SPARK_TTL = 30 * 60e3;
+
+/* ── GE tax ────────────────────────────────────────────────────
+   2% of sale price, floored, capped 5,000,000 gp per item.
+   Sub-50gp owes nothing (floor(49*0.02)===0 — falls out of the floor). */
+const TAX_RATE = 0.02, TAX_CAP = 5_000_000;
+const EXEMPT_NAMES = [
+  "Old school bond",
+  "Energy potion(1)","Energy potion(2)","Energy potion(3)","Energy potion(4)",
+  "Bronze arrow","Bronze dart","Iron arrow","Iron dart","Steel arrow","Steel dart","Mind rune",
+  "Bass","Bread","Cake","Cooked chicken","Cooked meat","Herring","Lobster","Mackerel",
+  "Meat pie","Pike","Salmon","Shrimps","Tuna",
+  // NB: mapping names carry a "(tablet)" suffix — except Civitas illa fortis, which doesn't.
+  // Matched exactly, so "West ardougne teleport (tablet)" (not exempt) never slips through.
+  "Ardougne teleport (tablet)","Camelot teleport (tablet)","Civitas illa fortis teleport",
+  "Falador teleport (tablet)","Games necklace(8)","Kourend castle teleport (tablet)",
+  "Lumbridge teleport (tablet)","Ring of dueling(8)","Teleport to house (tablet)",
+  "Varrock teleport (tablet)",
+  "Chisel","Gardening trowel","Glassblowing pipe","Hammer","Needle","Pestle and mortar",
+  "Rake","Saw","Secateurs","Seed dibber","Shears","Spade","Watering can"
+];
+const EXEMPT_SET = new Set(EXEMPT_NAMES.map(n => n.toLowerCase()));
+const exemptIds = new Set();
+
+function geTax(salePrice, itemId){
+  if (!Number.isFinite(salePrice) || salePrice <= 0) return 0;
+  if (exemptIds.has(itemId)) return 0;
+  return Math.min(Math.floor(salePrice * TAX_RATE), TAX_CAP);
+}
+
+const CONSUMABLE_RX = /(potion|brew|restore|rune$|rune\(|arrow|bolt|dart|knife|javelin|cannonball|shark|anglerfish|karambwan|monkfish|manta|sea turtle|pie$|ranarr|snapdragon|toadflax|torstol|kwuarm|cadantine|lantadyme|dwarf weed|irit|avantoe|harralander|tarromin|marrentill|guam|grimy|seed$|vial|blood|soul|wrath|death|chaos|nature|astral|law|cosmic|body|mind|water|earth|fire|air)/i;
+
+/* ── storage ─────────────────────────────────────────────────── */
+const K = "gef.v1";
+const DEFAULT_FILTERS = { vol:1000, min:0, max:2_000_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
+let DB = {
+  filters: {...DEFAULT_FILTERS},
+  sort: {k:"roi", dir:-1},
+  watch: [],        // [{id, qty|null, tBuy, tSell, tAt}]
+  flips: [],        // [{id,itemId,name,qty,buy,sell,date,note}]
+  positions: [],    // [{id,itemId,name,qty,buy,placedAt}]
+  bank: 0,
+  bankAsOf: 0,      // ms — only flips logged AFTER this are added on top of `bank`
+  minsPerTouch: 7,
+  lastExportAt: 0,
+  planPriority: [],   // promoted item ids, in order — jump the funding queue
+  planDemoted: [],    // demoted item ids — drop to NEXT UP
+  planDate: "",       // both reset when the day rolls over
+  scoutOn: true,      // auto-scout maintains its own watchlist entries
+  watchCap: 25,       // scout tops the list up to this size
+  slots: 8,           // offers per morning touch
+  horizonH: 10,       // hours the offers sit before the evening touch
+  reserve: 3_000_000, // gp held back for incidentals, never allocated
+  targets: ["Twisted bow","Avernic defender","Primordial boots"],
+  checks: { date:"", morning:[], evening:[], weekly:[] }
+};
+function load(){
+  try {
+    const raw = localStorage.getItem(K);
+    if (raw) DB = Object.assign(DB, JSON.parse(raw));
+    DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted"])
+      if (!Array.isArray(DB[k])) DB[k] = [];
+  } catch(e){ console.warn("state load failed", e); }
+}
+
+let saveTimer = null, dirty = false;
+function save(){
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 150);
+}
+/* Quota is shared with the mapping cache. The cache is re-fetchable in one
+   request; the flip log is not. So evict the cache and retry before giving up. */
+function flush(){
+  clearTimeout(saveTimer);
+  if (!dirty) return true;
+  const payload = JSON.stringify(DB);
+  try { localStorage.setItem(K, payload); dirty = false; clearWarn("quota"); return true; }
+  catch(e){
+    try {
+      localStorage.removeItem(MAP_KEY);
+      localStorage.setItem(K, payload);
+      dirty = false;
+      warn("quota", "Storage was full — cleared the cached item list to make room. It refetches on next load.");
+      return true;
+    } catch(e2){
+      warn("quota", "⚠ Storage is full and your last change could NOT be saved. Export to JSON now before closing this tab.");
+      return false;
+    }
+  }
+}
+addEventListener("beforeunload", flush);
+addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
+
+/* ── app state ───────────────────────────────────────────────── */
+const S = {
+  items: [], byId: new Map(),
+  latest: {}, hour: {}, min5: {}, volumes: {}, volRank: new Map(),
+  latestAt: 0, hourAt: 0, mapAt: 0,
+  spark: new Map(),
+  loading: false, err: null, tab: "scan",
+  mode: "morning", planMode: "buy", promoteFor: null
+};
+
+/* ── helpers ─────────────────────────────────────────────────── */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const clampNum = (v, d) => Number.isFinite(+v) ? +v : d;
+
+/* Trailing zeros may only be dropped after a decimal point. Stripping them from
+   an integer turned 790 into 79 — a silent 10× understatement on every
+   nine-figure number, including the Shadow price. */
+const trimZeros = s => s.indexOf(".") >= 0 ? s.replace(/\.?0+$/, "") : s;
+function gp(n){
+  if (n == null || !Number.isFinite(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return trimZeros((n/1e9).toFixed(2)) + "b";
+  if (a >= 1e6) return trimZeros((n/1e6).toFixed(a >= 1e8 ? 0 : 2)) + "m";
+  if (a >= 1e4){
+    const k = Math.round(n/1e3);
+    if (Math.abs(k) >= 1000) return trimZeros((n/1e6).toFixed(2)) + "m";   // 999,999 was "1000k"
+    return k + "k";
+  }
+  return n.toLocaleString("en-US");
+}
+const full = n => Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
+function ago(ts){
+  if (!ts) return "never";
+  const s = Math.max(0, Math.round((Date.now() - ts)/1000));
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.floor(s/60) + "m ago";
+  if (s < 86400) return Math.floor(s/3600) + "h ago";
+  return Math.floor(s/86400) + "d ago";
+}
+const sign = n => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
+const today = () => new Date().toLocaleDateString("en-CA");
+const itemName = (id, fallback) => (S.byId.get(id) || {}).n || fallback || ("item " + id);
+
+/* ── banners ─────────────────────────────────────────────────── */
+const warns = new Map();
+function warn(key, msg){ warns.set(key, msg); paintWarns(); }
+function clearWarn(key){ if (warns.delete(key)) paintWarns(); }
+function paintWarns(){
+  $("#warnbox").innerHTML = Array.from(warns.values())
+    .map(m => '<div class="warnbar">' + esc(m) + '</div>').join("");
+}
+
+/* ── fetch layer ─────────────────────────────────────────────── */
+async function getJSON(path){
+  const r = await fetch(API + path, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status + " on " + path);
+  return r.json();
+}
+
+async function loadMapping(force){
+  if (!force){
+    try {
+      const c = JSON.parse(localStorage.getItem(MAP_KEY) || "null");
+      if (c && c.v === 2 && Date.now() - c.at < MAP_TTL && Array.isArray(c.items) && c.items.length){
+        applyMapping(c.items, c.at); return;
+      }
+    } catch(e){ /* fall through to network */ }
+  }
+  const raw = await getJSON("/mapping");
+  const items = raw.map(i => ({ i:i.id, n:i.name, l:i.limit ?? null, m:i.members?1:0, v:i.value ?? 0, a:i.highalch ?? 0 }));
+  applyMapping(items, Date.now());
+  try { localStorage.setItem(MAP_KEY, JSON.stringify({v:2, at:Date.now(), items})); } catch(e){}
+}
+function applyMapping(items, at){
+  S.items = items; S.mapAt = at;
+  S.byId.clear(); exemptIds.clear();
+  for (const it of items){
+    S.byId.set(it.i, it);
+    if (EXEMPT_SET.has(it.n.toLowerCase())) exemptIds.add(it.i);
+  }
+  /* A wiki rename silently un-exempts an item and quietly taxes it 2%. This
+     already happened once with the "(tablet)" suffix — so assert the count. */
+  if (exemptIds.size !== EXEMPT_NAMES.length){
+    const missing = EXEMPT_NAMES.filter(n => !S.items.some(it => it.n.toLowerCase() === n.toLowerCase()));
+    warn("exempt", "Tax-exempt list is out of date: " + exemptIds.size + " of " + EXEMPT_NAMES.length +
+         " matched. Unmatched: " + missing.join(", ") + ". These are being taxed 2% when they shouldn't be.");
+  } else clearWarn("exempt");
+}
+
+async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.data || {}; S.latestAt = Date.now(); }
+async function loadHour(){
+  const [h, m, v] = await Promise.all([getJSON("/1h"), getJSON("/5m"), getJSON("/volumes")]);
+  S.hour = h.data || {}; S.min5 = m.data || {}; S.hourAt = Date.now();
+  /* 24h volume ranking = the crowding census. The most-flipped items are where
+     every tool sends every flipper — expect spreads compressed to the tax floor. */
+  S.volumes = v.data || {};
+  S.volRank.clear();
+  Object.entries(S.volumes).sort((a,b) => b[1] - a[1])
+    .forEach(([id, _], i) => S.volRank.set(+id, i + 1));
+}
+
+/* Timeseries powers three things: the sparkline, the trend gate, and the
+   hour-of-day profile. All three come from one request already being made. */
+async function sparkFor(id){
+  const c = S.spark.get(id);
+  if (c && Date.now() - c.at < SPARK_TTL) return c;
+  const d = await getJSON("/timeseries?id=" + id + "&timestep=1h");
+  const raw = (d.data || []).slice(-168);
+  const pts = [], vols = [], byHour = new Array(24).fill(0), hourN = new Array(24).fill(0);
+  for (const p of raw){
+    /* Midpoint, not "high or else low" — substituting one series for the other
+       injects a fake drop exactly the width of the spread. */
+    const hi = Number.isFinite(p.avgHighPrice) ? p.avgHighPrice : null;
+    const lo = Number.isFinite(p.avgLowPrice)  ? p.avgLowPrice  : null;
+    const mid = (hi != null && lo != null) ? (hi + lo)/2 : (hi != null ? hi : lo);
+    pts.push(mid);
+    const v = (p.highPriceVolume || 0) + (p.lowPriceVolume || 0);
+    vols.push(v);
+    const h = new Date(p.timestamp * 1000).getHours();
+    byHour[h] += v; hourN[h]++;
+  }
+  for (let h = 0; h < 24; h++) if (hourN[h]) byHour[h] /= hourN[h];
+  const rec = { at: Date.now(), pts, vols, byHour, noData: raw.length === 0 };
+  S.spark.set(id, rec);
+  return rec;
+}
+
+/* ── refresh orchestration ───────────────────────────────────── */
+let refreshPromise = null;
+function refresh(opts = {}){
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefresh(opts);
+  refreshPromise.finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+let failCount = 0;
+async function doRefresh(opts = {}){
+  S.loading = true; paintStatus();
+  try {
+    if (!S.items.length) await loadMapping(opts.forceMap);
+    const jobs = [loadLatest()];
+    if (Date.now() - S.hourAt > HOUR_MS) jobs.push(loadHour());
+    await Promise.all(jobs);
+    S.err = null; failCount = 0; clearErr();
+    rollChecklistDate();
+    runScout();
+  } catch(e){
+    S.err = e.message || String(e);
+    failCount++;
+    showErr("Price API unreachable — " + S.err + ". Showing the last good data" +
+            (S.latestAt ? " from " + ago(S.latestAt) : "") +
+            ". Retrying in " + Math.round(backoffMs()/1000) + "s.");
+  } finally {
+    S.loading = false;
+    paintStatus(); renderAll();
+  }
+  return !S.err;
+}
+/* Hammering a struggling API every 60s is the opposite of polite. */
+const backoffMs = () => failCount ? Math.min(POLL_MS * Math.pow(2, failCount), POLL_MAX) : POLL_MS;
+
+function showErr(msg){
+  $("#errbox").innerHTML =
+    '<div class="err"><span>⚠</span><span>' + esc(msg) +
+    '</span><button class="sm" style="margin-left:auto" id="errRetry">Retry now</button></div>';
+  const b = $("#errRetry"); if (b) b.onclick = () => { failCount = 0; refresh(); };
+}
+function clearErr(){ $("#errbox").innerHTML = ""; }
+
+function paintStatus(){
+  const dot = $("#dot"), st = $("#status");
+  const age = Date.now() - S.latestAt;
+  if (S.loading){ dot.className = "dot load"; st.textContent = "fetching…"; return; }
+  if (S.err && !S.latestAt){ dot.className = "dot bad"; st.textContent = "offline — no data"; return; }
+  dot.className = "dot" + (S.err ? " bad" : age > 3*POLL_MS ? " stale" : "");
+  st.textContent = "prices " + ago(S.latestAt) + (S.err ? " · retrying" : "");
+}
+setInterval(paintStatus, 1000);
+
+/* ── core math ───────────────────────────────────────────────── */
+function calc(id){
+  const meta = S.byId.get(id); if (!meta) return null;
+  const L = S.latest[id], H = S.hour[id], M = S.min5[id];
+  const w = DB.watch.find(x => x.id === id);
+
+  let sell = L && Number.isFinite(L.high) ? L.high : null;   // instabuy — you sell into it
+  let buy  = L && Number.isFinite(L.low)  ? L.low  : null;   // instasell — you buy into it
+  /* A margin-tested pair is the guide's "truth" and outranks live data. */
+  const tested = !!(w && Number.isFinite(w.tBuy) && Number.isFinite(w.tSell) && w.tBuy > 0 && w.tSell > 0);
+  if (tested){ buy = w.tBuy; sell = w.tSell; }
+
+  const tax  = sell != null ? geTax(sell, id) : null;
+  const margin = (sell != null && buy != null) ? sell - buy - tax : null;
+  const roi = (margin != null && buy > 0) ? (margin / buy) * 100 : null;
+
+  const volHigh = H ? (H.highPriceVolume || 0) : 0;   // trades at the high price = buyers taking your sell
+  const volLow  = H ? (H.lowPriceVolume  || 0) : 0;   // trades at the low price  = sellers filling your buy
+  const vol = volHigh + volLow;
+  /* A round trip needs both sides, so the binding constraint is the thinner one. */
+  const volSide = Math.min(volHigh, volLow);
+  const vol5 = M ? ((M.highPriceVolume || 0) + (M.lowPriceVolume || 0)) * 12 : null;  // hourly-equivalent
+  const imbalance = vol > 0 ? volLow / vol : null;
+
+  /* A spread that survives an hour of averaging is real; one visible only in
+     two unrelated instants often isn't. */
+  let margin1h = null, roi1h = null;
+  if (H && Number.isFinite(H.avgHighPrice) && Number.isFinite(H.avgLowPrice)){
+    margin1h = H.avgHighPrice - H.avgLowPrice - geTax(H.avgHighPrice, id);
+    if (H.avgLowPrice > 0) roi1h = margin1h / H.avgLowPrice * 100;
+  }
+
+  const tHigh = L ? (L.highTime || 0) : 0, tLow = L ? (L.lowTime || 0) : 0;
+  const t = Math.min(tHigh, tLow);
+  const skewMin = (tHigh && tLow) ? Math.abs(tHigh - tLow)/60 : null;
+
+  return {
+    id, name: meta.n, limit: meta.l, members: !!meta.m, exempt: exemptIds.has(id),
+    highalch: meta.a || 0,
+    buy, sell, tax, margin, roi, tested,
+    vol, volHigh, volLow, volSide, vol5, imbalance, margin1h, roi1h,
+    perLimit: (margin != null && meta.l) ? margin * meta.l : null,
+    downside: (buy > 0 && meta.a) ? buy / meta.a : null,
+    tHigh, tLow, skewMin,
+    crowdRank: S.volRank.get(id) || null,
+    age: t ? (Date.now()/1000 - t)/60 : null
+  };
+}
+
+const flipProfit = f => f.qty * (f.sell - f.buy - geTax(f.sell, f.itemId));
+/* Measured slot-hours: a flip with both leg timings occupied a slot for bh+sh.
+   gp per slot-hour is the truest rank of what deserves one of the 8 slots. */
+function fillStats(id){
+  let n = 0, buyH = 0, sellH = 0, profit = 0, slotH = 0;
+  for (const f of DB.flips){
+    if (id != null && f.itemId !== id) continue;
+    if (!Number.isFinite(f.bh) || !Number.isFinite(f.sh)) continue;
+    n++; buyH += f.bh; sellH += f.sh; profit += flipProfit(f); slotH += f.bh + f.sh;
+  }
+  return n ? { n, avgBuyH: buyH/n, avgSellH: sellH/n, gpPerSlotH: slotH > 0 ? profit/slotH : null } : null;
+}
+const realized  = () => DB.flips.reduce((a,f) => a + flipProfit(f), 0);
+/* Only profit booked AFTER the bank figure was stamped. Adding all of it to a
+   bank total you read off your own bank counts the same gp twice. */
+const realizedSince = ts => DB.flips.reduce((a,f) => a + ((f.id > ts) ? flipProfit(f) : 0), 0);
+const flipsSince = ts => DB.flips.filter(f => f.id > ts).length;
+const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0);
+const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0);
+const available = () => Math.max(0, stack() - committed());
+
+/* ── charts ──────────────────────────────────────────────────── */
+function sparkSVG(pts, w = 110, h = 24){
+  const clean = (pts || []).filter(v => Number.isFinite(v));
+  if (clean.length < 2) return '<span class="dim">—</span>';
+  const min = Math.min(...clean), max = Math.max(...clean), r = (max - min) || 1;
+  const step = (w - 2) / (pts.length - 1);
+  let d = "", started = false;
+  pts.forEach((v, i) => {
+    if (!Number.isFinite(v)){ started = false; return; }          // gap, don't bridge it
+    const x = (1 + i*step).toFixed(1), y = (h - 1 - ((v-min)/r)*(h-2)).toFixed(1);
+    d += (started ? "L" : "M") + x + " " + y + " ";
+    started = true;
+  });
+  const up = clean[clean.length-1] >= clean[0];
+  return '<svg class="spark" viewBox="0 0 '+w+' '+h+'" width="'+w+'" height="'+h+'" aria-hidden="true">'
+       + '<path d="'+d.trim()+'" fill="none" stroke="'+(up?"#78bf5e":"#cf5a4e")+'" stroke-width="1.4" '
+       + 'stroke-linejoin="round" stroke-linecap="round"/></svg>';
+}
+
+/* Least-squares slope over the whole window, expressed as % change across it.
+   Endpoint-to-endpoint let one bad final point flip the gate, and read a
+   crash-and-recovery as "flat". */
+function trendPct(pts){
+  const xs = [], ys = [];
+  (pts || []).forEach((v, i) => { if (Number.isFinite(v)){ xs.push(i); ys.push(v); } });
+  const n = xs.length;
+  if (n < 3) return null;
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++){ num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)**2; }
+  if (!den) return null;
+  const slope = num/den;
+  /* Normalise against the fitted value at the START of the window, not the mean
+     — dividing by the mean understates a real move by about a third. */
+  const fittedStart = my - slope*(mx - xs[0]);
+  if (!fittedStart) return null;
+  return (slope * (xs[n-1]-xs[0])) / Math.abs(fittedStart) * 100;
+}
+
+/* Volume dying is visible before price moves — the "dying item post-update" trap. */
+function volTrendPct(vols){
+  if (!vols || vols.length < 48) return null;
+  const recent = vols.slice(-24), prior = vols.slice(0, -24);
+  if (!prior.length) return null;
+  const ra = recent.reduce((a,b)=>a+b,0)/recent.length;
+  const pa = prior.reduce((a,b)=>a+b,0)/prior.length;
+  if (!pa) return null;
+  return (ra - pa)/pa * 100;
+}
+
+function hourSVG(byHour, w = 74, h = 22){
+  if (!byHour || !byHour.some(v => v > 0)) return '<span class="dim">—</span>';
+  const max = Math.max(...byHour) || 1, bw = w/24, nowH = new Date().getHours();
+  let bars = "";
+  for (let i = 0; i < 24; i++){
+    const bh = Math.max(1, (byHour[i]/max) * (h-2));
+    bars += '<rect x="'+(i*bw).toFixed(1)+'" y="'+(h-bh).toFixed(1)+'" width="'+(bw-0.6).toFixed(1)
+          + '" height="'+bh.toFixed(1)+'" fill="'+(i === nowH ? "#e8b64c" : "#4d6b3a")+'"/>';
+  }
+  return '<svg class="spark" viewBox="0 0 '+w+' '+h+'" width="'+w+'" height="'+h+'" aria-hidden="true">'+bars+'</svg>';
+}
+function hourVerdict(byHour){
+  if (!byHour || !byHour.some(v => v > 0)) return null;
+  const mean = byHour.reduce((a,b)=>a+b,0)/24, now = byHour[new Date().getHours()];
+  if (!mean) return null;
+  return { ratio: now/mean, thin: now < mean * 0.6 };
+}
+
+/* ═══════════ SCANNER ═══════════ */
+function scanRows(){
+  const f = DB.filters, out = [];
+  for (const it of S.items){
+    if (f.mem === "p2p" && !it.m) continue;
+    if (f.mem === "f2p" &&  it.m) continue;
+    if (f.lim && !it.l) continue;
+    if (f.cons && !CONSUMABLE_RX.test(it.n)) continue;
+    const c = calc(it.i);
+    if (!c || c.buy == null || c.sell == null) continue;
+    if (c.buy > f.max || c.buy < f.min) continue;
+    if (c.volSide < f.vol) continue;
+    if (c.margin < f.margin) continue;
+    if (c.roi == null || c.roi < f.roi) continue;
+    if (c.age == null || c.age > f.age) continue;
+    out.push(c);
+  }
+  const {k, dir} = DB.sort;
+  out.sort((a,b) => {
+    let x = a[k], y = b[k];
+    if (k === "name") return dir * String(x).localeCompare(String(y));
+    x = x == null ? -Infinity : x; y = y == null ? -Infinity : y;
+    return dir * (x - y);
+  });
+  return out;
+}
+
+function renderScan(){
+  if (!S.items.length){ $("#scanBody").innerHTML = '<tr><td colspan="13" class="empty">Loading item mapping…</td></tr>'; return; }
+  const rows = scanRows();
+  const shown = rows.slice(0, +DB.filters.rows || 50);
+  $("#scanCount").textContent = rows.length + " pass · showing " + shown.length +
+    " · prices " + ago(S.latestAt) + " · volumes " + (S.hourAt ? ago(S.hourAt) : "—");
+  if (!shown.length){
+    $("#scanBody").innerHTML = '<tr><td colspan="13" class="empty">Nothing passes these filters. Loosen the volume floor or raise max buy price.</td></tr>';
+    return;
+  }
+  const watched = new Set(DB.watch.map(w => w.id));
+  $("#scanBody").innerHTML = shown.map(c => {
+    const flags = [];
+    if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
+    if (c.roi > 12 && c.volSide < 20000) flags.push('<span class="badge b-warn" title="Fat ROI on modest volume — manipulation, dying item, or stale data. Margin-test before sizing.">check me</span>');
+    if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — everyone\'s flipping tool recommends this item, so expect the spread compressed to the tax floor. Volume is safety, not margin.">crowded #'+c.crowdRank+'</span>');
+    const slow = c.limit && c.volSide && c.limit > c.volSide * 4;
+    if (slow) flags.push('<span class="badge b-warn" title="The thin side of the book trades ~'+full(c.volSide*4)+' in 4h but your buy limit is '+full(c.limit)+' — profit/limit is a ceiling you cannot reach.">slow fill</span>');
+    if (c.margin1h != null && c.margin > 0 && c.margin1h < c.margin * 0.7)
+      flags.push('<span class="badge b-warn" title="The 1h-average spread is '+full(c.margin1h)+' vs '+full(c.margin)+' live — the live margin is partly an artifact of two unrelated trades.">thin on 1h</span>');
+    if (c.skewMin != null && c.skewMin > 30)
+      flags.push('<span class="badge b-warn" title="'+Math.round(c.skewMin)+' min between the last buy and last sell — one side of the book is asleep.">one-sided</span>');
+    return '<tr>'
+      + '<td><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
+      + '<td class="num">'+full(c.buy)+'</td>'
+      + '<td class="num">'+full(c.sell)+'</td>'
+      + '<td class="num dim sec">'+full(c.tax)+'</td>'
+      + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
+      + '<td class="num '+sign(c.roi)+'">'+c.roi.toFixed(2)+'</td>'
+      + '<td class="num sec '+sign(c.margin1h)+'">'+(c.margin1h != null ? full(c.margin1h) : "—")+'</td>'
+      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
+      + '<td class="num sec '+sign(c.perLimit)+'"'
+      + (slow ? ' title="Fill-capped estimate: ~'+gp(c.margin * c.volSide * 4)+' at current volume"' : '')
+      + '>'+gp(c.perLimit)+(slow ? ' <span class="dim">*</span>' : '')+'</td>'
+      + '<td class="num dim" title="thin side '+full(c.volSide)+' · buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
+      + '<td class="num dim sec">'+(c.imbalance != null ? c.imbalance.toFixed(2) : "—")+'</td>'
+      + '<td class="num dim sec">'+Math.round(c.age)+'m</td>'
+      + '<td><button class="sm" data-add="'+c.id+'"'+(watched.has(c.id)?' disabled title="already watched"':'')+'>'
+      + (watched.has(c.id) ? '✓' : '+ watch') + '</button></td>'
+      + '</tr>';
+  }).join("");
+}
+
+/* ═══════════ CONVERSION SPREADS ═══════════
+   Intra-family mispricings closed by a free (or near-free) in-game action.
+   These don't need the price to move — the conversion itself is the edge. */
+function thinSide(id){
+  const H = S.hour[id];
+  return H ? Math.min(H.highPriceVolume || 0, H.lowPriceVolume || 0) : 0;
+}
+
+function findConversions(){
+  const out = [];
+  const floor = DB.filters.vol;
+
+  /* Decanting: dose variants of one potion should price per-dose identically.
+     When they don't, buy cheap doses, decant at Bob Barter, sell dear doses. */
+  const doseRe = /^(.+)\((\d)\)$/;
+  const fams = new Map();
+  for (const it of S.items){
+    const m = it.n.match(doseRe);
+    if (!m) continue;
+    const d = +m[2];
+    if (d < 1 || d > 4) continue;
+    const k = m[1].trim().toLowerCase();
+    if (!fams.has(k)) fams.set(k, []);
+    fams.get(k).push({ d, it });
+  }
+  for (const [base, list] of fams){
+    if (list.length < 2) continue;
+    let bestBuy = null, bestSell = null;
+    for (const v of list){
+      const L = S.latest[v.it.i];
+      if (!L || !Number.isFinite(L.high) || !Number.isFinite(L.low) || L.low <= 0) continue;
+      const vs = thinSide(v.it.i);
+      if (vs < floor) continue;                                   // both legs must be liquid
+      const bpd = L.low / v.d;                                    // cost per dose, buying at instasell
+      const spd = (L.high - geTax(L.high, v.it.i)) / v.d;         // net per dose, selling at instabuy
+      if (!bestBuy  || bpd < bestBuy.bpd)  bestBuy  = { ...v, price:L.low,  bpd, vs };
+      if (!bestSell || spd > bestSell.spd) bestSell = { ...v, price:L.high, spd, vs };
+    }
+    if (!bestBuy || !bestSell || bestBuy.it.i === bestSell.it.i) continue;
+    const perDose = bestSell.spd - bestBuy.bpd;
+    if (perDose <= 0) continue;
+    out.push({
+      type: "decant", name: base,
+      route: "buy " + bestBuy.it.n + " @ " + full(bestBuy.price)
+           + " → decant → sell " + bestSell.it.n + " @ " + full(bestSell.price),
+      margin: perDose, marginLabel: full(Math.round(perDose*10)/10) + "/dose",
+      roi: perDose / bestBuy.bpd * 100,
+      vol: Math.min(bestBuy.vs, bestSell.vs),
+      watchId: bestBuy.it.i
+    });
+  }
+
+  /* Grimy → clean: cleaning is free given the Herblore level (but click-heavy —
+     that cost is your minutes, which §5 says to count). */
+  for (const it of S.items){
+    if (!/^grimy /i.test(it.n)) continue;
+    const clean = S.items.find(x => x.n.toLowerCase() === it.n.slice(6).toLowerCase());
+    if (!clean) continue;
+    const Lg = S.latest[it.i], Lc = S.latest[clean.i];
+    if (!Lg || !Lc || !Number.isFinite(Lg.low) || !Number.isFinite(Lc.high) || Lg.low <= 0) continue;
+    const vg = thinSide(it.i), vc = thinSide(clean.i);
+    if (vg < floor || vc < floor) continue;
+    const margin = Lc.high - geTax(Lc.high, clean.i) - Lg.low;
+    if (margin <= 0) continue;
+    out.push({
+      type: "clean", name: clean.n,
+      route: "buy " + it.n + " @ " + full(Lg.low) + " → clean → sell @ " + full(Lc.high),
+      margin, marginLabel: full(margin),
+      roi: margin / Lg.low * 100,
+      vol: Math.min(vg, vc),
+      watchId: it.i
+    });
+  }
+
+  out.sort((a,b) => b.roi - a.roi);
+  return out;
+}
+
+function renderConversions(){
+  const body = $("#convBody");
+  if (!S.items.length || !S.latestAt){ body.innerHTML = '<tr><td colspan="6" class="empty">Waiting for prices…</td></tr>'; return; }
+  const rows = findConversions().slice(0, 20);
+  $("#convCount").textContent = rows.length
+    ? rows.length + " live · both legs over the " + full(DB.filters.vol) + "/h floor · taxes included"
+    : "none clear the volume floor right now";
+  if (!rows.length){
+    body.innerHTML = '<tr><td colspan="6" class="empty">No conversion spread currently survives tax + the volume floor. These come and go — check after update days.</td></tr>';
+    return;
+  }
+  const watched = new Set(DB.watch.map(w => w.id));
+  body.innerHTML = rows.map(r =>
+    '<tr><td><span class="badge '+(r.type==="decant"?"b-ok":"b-tax")+'">'+r.type+'</span> '+esc(r.name)+'</td>'
+    + '<td class="dim" style="white-space:normal;text-align:left">'+esc(r.route)+'</td>'
+    + '<td class="num pos">'+r.marginLabel+'</td>'
+    + '<td class="num pos">'+r.roi.toFixed(2)+'</td>'
+    + '<td class="num dim">'+gp(r.vol)+'</td>'
+    + '<td><button class="sm" data-add="'+r.watchId+'"'+(watched.has(r.watchId)?' disabled':'')+'>'
+    + (watched.has(r.watchId)?'✓':'+ watch buy leg')+'</button></td></tr>'
+  ).join("");
+}
+
+/* ═══════════ SIZING ═══════════ */
+function planCap(c){
+  const caps = [], st = stack();
+  if (st > 0 && c.buy > 0) caps.push(Math.floor((st/3) / c.buy));
+  if (c.limit) caps.push(c.limit * limitWindows());
+  return caps.length ? Math.max(0, Math.min(...caps)) : null;
+}
+function planQty(w, c){
+  const cap = planCap(c);
+  const wanted = w.qty == null ? (cap != null ? cap : (c.limit || 0)) : w.qty;
+  const qty = cap != null ? Math.min(wanted, cap) : wanted;
+  return { qty, cap, auto: cap != null && (w.qty == null || w.qty > cap) };
+}
+function capReason(c, cap){
+  const st = stack();
+  const byThird = (st > 0 && c.buy > 0) ? Math.floor((st/3)/c.buy) : null;
+  const w = limitWindows(), byLimit = c.limit ? c.limit * w : null;
+  if (byLimit != null && cap === byLimit && (byThird == null || byLimit <= byThird))
+    return "the 4-hour buy limit" + (w > 1 ? " × " + w + " windows over your " + (DB.horizonH||10) + "h day" : "");
+  return "one-third of your stack";
+}
+
+/* ═══════════ TODAY'S PLAN ═══════════ */
+/* Hard gates bench; soft bands only tag. The rule of thumb after three
+   double-counting bugs: bench only on information that sizing and the
+   effective-margin logic don't already price in. */
+const GATE = { roi:1.2, trendSoft:-5, trendWarn:-3, falling:-8, volPerQty:4,
+               balHardLo:0.15, balHardHi:0.85, balWarnLo:0.30, balWarnHi:0.70,
+               skewHard:60, skewWarn:30, volDecline:-40,
+               seedSizeFactor:0.5, seedSlots:1,
+               capture:0.15 };   // share of one side's flow a standing offer can realistically capture
+
+/* Offers sit from the morning touch to the evening one, so the liquidity budget
+   is hours × hourly flow × capture share — not one hour's worth. Buy limits
+   roll every 4h and a standing offer resumes filling on its own, so the limit
+   cap scales with the number of windows in the horizon. */
+const limitWindows = () => Math.max(1, Math.floor((DB.horizonH || 10) / 4));
+
+/* The margin the plan believes: your tested spread if you have one, else the
+   CONSERVATIVE of live and 1h-average. A live spread above the sustained one
+   is optimism; below it is caution — take the lower either way. */
+function effMargin(c){
+  if (c.tested || c.margin1h == null) return c.margin;
+  return Math.min(c.margin, c.margin1h);
+}
+
+/* ── correlation families ─────────────────────────────────────
+   Two positions in the same production line aren't diversification — a nerf
+   to the boss that drops the herb moves the herb, the unf potion and the
+   finished potion together. Stems are approximate by construction, which is
+   why the resolved map is exposed in a debug panel. */
+function familyKey(name){
+  let s = String(name).toLowerCase().trim();
+  // doses (4), unfinished, poisoned (p/p+/p++), enchanted (e), imbued (i),
+  // ornament/locked/trimmed/gold, nightmare-zone — all same-line variants
+  s = s.replace(/\((?:\d+|unf|e|i|or|l|t|g|nz|p(?:\+\+?)?)\)/g, " ");
+  s = s.replace(/\b(?:grimy|unfinished)\b/g, " ");
+  s = s.replace(/\barrowtips?\b/g, "arrow");
+  s = s.replace(/\b(bolt|dart|javelin|arrow|knife)\s+(?:tips?|heads?)\b/g, "$1");
+  s = s.replace(/\b(?:tips?|heads?)\b/g, " ");
+  s = s.replace(/\bpotion\b/g, " ");
+  s = s.replace(/\b(?:seed|weed|leaf)\b/g, " ");
+  s = s.replace(/[^a-z0-9 ]/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/s$/, "");
+  return s || String(name).toLowerCase();
+}
+/* Classic pump-vehicle categories: storable, mid-liquidity, niche demand —
+   the profile manipulation discords hunt for. Each category gets half sizing
+   and one plan slot until an ITEM graduates via your own log. */
+const CAUTION_CATS = [
+  { key:"seed", label:"seed", test:n=>/\bseeds?$/i.test(n),
+    why:"seed category: manipulation-prone" },
+  { key:"impling", label:"impling jar", test:n=>/impling jar$/i.test(n),
+    why:"impling jars: hoardable with niche demand — classic pump vehicle" },
+  { key:"ensouled", label:"ensouled head", test:n=>/^ensouled .+ head$/i.test(n),
+    why:"ensouled heads: spiky prayer-training demand — classic pump vehicle" },
+  { key:"nest", label:"bird nest", test:n=>/^bird nest\b/i.test(n) || /^crushed nest$/i.test(n),
+    why:"nests: trickle supply, easy to corner — historically pumped" }
+];
+const cautionCat = name => CAUTION_CATS.find(c => c.test(String(name).trim())) || null;
+const isSeed = name => /\bseeds?$/i.test(String(name).trim());   // families still use this
+
+/* §5 in code: the log decides. Three profitable round trips inside two weeks
+   graduates an item out of its category's caution — full size, freed slot.
+   Wins age out, so graduation is earned continuously, not once. */
+function itemWins(id){
+  const cutoff = Date.now() - 14 * 86400e3;
+  let w = 0;
+  for (const f of DB.flips)
+    if (f.itemId === id && f.id >= cutoff && flipProfit(f) > 0) w++;
+  return w;
+}
+const provenCaution = id => itemWins(id) >= 3;
+
+/* ── plan-level overrides (reset daily with the checklist) ──── */
+function resetPlanOverrides(){
+  DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
+}
+function ensurePlanDate(){
+  if (DB.planDate !== today()) resetPlanOverrides();
+}
+
+function planCandidates(){
+  return DB.watch.map(w => {
+    const c = calc(w.id);
+    if (!c || c.buy == null || c.sell == null)
+      return { id:w.id, name: itemName(w.id), failed:"no live price in /latest" };
+
+    const { qty } = planQty(w, c);
+    const sp = S.spark.get(w.id);
+    const tr = sp ? trendPct(sp.pts) : null;
+    const vt = sp ? volTrendPct(sp.vols) : null;
+    const volGate = c.vol5 != null ? Math.min(c.volSide, c.vol5) : c.volSide;
+    /* NB: no slow-fill hard gate here. "Buy limit exceeds 4h volume" only means
+       profit-per-limit is unreachable — a display caveat, not untradability.
+       Allocation already sizes qty to volume÷4, so the fill constraint is
+       enforced where it belongs. Benching on it killed items you'd simply
+       have sized smaller. */
+
+    /* Judge on the effective (sustained-aware) margin, not the live snapshot.
+       "Live 240 vs 1h −91" now benches for the honest reason — the sustained
+       spread is dead — while "live 48 vs 1h 32" funds at 32. */
+    const eMargin = effMargin(c);
+    const eRoi = (eMargin != null && c.buy > 0) ? eMargin / c.buy * 100 : null;
+
+    let failed = null;
+    if (eRoi == null || eRoi < GATE.roi)
+      failed = "sustained ROI " + (eRoi == null ? "unknown" : eRoi.toFixed(2) + "%") + " — under the " + GATE.roi + "% floor"
+             + (c.roi != null && eRoi != null && c.roi - eRoi > 1 ? " (live " + c.roi.toFixed(2) + "% doesn't hold over 1h)" : "");
+    else if (c.skewMin != null && c.skewMin > GATE.skewHard)
+      failed = "one-sided book — " + Math.round(c.skewMin) + " min between last buy and last sell";
+    else if (c.imbalance != null && (c.imbalance < GATE.balHardLo || c.imbalance > GATE.balHardHi))
+      failed = "one-way flow — " + (c.imbalance*100).toFixed(0) + "% of volume on the buy side (dump/pump territory)";
+    else if (sp && sp.noData)
+      failed = "no price history published for this item";
+    else if (tr == null)
+      failed = "no chart yet — history still loading";
+    else if (tr <= GATE.falling)
+      failed = "falling chart — " + tr.toFixed(1) + "% over 7d";
+    else if (tr <= GATE.trendSoft)
+      failed = "downtrend " + tr.toFixed(1) + "% — needs better than " + GATE.trendSoft + "%";
+    else if (vt != null && vt <= GATE.volDecline)
+      failed = "volume dying — " + vt.toFixed(0) + "% vs the prior 6 days";
+    else if (!(qty > 0))
+      failed = "plan qty clamps to 0 — one unit exceeds a third of your stack";
+    else if (volGate < DB.filters.vol)
+      failed = "volume " + gp(volGate) + "/h on the thin side — under your " + full(DB.filters.vol) + "/h floor";
+    /* NB: moderate imbalance and 30–60 min book-skew only TAG (see whyTag) —
+       volSide sizing already prices asymmetric flow; benching it twice was
+       the same double-count as the old slow-fill gate. */
+
+    const cat = cautionCat(c.name);
+    /* Realized alpha ranks up: every profitable round trip in the last 14 days
+       boosts an item's score 10%, capped at +50%. The book trades what the
+       log has proven — that's the whole edge, systematized. */
+    const wins = itemWins(w.id);
+    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins,
+             fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
+             score: failed ? 0 : eRoi * Math.log(Math.max(volGate, 2)) * (1 + Math.min(wins, 5) * 0.1) };
+  });
+}
+
+/* One position per family, highest score wins. Applied after the gates so the
+   bench reason names the winner rather than hiding the item entirely. */
+function applyFamilyRule(pass, bench){
+  const bestByFam = new Map();
+  for (const x of pass){
+    const cur = bestByFam.get(x.fam);
+    if (!cur || x.score > cur.score) bestByFam.set(x.fam, x);
+  }
+  const kept = [];
+  for (const x of pass){
+    const winner = bestByFam.get(x.fam);
+    if (winner.id === x.id) kept.push(x);
+    else bench.push({ ...x, failed: "family overlap with " + winner.name });
+  }
+  return kept;
+}
+
+function buildPlan(){
+  ensurePlanDate();
+  const all = planCandidates();
+  const bench = all.filter(x => x.failed);
+  let pass = all.filter(x => !x.failed).sort((a,b) => b.score - a.score);
+  pass = applyFamilyRule(pass, bench);
+
+  /* Manual promotions jump the queue; demoted picks drop to NEXT UP. */
+  const prio = DB.planPriority || [], demoted = new Set(DB.planDemoted || []);
+  const rank = x => { const i = prio.indexOf(x.id); return i < 0 ? Infinity : i; };
+  pass.sort((a,b) => (rank(a) - rank(b)) || (b.score - a.score));
+
+  const st = stack(), avail = available();
+  const targetSlots = Math.max(1, Math.min(8, DB.slots || 8));
+  const H = DB.horizonH || 10;
+  /* Deployable = free capital minus the incidentals reserve, which is never touched. */
+  const deployable = Math.max(0, avail - (DB.reserve || 0));
+  let remaining = deployable;
+  const catSlots = {};    // one funded slot per caution category (unproven items only)
+  const smalls = [];      // below the worth-a-slot floor — fund only into idle slots
+  const picks = [], nextUp = [];
+  const held = new Set(DB.positions.map(p => p.itemId));
+  const minExpect = Math.max(1000, Math.round(deployable * 0.0002));
+  const perSlot = Math.floor(deployable / targetSlots);
+
+  /* Pass 1: fund up to targetSlots picks at an even per-slot budget, so eight
+     offers exist before anything gets greedy. */
+  for (const x of pass){
+    const byLiquidity = Math.floor(x.volGate * H * GATE.capture);
+    let cap = Math.min(x.qty, byLiquidity);
+    const rawCaution = x.caution && !x.cautionProven;   // proven items trade as regular items
+    if (rawCaution) cap = Math.floor(cap * GATE.seedSizeFactor);
+
+    const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
+    const full_ = picks.length >= targetSlots;
+
+    if (held.has(x.id)){
+      nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
+                    wouldExpect: Math.max(0, cap) * x.eMargin, why: "already placed — holding a position" });
+      continue;
+    }
+    const tooSmall = cap > 0 && cap * x.eMargin < minExpect;
+    const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, remaining) / x.c.buy)));
+    if (demoted.has(x.id) || full_ || blockedSeed || cap <= 0 || qty <= 0 || tooSmall){
+      if (tooSmall && !demoted.has(x.id) && !full_ && !blockedSeed && qty > 0){
+        smalls.push({ ...x, capQty: cap, rawCaution });   // filler candidate — decided after pass 2
+        continue;
+      }
+      nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
+        wouldExpect: Math.max(0, cap) * x.eMargin,
+        why: demoted.has(x.id) ? "demoted by you"
+           : blockedSeed ? x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used"
+           : full_ ? "plan is full at " + targetSlots + " offers"
+           : "no capital left this rotation" });
+      continue;
+    }
+    remaining -= qty * x.c.buy;
+    if (rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
+    picks.push({ ...x, capQty: cap, allocQty: qty });
+  }
+
+  /* Pass 2: pour the leftover into the funded picks by rank, up to each item's
+     own caps (third-of-stack, limit windows, liquidity). The reserve is
+     already outside `deployable`, so it can't be invaded. */
+  /* Pass 2 — fillers claim idle slots BEFORE the top-up; otherwise the big
+     picks absorb the whole pool and slots sit empty. An idle GE slot earns
+     exactly zero; a small high-ROI position (the snape-grass shape: tiny
+     limit, instant fills, uncrowded) beats that, and by definition it
+     barely dents the pool. */
+  for (const x of smalls){
+    if (picks.length >= targetSlots || remaining <= 0){
+      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy,
+                    wouldExpect: x.capQty * x.eMargin,
+                    why: picks.length >= targetSlots ? "small — every slot went to a full-size pick" : "no capital left this rotation" });
+      continue;
+    }
+    if (x.rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots){
+      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy, wouldExpect: x.capQty * x.eMargin,
+                    why: x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used" });
+      continue;
+    }
+    const qty = Math.min(x.capQty, Math.floor(remaining / x.c.buy));
+    if (qty <= 0) continue;
+    remaining -= qty * x.c.buy;
+    if (x.rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
+    picks.push({ ...x, allocQty: qty, filler: true });
+  }
+
+  /* Pass 3 — pour the leftover into the funded picks by rank, up to each
+     item's own caps. Fillers are already at cap, so this fattens the big picks. */
+  for (const p of picks){
+    if (remaining <= 0) break;
+    const extra = Math.min(p.capQty - p.allocQty, Math.floor(remaining / p.c.buy));
+    if (extra > 0){ p.allocQty += extra; remaining -= extra * p.c.buy; }
+  }
+
+  for (const p of picks){ p.cost = p.allocQty * p.c.buy; p.expect = p.allocQty * p.eMargin; }
+
+  return { picks, nextUp, bench, pass, remaining, st, avail, deployable,
+           reserve: DB.reserve || 0, deployed: deployable - remaining };
+}
+
+function whyTag(x){
+  const bits = [];
+  const r = x.eRoi != null ? x.eRoi : x.c.roi;
+  bits.push(r >= 4 ? "high ROI" : r >= 2.5 ? "solid ROI" : "thin but clean ROI");
+  bits.push(x.volGate >= 100000 ? "deep volume" : x.volGate >= 25000 ? "good volume" : "adequate volume");
+  if (x.tr != null){
+    if (x.tr <= GATE.trendWarn) bits.push("drifting " + x.tr.toFixed(1) + "% — watch it");
+    else bits.push(Math.abs(x.tr) < 3 ? "flat chart" : "rising chart");
+  }
+  if (x.c.tested) bits.push("margin-tested");
+  if (x.cautionProven) bits.push(x.caution.label + " proven by your log — 3+ wins in 14d");
+  else if (x.wins > 0) bits.push("log-proven edge — " + x.wins + " win" + (x.wins===1?"":"s") + " in 14d, ranked up");
+  const fs = fillStats(x.id);
+  if (fs && fs.n >= 2)
+    bits.push("measured fills: buy " + (fs.avgBuyH < 1 ? Math.round(fs.avgBuyH*60) + "m" : fs.avgBuyH.toFixed(1) + "h")
+      + ", sell " + (fs.avgSellH < 1 ? Math.round(fs.avgSellH*60) + "m" : fs.avgSellH.toFixed(1) + "h")
+      + " over " + fs.n + " flips");
+  else if (x.c.limit && x.volGate >= 20 * x.c.limit)
+    bits.push("fast cycler — the " + full(x.c.limit) + " limit fills in minutes; worth a midday re-arm when you're around");
+  if (x.eMargin != null && x.c.margin > x.eMargin) bits.push("sized on 1h spread (" + full(x.eMargin) + "), live shows " + full(x.c.margin));
+  if (x.c.imbalance != null && (x.c.imbalance < GATE.balWarnLo || x.c.imbalance > GATE.balWarnHi))
+    bits.push("uneven flow — " + (x.c.imbalance*100).toFixed(0) + "% buy-side, the " + (x.c.imbalance < 0.5 ? "buy" : "sell") + " leg fills slower");
+  if (x.c.skewMin != null && x.c.skewMin > GATE.skewWarn) bits.push("slow book — " + Math.round(x.c.skewMin) + "m between sides");
+  if (x.c.crowdRank && x.c.crowdRank <= 100) bits.push("crowded #" + x.c.crowdRank + " — margin may compress");
+  else if (x.c.crowdRank && x.c.crowdRank > 300) bits.push("uncrowded — spread likelier to hold");
+  const hv = hourVerdict((S.spark.get(x.id) || {}).byHour);
+  if (hv && hv.thin) bits.push("quiet hour — fills may lag");
+  return bits.join(", ");
+}
+const startOfToday = () => new Date(new Date().toDateString()).getTime();
+
+const planLineText = (p, i) =>
+  (i+1) + ". BUY " + full(p.allocQty) + " " + p.name + " at " + full(p.c.buy) +
+  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle";
+
+/* Position lifecycle: buying → bought → selling → sold (= log entry).
+   Each stage has one obvious next action; nothing advances on its own. */
+const STAGES = {
+  buying:  { label:"buy pending",  cls:"b-warn", next:"buy filled →" },
+  bought:  { label:"awaiting sell", cls:"b-ok",  next:"listed sell →" },
+  selling: { label:"sell pending", cls:"b-seed", next:"sold →" }
+};
+const posStage = p => p.stage || "buying";
+
+function advancePosition(pid){
+  const p = DB.positions.find(x => x.id === pid);
+  if (!p) return;
+  const st = posStage(p);
+  if (st === "buying"){
+    p.stage = "bought"; p.stageAt = Date.now();
+    p.buyH = Math.round((Date.now() - p.placedAt) / 36e3) / 100;   // hours the buy took to fill
+    save(); renderWatch();
+    toast("Buy filled: " + full(p.qty) + " " + itemName(p.itemId, p.name) + " — next: list the sell.");
+  } else if (st === "bought"){
+    const c = calc(p.itemId);
+    const a = prompt("List " + itemName(p.itemId, p.name) + " ×" + full(p.qty) +
+                     " — at what sell price each?", c && c.sell != null ? String(c.sell) : "");
+    if (a === null) return;
+    const ask = Math.round(clampNum(a, NaN));
+    if (!(ask > 0)){ toast("Ask must be a positive number."); return; }
+    p.stage = "selling"; p.ask = ask; p.stageAt = Date.now();
+    save(); renderWatch();
+    toast("Sell listed at " + full(ask) + " — press sold when it fills.");
+  } else if (st === "selling"){
+    closePosition(pid);      // → prefills the log; you still press + Log flip
+  }
+}
+
+/* Partial fills: one number, then the bookkeeping happens.
+   buying  → n bought now; remainder either still stands (split) or was cancelled (shrink)
+   selling → n sold; log prefilled for them, the rest stays listed */
+function partialPosition(pid){
+  const p = DB.positions.find(x => x.id === pid);
+  if (!p) return;
+  const st = posStage(p), nm = itemName(p.itemId, p.name);
+  if (st === "buying"){
+    const a = prompt("Partial buy fill — how many of the " + full(p.qty) + " " + nm + " were bought?", "");
+    if (a === null) return;
+    const n = Math.floor(clampNum(a, NaN));
+    if (!(n > 0)){ toast("Enter the filled quantity as a positive number."); return; }
+    if (n >= p.qty){ advancePosition(pid); return; }          // that's a full fill
+    const keep = confirm("Filled " + full(n) + " of " + full(p.qty) + ".\n\n" +
+      "OK — the offer for the remaining " + full(p.qty - n) + " is still standing in-game (keep tracking it).\n" +
+      "Cancel — you cancelled the remainder (stop tracking it).");
+    const filled = { id: Date.now(), itemId: p.itemId, name: p.name, qty: n, buy: p.buy,
+                     placedAt: p.placedAt, stage: "bought", stageAt: Date.now(),
+                     buyH: Math.round((Date.now() - p.placedAt) / 36e3) / 100 };
+    if (keep){ p.qty -= n; DB.positions.push(filled); }
+    else { Object.assign(p, { qty: n, stage: "bought", stageAt: Date.now(),
+                              buyH: Math.round((Date.now() - p.placedAt) / 36e3) / 100 }); }
+    save(); renderWatch();
+    toast(full(n) + " " + nm + " marked bought — next: list the sell. " +
+          (keep ? full(p.qty) + " remain on the standing buy offer." : "Remainder dropped."));
+  } else if (st === "selling"){
+    const a = prompt("Partial sell fill — how many of the " + full(p.qty) + " " + nm + " sold at " + full(p.ask) + "?", "");
+    if (a === null) return;
+    const n = Math.floor(clampNum(a, NaN));
+    if (!(n > 0)){ toast("Enter the sold quantity as a positive number."); return; }
+    if (n >= p.qty){ closePosition(pid); return; }             // that's a full fill
+    p.qty -= n;
+    save(); renderWatch();
+    logFromWatch(p.itemId, n, p.buy, p.ask);
+    toast("Log prefilled for the " + full(n) + " sold — press + Log flip. " +
+          full(p.qty) + " remain listed at " + full(p.ask) + ".");
+  }
+}
+
+/* One action strip per position, used everywhere a position renders. */
+function posActions(p){
+  const stage = posStage(p), st = STAGES[stage];
+  return '<button class="sm" data-adv="'+p.id+'">'+st.next+'</button>'
+    + (stage !== "bought" ? '<button class="sm" data-part="'+p.id+'" title="Partially filled — enter the filled quantity and the split is handled">partial…</button>' : '')
+    + '<button class="sm ghost" data-delpos="'+p.id+'" title="cancel without logging">✕</button>';
+}
+
+function sellLines(){
+  return DB.positions.map(p => {
+    const c = calc(p.itemId);
+    const stage = posStage(p);
+    /* the price that matters: your standing ask if listed, else live instabuy */
+    const at = stage === "selling" ? p.ask : (c && c.sell != null ? c.sell : null);
+    const net = at != null ? p.qty * (at - p.buy - geTax(at, p.itemId)) : null;
+    const ageH = (Date.now() - p.placedAt)/3600e3;
+    return { p, c, at, net, ageH, stage };
+  });
+}
+const sellLineText = (s, i) => {
+  const nm = itemName(s.p.itemId, s.p.name);
+  if (s.stage === "buying")  return (i+1) + ". UNFILLED buy: " + full(s.p.qty) + " " + nm + " — cancel and re-test, don't chase";
+  if (s.stage === "selling") return (i+1) + ". PENDING sell: " + full(s.p.qty) + " " + nm + " listed at " + full(s.at) + " — undercut to exit if stuck";
+  return (i+1) + ". SELL " + full(s.p.qty) + " " + nm +
+    (s.at != null ? " at " + full(s.at) + " each — net ~" + gp(s.net) : " — no live price");
+};
+
+/* Independent of plan mode and of whether anything passed, so the stem matching
+   stays auditable even on a night when the plan is empty. */
+function renderFamilyDebug(){
+  const fams = new Map();
+  for (const w of DB.watch){
+    const nm = itemName(w.id), k = familyKey(nm);
+    if (!fams.has(k)) fams.set(k, []);
+    if (!fams.get(k).includes(nm)) fams.get(k).push(nm);
+  }
+  const rows = Array.from(fams.entries()).sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  $("#famBody").innerHTML = rows.length
+    ? rows.map(([k, names]) => '<div class="fam-row"><span class="k">' + esc(k) + '</span><span>'
+        + esc(names.join("  ·  ")) + (names.length > 1 ? ' <span class="badge b-warn">grouped</span>' : '') + '</span></div>').join("")
+    : '<div class="fam-row"><span class="dim">Nothing on the watchlist yet.</span></div>';
+}
+
+function renderPlan(){
+  const list = $("#planList"), foot = $("#planFoot"), hint = $("#planHint");
+  $$("#planMode button").forEach(b => b.classList.toggle("on", b.dataset.pm === S.planMode));
+  renderFamilyDebug();
+
+  if (S.planMode === "sell"){
+    $("#planTitle").textContent = "Tonight's sells";
+    hint.textContent = "Relist at your tested margin, not this morning's number. A sell that won't move: drop it below instabuy and take the small loss.";
+    const lines = sellLines();
+    list.innerHTML = lines.length ? lines.map(s => {
+        const st = STAGES[s.stage], nm = itemName(s.p.itemId, s.p.name);
+        const head = s.stage === "buying"
+          ? '<b class="buy">BUY PENDING</b> <span class="num">'+full(s.p.qty)+'</span> '+esc(nm)
+            + ' <span class="dim">at '+full(s.p.buy)+' — unfilled; cancel and re-test rather than chasing</span>'
+          : s.stage === "selling"
+          ? '<b class="sell">SELL PENDING</b> <span class="num">'+full(s.p.qty)+'</span> '+esc(nm)
+            + ' listed at <span class="num">'+full(s.at)+'</span> — net <span class="num '+sign(s.net)+'">~'+gp(s.net)+'</span> if it fills'
+          : '<b class="sell">SELL</b> <span class="num">'+full(s.p.qty)+'</span> '+esc(nm)
+            + (s.at != null ? ' at <span class="num">'+full(s.at)+'</span> each — net <span class="num '+sign(s.net)+'">~'+gp(s.net)+'</span>'
+                            : ' <span class="dim">— no live price</span>');
+        return '<li'+(s.stage === "selling" ? ' class="placed"' : '')+'><div class="body">'
+          + '<span class="badge '+st.cls+'">'+st.label+'</span> ' + head
+          + '<div class="why">bought at '+full(s.p.buy)+' · held '+(s.ageH<1?"<1":Math.round(s.ageH))+'h'
+          + (s.ageH > 24 && s.stage !== "selling" ? ' · <span class="neg">sat over a day</span>' : '') + '</div></div>'
+          + '<span class="plan-actions">'+posActions(s.p)+'</span></li>';
+      }).join("")
+      : '<li><span class="dim">No open positions. Mark plan lines as placed on the buy plan and they show up here.</span></li>';
+    const actionable = lines.filter(s => s.stage !== "buying");
+    const tot = actionable.reduce((a,s) => a + (s.net || 0), 0);
+    foot.innerHTML = lines.length ? 'Expected net from sells: <span class="num '+sign(tot)+'">'+gp(tot)+'</span>'
+      + (lines.some(s => s.stage === "buying") ? ' · <span class="dim">' + lines.filter(s => s.stage==="buying").length + ' buy(s) never filled</span>' : '') : "";
+    $("#benchSummary").textContent = "Benched — n/a on the sell plan";
+    $("#benchBody").innerHTML = "";
+    $("#planSub").textContent = lines.length + " position" + (lines.length===1?"":"s") + " open";
+    return;
+  }
+
+  $("#planTitle").textContent = "Today's Plan";
+  hint.textContent = "Margin-test one unit of anything new before committing — buy a single unit at instabuy and sell it at instasell. Record the result in the Tested column; it then overrides live prices everywhere.";
+
+  /* Placements older than today that were never resolved — rendered before any
+     early return so they can't disappear behind an empty watchlist. */
+  const stale = DB.positions.filter(p => p.placedAt < startOfToday());
+  $("#staleOpen").innerHTML = stale.length
+    ? '<b>Yesterday\'s placements — still open (' + stale.length + ')</b>'
+      + stale.map(p => { const st = STAGES[posStage(p)];
+        return '<div class="row2"><span><span class="badge '+st.cls+'">'+st.label+'</span> '
+        + esc(itemName(p.itemId, p.name)) + ' × '
+        + full(p.qty) + ' at ' + full(p.buy)
+        + (posStage(p) === "selling" ? ' (asking ' + full(p.ask) + ')' : '')
+        + ' — placed ' + ago(p.placedAt) + '</span>'
+        + posActions(p) + '</div>'; }).join("")
+    : "";
+  $("#staleOpen").style.display = stale.length ? "" : "none";
+
+  if (!DB.watch.length){
+    $("#planSub").textContent = "";
+    list.innerHTML = '<li><span class="dim">Watchlist is empty — nothing to plan.</span></li>';
+    foot.textContent = ""; $("#benchBody").innerHTML = ""; $("#benchSummary").textContent = "Benched — 0 items";
+    return;
+  }
+  const { picks, nextUp, bench, pass, remaining, st, avail, deployable, deployed } = buildPlan();
+  const loading = bench.filter(b => /still loading/.test(b.failed)).length;
+  $("#planSub").textContent = pass.length + " of " + DB.watch.length + " pass the gates · prices " + ago(S.latestAt)
+    + (loading ? " · ⏳ " + loading + " charts still loading — verdicts will improve" : "");
+
+  /* Placements made today, shown dimmed in-line so the plan reflects what you
+     have actually done. These are positions — a placed buy is not a flip. */
+  const placedToday = DB.positions.filter(p => p.placedAt >= startOfToday());
+  let n = 0;
+  const placedHTML = placedToday.map(p => {
+    const c = calc(p.itemId);
+    const st = STAGES[posStage(p)];
+    n++;
+    return '<li class="placed"><div class="body"><span class="badge '+st.cls+'">'+st.label+'</span> '
+      + '<span class="num">'+full(p.qty)+'</span> '
+      + esc(itemName(p.itemId, p.name)) + ' at <span class="num">'+full(p.buy)+'</span> each '
+      + '<span class="dim">('+gp(p.qty*p.buy)+')</span>'
+      + (posStage(p) === "selling" ? ' · listed at <span class="num">'+full(p.ask)+'</span>' : '')
+      + '<div class="why">placed ' + ago(p.placedAt)
+      + (posStage(p) === "buying" && c && c.sell != null ? ' · sell now ' + full(c.sell) : '')
+      + ' — nothing is logged until the round trip completes</div></div>'
+      + '<span class="plan-actions">'+posActions(p)+'</span></li>';
+  }).join("");
+
+  const pickHTML = picks.map(p => {
+    n++;
+    return '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
+      + esc(p.name) + ' at <span class="num">' + full(p.c.buy) + '</span> each '
+      + '<span class="dim">(' + gp(p.cost) + ')</span> — expect <span class="pos num">~' + gp(p.expect) + '</span>/cycle'
+      + (p.filler ? ' <span class="badge b-ok" title="Below the worth-a-slot floor, but this slot would otherwise sit idle — small profit beats none">filler</span>' : '')
+      + (p.caution ? (p.cautionProven
+          ? ' <span class="badge b-tax" title="Your log shows 3+ profitable round trips in 14 days — full sizing earned">proven '+esc(p.caution.label)+'</span>'
+          : ' <span class="badge b-seed" title="'+esc(p.caution.why)+' — half-sized, one '+esc(p.caution.label)+' slot until your log proves it (3 profitable flips in 14 days)">caution '+esc(p.caution.label)+'</span>') : '')
+      + '<div class="why">' + esc(whyTag(p)) + (p.caution && !p.cautionProven ? ' · half-sized, ' + esc(p.caution.why) : '') + '</div></div>'
+      + '<span class="plan-actions">'
+      + '<button class="sm" data-place="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">placed</button>'
+      + '<button class="sm" data-logline="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">log round trip</button>'
+      + '</span></li>';
+  }).join("");
+
+  let nextHTML = "";
+  if (nextUp.length){
+    nextHTML = '<div class="nexthead"><b>Next up</b> — passed gates, unfunded. '
+      + 'These are substitutes for failed margin-tests or dead offers, not additional buys — total deployed never exceeds the stack.</div>'
+      + nextUp.map(x => {
+          n++;
+          const picker = S.promoteFor === x.id
+            ? '<div class="picker"><div class="h">Promote ' + esc(x.name) + ' — which funded pick gives up its capital?</div>'
+              + (picks.length ? picks.map(p => '<button class="sm" data-demote="'+p.id+'" data-prom="'+x.id+'">demote '+esc(p.name)+'</button>').join("")
+                              : '<span class="dim">Nothing is funded to demote.</span>')
+              + ' <button class="sm ghost" data-cancelprom="1">cancel</button></div>'
+            : '';
+          return '<li class="next"><div class="body"><b>' + n + '. BUY</b> <span class="num">' + full(x.wouldQty) + '</span> '
+            + esc(x.name) + ' at <span class="num">' + full(x.c.buy) + '</span> each '
+            + '<span class="dim">(' + gp(x.wouldCost) + ')</span> — expect <span class="num">~' + gp(x.wouldExpect) + '</span>/cycle'
+            + (x.caution ? (x.cautionProven ? ' <span class="badge b-tax">proven '+esc(x.caution.label)+'</span>' : ' <span class="badge b-seed">caution '+esc(x.caution.label)+'</span>') : '')
+            + '<div class="why">passed gates, unfunded — ' + esc(x.why) + ' · ' + esc(whyTag(x)) + '</div>'
+            + picker + '</div>'
+            + '<span class="plan-actions">'
+            + '<button class="sm" data-promote="'+x.id+'">promote</button>'
+            + '<button class="sm" data-place="'+x.id+'" data-q="'+x.wouldQty+'" data-b="'+x.c.buy+'" title="You executed this substitute in-game — track it as a position">placed</button>'
+            + '</span></li>';
+        }).join("");
+  }
+
+  const emptyMsg = '<li><span class="dim">Nothing clears today\'s gates. Sitting out is a position — don\'t force a flip into a market that isn\'t offering one.</span></li>';
+  list.innerHTML = (placedHTML + pickHTML + nextHTML) || emptyMsg;
+
+  if (picks.length){
+    const expect = picks.reduce((a,p) => a + p.expect, 0);
+    foot.innerHTML = 'Deploys <span class="num">' + gp(deployed) + '</span> of <span class="num">' + gp(deployable)
+      + '</span> deployable (' + (deployable ? (deployed/deployable*100).toFixed(0) : 0) + '%) across ' + picks.length + ' of ' + (DB.slots||8) + ' offers · '
+      + 'expected <span class="pos num">' + gp(expect) + '</span> per full cycle'
+      + ' · <span class="dim">' + gp(DB.reserve||0) + ' reserved for incidentals</span>'
+      + (committed() > 0 ? ' · <span class="dim">' + gp(committed()) + ' committed in open positions</span>' : '')
+      + (remaining > 0 ? ' · <span class="dim">' + gp(remaining) + ' unallocated (item caps bind before capital)</span>' : '');
+  } else foot.textContent = "";
+
+  $("#benchSummary").textContent = "Benched — " + bench.length + " item" + (bench.length === 1 ? "" : "s");
+  $("#benchBody").innerHTML = bench.length
+    ? bench.map(b => '<div class="bench-row"><span>' + esc(b.name) + '</span><span class="r">' + esc(b.failed) + '</span></div>').join("")
+    : '<div class="bench-row"><span class="dim">Nothing benched — every watchlist item passed.</span></div>';
+}
+
+/* ═══════════ AUTO-SCOUT ═══════════
+   Maintains the menu the way §7 says to seed it, continuously: screen the
+   whole market on SUSTAINED post-tax ROI (the honest number), rank, top up.
+   Hard boundary: it only manages entries it added itself (src:"scout").
+   Anything you added, margin-tested, hold, or recently flipped is untouchable. */
+function scoutScreen(){
+  const out = [];
+  for (const it of S.items){
+    if (!it.l) continue;
+    const c = calc(it.i);
+    if (!c || c.buy == null || c.sell == null) continue;
+    if (c.buy < Math.max(150, DB.filters.min) || c.buy > DB.filters.max) continue;
+    if (c.volSide < DB.filters.vol) continue;
+    if (c.age == null || c.age > DB.filters.age) continue;
+    const eM = effMargin(c);
+    const eR = (eM != null && c.buy > 0) ? eM / c.buy * 100 : null;
+    if (eR == null || eR < GATE.roi) continue;
+    let score = eR * Math.log(Math.max(c.volSide, 2));
+    if (c.crowdRank && c.crowdRank <= 100) score *= 0.5;   // crowding is a penalty, not a ban
+    out.push({ id: it.i, score });
+  }
+  out.sort((a,b) => b.score - a.score);
+  return out;
+}
+
+const SCOUT_EVERY = 10 * 60e3, SCOUT_EVICT_MS = 48 * 3600e3;
+function runScout(force){
+  if (!DB.scoutOn || !S.items.length || !S.latestAt || !S.hourAt) return;
+  const now = Date.now();
+  if (!force && S.lastScout && now - S.lastScout < SCOUT_EVERY) return;
+  S.lastScout = now;
+
+  const screen = scoutScreen();
+  const passIds = new Set(screen.map(x => x.id));
+  for (const w of DB.watch) if (passIds.has(w.id)) w.lastPass = now;
+
+  /* Evict: scout-added only, and never anything with skin in the game. */
+  const held = new Set(DB.positions.map(p => p.itemId));
+  const recentFlip = new Set(DB.flips.filter(f => now - f.id < 7 * 86400e3).map(f => f.itemId));
+  const removed = [];
+  DB.watch = DB.watch.filter(w => {
+    if (w.src !== "scout") return true;                       // yours — never touched
+    if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
+    if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
+    if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){ removed.push(itemName(w.id)); return false; }
+    return true;
+  });
+
+  const cap = DB.watchCap || 25;
+  const have = new Set(DB.watch.map(w => w.id));
+  const added = [];
+  for (const x of screen){
+    if (DB.watch.length >= cap) break;
+    if (have.has(x.id)) continue;
+    DB.watch.push({ id: x.id, qty: null, src: "scout", addedAt: now, lastPass: now });
+    have.add(x.id); added.push(itemName(x.id));
+  }
+
+  if (added.length || removed.length){
+    S.scoutMsg = "scout: "
+      + (added.length ? "+" + added.length + " (" + added.slice(0,4).join(", ") + (added.length>4?"…":"") + ")" : "")
+      + (added.length && removed.length ? " · " : "")
+      + (removed.length ? "−" + removed.length + " (" + removed.slice(0,3).join(", ") + (removed.length>3?"…":"") + ")" : "");
+    save();
+    if (S.tab === "watch"){ renderWatch(); fillSparks(); }
+  }
+}
+
+/* ═══════════ OPEN POSITIONS ═══════════ */
+function renderPositions(){
+  const body = $("#posBody");
+  $("#posSub").textContent = DB.positions.length
+    ? gp(committed()) + " committed · " + gp(available()) + " free of " + gp(stack())
+    : "none open";
+  if (!DB.positions.length){
+    body.innerHTML = '<tr><td colspan="9" class="empty">No open positions.</td></tr>';
+    $("#posFoot").innerHTML = ""; return;
+  }
+  let cost = 0, unreal = 0;
+  body.innerHTML = DB.positions.map(p => {
+    const c = calc(p.itemId);
+    const stage = posStage(p), st = STAGES[stage];
+    const at = stage === "selling" ? p.ask : (c && c.sell != null ? c.sell : null);
+    const net = at != null ? p.qty * (at - p.buy - geTax(at, p.itemId)) : null;
+    const ageH = (Date.now() - p.placedAt)/3600e3;
+    cost += p.qty * p.buy; if (net != null) unreal += net;
+    return '<tr><td>'+esc(itemName(p.itemId, p.name))
+      + ' <span class="badge '+st.cls+'">'+st.label+'</span>'
+      + (ageH > 24 && stage === "buying" ? ' <span class="badge b-risk" title="Buy sat more than a day — cancel and re-test rather than chasing the fill">stale</span>' : '')
+      + '</td>'
+      + '<td class="num">'+full(p.qty)+'</td><td class="num">'+full(p.buy)+'</td>'
+      + '<td class="num">'+gp(p.qty*p.buy)+'</td>'
+      + '<td class="num"'+(stage === "selling" ? ' title="your standing ask"' : '')+'>'+(at != null ? full(at) : "—")+'</td>'
+      + '<td class="num '+sign(net)+'">'+(net != null ? gp(net) : "—")+'</td>'
+      + '<td class="num dim sec">'+(ageH < 1 ? "<1h" : Math.round(ageH)+"h")+'</td>'
+      + '<td colspan="2" style="white-space:nowrap">'+posActions(p)+'</td></tr>';
+  }).join("");
+  $("#posFoot").innerHTML = '<tr><td colspan="3">Committed</td><td class="num">'+gp(cost)+'</td>'
+    + '<td class="dim">unrealized</td><td class="num '+sign(unreal)+'">'+gp(unreal)+'</td><td colspan="3"></td></tr>';
+}
+
+/* ═══════════ WATCHLIST ═══════════ */
+function renderWatch(){
+  const body = $("#watchBody");
+  const st = stack(), third = st/3;
+  $("#watchStack").textContent = "stack " + gp(st) + " · free " + gp(available()) + " · one-third cap " + gp(third);
+  const scoutN = DB.watch.filter(w => w.src === "scout").length;
+  $("#scoutTog").textContent = DB.scoutOn ? "⚡ scout ON (" + scoutN + "/" + (DB.watchCap||25) + ")" : "⚡ scout OFF";
+  $("#scoutTog").classList.toggle("primary", !!DB.scoutOn);
+  $("#scoutMsg").textContent = DB.scoutOn ? (S.scoutMsg || "") : "";
+  $("#stackNote").textContent = gp(st) + " ÷ 3 = " + gp(third);
+  if (!DB.watch.length){
+    body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
+    $("#watchFoot").innerHTML = "";
+    renderPlan(); renderPositions();
+    return;
+  }
+  let totalPos = 0, totalProfit = 0, priced = 0;
+  body.innerHTML = DB.watch.map(w => {
+    const c = calc(w.id);
+    if (!c) return '<tr><td colspan="15" class="dim">'+esc(itemName(w.id))+' — no data</td><td><button class="sm ghost" data-del="'+w.id+'">✕</button></td></tr>';
+    const { qty, cap, auto } = planQty(w, c);
+    const position = c.buy != null ? qty * c.buy : null;
+    const profit = c.margin != null ? qty * c.margin : null;
+    if (position != null){ totalPos += position; priced++; }
+    if (profit != null) totalProfit += profit;
+    const sp = S.spark.get(w.id);
+    const tr = sp ? trendPct(sp.pts) : null;
+    const hv = sp ? hourVerdict(sp.byHour) : null;
+    const flags = [];
+    if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by auto-scout '+ago(w.addedAt)+' — it will remove this itself if it stops passing the screen for 48h. Margin-test it to claim it as yours.">scout</span>');
+    else if (w.lastPass && Date.now() - w.lastPass > SCOUT_EVICT_MS)
+      flags.push('<span class="badge b-warn" title="Hasn\'t passed the scout screen in '+ago(w.lastPass).replace(" ago","")+'. Yours, so it stays — but §5 says consider cutting it.">cold</span>');
+    if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
+    if (c.tested) flags.push('<span class="badge b-ok" title="Using your margin-tested prices from '+ago(w.tAt)+'">tested</span>');
+    if (cap === 0) flags.push('<span class="badge b-risk" title="A single unit costs more than a third of your stack">too big</span>');
+    if (c.volSide < DB.filters.vol) flags.push('<span class="badge b-warn" title="Thin side of the book is below your volume floor — fills will be slow">thin</span>');
+    if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
+    if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
+    const testCell = c.tested
+      ? '<span class="num" title="tested '+ago(w.tAt)+'">'+full(w.tBuy)+'/'+full(w.tSell)+'</span> <button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
+      : '<button class="sm" data-test="'+w.id+'" title="Record the prices your one-unit margin test actually filled at">set</button>';
+    return '<tr>'
+      + '<td><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
+      + '<td class="num">'+full(c.buy)+'</td>'
+      + '<td class="num">'+full(c.sell)+'</td>'
+      + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
+      + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
+      + '<td>'+testCell+'</td>'
+      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
+      + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
+      + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
+      + '</td>'
+      + '<td class="num">'+gp(position)+'</td>'
+      + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
+      + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
+      + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
+      + '<td class="num sec '+(tr == null ? "dim" : sign(tr))+'">'+(tr == null ? "—" : (tr>0?"+":"") + tr.toFixed(1) + "%")+'</td>'
+      + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
+      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
+      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
+      + '<td><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button></td>'
+      + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
+      + '</tr>';
+  }).join("");
+
+  const over = st > 0 && totalPos > st;
+  $("#watchFoot").innerHTML = '<tr>'
+    + '<td colspan="8">Total across '+priced+' item'+(priced===1?"":"s")
+    + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire stack">over stack</span>' : '') + '</td>'
+    + '<td class="num'+(over ? " neg" : "")+'">'+gp(totalPos)+'</td>'
+    + '<td class="num sec '+sign(totalProfit)+'">'+gp(totalProfit)+'</td>'
+    + '<td colspan="6" class="dim">of '+gp(st)+' stack'
+    + (st > 0 ? ' · ' + (totalPos/st*100).toFixed(0) + '% committed' : '') + '</td>'
+    + '</tr>';
+
+  renderPlan();
+  renderPositions();
+}
+
+/* Politeness pacing kept; re-render batched so a 20-item list doesn't rebuild
+   the whole plan twenty times. */
+let sparkBusy = false;
+async function fillSparks(force){
+  if (sparkBusy || !DB.watch.length) return;
+  sparkBusy = true;
+  try {
+    let since = 0;
+    for (const w of DB.watch){
+      if (force) S.spark.delete(w.id);
+      const c = S.spark.get(w.id);
+      if (c && Date.now() - c.at < SPARK_TTL) continue;
+      try { await sparkFor(w.id); } catch(e){ /* one bad series shouldn't stop the rest */ }
+      if (++since >= 5){ since = 0; if (S.tab === "watch") renderWatch(); }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    if (S.tab === "watch") renderWatch();
+  } finally { sparkBusy = false; }
+}
+
+/* ═══════════ FLIP LOG ═══════════ */
+function renderLog(){
+  const flips = DB.flips.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"") || b.id - a.id);
+  const total = realized();
+  const profits = DB.flips.map(flipProfit);
+  const best  = DB.flips.length ? DB.flips[profits.indexOf(Math.max(...profits))] : null;
+  const worst = DB.flips.length ? DB.flips[profits.indexOf(Math.min(...profits))] : null;
+  const touches = DB.flips.length * 2;
+  const mins = Math.max(1, DB.minsPerTouch || 7);
+  const capital = DB.flips.reduce((a,f) => a + f.qty*f.buy, 0);
+
+  const unex = flipsSince(DB.lastExportAt || 0);
+  $("#exportChip").innerHTML = unex
+    ? '<span class="badge b-warn" title="The log is the only irreplaceable data here and it lives in localStorage.">'+unex+' unexported</span>'
+    : (DB.lastExportAt ? '<span class="dim">exported ' + ago(DB.lastExportAt) + '</span>' : '');
+
+  $("#logStats").innerHTML = [
+    ["Realized profit", '<span class="'+sign(total)+'">'+gp(total)+'</span>'],
+    ["Flips logged", DB.flips.length],
+    ["Avg / flip", DB.flips.length ? gp(Math.round(total/DB.flips.length)) : "—"],
+    ["gp / touch", touches ? gp(Math.round(total/touches)) : "—"],
+    ["gp / min of attention", touches ? gp(Math.round(total/(touches*mins))) : "—"],
+    ["gp / slot-hour (measured)", (() => { const s = fillStats(null);
+        return s && s.gpPerSlotH != null
+          ? '<span title="'+s.n+' flips with both legs timed via the position lifecycle">'+gp(Math.round(s.gpPerSlotH))+'</span>'
+          : '<span class="dim v sm" title="Appears once flips are logged through the position lifecycle (placed → filled → listed → sold), which times each leg">no timed flips yet</span>'; })()],
+    ["Return on capital", capital ? (total/capital*100).toFixed(2)+"%" : "—"],
+    ["Best", best ? '<span class="pos v sm">'+esc(itemName(best.itemId,best.name))+'</span><br><span class="pos">'+gp(flipProfit(best))+'</span>' : "—"],
+    ["Worst", worst ? '<span class="neg v sm">'+esc(itemName(worst.itemId,worst.name))+'</span><br><span class="neg">'+gp(flipProfit(worst))+'</span>' : "—"]
+  ].map(([k,v]) => '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join("");
+
+  const agg = new Map();
+  for (const f of DB.flips){
+    const a = agg.get(f.itemId) || {id:f.itemId, name:itemName(f.itemId,f.name), n:0, qty:0, p:0, cap:0};
+    a.n++; a.qty += f.qty; a.p += flipProfit(f); a.cap += f.qty*f.buy; agg.set(f.itemId, a);
+  }
+  const byItem = Array.from(agg.values()).sort((a,b) => (b.p/(b.n*2)) - (a.p/(a.n*2)));
+  const watched = new Set(DB.watch.map(w => w.id));
+  const worstItem = byItem.length > 1 ? byItem[byItem.length-1] : null;
+  $("#worstNote").innerHTML = worstItem && watched.has(worstItem.id)
+    ? 'Bottom performer: <b>'+esc(worstItem.name)+'</b> — §5 says cut it.' : '';
+  $("#logByItem").innerHTML = byItem.length ? byItem.map(a => {
+    const fs = fillStats(a.id);
+    const fmtH = h => h < 1 ? Math.round(h*60) + "m" : h.toFixed(1) + "h";
+    return '<tr'+(worstItem && a.id === worstItem.id && byItem.length > 1 ? ' class="worst"' : '')+'>'
+    + '<td>'+esc(a.name)+'</td><td class="num">'+a.n+'</td><td class="num sec">'+full(a.qty)+'</td>'
+    + '<td class="num '+sign(a.p)+'">'+gp(a.p)+'</td>'
+    + '<td class="num sec '+sign(a.p)+'">'+gp(Math.round(a.p/a.n))+'</td>'
+    + '<td class="num '+sign(a.p)+'">'+gp(Math.round(a.p/(a.n*2)))+'</td>'
+    + '<td class="num '+(fs && fs.gpPerSlotH != null ? sign(fs.gpPerSlotH) : "dim")+'"'
+    + (fs ? ' title="'+fs.n+' timed flip'+(fs.n===1?"":"s")+'"' : '')
+    + '>'+(fs && fs.gpPerSlotH != null ? gp(Math.round(fs.gpPerSlotH)) : "—")+'</td>'
+    + '<td class="num dim sec">'+(fs ? fmtH(fs.avgBuyH)+" + "+fmtH(fs.avgSellH) : "—")+'</td>'
+    + '<td class="num sec '+sign(a.p)+'">'+(a.cap ? (a.p/a.cap*100).toFixed(2) : "—")+'</td>'
+    + '<td>'+(watched.has(a.id) ? '<button class="sm ghost" data-cut="'+a.id+'" title="Remove from watchlist">cut</button>' : '')+'</td></tr>';
+  }).join("") : '<tr><td colspan="10" class="empty">Log a few round trips — this table is the weekly review.</td></tr>';
+
+  $("#logBody").innerHTML = flips.length ? flips.map(f => {
+    const tax = geTax(f.sell, f.itemId) * f.qty, p = flipProfit(f);
+    const roi = f.buy ? p/(f.qty*f.buy)*100 : null;
+    return '<tr><td class="dim">'+esc(f.date||"")+'</td><td>'+esc(itemName(f.itemId,f.name))+'</td>'
+      + '<td class="num">'+full(f.qty)+'</td><td class="num">'+full(f.buy)+'</td><td class="num">'+full(f.sell)+'</td>'
+      + '<td class="num dim sec">'+gp(tax)+'</td><td class="num '+sign(p)+'">'+gp(p)+'</td>'
+      + '<td class="num sec '+sign(p)+'">'+(roi != null ? roi.toFixed(2) : "—")+'</td>'
+      + '<td class="dim sec">'+esc(f.note||"")+'</td>'
+      + '<td><button class="sm ghost" data-delflip="'+f.id+'">✕</button></td></tr>';
+  }).join("") : '<tr><td colspan="10" class="empty">No flips logged yet.</td></tr>';
+}
+
+/* ── prefill estimate machinery ───────────────────────────────── */
+const PREFILL_STALE_MS = 3 * 60e3;
+const marks = { buy:null, sell:null };
+const EST_EL = { buy:"#lBuy", sell:"#lSell" };
+const EST_TAG = { buy:"#tagBuy", sell:"#tagSell" };
+let prefilledFor = null;
+
+function setMark(which, mark, staleMs){
+  marks[which] = mark || null;
+  const el = $(EST_EL[which]), tag = $(EST_TAG[which]);
+  el.classList.toggle("est",   mark === "est");
+  el.classList.toggle("stale", mark === "stale");
+  tag.classList.toggle("hide", !mark);
+  tag.classList.toggle("est-tag",   mark === "est");
+  tag.classList.toggle("stale-tag", mark === "stale");
+  tag.textContent = mark === "stale"
+    ? "stale — " + Math.max(1, Math.round((staleMs || 0)/60000)) + "m old"
+    : "est.";
+}
+
+function prefillPrices(force, meta = {}){
+  const id = acLog.itemId;
+  if (!id) return;
+  if (force) prefilledFor = id;
+  const c = calc(id);
+  const mark = meta.staleMs > 0 ? "stale" : "est";
+  for (const [which, live] of [["buy", c ? c.buy : null], ["sell", c ? c.sell : null]]){
+    if (!force && !marks[which]) continue;
+    if (live != null){ $(EST_EL[which]).value = live; setMark(which, mark, meta.staleMs); }
+    else if (force){ $(EST_EL[which]).value = ""; setMark(which, null); }
+  }
+  logPreview();
+}
+
+async function prefillFresh(force){
+  const age = Date.now() - S.latestAt;
+  if (age <= PREFILL_STALE_MS || !S.latestAt){ prefillPrices(force); return; }
+  note("refreshing prices…");
+  const ok = await refresh();
+  if (ok){ prefillPrices(force); note("prices refreshed", 3500); }
+  else { prefillPrices(force, { staleMs: Date.now() - S.latestAt }); note("", 0); }
+}
+
+let noteT = null;
+function note(msg, ms){
+  const el = $("#lFresh");
+  el.textContent = msg;
+  clearTimeout(noteT);
+  if (msg && ms) noteT = setTimeout(() => { el.textContent = ""; }, ms);
+}
+function clearEstFields(){
+  prefilledFor = null; note("", 0);
+  for (const w of ["buy","sell"]){ $(EST_EL[w]).value = ""; setMark(w, null); }
+}
+
+/* ── toast, with optional undo ────────────────────────────────── */
+let toastT = null;
+function toast(msg, undo){
+  const t = $("#toast");
+  t.innerHTML = '<span>' + esc(msg) + '</span>';
+  if (undo){
+    const b = document.createElement("button");
+    b.className = "sm"; b.textContent = "Undo";
+    b.onclick = () => { undo(); t.classList.remove("on"); };
+    t.appendChild(b);
+  }
+  t.classList.add("on");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove("on"), undo ? 6000 : 2800);
+}
+
+function logPreview(){
+  const el = $("#lPreview");
+  const id = +acLog.itemId, qty = +$("#lQty").value, buy = +$("#lBuy").value, sell = +$("#lSell").value;
+  if (!id || !qty || !buy || !sell){ el.textContent = ""; return; }
+  const tax = geTax(sell, id) * qty, p = qty*(sell-buy) - tax;
+  el.innerHTML = 'tax <span class="num">'+full(tax)+'</span> → profit <span class="num '+sign(p)+'">'+full(p)+'</span> gp'
+    + (exemptIds.has(id) ? ' <span class="badge b-tax">no tax</span>' : '')
+    + ((marks.buy === "stale" || marks.sell === "stale")
+        ? ' <span class="stale-tag">stale prices</span>'
+        : (marks.buy || marks.sell) ? ' <span class="est-tag">est.</span>' : '');
+}
+
+/* ═══════════ ROUTINE ═══════════ */
+const CHECKLISTS = {
+  morning: { title: "☀ Morning — 5–10 min, coffee", foot: "Then close the app. Offers fill while you bill hours.", steps: [
+    ["Refresh and scan", "Hit ↻, open the Scanner. Filters at guide defaults.", "scan"],
+    ["Check the charts before you trust a margin", "Flat-ish is what you want. A wide margin on a plunging chart isn't a flip, it's catching a knife.", "watch"],
+    ["Margin-test anything new", "Buy one unit at instabuy, sell it at instasell, then record it in the Tested column so the plan uses the real spread.", "watch"],
+    ["Place these buys", "All 8 GE slots working. Idle slots are idle capital.", "watch", "plan"],
+    ["Mark them placed", "So tonight's sell plan knows what you're holding and the next plan won't double-commit the same gp.", "watch"],
+    ["Close the app", "Nothing more to do until evening. Don't babysit."]
+  ]},
+  evening: { title: "☾ Evening — 5–10 min", foot: "Wednesday note: game updates reprice consumables violently. Hold lighter into update day and read patch notes before re-arming.", steps: [
+    ["Collect fills", "Everything that filled, out of the collection box."],
+    ["Relist these as sells", "At your tested margin — not at the number the tracker showed this morning.", "watch", "sell"],
+    ["Re-arm buys on proven items", "The 4-hour limit window has reset several times since morning.", "watch"],
+    ["Cancel anything that never filled", "Never chase a fill. Positions held over a day are flagged stale.", "watch"],
+    ["Undercut to exit, don't hope", "A sell that won't move: drop it below instabuy and take the small loss."],
+    ["Log every completed round trip", "Every one, including the duds. Use close → log on each position.", "log"]
+  ]},
+  weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
+    ["Read the per-item table", "Sorted by gp per touch. The bottom row is highlighted.", "log"],
+    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment.", "log"],
+    ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
+    ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log"],
+    ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
+    ["Export the log", "It only exists in this browser.", "log"]
+  ]}
+};
+
+function rollChecklistDate(){
+  if (DB.checks.date !== today()){
+    DB.checks = { date: today(), morning:[], evening:[], weekly:[] };
+    save();
+    if (S.tab === "routine") renderRoutine();
+  }
+}
+
+function renderRoutine(){
+  rollChecklistDate();
+  const m = S.mode, list = CHECKLISTS[m], done = DB.checks[m] || [];
+  $("#ckDate").textContent = new Date().toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"})
+    + " · progress resets daily";
+  $("#ckTitle").textContent = list.title;
+  $("#ckFoot").textContent = list.foot;
+  $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
+  $("#ckList").innerHTML = list.steps.map((s,i) => {
+    const isDone = done.includes(i);
+    let inline = "";
+    /* The exact lines you're about to execute, inline — no tab-hopping mid-touch. */
+    if (s[3] === "plan"){
+      const { picks } = buildPlan();
+      inline = picks.length
+        ? '<div class="inline">' + picks.map((p,j) => '<div>' + esc(planLineText(p,j)) + '</div>').join("") + '</div>'
+        : '<div class="inline"><div class="dim">Nothing clears the gates today.</div></div>';
+    } else if (s[3] === "sell"){
+      const lines = sellLines();
+      inline = lines.length
+        ? '<div class="inline">' + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
+        : '<div class="inline"><div class="dim">No open positions.</div></div>';
+    }
+    return '<li class="'+(isDone?"done":"")+'" data-step="'+i+'">'
+      + '<span class="n">'+(isDone ? "✓" : i+1)+'</span>'
+      + '<span style="flex:1"><span class="t">'+esc(s[0])+'</span><span class="d">'+esc(s[1])
+      + (s[2] ? ' <a href="#" data-goto="'+s[2]+'">→ open</a>' : '') + '</span>' + inline + '</span></li>';
+  }).join("");
+  $$("#tab-routine .row button").forEach(b => b.classList.toggle("primary",
+    (b.id === "mMorning" && m === "morning") || (b.id === "mEvening" && m === "evening") || (b.id === "mWeekly" && m === "weekly")));
+}
+
+/* ═══════════ SHADOW FUND ═══════════ */
+const SHADOW_NAME = "tumeken's shadow (uncharged)";
+function shadowItem(){
+  for (const it of S.items) if (it.n.toLowerCase() === SHADOW_NAME) return it;
+  return null;
+}
+function livePrice(id){
+  const L = S.latest[id];
+  if (!L) return null;
+  return Number.isFinite(L.high) ? L.high : (Number.isFinite(L.low) ? L.low : null);
+}
+/* A 27-trades-per-hour item can be hours stale while the header says "12s ago",
+   because that is the age of the fetch, not of this item's last trade. */
+function priceAgeMs(id){
+  const L = S.latest[id];
+  if (!L) return null;
+  const t = Number.isFinite(L.high) ? L.highTime : L.lowTime;
+  return t ? Date.now() - t*1000 : null;
+}
+function ageTag(id){
+  const ms = priceAgeMs(id);
+  if (ms == null) return "";
+  const h = ms/3600e3;
+  const txt = ago(Date.now() - ms);
+  return h > 6 ? ' <span class="badge b-warn" title="This item last traded '+txt+'. Illiquid items go stale between fetches.">'+txt+'</span>'
+               : ' <span class="dim">'+txt+'</span>';
+}
+
+function renderShadow(){
+  const it = shadowItem();
+  const price = it ? livePrice(it.i) : null;
+  const have = stack(), profitSince = realizedSince(DB.bankAsOf || 0);
+  const pct = price ? Math.min(100, have/price*100) : 0;
+
+  $("#shadowSub").innerHTML = it
+    ? (price ? "Tumeken's shadow (uncharged) · " + full(price) + " gp · last traded" + ageTag(it.i)
+             : "price unavailable — waiting on /latest")
+    : "item not found in mapping";
+  $("#shBar").style.width = pct + "%";
+  $("#shBarTxt").textContent = price ? pct.toFixed(2) + "%  ·  " + gp(have) + " / " + gp(price) : "no live price";
+
+  const n = flipsSince(DB.bankAsOf || 0);
+  $("#bankNote").innerHTML = DB.bankAsOf
+    ? "Stamped " + ago(DB.bankAsOf) + ". Adding <b>" + n + "</b> flip" + (n===1?"":"s") +
+      " logged since then (" + gp(profitSince) + ") — earlier profit is assumed already inside the bank figure."
+    : "<b>Not stamped yet</b>, so all " + DB.flips.length + " logged flips are being added on top of the bank figure. " +
+      "If that number came from your actual bank it already contains them — press <b>Mark as current</b> to stop double-counting.";
+
+  const allProfit = realized();
+  const avg = DB.flips.length ? allProfit/DB.flips.length : 0;
+  const need = price ? Math.max(0, price - have) : null;
+  $("#shStats").innerHTML = [
+    ["Live shadow price", price ? gp(price) : "—"],
+    ["Bank (stamped)", gp(DB.bank||0)],
+    ["Profit since stamp", '<span class="'+sign(profitSince)+'">'+gp(profitSince)+'</span>'],
+    ["Fund total", gp(have)],
+    ["Still needed", need != null ? gp(need) : "—"],
+    ["Flips to go", (need != null && avg > 0) ? Math.ceil(need/avg).toLocaleString() : "—"]
+  ].map(([k,v]) => '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join("");
+
+  const rows = DB.targets.map(name => {
+    const t = S.items.find(x => x.n.toLowerCase() === name.toLowerCase());
+    const p = t ? livePrice(t.i) : null;
+    const pc = p ? Math.min(100, have/p*100) : 0;
+    const nd = p ? Math.max(0, p - have) : null;
+    return '<tr><td>'+esc(name)+(t?"":' <span class="badge b-warn">not found</span>')+'</td>'
+      + '<td class="num">'+(p ? full(p) : "—")+(t?ageTag(t.i):"")+'</td>'
+      + '<td class="sec" style="min-width:130px"><div class="bar thin"><i style="width:'+pc+'%"></i></div></td>'
+      + '<td class="num">'+(p ? pc.toFixed(1) : "—")+'</td>'
+      + '<td class="num '+(nd===0?"pos":"")+'">'+(nd != null ? (nd === 0 ? "afforded ✓" : gp(nd)) : "—")+'</td>'
+      + '<td class="num dim sec">'+((nd != null && avg > 0) ? (nd === 0 ? "—" : Math.ceil(nd/avg).toLocaleString()) : "—")+'</td>'
+      + '<td><button class="sm ghost" data-deltgt="'+esc(name)+'">✕</button></td></tr>';
+  });
+  $("#tgtBody").innerHTML = rows.length ? rows.join("")
+    : '<tr><td colspan="7" class="empty">No secondary targets. Add one above.</td></tr>';
+}
+
+/* ═══════════ autocomplete ═══════════ */
+function makeAC(sel, onPick, placeholderKeep){
+  const box = $(sel), input = box.querySelector("input");
+  let list = null, results = [], sel_ = -1;
+  const api = { itemId: null, input };
+  function close(){ if (list){ list.remove(); list = null; } sel_ = -1; }
+  function open(){
+    close();
+    const q = input.value.trim().toLowerCase();
+    if (q.length < 2) return;
+    results = [];
+    for (const it of S.items){
+      const n = it.n.toLowerCase();
+      if (n.startsWith(q)) results.push([0, it]);
+      else if (n.includes(q)) results.push([1, it]);
+      if (results.length > 400) break;
+    }
+    results.sort((a,b) => a[0]-b[0] || a[1].n.length-b[1].n.length);
+    results = results.slice(0,10).map(r => r[1]);
+    if (!results.length) return;
+    list = document.createElement("ul");
+    list.innerHTML = results.map((it,i) =>
+      '<li data-i="'+i+'"><span>'+esc(it.n)+'</span><span class="dim num">'+
+      (S.latest[it.i] && S.latest[it.i].low ? gp(S.latest[it.i].low) : "") + '</span></li>').join("");
+    box.appendChild(list);
+    /* pointerdown fires before blur on both mouse and touch — the old
+       mousedown+120ms-blur race dropped taps on a phone. */
+    list.addEventListener("pointerdown", e => {
+      const li = e.target.closest("li"); if (!li) return;
+      e.preventDefault(); pick(results[+li.dataset.i]);
+    });
+  }
+  function pick(it){
+    api.itemId = it.i;
+    input.value = it.n;
+    close();
+    onPick(it);
+    if (!placeholderKeep) { api.itemId = null; input.value = ""; }
+  }
+  input.addEventListener("input", () => { api.itemId = null; open(); });
+  input.addEventListener("blur", () => setTimeout(close, 250));
+  input.addEventListener("keydown", e => {
+    if (!list) return;
+    const items = Array.from(list.children);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+      e.preventDefault();
+      items.forEach(x => x.classList.remove("sel"));
+      sel_ = (sel_ + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      items[sel_].classList.add("sel");
+    } else if (e.key === "Enter"){
+      e.preventDefault(); pick(results[sel_ >= 0 ? sel_ : 0]);
+    } else if (e.key === "Escape") close();
+  });
+  return api;
+}
+
+/* ═══════════ wiring ═══════════ */
+function renderAll(){
+  if (S.tab === "scan")  { renderScan(); renderConversions(); }
+  if (S.tab === "watch")   renderWatch();
+  if (S.tab === "log")     renderLog();
+  if (S.tab === "routine") renderRoutine();
+  if (S.tab === "shadow")  renderShadow();
+}
+function setTab(t){
+  S.tab = t;
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $$("section.tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + t));
+  renderAll();
+  if (t === "watch") fillSparks();
+}
+
+const FMAP = { fVol:"vol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
+function paintFilters(){
+  for (const [el,key] of Object.entries(FMAP)){
+    const n = $("#"+el);
+    if (n.type === "checkbox") n.checked = !!DB.filters[key];
+    else n.value = DB.filters[key];
+  }
+}
+for (const [el,key] of Object.entries(FMAP)){
+  $("#"+el).addEventListener("change", e => {
+    const n = e.target;
+    DB.filters[key] = n.type === "checkbox" ? n.checked
+                    : n.type === "number"   ? clampNum(n.value, DEFAULT_FILTERS[key])
+                    : n.value;
+    if (key === "rows") DB.filters.rows = +n.value;
+    save(); renderScan(); renderConversions();
+  });
+}
+$("#fReset").onclick = () => { DB.filters = {...DEFAULT_FILTERS}; DB.sort = {k:"roi",dir:-1}; save(); paintFilters(); paintSortHeads(); renderScan(); renderConversions(); };
+
+function paintSortHeads(){ $$("#scanTable th.s").forEach(th => th.classList.toggle("on", th.dataset.k === DB.sort.k)); }
+$$("#scanTable th.s").forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  DB.sort = DB.sort.k === k ? {k, dir: -DB.sort.dir} : {k, dir: k === "name" ? 1 : -1};
+  save(); paintSortHeads(); renderScan();
+});
+
+$("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setTab(b.dataset.tab); };
+$("#refresh").onclick = () => { failCount = 0; refresh(); };
+$("#planMode").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.planMode = b.dataset.pm; renderPlan();
+};
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  const add = t.closest("[data-add]");
+  if (add){ addWatch(+add.dataset.add); return; }
+
+  const adv = t.closest("[data-adv]");
+  if (adv){ advancePosition(+adv.dataset.adv); return; }
+  const part = t.closest("[data-part]");
+  if (part){ partialPosition(+part.dataset.part); return; }
+  const place = t.closest("[data-place]");
+  if (place){
+    const id = +place.dataset.place, qty = +place.dataset.q, buy = +place.dataset.b;
+    const rec = { id: Date.now(), itemId: id, name: itemName(id), qty, buy, placedAt: Date.now(), stage: "buying" };
+    DB.positions.push(rec);
+    S.promoteFor = null;
+    save(); renderWatch();
+    toast("Placed: " + full(qty) + " " + itemName(id) + ". Not logged — a flip needs both legs filled.",
+          () => { DB.positions = DB.positions.filter(p => p.id !== rec.id); save(); renderWatch(); });
+    return;
+  }
+  const ll = t.closest("[data-logline]");
+  if (ll){ logFromWatch(+ll.dataset.logline, +ll.dataset.q, +ll.dataset.b); return; }
+
+  const prom = t.closest("[data-promote]");
+  if (prom){ S.promoteFor = +prom.dataset.promote; renderPlan(); return; }
+  const cancelProm = t.closest("[data-cancelprom]");
+  if (cancelProm){ S.promoteFor = null; renderPlan(); return; }
+  const dem = t.closest("[data-demote]");
+  if (dem){
+    const demoteId = +dem.dataset.demote, promoteId = +dem.dataset.prom;
+    ensurePlanDate();
+    if (!DB.planDemoted.includes(demoteId)) DB.planDemoted.push(demoteId);
+    DB.planPriority = [promoteId].concat(DB.planPriority.filter(x => x !== promoteId));
+    S.promoteFor = null;
+    save(); renderWatch();
+    toast(itemName(promoteId) + " promoted, " + itemName(demoteId) + " demoted — sizes re-clamped.",
+          () => {
+            DB.planDemoted = DB.planDemoted.filter(x => x !== demoteId);
+            DB.planPriority = DB.planPriority.filter(x => x !== promoteId);
+            save(); renderWatch();
+          });
+    return;
+  }
+  const close_ = t.closest("[data-close]");
+  if (close_){ closePosition(+close_.dataset.close); return; }
+  const dp = t.closest("[data-delpos]");
+  if (dp){
+    const idx = DB.positions.findIndex(p => p.id === +dp.dataset.delpos);
+    if (idx >= 0){
+      const [gone] = DB.positions.splice(idx, 1);
+      save(); renderWatch();
+      toast("Position cancelled.", () => { DB.positions.splice(idx, 0, gone); save(); renderWatch(); });
+    }
+    return;
+  }
+
+  const test = t.closest("[data-test]");
+  if (test){ askTested(+test.dataset.test); return; }
+  const untest = t.closest("[data-untest]");
+  if (untest){
+    const w = DB.watch.find(x => x.id === +untest.dataset.untest);
+    if (w){ const old = {tBuy:w.tBuy, tSell:w.tSell, tAt:w.tAt};
+      delete w.tBuy; delete w.tSell; delete w.tAt; save(); renderWatch();
+      toast("Tested prices cleared.", () => { Object.assign(w, old); save(); renderWatch(); });
+    }
+    return;
+  }
+
+  const lg = t.closest("[data-log]");
+  if (lg){ logFromWatch(+lg.dataset.log); return; }
+
+  const cut = t.closest("[data-cut]");
+  if (cut){ removeWatch(+cut.dataset.cut); return; }
+  const del = t.closest("[data-del]");
+  if (del){ removeWatch(+del.dataset.del); return; }
+
+  const df = t.closest("[data-delflip]");
+  if (df){
+    const idx = DB.flips.findIndex(f => f.id === +df.dataset.delflip);
+    if (idx >= 0){
+      const [gone] = DB.flips.splice(idx, 1);
+      save(); renderLog(); renderShadow();
+      toast("Flip deleted.", () => { DB.flips.splice(idx, 0, gone); save(); renderLog(); renderShadow(); });
+    }
+    return;
+  }
+  const dt = t.closest("[data-deltgt]");
+  if (dt){
+    const name = dt.dataset.deltgt, idx = DB.targets.indexOf(name);
+    if (idx >= 0){ DB.targets.splice(idx,1); save(); renderShadow();
+      toast("Target removed.", () => { DB.targets.splice(idx,0,name); save(); renderShadow(); }); }
+    return;
+  }
+  const step = t.closest("[data-step]");
+  if (step && !t.closest("[data-goto]")){
+    const i = +step.dataset.step, arr = DB.checks[S.mode];
+    const at = arr.indexOf(i);
+    if (at >= 0) arr.splice(at,1); else arr.push(i);
+    save(); renderRoutine(); return;
+  }
+  const go = t.closest("[data-goto]");
+  if (go){ e.preventDefault(); setTab(go.dataset.goto); return; }
+});
+
+function removeWatch(id){
+  const idx = DB.watch.findIndex(w => w.id === id);
+  if (idx < 0) return;
+  const [gone] = DB.watch.splice(idx, 1);
+  save(); renderWatch(); renderLog();
+  toast("Removed " + itemName(id) + " from the watchlist.",
+        () => { DB.watch.splice(idx, 0, gone); save(); renderWatch(); renderLog(); });
+}
+
+/* Margin test capture — the guide's "truth". Prompt is deliberate: it's two
+   numbers typed once, and it must not be mistaken for a logged flip. */
+function askTested(id){
+  const c = calc(id);
+  const b = prompt("Margin test for " + itemName(id) + "\n\nWhat did your single unit BUY fill at?",
+                   c && c.buy != null ? String(c.buy) : "");
+  if (b === null) return;
+  const s = prompt("And what did it SELL at?", c && c.sell != null ? String(c.sell) : "");
+  if (s === null) return;
+  const nb = Math.round(clampNum(b, NaN)), ns = Math.round(clampNum(s, NaN));
+  if (!(nb > 0) || !(ns > 0)){ toast("Both prices must be positive numbers."); return; }
+  const w = DB.watch.find(x => x.id === id);
+  if (!w) return;
+  w.tBuy = nb; w.tSell = ns; w.tAt = Date.now();
+  save(); renderWatch();
+  toast("Tested spread saved — it now overrides live prices for this item.");
+}
+
+document.addEventListener("change", e => {
+  const q = e.target.closest("[data-qty]");
+  if (!q) return;
+  const w = DB.watch.find(x => x.id === +q.dataset.qty);
+  if (!w) return;
+  const c = calc(w.id);
+  const typed = Math.max(0, clampNum(q.value, 0));
+  const cap = c ? planCap(c) : null;
+  if (cap != null && typed > cap){
+    w.qty = cap;
+    toast("Clamped to " + full(cap) + " — capped by " + capReason(c, cap) + ".");
+  } else w.qty = typed;
+  save(); renderWatch();
+});
+
+function logFromWatch(id, qtyOverride, buyOverride, sellOverride){
+  const c = calc(id);
+  const w = DB.watch.find(x => x.id === id);
+  if (!c){ toast("No live data for that item yet."); return; }
+  S.pendingFill = null;   // a fresh form has no fill telemetry unless a close attaches it
+  setTab("log");
+  acLog.itemId = id;
+  acLog.input.value = itemName(id);
+  prefilledFor = null;
+  $("#lQty").value = qtyOverride != null ? qtyOverride : (w ? planQty(w, c).qty || 1 : 1);
+  $("#lDate").value = $("#lDate").value || today();
+  const q = $("#lQty"); q.focus(); q.select();
+  prefillFresh(true).then(() => {
+    if (buyOverride != null){ $("#lBuy").value = buyOverride; setMark("buy", null); }
+    /* your standing ask is a better estimate than live — but still yours to correct */
+    if (sellOverride != null){ $("#lSell").value = sellOverride; setMark("sell", "est"); }
+    logPreview();
+    q.focus(); q.select();
+  });
+}
+
+/* Closing a position prefills the log with the qty and the price you actually
+   paid — then stops. You still press "+ Log flip". */
+function closePosition(pid){
+  const p = DB.positions.find(x => x.id === pid);
+  if (!p) return;
+  logFromWatch(p.itemId, p.qty, p.buy, Number.isFinite(p.ask) ? p.ask : null);
+  /* Fill-time telemetry rides along and attaches when the flip is actually
+     logged — set AFTER logFromWatch, which clears any stale pending metric. */
+  S.pendingFill = {
+    itemId: p.itemId,
+    buyH: Number.isFinite(p.buyH) ? p.buyH : null,
+    sellH: posStage(p) === "selling" && p.stageAt
+      ? Math.round((Date.now() - p.stageAt) / 36e3) / 100 : null
+  };
+  const idx = DB.positions.findIndex(x => x.id === pid);
+  const [gone] = DB.positions.splice(idx, 1);
+  save(); renderPositions();
+  toast("Position closed and copied into the form — press + Log flip to record it.",
+        () => { DB.positions.splice(idx, 0, gone); save(); renderWatch(); });
+}
+
+function addWatch(id){
+  const existing = DB.watch.find(w => w.id === id);
+  if (existing){ existing.src = "manual"; save(); setTab("watch"); return; }  // claiming a scout pick makes it yours
+  DB.watch.push({ id, qty: null, src: "manual", addedAt: Date.now() });
+  save(); renderScan(); renderWatch(); fillSparks();
+}
+
+const acWatch  = makeAC("#acWatch",  it => addWatch(it.i));
+const acLog    = makeAC("#acLog", () => {
+  const q = $("#lQty"); q.focus(); q.select();
+  prefillFresh(true).then(() => { q.focus(); q.select(); });
+}, true);
+const acTarget = makeAC("#acTarget", it => { if (!DB.targets.includes(it.n)) DB.targets.push(it.n); save(); renderShadow(); });
+
+["lQty","lBuy","lSell"].forEach(id => $("#"+id).addEventListener("input", logPreview));
+
+acLog.input.addEventListener("input", () => {
+  const q = acLog.input.value.trim().toLowerCase();
+  if (!q) { clearEstFields(); return; }
+  const hit = S.items.find(x => x.n.toLowerCase() === q);
+  if (!hit) return;
+  acLog.itemId = hit.i;
+  if (prefilledFor !== hit.i) prefillFresh(true);
+});
+
+for (const w of ["buy","sell"]){
+  const el = $(EST_EL[w]);
+  el.addEventListener("focus", () => { if (marks[w]){ setMark(w, null); el.select(); } });
+  el.addEventListener("input", () => { if (marks[w]) setMark(w, null); });
+}
+
+$("#lRefresh").onclick = async e => {
+  const b = e.target; b.disabled = true; b.textContent = "…";
+  try {
+    failCount = 0;
+    const ok = await refresh();
+    if (ok){ prefillPrices(false); note("prices refreshed", 3500); }
+    else { prefillPrices(false, { staleMs: Date.now() - S.latestAt }); note("", 0); }
+  } finally { b.disabled = false; b.textContent = "↻ prices"; }
+};
+$("#lDate").value = today();
+$("#lAdd").onclick = () => {
+  const id = acLog.itemId, qty = +$("#lQty").value, buy = +$("#lBuy").value, sell = +$("#lSell").value;
+  if (!id){ toast("Pick an item from the suggestions first."); return; }
+  if (!(qty > 0) || !(buy > 0) || !(sell > 0)){ toast("Qty, buy and sell must all be positive numbers."); return; }
+  const rec = {
+    id: Date.now(), itemId: id, name: itemName(id),
+    qty, buy, sell, date: $("#lDate").value || today(), note: $("#lNote").value.trim()
+  };
+  if (S.pendingFill && S.pendingFill.itemId === id){
+    if (S.pendingFill.buyH  != null) rec.bh = S.pendingFill.buyH;
+    if (S.pendingFill.sellH != null) rec.sh = S.pendingFill.sellH;
+  }
+  S.pendingFill = null;
+  DB.flips.push(rec);
+  flush();
+  acLog.itemId = null; acLog.input.value = ""; $("#lNote").value = ""; $("#lPreview").textContent = "";
+  clearEstFields();
+  renderLog(); renderShadow(); renderWatch();
+};
+$("#lMins").addEventListener("change", e => { DB.minsPerTouch = Math.max(1, clampNum(e.target.value,7)); save(); renderLog(); });
+
+/* export / import */
+$("#lExport").onclick = () => {
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ge-flips-" + today() + ".json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  DB.lastExportAt = Date.now(); save(); renderLog();
+};
+$("#lImport").onclick = () => $("#lFile").click();
+$("#lFile").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      if (!d || typeof d !== "object" || Array.isArray(d)) throw new Error("not a tracker export");
+      const v = validateImport(d);
+      const msg = "Replace current data with this file?\n\n"
+        + "Flips: " + v.flips.length + "\nPositions: " + v.positions.length
+        + "\nWatchlist: " + v.watch.length + "\nTargets: " + v.targets.length
+        + (v.rejected ? "\n\n" + v.rejected + " malformed row(s) will be DROPPED." : "");
+      if (!confirm(msg)) return;
+      DB = Object.assign(DB, v.db);
+      DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
+      flush(); paintFilters(); paintSortHeads();
+      $("#shBank").value = DB.bank || "";
+      $("#lMins").value = DB.minsPerTouch || 7;
+      renderAll(); fillSparks();
+      toast(v.rejected ? "Imported — " + v.rejected + " malformed row(s) dropped." : "Imported.");
+    } catch(err){ alert("Import failed: " + err.message); }
+    e.target.value = "";
+  };
+  r.readAsText(f);
+};
+
+/* A truncated or hand-edited file used to merge straight in and produce NaN
+   totals that looked plausible. Everything is checked or dropped. */
+function validateImport(d){
+  let rejected = 0, seq = 0;
+  const num = v => Number.isFinite(+v) ? +v : null;
+  const uid = () => Date.now() + (seq++);
+  const flips = (Array.isArray(d.flips) ? d.flips : []).map(f => {
+    const qty = num(f && f.qty), buy = num(f && f.buy), sell = num(f && f.sell), itemId = num(f && f.itemId);
+    if (!(qty > 0) || !(buy > 0) || !(sell > 0) || !(itemId > 0)){ rejected++; return null; }
+    const id = num(f.id);
+    const o = { id: id > 0 ? id : uid(), itemId, name: String(f.name || itemName(itemId)),
+                qty, buy, sell, date: String(f.date || today()).slice(0,10), note: String(f.note || "") };
+    if (num(f.bh) != null && num(f.bh) >= 0) o.bh = num(f.bh);
+    if (num(f.sh) != null && num(f.sh) >= 0) o.sh = num(f.sh);
+    return o;
+  }).filter(Boolean);
+  const positions = (Array.isArray(d.positions) ? d.positions : []).map(p => {
+    const qty = num(p && p.qty), buy = num(p && p.buy), itemId = num(p && p.itemId);
+    if (!(qty > 0) || !(buy > 0) || !(itemId > 0)){ rejected++; return null; }
+    const o = { id: num(p.id) || uid(), itemId, name: String(p.name || itemName(itemId)),
+                qty, buy, placedAt: num(p.placedAt) || Date.now() };
+    if (p.stage === "bought" || p.stage === "selling") o.stage = p.stage;
+    if (num(p.ask) > 0) o.ask = num(p.ask);
+    if (num(p.stageAt) > 0) o.stageAt = num(p.stageAt);
+    if (num(p.buyH) != null && num(p.buyH) >= 0) o.buyH = num(p.buyH);
+    return o;
+  }).filter(Boolean);
+  const watch = (Array.isArray(d.watch) ? d.watch : []).map(w => {
+    const id = num(w && w.id);
+    if (!(id > 0)){ rejected++; return null; }
+    const o = { id, qty: num(w.qty) };
+    if (w.src === "scout" || w.src === "manual") o.src = w.src;
+    if (num(w.addedAt) > 0) o.addedAt = num(w.addedAt);
+    if (num(w.lastPass) > 0) o.lastPass = num(w.lastPass);
+    if (num(w.tBuy) > 0 && num(w.tSell) > 0){ o.tBuy = num(w.tBuy); o.tSell = num(w.tSell); o.tAt = num(w.tAt) || Date.now(); }
+    return o;
+  }).filter(Boolean);
+  const targets = (Array.isArray(d.targets) ? d.targets : []).filter(t => typeof t === "string" && t.trim()).map(String);
+  const checks = (d.checks && typeof d.checks === "object") ? d.checks : { date:"", morning:[], evening:[], weekly:[] };
+  for (const k of ["morning","evening","weekly"]) if (!Array.isArray(checks[k])) checks[k] = [];
+  return { flips, positions, watch, targets, rejected,
+    db: { flips, positions, watch, targets, checks,
+          bank: Math.max(0, num(d.bank) || 0),
+          bankAsOf: Math.max(0, num(d.bankAsOf) || 0),
+          minsPerTouch: Math.max(1, num(d.minsPerTouch) || 7),
+          lastExportAt: Math.max(0, num(d.lastExportAt) || 0),
+          scoutOn: d.scoutOn !== false,
+          watchCap: Math.min(60, Math.max(5, num(d.watchCap) || 25)),
+          slots: Math.min(8, Math.max(1, num(d.slots) || 8)),
+          horizonH: Math.min(16, Math.max(4, num(d.horizonH) || 10)),
+          reserve: Math.max(0, num(d.reserve) != null ? num(d.reserve) : 3000000),
+          filters: (d.filters && typeof d.filters === "object") ? d.filters : {...DEFAULT_FILTERS},
+          sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
+}
+
+$("#mMorning").onclick = () => { S.mode = "morning"; renderRoutine(); };
+$("#mEvening").onclick = () => { S.mode = "evening"; renderRoutine(); };
+$("#mWeekly").onclick  = () => { S.mode = "weekly";  renderRoutine(); };
+$("#ckReset").onclick  = () => { DB.checks[S.mode] = []; save(); renderRoutine(); };
+
+$("#shBank").addEventListener("change", e => {
+  DB.bank = Math.max(0, clampNum(e.target.value, 0));
+  DB.bankAsOf = Date.now();          // typing a fresh figure re-stamps it
+  save(); renderShadow(); renderWatch();
+});
+$("#shBankNow").onclick = () => {
+  DB.bankAsOf = Date.now(); save(); renderShadow(); renderWatch();
+  toast("Bank figure stamped as current — earlier profit is no longer added on top.");
+};
+for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szRes","reserve",0,2e9]]){
+  $("#"+el).addEventListener("change", e => {
+    DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
+    e.target.value = DB[key];
+    save(); renderWatch();
+  });
+}
+$("#scoutTog").onclick = () => {
+  DB.scoutOn = !DB.scoutOn;
+  if (DB.scoutOn){ S.lastScout = 0; runScout(true); toast("Auto-scout on — it manages only its own entries."); }
+  else toast("Auto-scout off. Scout-added items stay until you remove them.");
+  save(); renderWatch();
+};
+$("#posClear").onclick = () => {
+  if (!DB.positions.length) return;
+  const gone = DB.positions.slice();
+  DB.positions = []; save(); renderWatch();
+  toast("Cleared " + gone.length + " position(s).", () => { DB.positions = gone; save(); renderWatch(); });
+};
+$("#wSpark").onclick = () => fillSparks(true);
+
+$("#planCopy").onclick = async () => {
+  let txt;
+  if (S.planMode === "sell"){
+    const lines = sellLines();
+    if (!lines.length){ toast("No open positions to copy."); return; }
+    txt = ["Tonight's sells:", ""].concat(lines.map(sellLineText)).join("\n");
+  } else {
+    const { picks, avail, deployed } = buildPlan();
+    if (!picks.length){ toast("Nothing to copy — no picks today."); return; }
+    txt = ["Today's plan — margin-test one unit of anything new first.", ""]
+      .concat(picks.map(planLineText))
+      .concat(["", "Deploys " + gp(deployed) + " of " + gp(avail) + " free across " + picks.length + " slots."])
+      .join("\n");
+  }
+  try { await navigator.clipboard.writeText(txt); toast("Copied."); }
+  catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); toast("Copied."); }
+    catch(e2){ toast("Copy blocked — select the list manually."); }
+    ta.remove();
+  }
+};
+
+/* ═══════════ boot ═══════════ */
+load();
+paintFilters(); paintSortHeads();
+$("#shBank").value = DB.bank || "";
+$("#lMins").value = DB.minsPerTouch || 7;
+$("#szSlots").value = DB.slots || 8;
+$("#szH").value = DB.horizonH || 10;
+$("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
+S.mode = new Date().getHours() < 15 ? "morning" : "evening";
+S.planMode = S.mode === "evening" ? "sell" : "buy";
+
+refresh().then(() => { renderAll(); fillSparks(); });
+
+/* Poll on a self-scheduling timer so failures can back off instead of
+   hammering a struggling API every 60s forever. */
+let pending = false;
+function schedulePoll(){
+  setTimeout(() => {
+    if (document.hidden){ pending = true; schedulePoll(); return; }
+    refresh().finally(schedulePoll);
+  }, backoffMs());
+}
+schedulePoll();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && pending){ pending = false; failCount = 0; refresh(); }
+});
+</script>
+</body>
+</html>

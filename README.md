@@ -1,0 +1,31 @@
+# Two-Touch Flip Tracker
+
+A single-file OSRS Grand Exchange flip tracker: one `index.html`, no build step, no framework,
+everything client-side. Prices come live from the
+[RuneLite / OSRS Wiki real-time prices API](https://prices.runescape.wiki/api/v1/osrs)
+(polled no faster than 60s, with backoff).
+
+**Your data never leaves your browser.** Flips, watchlist, bank value and settings live in
+`localStorage` on each device. Use Export/Import JSON (Flip Log tab) to move data between devices
+or back it up — the log is the only irreplaceable part.
+
+## What's inside
+
+- **Scanner** — post-tax margins over the whole market, gated on the thin side of the order book,
+  with crowding ranks and a conversion-spreads panel (decanting, herb cleaning)
+- **Watchlist** — auto-scouted on sustained ROI, with sparklines, hour-of-day volume profiles,
+  margin-test capture, and hard sizing clamps (one-third rule, buy-limit windows, liquidity)
+- **Today's Plan** — gated, ranked, capital-allocated buy list with NEXT UP substitutes,
+  promote/demote, caution categories for pump-prone items, and per-item graduation from your log
+- **Positions** — full lifecycle (buy pending → awaiting sell → sell pending → sold) with partial
+  fills; leg timings feed gp-per-slot-hour analytics
+- **Flip log** — realized post-tax profit, gp/touch, gp/minute, gp/slot-hour, weekly-review table
+- **Routine** — morning / evening / weekly checklists with the live plan inlined
+- **Shadow fund** — progress toward Tumeken's Shadow at its live price, plus secondary targets
+
+GE tax (2%, floored, 5M cap, 48 exempt items) verified against the
+[OSRS Wiki](https://oldschool.runescape.wiki/w/Grand_Exchange#Convenience_fee_and_item_sink).
+
+## Run it
+
+Open `index.html`. That's all.
