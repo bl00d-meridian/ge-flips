@@ -1,5 +1,8 @@
 # Two-Touch Flip Tracker
 
+**Live: https://bl00d-meridian.github.io/ge-flips/** — works on desktop and mobile
+(add to home screen); your data stays in that browser's local storage.
+
 A single-file OSRS Grand Exchange flip tracker: one `index.html`, no build step, no framework,
 everything client-side. Prices come live from the
 [RuneLite / OSRS Wiki real-time prices API](https://prices.runescape.wiki/api/v1/osrs)
