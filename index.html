@@ -504,8 +504,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="tw"><table>
         <thead><tr><th>Item</th>
         <th>Qty</th>
+        <th title="What you actually paid per unit — drives the P/L column. Leave blank if unknown">Paid each</th>
         <th title="The high side (instabuy) — roughly what a patient sell would fetch today">Live price</th>
         <th>Value</th>
+        <th title="Profit if you exited at today's price, after GE tax, versus what you paid">P/L</th>
         <th title="Price drift since you started tracking this hold — the thesis scoreboard">Since tracked</th>
         <th class="sec" title="7-day price sparkline">7-day</th>
         <th title="Why you're holding and when you plan to exit — tap to edit">Exit thesis</th><th></th></tr></thead>
@@ -2446,23 +2448,31 @@ function renderShadow(){
 function renderHolds(){
   const body = $("#holdBody");
   if (!DB.holds.length){
-    body.innerHTML = '<tr><td colspan="8" class="empty">No holds tracked. Add bank assets you\'re sitting on long-term.</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="empty">No holds tracked. Add bank assets you\'re sitting on long-term.</td></tr>';
     $("#holdFoot").textContent = ""; return;
   }
-  let totalVal = 0;
+  let totalVal = 0, totalPL = 0, plKnown = 0;
   body.innerHTML = DB.holds.map((h, i) => {
     const p = livePrice(h.itemId);
     /* Baseline stamps itself the first time a live price shows up. */
     if (h.baseline == null && p != null){ h.baseline = p; h.baseAt = Date.now(); save(); }
     const val = p != null ? p * (h.qty || 1) : null;
     if (val != null) totalVal += val;
+    /* P/L is honest: what an exit at today's price nets AFTER GE tax, vs cost. */
+    const pl = (p != null && h.paid > 0) ? (h.qty || 1) * (p - geTax(p, h.itemId) - h.paid) : null;
+    const plPct = pl != null ? pl / ((h.qty || 1) * h.paid) * 100 : null;
+    if (pl != null){ totalPL += pl; plKnown++; }
     const drift = (p != null && h.baseline) ? (p - h.baseline) / h.baseline * 100 : null;
     const sp = S.spark.get(h.itemId);
     return '<tr><td><span class="name" title="'+nameTitle(h.name)+'">'+esc(h.name)+'</span>'
       + ' <a href="https://oldschool.runescape.wiki/w/'+encodeURIComponent(h.name.replace(/ /g,"_"))+'" target="_blank" rel="noopener" class="dim" style="text-decoration:none" title="Open the OSRS wiki page">↗</a></td>'
       + '<td><input type="number" class="num" style="width:56px" value="'+(h.qty||1)+'" min="1" data-holdqty="'+i+'"></td>'
+      + '<td><input type="number" class="num" style="width:96px" value="'+(h.paid > 0 ? h.paid : "")+'" min="0" placeholder="paid…" data-holdpaid="'+i+'"></td>'
       + '<td class="num">'+(p != null ? full(p) : "—")+ageTag(h.itemId)+'</td>'
       + '<td class="num">'+(val != null ? gp(val) : "—")+'</td>'
+      + '<td class="num '+(pl == null ? "dim" : sign(pl))+'"'
+      + (pl != null ? ' title="exit at '+full(p)+' − '+full(geTax(p, h.itemId))+' tax − '+full(h.paid)+' paid, × '+full(h.qty||1)+'"' : ' title="Enter what you paid to see profit/loss"')+'>'
+      + (pl != null ? gp(pl) + " (" + (plPct>0?"+":"") + plPct.toFixed(1) + "%)" : "—")+'</td>'
       + '<td class="num '+(drift == null ? "dim" : sign(drift))+'" title="'
       + (h.baseline ? 'baseline '+full(h.baseline)+' stamped '+ago(h.baseAt || h.addedAt) : 'baseline pending — stamps at the first live price')+'">'
       + (drift != null ? (drift>0?"+":"") + drift.toFixed(1) + "%" : "—")+'</td>'
@@ -2471,7 +2481,10 @@ function renderHolds(){
       + esc(h.note || "tap to add a thesis…")+'</span></td>'
       + '<td><button class="sm ghost" data-delhold="'+i+'" title="Stop tracking (does not log anything — when you actually sell, log it as a flip if you want it in the profit history)">✕</button></td></tr>';
   }).join("");
-  $("#holdFoot").innerHTML = "Combined hold value <b>" + gp(totalVal) + "</b> — separate from the flipping stack. "
+  $("#holdFoot").innerHTML = "Combined hold value <b>" + gp(totalVal) + "</b>"
+    + (plKnown ? " · P/L after tax <b class=\"" + sign(totalPL) + "\">" + gp(totalPL) + "</b>"
+        + (plKnown < DB.holds.length ? " (" + plKnown + " of " + DB.holds.length + " have a paid price)" : "") : "")
+    + " — separate from the flipping stack. "
     + "When a thesis pays off, sell in-game and log it as a flip (buy = what you paid) so the profit lands in your history.";
 }
 
@@ -2762,6 +2775,16 @@ document.addEventListener("change", e => {
     if (h){ h.qty = Math.max(1, Math.floor(clampNum(hq.value, 1))); save(); renderShadow(); }
     return;
   }
+  const hp = e.target.closest("[data-holdpaid]");
+  if (hp){
+    const h = DB.holds[+hp.dataset.holdpaid];
+    if (h){
+      const v = Math.round(clampNum(hp.value, 0));
+      h.paid = v > 0 ? v : null;      // clearing the field clears the cost basis
+      save(); renderShadow();
+    }
+    return;
+  }
   const q = e.target.closest("[data-qty]");
   if (!q) return;
   const w = DB.watch.find(x => x.id === +q.dataset.qty);
@@ -2970,6 +2993,7 @@ function validateImport(d){
                 qty: Math.max(1, num(h.qty) || 1), addedAt: num(h.addedAt) || Date.now(),
                 baseline: num(h.baseline) > 0 ? num(h.baseline) : null, note: String(h.note || "") };
     if (num(h.baseAt) > 0) o.baseAt = num(h.baseAt);
+    if (num(h.paid) > 0) o.paid = num(h.paid);
     return o;
   }).filter(Boolean);
   const scoutLog = (Array.isArray(d.scoutLog) ? d.scoutLog : []).map(e => {
