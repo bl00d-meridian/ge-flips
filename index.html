@@ -479,7 +479,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="stats" id="logStats"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="eqPanel">
       <div class="ph"><h3>Equity curve</h3>
         <span class="sub" id="eqSub" style="margin-left:auto"></span>
       </div>
@@ -507,7 +507,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </table></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="byItemPanel">
       <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
         <span class="sub" id="worstNote" style="margin-left:auto"></span>
       </div>
@@ -1080,6 +1080,33 @@ function itemMarkouts(id){
   }
   if (!n) return null;
   return { n, avg30: n30 ? m30 / n30 : null, avg2h: n2h ? m2h / n2h : null };
+}
+
+/* One verdict per logged item — the single source the weekly checklist and the
+   per-item table both read, so they can never disagree. */
+function itemVerdicts(){
+  const agg = new Map();
+  for (const f of DB.flips){
+    const a = agg.get(f.itemId) || { id: f.itemId, name: itemName(f.itemId, f.name), n: 0, qty: 0, p: 0 };
+    a.n++; a.qty += f.qty; a.p += flipProfit(f); agg.set(f.itemId, a);
+  }
+  const mx = Math.max(0.05, DB.markoutX || 0.5);
+  return [...agg.values()].map(a => {
+    const mk = itemMarkouts(a.id);
+    const marginPU = a.qty ? a.p / a.qty : 0;
+    const toxic = !!(mk && marginPU > 0 && ((mk.avg30 != null && -mk.avg30 > mx * marginPU)
+                                         || (mk.avg2h != null && -mk.avg2h > mx * marginPU)));
+    const qmf = DB.flips.filter(f => f.itemId === a.id && Number.isFinite(f.qm));
+    let capPct = null, capGp = 0, driftGp = 0;
+    if (qmf.length){
+      capGp = qmf.reduce((s, f) => s + f.qm * f.qty, 0);
+      driftGp = qmf.reduce((s, f) => s + flipProfit(f), 0) - capGp;
+      capPct = (Math.abs(capGp) + Math.abs(driftGp)) > 0
+        ? capGp / (Math.abs(capGp) + Math.abs(driftGp)) * 100 : null;
+    }
+    return { ...a, mk, marginPU, mx, toxic, qmN: qmf.length, capGp, driftGp, capPct,
+             directional: capPct != null && capPct < 50 };
+  });
 }
 
 /* ── refresh orchestration ───────────────────────────────────── */
@@ -2601,6 +2628,7 @@ function renderLog(){
   const worstItem = byItem.length > 1 ? byItem[byItem.length-1] : null;
   $("#worstNote").innerHTML = worstItem && watched.has(worstItem.id)
     ? 'Bottom performer: <b>'+esc(worstItem.name)+'</b> — §5 says cut it.' : '';
+  const verdicts = new Map(itemVerdicts().map(v => [v.id, v]));
   $("#logByItem").innerHTML = byItem.length ? byItem.map(a => {
     const fs = fillStats(a.id);
     const fmtH = h => h < 1 ? Math.round(h*60) + "m" : h.toFixed(1) + "h";
@@ -2615,33 +2643,22 @@ function renderLog(){
     + '<td class="num dim sec">'+(fs ? fmtH(fs.avgBuyH)+" + "+fmtH(fs.avgSellH) : "—")+'</td>'
     + '<td class="num sec '+sign(a.p)+'">'+(a.cap ? (a.p/a.cap*100).toFixed(2) : "—")+'</td>'
     + (() => {   /* markout + capture columns — analysis, never a blocker */
-        const mk = itemMarkouts(a.id);
-        const marginPU = a.qty ? a.p / a.qty : 0;
-        const mx = Math.max(0.05, DB.markoutX || 0.5);
-        const toxic = mk && marginPU > 0 && ((mk.avg30 != null && -mk.avg30 > mx * marginPU)
-                                          || (mk.avg2h != null && -mk.avg2h > mx * marginPU));
-        const mkCell = mk && mk.avg30 != null
-          ? '<td class="num sec '+sign(mk.avg30)+'" title="'+mk.n+' timed flip'+(mk.n===1?"":"s")+' · +30m '
-            + mk.avg30.toFixed(1)+' gp/unit'+(mk.avg2h != null ? ' · +2h '+mk.avg2h.toFixed(1) : '')
-            + (toxic ? ' · adverse beyond '+mx+'× your '+marginPU.toFixed(1)+' gp/unit margin' : '')+'">'
-            + mk.avg30.toFixed(1)
-            + (toxic ? ' <span class="badge b-risk" title="Adverse markout exceeds '+mx+'× margin — informed flow is picking your quotes off. Widen, shrink, or drop this item.">toxic flow</span>' : '')
+        const v = verdicts.get(a.id);
+        const mkCell = v && v.mk && v.mk.avg30 != null
+          ? '<td class="num sec '+sign(v.mk.avg30)+'" title="'+v.mk.n+' timed flip'+(v.mk.n===1?"":"s")+' · +30m '
+            + v.mk.avg30.toFixed(1)+' gp/unit'+(v.mk.avg2h != null ? ' · +2h '+v.mk.avg2h.toFixed(1) : '')
+            + (v.toxic ? ' · adverse beyond '+v.mx+'× your '+v.marginPU.toFixed(1)+' gp/unit margin' : '')+'">'
+            + v.mk.avg30.toFixed(1)
+            + (v.toxic ? ' <span class="badge b-risk" title="Adverse markout exceeds '+v.mx+'× margin — informed flow is picking your quotes off. Widen, shrink, or drop this item.">toxic flow</span>' : '')
             + '</td>'
           : '<td class="num dim sec" title="Needs timed flips inside the 7-day price history — older fills age out; unwatched items have no series fetched">no data</td>';
-        const qmf = DB.flips.filter(f => f.itemId === a.id && Number.isFinite(f.qm));
-        let capCell = '<td class="num dim sec" title="Needs flips placed through the plan, which records the quoted spread at entry">no data</td>';
-        if (qmf.length){
-          const cap = qmf.reduce((s,f) => s + f.qm * f.qty, 0);
-          const pSub = qmf.reduce((s,f) => s + flipProfit(f), 0);
-          const drift = pSub - cap;
-          const pct = (Math.abs(cap) + Math.abs(drift)) > 0 ? cap / (Math.abs(cap) + Math.abs(drift)) * 100 : null;
-          capCell = pct == null ? capCell
-            : '<td class="num sec '+(pct >= 50 ? "pos" : "neg")+'" title="'+qmf.length+' flip'+(qmf.length===1?"":"s")
-              +' with entry quotes · spread capture '+gp(Math.round(cap))+' vs drift '+gp(Math.round(drift))+'">'
-              + pct.toFixed(0)+'%'
-              + (pct < 50 ? ' <span class="badge b-warn" title="Most of this item\'s profit came from price drift while holding, not the quoted spread — directional, not market making. It can stay, but know which game it\'s winning.">directional</span>' : '')
-              + '</td>';
-        }
+        const capCell = v && v.capPct != null
+          ? '<td class="num sec '+(v.capPct >= 50 ? "pos" : "neg")+'" title="'+v.qmN+' flip'+(v.qmN===1?"":"s")
+            +' with entry quotes · spread capture '+gp(Math.round(v.capGp))+' vs drift '+gp(Math.round(v.driftGp))+'">'
+            + v.capPct.toFixed(0)+'%'
+            + (v.directional ? ' <span class="badge b-warn" title="Most of this item\'s profit came from price drift while holding, not the quoted spread — directional, not market making. It can stay, but know which game it\'s winning.">directional</span>' : '')
+            + '</td>'
+          : '<td class="num dim sec" title="Needs flips placed through the plan, which records the quoted spread at entry">no data</td>';
         return mkCell + capCell;
       })()
     + '<td>'+(watched.has(a.id) ? '<button class="sm ghost" data-cut="'+a.id+'" title="Remove from watchlist">cut</button>' : '')+'</td></tr>';
@@ -3031,11 +3048,11 @@ const CHECKLISTS = {
     ["Note any friction", "One line about anything that was annoying or slow tonight — it feeds the Sunday review.", null, "fricin"]
   ]},
   weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
-    ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log"],
-    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log"],
+    ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log#byItemPanel"],
+    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log#byItemPanel"],
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
-    ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log"],
-    ["Check markouts and capture", "Toxic-flow and directional tags in the per-item table say which items are picking you off or paying you for luck — widen, shrink, or cut those.", "log"],
+    ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log#eqPanel"],
+    ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
     ["Read the week's friction notes", "Everything that annoyed you this week, one place — copy as markdown for the Sunday tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
@@ -3091,6 +3108,38 @@ function renderRoutine(){
               + (tgt != null ? ' → ' + full(tgt) : '') + '</div>';
           }).join("")
         : '<div class="dim">No aging sells — everything listed is inside the fill horizon.</div>') + '</div>';
+    } else if (s[3] === "mkcap"){
+      const vs = itemVerdicts();
+      const lines = [];
+      for (const v of vs){
+        if (v.toxic){
+          const adverse = Math.min(v.mk.avg30 != null ? v.mk.avg30 : 0, v.mk.avg2h != null ? v.mk.avg2h : 0);
+          lines.push('<div>⚠ <b>' + esc(v.name) + ' — TOXIC FLOW.</b> After your fills the price moves <b class="neg">'
+            + adverse.toFixed(1) + ' gp/unit against you</b>, vs only ' + v.marginPU.toFixed(1)
+            + ' gp/unit of margin earned (threshold: ' + v.mx + '× margin). Someone better-informed is hitting your quotes. '
+            + '<b>Do one:</b> demand a wider margin (re-test and only trade the tested spread), halve the size, or cut it.</div>');
+        }
+        if (v.directional){
+          lines.push('<div>△ <b>' + esc(v.name) + ' — DIRECTIONAL.</b> Only <b>' + v.capPct.toFixed(0)
+            + '%</b> of its profit came from the spread you quoted (' + gp(Math.round(v.capGp)) + ' capture vs '
+            + gp(Math.round(v.driftGp)) + ' drift while holding). The gp is real but it came from the price moving, '
+            + 'not from market-making — a bet that won. <b>Judge it as a bet:</b> fine to keep, but don\'t size it like a safe spread.</div>');
+        }
+        if (!v.toxic && !v.directional && (v.mk || v.capPct != null)){
+          const bits = [];
+          if (v.mk && v.mk.avg30 != null) bits.push('markout ' + (v.mk.avg30 >= 0 ? '+' : '') + v.mk.avg30.toFixed(1) + ' gp/unit at +30m');
+          if (v.capPct != null) bits.push('capture ' + v.capPct.toFixed(0) + '%');
+          lines.push('<div class="dim">✓ ' + esc(v.name) + ' — clean so far: ' + bits.join(', ')
+            + '. Nothing is picking you off; keep quoting it.</div>');
+        }
+      }
+      const noData = vs.filter(v => !v.mk && v.capPct == null).length;
+      if (noData) lines.push('<div class="dim">' + noData + ' item' + (noData === 1 ? ' has' : 's have')
+        + ' no verdict yet — markouts need flips timed through the position lifecycle while the 7-day price history '
+        + 'still covers them, and capture needs flips placed from the plan (which records the entry quote). Both accrue as you trade.</div>');
+      inline = '<div class="inline">' + (lines.length
+        ? lines.join("")
+        : '<div class="dim">No flips logged yet — verdicts appear with data.</div>') + '</div>';
     } else if (s[3] === "fricin"){
       inline = '<div class="inline"><div><input data-fric placeholder="one line — Enter saves it" style="width:min(320px,90%)"></div></div>';
     } else if (s[3] === "friction"){
@@ -3619,7 +3668,18 @@ document.addEventListener("click", e => {
     save(); renderRoutine(); return;
   }
   const go = t.closest("[data-goto]");
-  if (go){ e.preventDefault(); setTab(go.dataset.goto); return; }
+  if (go){
+    e.preventDefault();
+    /* "log#byItemPanel" = switch tab, then scroll to the exact panel — landing
+       at the top of a long tab reads as the link doing nothing. */
+    const [tab, anchor] = go.dataset.goto.split("#");
+    setTab(tab);
+    if (anchor){
+      const el = document.getElementById(anchor);
+      if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+    return;
+  }
 });
 
 function removeWatch(id){
