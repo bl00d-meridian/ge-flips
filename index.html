@@ -466,6 +466,24 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     </div>
 
     <div class="panel">
+      <div class="ph"><h3>Game gp — bank changes that aren't flips</h3>
+        <span class="sub" title="Supplies bought, drops sold, deaths — anything that moves the bank without being a flip. Logging it here keeps flipping P/L pure: these entries are netted out of the bank dots on the equity curve, and the stack the plan sizes against stays accurate.">supplies bought, drops sold — keeps flipping P/L pure</span>
+      </div>
+      <div class="row">
+        <label class="f">Amount (gp)<input type="number" id="gAmt" min="0" style="width:130px"></label>
+        <label class="f">What<input id="gNote" placeholder="e.g. prayer pots ×300" style="width:200px"></label>
+        <label class="f">Date<input type="date" id="gDate" style="width:140px"></label>
+        <button class="sm" id="gSpend" title="gp that left the bank for gameplay — supplies, gear, deaths">− Spent</button>
+        <button class="sm" id="gGain" title="gp that entered the bank from gameplay — drops sold, clue loot, quest rewards">+ Gained</button>
+        <span class="note" id="gSum" style="align-self:center"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Date</th><th>Δ gp</th><th>What</th><th></th></tr></thead>
+        <tbody id="gameBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
       <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
         <span class="sub" id="worstNote" style="margin-left:auto"></span>
       </div>
@@ -675,6 +693,7 @@ let DB = {
   minsPerTouch: 10,
   lastExportAt: 0,
   bankSnaps: [],    // daily bank snapshots [{d:"YYYY-MM-DD", v:gp}] — dots on the equity curve
+  gameLedger: [],   // non-flip bank changes [{id,t,d,v,note}] — v<0 spent on gameplay, v>0 drops sold
   planPriority: [],   // promoted item ids, in order — jump the funding queue
   planDemoted: [],    // demoted item ids — drop to NEXT UP
   planDate: "",       // both reset when the day rolls over
@@ -693,7 +712,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
@@ -1081,7 +1100,14 @@ const realized  = () => DB.flips.reduce((a,f) => a + flipProfit(f), 0);
    bank total you read off your own bank counts the same gp twice. */
 const realizedSince = ts => DB.flips.reduce((a,f) => a + ((f.id > ts) ? flipProfit(f) : 0), 0);
 const flipsSince = ts => DB.flips.filter(f => f.id > ts).length;
-const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0);
+/* Game gp: bank movement that isn't flipping — supplies bought, drops sold.
+   Kept in its own ledger so it never contaminates a flipping stat, but it IS
+   real gp, so the stack (and every sizing decision downstream) includes what
+   happened since the bank was last stamped. */
+const gameNet   = () => DB.gameLedger.reduce((a,g) => a + g.v, 0);
+const gameSince = ts => DB.gameLedger.reduce((a,g) => a + (g.t > ts ? g.v : 0), 0);
+const gameUpTo  = d  => DB.gameLedger.reduce((a,g) => a + (g.d <= d ? g.v : 0), 0);
+const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0) + gameSince(DB.bankAsOf || 0);
 const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0);
 const available = () => Math.max(0, stack() - committed());
 
@@ -2293,8 +2319,12 @@ function rebasedSnaps(days){
   const snaps = DB.bankSnaps;
   if (!snaps.length) return [];
   const cumAt = d => { let c = 0; for (const o of days){ if (o.d > d) break; c = o.cum; } return c; };
-  const off = cumAt(snaps[0].d) - snaps[0].v;
-  return snaps.map(s => ({ d: s.d, v: s.v, y: s.v + off }));
+  /* Game gp is netted out of every dot first, so buying prayer pots doesn't
+     read as a flipping loss. What's left after that adjustment SHOULD track
+     the profit line — residual drift means unlogged flips, nothing else. */
+  const adj = s => s.v - gameUpTo(s.d);
+  const off = cumAt(snaps[0].d) - adj(snaps[0]);
+  return snaps.map(s => ({ d: s.d, v: s.v, y: adj(s) + off }));
 }
 
 function renderEquity(){
@@ -2313,7 +2343,7 @@ function renderEquity(){
         : 'log a round trip and this becomes the only number that matters') + '</div>';
 
   $("#eqSub").innerHTML = days.length
-    ? '<span title="The line is cumulative realized profit, after tax, from every logged flip. Blue dots are your daily bank snapshots, re-based so the first one sits on the line — a sagging dot means gp the log can\'t account for (spending, or unlogged trades).">'
+    ? '<span title="The line is cumulative realized profit, after tax, from every logged flip. Blue dots are your daily bank snapshots with game gp (the ledger below) netted out, re-based so the first one sits on the line — remaining drift is gp the flip log can\'t account for.">'
       + days.length + ' day' + (days.length === 1 ? '' : 's') + ' · ' + dots.length + ' snapshot' + (dots.length === 1 ? '' : 's')
       + (snapToday() ? '' : ' · <b>none today</b>') + '</span>'
     : '';
@@ -2336,8 +2366,40 @@ function renderEquity(){
     ['<span title="One number, straight off the bank interface, once a day — Evening mode asks. Gaps are fine; the chart never invents points you didn\'t enter.">Bank snapshot</span>',
       sn ? '<span class="pos">' + gp(sn.v) + '</span> <span class="v sm dim">today ✓</span>'
          : (lastSnap ? '<span class="v sm">' + gp(lastSnap.v) + ' <span class="dim">' + lastSnap.d + ' — none today</span></span>'
-                     : '<span class="dim v sm">none yet — Evening mode asks</span>')]
+                     : '<span class="dim v sm">none yet — Evening mode asks</span>')],
+    ['<span title="Net bank movement from playing the game — supplies bought, drops sold. Logged in the Game gp panel below, netted out of the bank dots, and excluded from every flipping stat.">Game gp (non-flip)</span>',
+      DB.gameLedger.length ? '<span class="' + sign(gameNet()) + '">' + (gameNet() > 0 ? '+' : '') + gp(gameNet()) + '</span> <span class="v sm dim">' + DB.gameLedger.length + ' entr' + (DB.gameLedger.length === 1 ? 'y' : 'ies') + '</span>'
+                           : '<span class="dim v sm">none logged</span>']
   ].map(([k, v]) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>').join("");
+
+  renderGame();
+}
+
+/* ── game-gp ledger ───────────────────────────────────────────── */
+function renderGame(){
+  const rows = DB.gameLedger.slice().sort((a, b) => b.d.localeCompare(a.d) || b.id - a.id);
+  $("#gameBody").innerHTML = rows.length ? rows.map(g =>
+      '<tr><td class="dim">' + esc(g.d) + '</td>'
+    + '<td class="num ' + sign(g.v) + '">' + (g.v > 0 ? '+' : '') + full(g.v) + '</td>'
+    + '<td class="dim sec">' + esc(g.note || '') + '</td>'
+    + '<td><button class="sm ghost" data-delgame="' + g.id + '">✕</button></td></tr>').join("")
+    : '<tr><td colspan="4" class="empty">Bought supplies or sold a drop? One line here keeps it out of your flipping stats.</td></tr>';
+  $("#gSum").innerHTML = rows.length
+    ? 'net <span class="num ' + sign(gameNet()) + '">' + (gameNet() > 0 ? '+' : '') + gp(gameNet()) + '</span> across ' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies')
+    : '';
+}
+
+function addGame(dir){
+  const a = Math.round(Math.abs(clampNum($("#gAmt").value, NaN)));
+  if (!(a > 0)){ toast("Enter the gp amount first."); return; }
+  const rec = { id: Date.now(), t: Date.now(), d: $("#gDate").value || today(),
+                v: dir * a, note: $("#gNote").value.trim() };
+  DB.gameLedger.push(rec);
+  save();
+  $("#gAmt").value = ""; $("#gNote").value = "";
+  renderLog(); renderShadow();
+  toast((dir < 0 ? "Spent " : "Gained ") + gp(a) + " logged as game gp — flipping stats untouched.",
+        () => { DB.gameLedger = DB.gameLedger.filter(g => g.id !== rec.id); save(); renderLog(); renderShadow(); });
 }
 
 /* Big-sparkline equity chart. X is real calendar time (a quiet week reads as a
@@ -2377,7 +2439,7 @@ function equityCurveSVG(days, dots){
     s += '<text x="' + f1(x(days[days.length - 1].d) + 5) + '" y="' + f1(y(days[days.length - 1].cum) + 4) + '" font-size="11" fill="var(--gold)" class="num">' + gp(days[days.length - 1].cum) + '</text>';
   /* bank snapshots: dots with a 2px surface ring so they read over the line */
   for (const s2 of dots){
-    const tip = s2.d + ' — bank ' + gp(s2.v) + ' (re-based onto the profit curve; drift below the line = spending or unlogged gp)';
+    const tip = s2.d + ' — bank ' + gp(s2.v) + ' (game gp netted out, re-based onto the profit curve; drift vs the line = unlogged flips)';
     s += '<circle cx="' + f1(x(s2.d)) + '" cy="' + f1(y(s2.y)) + '" r="4.5" fill="var(--blue)" stroke="var(--panel)" stroke-width="2" title="' + esc(tip) + '"><title>' + esc(tip) + '</title></circle>';
   }
   return s + '</svg>';
@@ -2520,7 +2582,7 @@ const CHECKLISTS = {
     ["Cancel anything that never filled", "Never chase a fill. Positions held over a day are flagged stale.", "watch"],
     ["Undercut to exit, don't hope", "A sell that won't move: drop it below instabuy and take the small loss."],
     ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"],
-    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Gaps are fine; the chart never invents points.", null, "snap"]
+    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Bought supplies or sold drops today? Put those in the Game gp box (Flip Log tab) first so the dot stays clean. Gaps are fine; the chart never invents points.", null, "snap"]
   ]},
   weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log"],
@@ -2625,10 +2687,12 @@ function renderShadow(){
   $("#shBar").style.width = pct + "%";
   $("#shBarTxt").textContent = price ? pct.toFixed(2) + "%  ·  " + gp(have) + " / " + gp(price) : "no live price";
 
-  const n = flipsSince(DB.bankAsOf || 0);
+  const n = flipsSince(DB.bankAsOf || 0), gSince = gameSince(DB.bankAsOf || 0);
   $("#bankNote").innerHTML = DB.bankAsOf
     ? "Stamped " + ago(DB.bankAsOf) + ". Adding <b>" + n + "</b> flip" + (n===1?"":"s") +
-      " logged since then (" + gp(profitSince) + ") — earlier profit is assumed already inside the bank figure."
+      " logged since then (" + gp(profitSince) + ")" +
+      (gSince ? " and " + (gSince > 0 ? "+" : "") + gp(gSince) + " of game gp" : "") +
+      " — earlier profit is assumed already inside the bank figure."
     : "<b>Not stamped yet</b>, so all " + DB.flips.length + " logged flips are being added on top of the bank figure. " +
       "If that number came from your actual bank it already contains them — press <b>Mark as current</b> to stop double-counting.";
 
@@ -2639,6 +2703,8 @@ function renderShadow(){
     ["Live shadow price", price ? gp(price) : "—"],
     ["Bank (stamped)", gp(DB.bank||0)],
     ["Profit since stamp", '<span class="'+sign(profitSince)+'">'+gp(profitSince)+'</span>'],
+    ['<span title="Non-flip bank changes (Game gp panel, Flip Log tab) since the stamp — counted into the fund total but never into flipping stats.">Game gp since stamp</span>',
+      gSince ? '<span class="'+sign(gSince)+'">'+(gSince > 0 ? '+' : '')+gp(gSince)+'</span>' : '<span class="dim v sm">none</span>'],
     ["Fund total", gp(have)],
     ["Still needed", need != null ? gp(need) : "—"],
     ["Flips to go", (need != null && avg > 0) ? Math.ceil(need/avg).toLocaleString() : "—"]
@@ -2929,6 +2995,16 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const dg = t.closest("[data-delgame]");
+  if (dg){
+    const idx = DB.gameLedger.findIndex(g => g.id === +dg.dataset.delgame);
+    if (idx >= 0){
+      const [gone] = DB.gameLedger.splice(idx, 1);
+      save(); renderLog(); renderShadow();
+      toast("Game gp entry deleted.", () => { DB.gameLedger.splice(idx, 0, gone); save(); renderLog(); renderShadow(); });
+    }
+    return;
+  }
   const dt = t.closest("[data-deltgt]");
   if (dt){
     const name = dt.dataset.deltgt, idx = DB.targets.indexOf(name);
@@ -3172,6 +3248,8 @@ $("#lAdd").onclick = () => {
   renderLog(); renderShadow(); renderWatch();
 };
 $("#lMins").addEventListener("change", e => { DB.minsPerTouch = Math.max(1, clampNum(e.target.value,10)); save(); renderLog(); });
+$("#gSpend").onclick = () => addGame(-1);
+$("#gGain").onclick  = () => addGame(1);
 
 /* export / import */
 $("#lExport").onclick = () => {
@@ -3273,8 +3351,14 @@ function validateImport(d){
     snapDays.add(dd);
     return { d: dd, v: Math.round(v) };
   }).filter(Boolean).sort((a, b) => a.d.localeCompare(b.d));
+  const gameLedger = (Array.isArray(d.gameLedger) ? d.gameLedger : []).map(g => {
+    const v = num(g && g.v), dd = String((g && g.d) || "");
+    if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(dd)){ rejected++; return null; }
+    return { id: num(g.id) || uid(), t: num(g.t) > 0 ? num(g.t) : Date.now(),
+             d: dd, v: Math.round(v), note: String(g.note || "") };
+  }).filter(Boolean);
   return { flips, positions, watch, targets, rejected,
-    db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps,
+    db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps, gameLedger,
           holdsSeed1: d.holdsSeed1 ? 1 : 0,
           slotCapV2: d.slotCapV2 ? 1 : 0,
           slotsSRA1: d.slotsSRA1 ? 1 : 0,
@@ -3356,6 +3440,7 @@ load();
 paintFilters(); paintSortHeads();
 $("#shBank").value = DB.bank || "";
 $("#lMins").value = DB.minsPerTouch || 10;
+$("#gDate").value = today();
 $("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;

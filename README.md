@@ -23,7 +23,8 @@ or back it up — the log is the only irreplaceable part.
 - **Flip log** — realized post-tax profit, gp/touch, gp/slot-hour, weekly-review table, and an
   equity curve: cumulative profit over time with daily bank snapshots overlaid, a daily-return
   strip, an unannualized daily Sharpe (once 7 days exist), and gp-per-couch-minute as the
-  headline metric
+  headline metric. A separate game-gp ledger keeps non-flip bank changes (supplies bought,
+  drops sold) out of the flipping stats while netting them from the snapshot dots
 - **Routine** — morning / evening / weekly checklists with the live plan inlined
 - **Shadow fund** — progress toward Tumeken's Shadow at its live price, secondary targets, and
   long-term holds tracked against a baseline with an exit thesis per item
