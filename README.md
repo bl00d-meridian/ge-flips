@@ -20,7 +20,10 @@ or back it up — the log is the only irreplaceable part.
   promote/demote, caution categories for pump-prone items, and per-item graduation from your log
 - **Positions** — full lifecycle (buy pending → awaiting sell → sell pending → sold) with partial
   fills; leg timings feed gp-per-slot-hour analytics
-- **Flip log** — realized post-tax profit, gp/touch, gp/minute, gp/slot-hour, weekly-review table
+- **Flip log** — realized post-tax profit, gp/touch, gp/slot-hour, weekly-review table, and an
+  equity curve: cumulative profit over time with daily bank snapshots overlaid, a daily-return
+  strip, an unannualized daily Sharpe (once 7 days exist), and gp-per-couch-minute as the
+  headline metric
 - **Routine** — morning / evening / weekly checklists with the live plan inlined
 - **Shadow fund** — progress toward Tumeken's Shadow at its live price, secondary targets, and
   long-term holds tracked against a baseline with an exit thesis per item

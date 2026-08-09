@@ -106,6 +106,12 @@ tr.worst td{background:#3a1b18}
 .stat .k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
 .stat .v{font-size:17px;color:var(--gold);font-variant-numeric:tabular-nums;margin-top:2px}
 .stat .v.sm{font-size:13px;color:var(--text)}
+.eqhero{background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:10px 14px;margin-bottom:10px}
+.eqhero .k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.eqhero .v{font-size:28px;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1.2}
+.eqhero .f{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;margin-top:2px}
+#eqChart svg,#eqBars svg{display:block;width:100%;height:auto}
+#eqChart{margin-bottom:2px}
 
 /* ---- progress ---- */
 .bar{height:22px;background:#141109;border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative}
@@ -440,13 +446,23 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>Results</h2>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span id="exportChip" class="note"></span>
-          <label class="f">Min / touch<input type="number" id="lMins" value="7" min="1" style="width:64px"></label>
+          <label class="f">Min / touch<input type="number" id="lMins" value="10" min="1" style="width:64px" title="How long one GE touch honestly takes, door to door — opening the app, walking to the booth, placing or collecting. Feeds every gp-per-minute figure, so keep it honest rather than flattering."></label>
           <button class="sm" id="lExport">⭳ Export JSON</button>
           <button class="sm" id="lImport">⭱ Import JSON</button>
           <input type="file" id="lFile" accept="application/json,.json" class="hide">
         </span>
       </div>
       <div class="stats" id="logStats"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Equity curve</h3>
+        <span class="sub" id="eqSub" style="margin-left:auto"></span>
+      </div>
+      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. A flip is ~2 touches (place the buy; collect and relist), each costing your minutes-per-touch setting — editable here in the log and in Morning/Evening mode. Compare it against just playing content you enjoy."></div>
+      <div id="eqChart"></div>
+      <div id="eqBars"></div>
+      <div class="stats" id="eqStats" style="margin-top:10px"></div>
     </div>
 
     <div class="panel">
@@ -481,6 +497,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <button class="primary" id="mMorning">☀ Morning mode</button>
         <button class="primary" id="mEvening">☾ Evening mode</button>
         <button id="mWeekly">📓 Weekly review</button>
+        <span id="modeExtras" style="margin-left:auto;display:flex;align-items:center"></span>
       </div>
       <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
       <h3 id="ckTitle" style="margin-bottom:8px"></h3>
@@ -655,8 +672,9 @@ let DB = {
   positions: [],    // [{id,itemId,name,qty,buy,placedAt}]
   bank: 0,
   bankAsOf: 0,      // ms — only flips logged AFTER this are added on top of `bank`
-  minsPerTouch: 7,
+  minsPerTouch: 10,
   lastExportAt: 0,
+  bankSnaps: [],    // daily bank snapshots [{d:"YYYY-MM-DD", v:gp}] — dots on the equity curve
   planPriority: [],   // promoted item ids, in order — jump the funding queue
   planDemoted: [],    // demoted item ids — drop to NEXT UP
   planDate: "",       // both reset when the day rolls over
@@ -675,7 +693,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
@@ -2155,7 +2173,6 @@ function renderLog(){
   const best  = DB.flips.length ? DB.flips[profits.indexOf(Math.max(...profits))] : null;
   const worst = DB.flips.length ? DB.flips[profits.indexOf(Math.min(...profits))] : null;
   const touches = DB.flips.length * 2;
-  const mins = Math.max(1, DB.minsPerTouch || 7);
   const capital = DB.flips.reduce((a,f) => a + f.qty*f.buy, 0);
 
   const unex = flipsSince(DB.lastExportAt || 0);
@@ -2168,7 +2185,6 @@ function renderLog(){
     ["Flips logged", DB.flips.length],
     ["Avg / flip", DB.flips.length ? gp(Math.round(total/DB.flips.length)) : "—"],
     ["gp / touch", touches ? gp(Math.round(total/touches)) : "—"],
-    ["gp / min of attention", touches ? gp(Math.round(total/(touches*mins))) : "—"],
     ["gp / slot-hour (measured)", (() => { const s = fillStats(null);
         return s && s.gpPerSlotH != null
           ? '<span title="'+s.n+' flips with both legs timed via the position lifecycle">'+gp(Math.round(s.gpPerSlotH))+'</span>'
@@ -2214,6 +2230,182 @@ function renderLog(){
       + '<td class="dim sec">'+esc(f.note||"")+'</td>'
       + '<td><button class="sm ghost" data-delflip="'+f.id+'">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="10" class="empty">No flips logged yet.</td></tr>';
+
+  renderEquity();
+}
+
+/* ═══════════ EQUITY CURVE ═══════════ */
+/* One row per calendar day with logged flips: that day's realized profit, the
+   capital those flips deployed (qty × buy), and the running cumulative total. */
+function equityDays(){
+  const byDay = new Map();
+  for (const f of DB.flips){
+    const d = String(f.date || "").slice(0, 10);
+    if (!d) continue;
+    const o = byDay.get(d) || { d, p: 0, cap: 0 };
+    o.p += flipProfit(f); o.cap += f.qty * f.buy;
+    byDay.set(d, o);
+  }
+  const days = [...byDay.values()].sort((a, b) => a.d.localeCompare(b.d));
+  let cum = 0;
+  for (const o of days){ cum += o.p; o.cum = cum; }
+  return days;
+}
+
+/* Day's profit ÷ that day's deployed capital. Days where nothing was deployed
+   (a straggler sell logged on its own) fall back to the nearest bank snapshot
+   at or before that day; with neither, the day has no defined return. */
+function dailyReturns(days){
+  const snaps = DB.bankSnaps;
+  return days.map(o => {
+    let denom = o.cap;
+    if (!(denom > 0))
+      for (let i = snaps.length - 1; i >= 0; i--)
+        if (snaps[i].d <= o.d){ denom = snaps[i].v; break; }
+    return denom > 0 ? { d: o.d, r: o.p / denom, cap: denom, p: o.p } : null;
+  }).filter(Boolean);
+}
+
+const SHARPE_MIN_DAYS = 7;
+function sharpeDaily(rs){
+  if (rs.length < SHARPE_MIN_DAYS) return { need: SHARPE_MIN_DAYS - rs.length };
+  const m = rs.reduce((a, x) => a + x, 0) / rs.length;
+  const sd = Math.sqrt(rs.reduce((a, x) => a + (x - m) ** 2, 0) / (rs.length - 1));
+  return { v: sd > 0 ? m / sd : null };
+}
+
+function snapToday(){ return DB.bankSnaps.find(s => s.d === today()); }
+function recordSnap(v){
+  const d = today(), i = DB.bankSnaps.findIndex(s => s.d === d);
+  if (!(v > 0)){ if (i >= 0) DB.bankSnaps.splice(i, 1); }
+  else if (i >= 0) DB.bankSnaps[i].v = v;
+  else { DB.bankSnaps.push({ d, v }); DB.bankSnaps.sort((a, b) => a.d.localeCompare(b.d)); }
+  save();
+}
+
+/* Bank snapshots and cumulative profit live on different scales (a 25m bank vs
+   2m of booked profit), and two y-axes is how charts lie. So the dots are
+   RE-BASED: the first snapshot is pinned onto the curve, and every later dot
+   moves by however much the bank moved since. Dots tracking the line = the log
+   accounts for the bank. Dots sagging under it = gp left in spending or
+   unlogged trades. */
+function rebasedSnaps(days){
+  const snaps = DB.bankSnaps;
+  if (!snaps.length) return [];
+  const cumAt = d => { let c = 0; for (const o of days){ if (o.d > d) break; c = o.cum; } return c; };
+  const off = cumAt(snaps[0].d) - snaps[0].v;
+  return snaps.map(s => ({ d: s.d, v: s.v, y: s.v + off }));
+}
+
+function renderEquity(){
+  const days = equityDays();
+  const dots = rebasedSnaps(days);
+  const rets = dailyReturns(days);
+
+  /* hero — the house metric */
+  const total = realized(), touches = DB.flips.length * 2;
+  const mins = Math.max(1, DB.minsPerTouch || 10);
+  $("#eqHero").innerHTML =
+      '<div class="k">Couch-Minute Sharpe — gp per minute of attention</div>'
+    + '<div class="v">' + (touches ? gp(Math.round(total / (touches * mins))) + ' gp / min' : '—') + '</div>'
+    + '<div class="f num">' + (touches
+        ? gp(total) + ' realized ÷ (' + DB.flips.length + ' flips × 2 touches × ' + mins + ' min each)'
+        : 'log a round trip and this becomes the only number that matters') + '</div>';
+
+  $("#eqSub").innerHTML = days.length
+    ? '<span title="The line is cumulative realized profit, after tax, from every logged flip. Blue dots are your daily bank snapshots, re-based so the first one sits on the line — a sagging dot means gp the log can\'t account for (spending, or unlogged trades).">'
+      + days.length + ' day' + (days.length === 1 ? '' : 's') + ' · ' + dots.length + ' snapshot' + (dots.length === 1 ? '' : 's')
+      + (snapToday() ? '' : ' · <b>none today</b>') + '</span>'
+    : '';
+
+  $("#eqChart").innerHTML = equityCurveSVG(days, dots);
+  $("#eqBars").innerHTML = returnBarsSVG(rets, days, dots)
+    + (rets.length ? '<div class="note">Daily return = that day\'s profit ÷ capital deployed that day (bank snapshot when deployment is unknown).</div>' : '');
+
+  const sh = sharpeDaily(rets.map(x => x.r));
+  const shTip = "Mean daily return ÷ standard deviation of daily returns. Directional fun, not finance: tiny sample, no risk-free rate, self-reported fills.";
+  const sn = snapToday(), lastSnap = DB.bankSnaps[DB.bankSnaps.length - 1];
+  $("#eqStats").innerHTML = [
+    ['<span title="' + shTip + '">Sharpe (daily, unannualized)</span>',
+      sh.need ? '<span class="dim v sm">need ' + sh.need + ' more day' + (sh.need === 1 ? '' : 's') + '</span>'
+              : (sh.v == null ? '—' : '<span class="' + sign(sh.v) + '">' + sh.v.toFixed(2) + '</span>')],
+    ["Best day", rets.length ? (() => { const b = rets.reduce((a, x) => x.r > a.r ? x : a);
+        return '<span class="pos">' + (b.r * 100).toFixed(1) + '%</span> <span class="v sm dim">' + b.d + '</span>'; })() : '—'],
+    ["Worst day", rets.length ? (() => { const w = rets.reduce((a, x) => x.r < a.r ? x : a);
+        return '<span class="' + sign(w.r) + '">' + (w.r * 100).toFixed(1) + '%</span> <span class="v sm dim">' + w.d + '</span>'; })() : '—'],
+    ['<span title="One number, straight off the bank interface, once a day — Evening mode asks. Gaps are fine; the chart never invents points you didn\'t enter.">Bank snapshot</span>',
+      sn ? '<span class="pos">' + gp(sn.v) + '</span> <span class="v sm dim">today ✓</span>'
+         : (lastSnap ? '<span class="v sm">' + gp(lastSnap.v) + ' <span class="dim">' + lastSnap.d + ' — none today</span></span>'
+                     : '<span class="dim v sm">none yet — Evening mode asks</span>')]
+  ].map(([k, v]) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>').join("");
+}
+
+/* Big-sparkline equity chart. X is real calendar time (a quiet week reads as a
+   flat gap, not a hidden one); nothing is interpolated — only entered points
+   are drawn. */
+function equityCurveSVG(days, dots){
+  if (!days.length && !dots.length)
+    return '<div class="empty">Log flips and the curve draws itself.</div>';
+  const W = 640, H = 150, L = 8, R = 52, T = 14, B = 20;
+  const iw = W - L - R, ih = H - T - B;
+  const ts = [...days.map(o => Date.parse(o.d)), ...dots.map(s => Date.parse(s.d))];
+  const t0 = Math.min(...ts), span = Math.max(...ts) - t0 || 1;
+  const vals = [0, ...days.map(o => o.cum), ...dots.map(s => s.y)];
+  const lo = Math.min(...vals), hi = Math.max(...vals), r = hi - lo || 1;
+  const x = d => (L + (Date.parse(d) - t0) / span * iw);
+  const y = v => (T + (1 - (v - lo) / r) * ih);
+  const f1 = n => n.toFixed(1);
+
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Cumulative realized profit by day">';
+  /* recessive frame: baseline-zero gridline + y extents */
+  if (lo < 0 && hi > 0)
+    s += '<line x1="' + L + '" y1="' + f1(y(0)) + '" x2="' + (W - R) + '" y2="' + f1(y(0)) + '" stroke="var(--line)" stroke-dasharray="3 4" stroke-width="1"/>';
+  s += '<text x="' + L + '" y="' + (T - 4) + '" font-size="10" fill="var(--dim)">' + gp(hi) + '</text>'
+     + '<text x="' + L + '" y="' + (H - B + 14) + '" font-size="10" fill="var(--dim)">' + (days.length ? days[0].d : dots[0].d) + '</text>'
+     + '<text x="' + (W - R) + '" y="' + (H - B + 14) + '" font-size="10" fill="var(--dim)" text-anchor="end">' + (days.length ? days[days.length - 1].d : dots[dots.length - 1].d) + '</text>';
+  if (days.length > 1){
+    s += '<path d="' + days.map((o, i) => (i ? 'L' : 'M') + f1(x(o.d)) + ' ' + f1(y(o.cum))).join(' ')
+       + '" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  }
+  /* per-day hover/tap markers on the curve (invisible until you want them) */
+  for (const o of days){
+    const tip = o.d + ' — day ' + (o.p >= 0 ? '+' : '') + gp(o.p) + ' · total ' + gp(o.cum);
+    s += '<circle cx="' + f1(x(o.d)) + '" cy="' + f1(y(o.cum)) + '" r="7" fill="transparent" title="' + esc(tip) + '"><title>' + esc(tip) + '</title></circle>'
+       + (days.length === 1 ? '<circle cx="' + f1(x(o.d)) + '" cy="' + f1(y(o.cum)) + '" r="3" fill="var(--gold)"/>' : '');
+  }
+  if (days.length)
+    s += '<text x="' + f1(x(days[days.length - 1].d) + 5) + '" y="' + f1(y(days[days.length - 1].cum) + 4) + '" font-size="11" fill="var(--gold)" class="num">' + gp(days[days.length - 1].cum) + '</text>';
+  /* bank snapshots: dots with a 2px surface ring so they read over the line */
+  for (const s2 of dots){
+    const tip = s2.d + ' — bank ' + gp(s2.v) + ' (re-based onto the profit curve; drift below the line = spending or unlogged gp)';
+    s += '<circle cx="' + f1(x(s2.d)) + '" cy="' + f1(y(s2.y)) + '" r="4.5" fill="var(--blue)" stroke="var(--panel)" stroke-width="2" title="' + esc(tip) + '"><title>' + esc(tip) + '</title></circle>';
+  }
+  return s + '</svg>';
+}
+
+/* Daily-return strip under the curve — green above the baseline, red below,
+   position carrying the sign so color is never the only channel. */
+function returnBarsSVG(rets, days, dots){
+  if (!rets.length) return '';
+  const W = 640, H = 44, L = 8, R = 52, T = 4, B = 4;
+  const iw = W - L - R, ih = H - T - B;
+  const ts = [...days.map(o => Date.parse(o.d)), ...dots.map(s => Date.parse(s.d))];
+  const t0 = Math.min(...ts), span = Math.max(...ts) - t0 || 1;
+  const max = Math.max(...rets.map(x => Math.abs(x.r))) || 1;
+  const mid = T + ih / 2;
+  const bw = Math.max(2, Math.min(10, iw / (span / 86400e3 + 1) * 0.6));
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Daily returns">'
+        + '<line x1="' + L + '" y1="' + mid + '" x2="' + (W - R) + '" y2="' + mid + '" stroke="var(--line)" stroke-width="1"/>';
+  for (const o of rets){
+    const h = Math.abs(o.r) / max * (ih / 2 - 1);
+    const cx = L + (Date.parse(o.d) - t0) / span * iw;
+    const tip = o.d + ' — ' + (o.r >= 0 ? '+' : '') + (o.r * 100).toFixed(2) + '% on ' + gp(o.cap) + ' deployed (' + (o.p >= 0 ? '+' : '') + gp(o.p) + ')';
+    s += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (o.r >= 0 ? mid - h : mid).toFixed(1)
+       + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, h).toFixed(1)
+       + '" rx="1" fill="var(--' + (o.r >= 0 ? 'green' : 'red') + ')" title="' + esc(tip) + '"><title>' + esc(tip) + '</title></rect>';
+  }
+  s += '<text x="' + (W - R + 4) + '" y="' + (T + 9) + '" font-size="9" fill="var(--dim)">±' + (max * 100).toFixed(1) + '%</text>';
+  return s + '</svg>';
 }
 
 /* ── prefill estimate machinery ───────────────────────────────── */
@@ -2293,7 +2485,10 @@ function toast(msg, undo, ms){
 document.addEventListener("click", e => {
   if (e.target.closest("button, a, input, select, textarea, summary, th.s, [data-qty]")) return;
   const t = e.target.closest("[title]");
-  if (t && t.title) toast(t.title, null, Math.min(9000, 2000 + t.title.length * 35));
+  /* getAttribute, not .title — SVG marks (equity dots, return bars) carry
+     titles too, and SVG elements have no .title property. */
+  const txt = t && t.getAttribute("title");
+  if (txt) toast(txt, null, Math.min(9000, 2000 + txt.length * 35));
 });
 
 function logPreview(){
@@ -2324,7 +2519,8 @@ const CHECKLISTS = {
     ["Re-arm buys on proven items", "The 4-hour limit window has reset several times since morning.", "watch"],
     ["Cancel anything that never filled", "Never chase a fill. Positions held over a day are flagged stale.", "watch"],
     ["Undercut to exit, don't hope", "A sell that won't move: drop it below instabuy and take the small loss."],
-    ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"]
+    ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"],
+    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Gaps are fine; the chart never invents points.", null, "snap"]
   ]},
   weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log"],
@@ -2366,6 +2562,14 @@ function renderRoutine(){
       inline = lines.length
         ? '<div class="inline">' + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
         : '<div class="inline"><div class="dim">No open positions.</div></div>';
+    } else if (s[3] === "snap"){
+      const sn = snapToday();
+      inline = '<div class="inline"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        + '<input type="number" data-snap step="100000" style="width:150px" value="' + (sn ? sn.v : '') + '"'
+        + ' placeholder="' + (stack() || '') + '" title="Total bank value in gp. Entering it again today just corrects the same dot — one snapshot per day.">'
+        + (sn ? '<span class="pos">✓ ' + gp(sn.v) + ' recorded today</span>'
+              : '<span class="badge b-warn" title="No snapshot for today yet. One number keeps the equity curve honest.">not recorded today</span>')
+        + '</div></div>';
     }
     return '<li class="'+(isDone?"done":"")+'" data-step="'+i+'">'
       + '<span class="n">'+(isDone ? "✓" : i+1)+'</span>'
@@ -2374,6 +2578,10 @@ function renderRoutine(){
   }).join("");
   $$("#tab-routine .row button").forEach(b => b.classList.toggle("primary",
     (b.id === "mMorning" && m === "morning") || (b.id === "mEvening" && m === "evening") || (b.id === "mWeekly" && m === "weekly")));
+  $("#modeExtras").innerHTML = (m === "morning" || m === "evening")
+    ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on the Flip Log tab — keep it honest rather than flattering.">Min / touch'
+      + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
+    : "";
 }
 
 /* ═══════════ SHADOW FUND ═══════════ */
@@ -2729,7 +2937,7 @@ document.addEventListener("click", e => {
     return;
   }
   const step = t.closest("[data-step]");
-  if (step && !t.closest("[data-goto]")){
+  if (step && !t.closest("[data-goto], input, label")){
     const i = +step.dataset.step, arr = DB.checks[S.mode];
     const at = arr.indexOf(i);
     if (at >= 0) arr.splice(at,1); else arr.push(i);
@@ -2780,6 +2988,22 @@ function askTested(id){
 }
 
 document.addEventListener("change", e => {
+  const sn = e.target.closest("[data-snap]");
+  if (sn){
+    const v = Math.round(clampNum(sn.value, 0));
+    recordSnap(v);
+    toast(v > 0 ? "Bank snapshot recorded: " + gp(v) + " for " + today() + "."
+                : "Today's snapshot cleared.");
+    renderRoutine(); renderLog();
+    return;
+  }
+  const em = e.target.closest("[data-eqmins]");
+  if (em){
+    DB.minsPerTouch = Math.max(1, clampNum(em.value, 10));
+    $("#lMins").value = DB.minsPerTouch;
+    save(); renderLog();
+    return;
+  }
   const hq = e.target.closest("[data-holdqty]");
   if (hq){
     const h = DB.holds[+hq.dataset.holdqty];
@@ -2947,7 +3171,7 @@ $("#lAdd").onclick = () => {
   clearEstFields();
   renderLog(); renderShadow(); renderWatch();
 };
-$("#lMins").addEventListener("change", e => { DB.minsPerTouch = Math.max(1, clampNum(e.target.value,7)); save(); renderLog(); });
+$("#lMins").addEventListener("change", e => { DB.minsPerTouch = Math.max(1, clampNum(e.target.value,10)); save(); renderLog(); });
 
 /* export / import */
 $("#lExport").onclick = () => {
@@ -2977,7 +3201,7 @@ $("#lFile").onchange = e => {
       DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
       flush(); paintFilters(); paintSortHeads();
       $("#shBank").value = DB.bank || "";
-      $("#lMins").value = DB.minsPerTouch || 7;
+      $("#lMins").value = DB.minsPerTouch || 10;
       renderAll(); fillSparks();
       toast(v.rejected ? "Imported — " + v.rejected + " malformed row(s) dropped." : "Imported.");
     } catch(err){ alert("Import failed: " + err.message); }
@@ -3041,14 +3265,22 @@ function validateImport(d){
     if (!(t > 0) || (e.act !== "add" && e.act !== "evict")) return null;
     return { t, act: e.act, id: num(e.id) || 0, name: String(e.name || ""), why: String(e.why || "") };
   }).filter(Boolean).slice(-80);
+  const snapDays = new Set();
+  const bankSnaps = (Array.isArray(d.bankSnaps) ? d.bankSnaps : []).map(s => {
+    const v = num(s && s.v), dd = String((s && s.d) || "");
+    if (!(v > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(dd)){ rejected++; return null; }
+    if (snapDays.has(dd)) return null;      // one snapshot per day, first wins
+    snapDays.add(dd);
+    return { d: dd, v: Math.round(v) };
+  }).filter(Boolean).sort((a, b) => a.d.localeCompare(b.d));
   return { flips, positions, watch, targets, rejected,
-    db: { flips, positions, watch, targets, checks, holds, scoutLog,
+    db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps,
           holdsSeed1: d.holdsSeed1 ? 1 : 0,
           slotCapV2: d.slotCapV2 ? 1 : 0,
           slotsSRA1: d.slotsSRA1 ? 1 : 0,
           bank: Math.max(0, num(d.bank) || 0),
           bankAsOf: Math.max(0, num(d.bankAsOf) || 0),
-          minsPerTouch: Math.max(1, num(d.minsPerTouch) || 7),
+          minsPerTouch: Math.max(1, num(d.minsPerTouch) || 10),
           lastExportAt: Math.max(0, num(d.lastExportAt) || 0),
           scoutOn: d.scoutOn !== false,
           watchCap: Math.min(60, Math.max(5, num(d.watchCap) || 25)),
@@ -3123,7 +3355,7 @@ $("#planCopy").onclick = async () => {
 load();
 paintFilters(); paintSortHeads();
 $("#shBank").value = DB.bank || "";
-$("#lMins").value = DB.minsPerTouch || 7;
+$("#lMins").value = DB.minsPerTouch || 10;
 $("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
