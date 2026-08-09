@@ -275,17 +275,17 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="tw"><table id="scanTable">
         <thead><tr>
           <th class="s" data-k="name">Item</th>
-          <th class="s" data-k="buy">Buy</th>
-          <th class="s" data-k="sell">Sell</th>
-          <th class="s sec" data-k="tax">Tax</th>
-          <th class="s" data-k="margin">Margin</th>
-          <th class="s on" data-k="roi">ROI %</th>
+          <th class="s" data-k="buy" title="What a patient buy offer pays — the low ('instasell') price, where impatient sellers dump to you">Buy</th>
+          <th class="s" data-k="sell" title="What a patient sell offer receives — the high ('instabuy') price, where impatient buyers lift your listing">Sell</th>
+          <th class="s sec" data-k="tax" title="GE tax on the sale: 2% rounded down per item, capped at 5m, some items exempt. Already subtracted from Margin">Tax</th>
+          <th class="s" data-k="margin" title="Profit per unit for one full round trip: sell − buy − tax">Margin</th>
+          <th class="s on" data-k="roi" title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
           <th class="s sec" data-k="margin1h" title="Margin rebuilt from 1h average high/low — a spread that survives an hour of averaging is real">1h margin</th>
-          <th class="s sec" data-k="limit">Limit</th>
-          <th class="s sec" data-k="perLimit">Profit / limit</th>
-          <th class="s" data-k="volSide">Vol (thin side)</th>
+          <th class="s sec" data-k="limit" title="GE buy limit — the most of this item you can buy per rolling 4h window">Limit</th>
+          <th class="s sec" data-k="perLimit" title="Margin × buy limit: the ceiling one 4h window can earn on this item">Profit / limit</th>
+          <th class="s" data-k="volSide" title="Units traded per hour on the quieter side of the book — your fills can never be faster than the slow side">Vol (thin side)</th>
           <th class="s sec" data-k="imbalance" title="Share of volume on the sell-into-you side. 0.50 is balanced.">Bal</th>
-          <th class="s sec" data-k="age">Age</th>
+          <th class="s sec" data-k="age" title="Time since each side last traded — old prints mean the shown price may be fiction">Age</th>
           <th></th>
         </tr></thead>
         <tbody id="scanBody"></tbody>
@@ -329,6 +329,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <span class="note" style="align-self:center;max-width:520px">
           Sizing assumes offers sit the whole horizon: liquidity budget = hours × flow × 15% capture,
           and buy limits roll every 4h while an offer stands. The reserve is never allocated.
+          Offers defaults to 7 of the 8 GE slots so one always stays free for game-content buys.
         </span>
       </div>
       <div class="plan-note" id="planHint"></div>
@@ -354,7 +355,9 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="tw"><table>
         <thead><tr>
           <th>Item</th><th>Qty</th><th>Bought at</th><th>Cost</th>
-          <th>Sell now</th><th>Unrealized</th><th class="sec">Age</th><th></th><th></th>
+          <th title="The current high (instabuy) — what listing at the going rate would fetch per unit">Sell now</th>
+          <th title="Profit if the sell filled right now, after tax — not yours until it actually fills">Unrealized</th>
+          <th class="sec" title="How long this position has been open — anything over a day gets flagged stale">Age</th><th></th><th></th>
         </tr></thead>
         <tbody id="posBody"></tbody>
         <tfoot id="posFoot"></tfoot>
@@ -378,10 +381,19 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </div>
       <div class="tw"><table>
         <thead><tr>
-          <th>Item</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th>
-          <th title="Your margin-tested prices override live data everywhere">Tested</th>
-          <th class="sec">Limit</th><th>Plan qty</th><th>Position</th><th class="sec">Profit</th>
-          <th class="sec">Vol (thin)</th><th class="sec">7-day</th><th class="sec">Trend</th>
+          <th>Item</th>
+          <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
+          <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
+          <th title="Profit per unit for one full round trip: sell − buy − tax">Margin</th>
+          <th title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
+          <th title="Your margin-tested prices override live data everywhere for 16h after the test — then live prices take back over">Tested</th>
+          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
+          <th title="Suggested size — auto-clamped to the smallest of: one-third of your stack, the 4h buy limit, and what the book can absorb">Plan qty</th>
+          <th title="gp tied up at the planned quantity (qty × buy)">Position</th>
+          <th class="sec" title="Expected profit per full cycle at the planned quantity">Profit</th>
+          <th class="sec" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
+          <th class="sec" title="Price over the last 7 days — flat is good, plunging is a knife">7-day</th>
+          <th class="sec" title="Fitted 7-day price drift in % — the plan benches anything below −5%">Trend</th>
           <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
           <th></th><th></th>
         </tr></thead>
@@ -431,7 +443,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <span class="sub" id="worstNote" style="margin-left:auto"></span>
       </div>
       <div class="tw"><table>
-        <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th><th>gp / touch</th>
+        <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th>
+        <th title="Profit per time you handled the GE — a flip is ~2 touches (place the buy; collect and relist). Your minutes-per-touch setting turns this into gp/minute">gp / touch</th>
         <th title="Measured from the position lifecycle: profit ÷ hours the flip actually occupied a GE slot">gp / slot-h</th>
         <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th><th></th></tr></thead>
         <tbody id="logByItem"></tbody>
@@ -484,11 +497,59 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <div class="ac" id="acTarget" style="max-width:280px"><input placeholder="Add a target item…"></div>
       </div>
       <div class="tw"><table>
-        <thead><tr><th>Target</th><th>Live price</th><th class="sec">Progress</th><th>%</th><th>Still needed</th><th class="sec">Flips @ current avg</th><th></th></tr></thead>
+        <thead><tr><th>Target</th><th>Live price</th><th class="sec">Progress</th><th>%</th><th>Still needed</th>
+        <th class="sec" title="How many flips at your recent average profit-per-flip still separate you from this target">Flips @ current avg</th><th></th></tr></thead>
         <tbody id="tgtBody"></tbody>
       </table></div>
     </div>
   </section>
+
+  <div class="panel">
+    <details>
+      <summary style="cursor:pointer;padding:2px 0"><h3 style="display:inline">📖 Trading glossary — how to read all of this</h3>
+        <span class="dim"> — and on the phone, tap any badge or column header for its explanation</span></summary>
+      <div class="note" style="line-height:1.55">
+        <p><b>Patient vs instant offers.</b> The GE matches by price. Offer <em>above</em> the going rate and you
+        buy instantly at the best available price; offer <em>at or below</em> it and you join a queue and wait.
+        Every flip here is two <em>patient</em> offers: buy at the low, sell at the high. Instant trades are only
+        for margin tests and emergency exits — they pay the spread instead of earning it.</p>
+        <p><b>Buy / Sell columns.</b> "Buy" is what patient buyers are currently paying (the wiki's low /
+        "instasell"); "Sell" is what patient sellers are receiving (the high / "instabuy"). The gap between them,
+        minus tax, is the whole business.</p>
+        <p><b>Margin, ROI.</b> Margin = sell − buy − tax, per unit, for one full round trip. ROI is that margin
+        divided by the buy price: the return on the gp you tie up. 1–2% per cycle compounds fast because a cycle
+        is hours, not months.</p>
+        <p><b>Margin test.</b> Live prices can be two unrelated trades. To learn the real spread: instant-buy one
+        unit (offer ~5% above the shown sell — the fill is the true sell side), instant-sell it back (~5% below
+        the shown buy — the fill is the true buy side). The unit loses the spread + tax; that's the fee for real
+        numbers. Either offer sitting over ~5 minutes is a fail in itself. Tests expire after 16h.</p>
+        <p><b>Buy limit.</b> Each item caps how much you can buy per rolling 4-hour window (e.g. 25,000 runes).
+        The window rolls while your offer stands, so an offer sitting all day buys several windows' worth.</p>
+        <p><b>Slots.</b> You get 8 GE offer slots. The plan commits 7 so one is always free for buying gear or
+        supplies without cancelling a flip. An idle committed slot earns exactly zero.</p>
+        <p><b>One-third rule.</b> Never put more than a third of your stack into one item — one bad market can't
+        take out the whole bankroll, and smaller positions exit faster.</p>
+        <p><b>Thin-side volume.</b> An item trades on two sides (people buying, people selling). Your fills move
+        at the pace of the <em>quieter</em> side, so all sizing and gating here uses that number, not the total.</p>
+        <p><b>Crowded.</b> Top-100 by 24h volume means every flipping tool recommends it, and competition has
+        squeezed the spread to the tax floor. Volume there is safety, not profit — the edge lives in the
+        mid-liquidity items nobody's tool ranks.</p>
+        <p><b>Trend / catching a knife.</b> A wide margin on a falling chart usually means the price is on its
+        way through your buy price. Flat charts are what you want; the plan benches anything drifting worse than
+        −5% over 7 days.</p>
+        <p><b>Caution: seeds & pump vehicles.</b> Cheap, high-volume, storable items (seeds, impling jars,
+        ensouled heads, nests) are the classic targets for price manipulation. They flip great — until the pump
+        ends. The plan half-sizes them and allows one slot per category until your own log proves an item out
+        (3 profitable flips in 14 days).</p>
+        <p><b>Undercut to exit.</b> A sell that won't fill: relist it 1 gp under the current low sell price and
+        take the small loss. Hoping is how a 2% edge becomes a 10% hole.</p>
+        <p><b>Capture rate & horizon.</b> Sizing assumes your offers sit ~10h and capture ~15% of the item's flow
+        — you're one buyer among many, not the whole market. The reserve is gp the plan never touches.</p>
+        <p><b>gp / slot-hour.</b> Profit divided by the hours a flip actually occupied a slot — the truest
+        measure of what deserves your 7 slots, and what the plan learns from your log.</p>
+      </div>
+    </details>
+  </div>
 
   <div class="panel">
     <div class="ph"><h3>Tax rules implemented</h3></div>
@@ -566,7 +627,7 @@ let DB = {
   planDate: "",       // both reset when the day rolls over
   scoutOn: true,      // auto-scout maintains its own watchlist entries
   watchCap: 25,       // scout tops the list up to this size
-  slots: 8,           // offers per morning touch
+  slots: 7,           // offers per morning touch — the 8th GE slot stays free for game-content buys
   horizonH: 10,       // hours the offers sit before the evening touch
   reserve: 3_000_000, // gp held back for incidentals, never allocated
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
@@ -579,6 +640,9 @@ function load(){
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
     for (const k of ["watch","flips","positions","targets","planPriority","planDemoted"])
       if (!Array.isArray(DB[k])) DB[k] = [];
+    /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
+       has to cancel a flip. Settings can still raise it back to 8 deliberately. */
+    if (!DB.slotCapV2){ if (DB.slots === 8) DB.slots = 7; DB.slotCapV2 = 1; }
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -794,6 +858,9 @@ function paintStatus(){
 setInterval(paintStatus, 1000);
 
 /* ── core math ───────────────────────────────────────────────── */
+/* 16h: a morning test stays authoritative through that evening's touch but is
+   stale-by-construction the next morning, when live prices take over again. */
+const TESTED_TTL_MS = 16 * 3600e3;
 function calc(id){
   const meta = S.byId.get(id); if (!meta) return null;
   const L = S.latest[id], H = S.hour[id], M = S.min5[id];
@@ -801,8 +868,11 @@ function calc(id){
 
   let sell = L && Number.isFinite(L.high) ? L.high : null;   // instabuy — you sell into it
   let buy  = L && Number.isFinite(L.low)  ? L.low  : null;   // instasell — you buy into it
-  /* A margin-tested pair is the guide's "truth" and outranks live data. */
-  const tested = !!(w && Number.isFinite(w.tBuy) && Number.isFinite(w.tSell) && w.tBuy > 0 && w.tSell > 0);
+  /* A margin-tested pair is the guide's "truth" and outranks live data — but a
+     test is a snapshot, so it expires: fresh through the same day's evening
+     touch, reverted to live prices by the next morning. */
+  const hasTest = !!(w && Number.isFinite(w.tBuy) && Number.isFinite(w.tSell) && w.tBuy > 0 && w.tSell > 0);
+  const tested = hasTest && (Date.now() - (w.tAt || 0)) < TESTED_TTL_MS;
   if (tested){ buy = w.tBuy; sell = w.tSell; }
 
   const tax  = sell != null ? geTax(sell, id) : null;
@@ -1295,7 +1365,7 @@ function buildPlan(){
   pass.sort((a,b) => (rank(a) - rank(b)) || (b.score - a.score));
 
   const st = stack(), avail = available();
-  const targetSlots = Math.max(1, Math.min(8, DB.slots || 8));
+  const targetSlots = Math.max(1, Math.min(8, DB.slots || 7));
   const H = DB.horizonH || 10;
   /* Deployable = free capital minus the incidentals reserve, which is never touched. */
   const deployable = Math.max(0, avail - (DB.reserve || 0));
@@ -1318,11 +1388,9 @@ function buildPlan(){
     const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
     const full_ = picks.length >= targetSlots;
 
-    if (held.has(x.id)){
-      nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
-                    wouldExpect: Math.max(0, cap) * x.eMargin, why: "already placed — holding a position" });
-      continue;
-    }
+    /* Held items are represented by their placed-position line, not duplicated
+       into NEXT UP — the capital is committed, so it's not a substitute. */
+    if (held.has(x.id)) continue;
     const tooSmall = cap > 0 && cap * x.eMargin < minExpect;
     const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, remaining) / x.c.buy)));
     if (demoted.has(x.id) || full_ || blockedSeed || cap <= 0 || qty <= 0 || tooSmall){
@@ -1394,6 +1462,20 @@ function whyTag(x){
     else bits.push(Math.abs(x.tr) < 3 ? "flat chart" : "rising chart");
   }
   if (x.c.tested) bits.push("margin-tested");
+  /* The scanner's warning flags, restated honestly when the plan buys anyway:
+     say the flag, then say why the buy survives it. */
+  if (x.c.limit && x.c.volSide && x.c.limit > x.c.volSide * 4){
+    const q = x.allocQty != null ? x.allocQty : x.wouldQty;
+    const fillH = q && x.c.volSide ? q / (x.c.volSide * GATE.capture) : null;
+    bits.push("slow-fill flag — the full " + full(x.c.limit) + " limit outruns the book, but this buy is sized to "
+      + (q != null ? full(q) : "liquidity") + (fillH != null
+        ? " (~" + (fillH < 1 ? Math.max(1, Math.round(fillH * 60)) + "m" : fillH.toFixed(1) + "h")
+          + " to fill at a " + Math.round(GATE.capture * 100) + "% capture rate, inside the " + (DB.horizonH || 10) + "h horizon)"
+        : "") + ", so the flag is priced in, not ignored");
+  }
+  if (x.c.margin1h != null && x.c.margin > 0 && x.c.margin1h < x.c.margin * 0.7 && !x.c.tested)
+    bits.push("thin-on-1h flag — live spread " + full(x.c.margin) + " vs sustained " + full(x.c.margin1h)
+      + "; the expectation above already uses the sustained number, not the fat live print");
   if (x.cautionProven) bits.push(x.caution.label + " proven by your log — 3+ wins in 14d");
   else if (x.wins > 0) bits.push("log-proven edge — " + x.wins + " win" + (x.wins===1?"":"s") + " in 14d, ranked up");
   const fs = fillStats(x.id);
@@ -1572,7 +1654,7 @@ function renderPlan(){
   }
 
   $("#planTitle").textContent = "Today's Plan";
-  hint.textContent = "Margin-test one unit of anything new before committing — buy a single unit at instabuy and sell it at instasell. Record the result in the Tested column; it then overrides live prices everywhere.";
+  hint.textContent = "Margin-test anything new before committing. One unit, instant round trip: (1) buy it with an offer ~5% ABOVE the shown sell price so it fills in seconds — that fill is the true sell side; (2) sell it back ~5% BELOW the shown buy price — that fill is the true buy side. Losing the spread + tax on this one unit is expected: it's the fee for real numbers. If either offer sits more than ~5 minutes, cancel and bench the item — that's a slow-fill verdict on its own. Record both fills in the Tested column; your patient flip then buys at the low fill +1 and sells at the high fill −1. Tests expire after 16h — live prices take back over.";
 
   /* Placements older than today that were never resolved — rendered before any
      early return so they can't disappear behind an empty watchlist. */
@@ -1615,6 +1697,7 @@ function renderPlan(){
       + (posStage(p) === "selling" ? ' · listed at <span class="num">'+full(p.ask)+'</span>' : '')
       + '<div class="why">placed ' + ago(p.placedAt)
       + (posStage(p) === "buying" && c && c.sell != null ? ' · sell now ' + full(c.sell) : '')
+      + (pass.some(x => x.id === p.itemId) ? ' · still passes today\'s gates' : '')
       + ' — nothing is logged until the round trip completes</div></div>'
       + '<span class="plan-actions">'+posActions(p)+'</span></li>';
   }).join("");
@@ -1666,7 +1749,7 @@ function renderPlan(){
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
     foot.innerHTML = 'Deploys <span class="num">' + gp(deployed) + '</span> of <span class="num">' + gp(deployable)
-      + '</span> deployable (' + (deployable ? (deployed/deployable*100).toFixed(0) : 0) + '%) across ' + picks.length + ' of ' + (DB.slots||8) + ' offers · '
+      + '</span> deployable (' + (deployable ? (deployed/deployable*100).toFixed(0) : 0) + '%) across ' + picks.length + ' of ' + (DB.slots||7) + ' offers · '
       + 'expected <span class="pos num">' + gp(expect) + '</span> per full cycle'
       + ' · <span class="dim">' + gp(DB.reserve||0) + ' reserved for incidentals</span>'
       + (committed() > 0 ? ' · <span class="dim">' + gp(committed()) + ' committed in open positions</span>' : '')
@@ -1797,7 +1880,14 @@ function renderWatch(){
     return;
   }
   let totalPos = 0, totalProfit = 0, priced = 0;
-  body.innerHTML = DB.watch.map(w => {
+  /* Display order: post-tax ROI, best first. Scout appends in discovery order,
+     which means nothing to a human scanning the list; the stored array is left
+     alone so nothing else changes under it. */
+  const roiOf = new Map(DB.watch.map(w => { const c = calc(w.id);
+    return [w.id, c && c.roi != null ? c.roi : -1e15]; }));
+  body.innerHTML = DB.watch.slice()
+    .sort((a, b) => roiOf.get(b.id) - roiOf.get(a.id))
+    .map(w => {
     const c = calc(w.id);
     if (!c) return '<tr><td colspan="15" class="dim">'+esc(itemName(w.id))+' — no data</td><td><button class="sm ghost" data-del="'+w.id+'">✕</button></td></tr>';
     const { qty, cap, auto } = planQty(w, c);
@@ -1818,8 +1908,13 @@ function renderWatch(){
     if (c.volSide < DB.filters.vol) flags.push('<span class="badge b-warn" title="Thin side of the book is below your volume floor — fills will be slow">thin</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
     if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
+    const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
     const testCell = c.tested
       ? '<span class="num" title="tested '+ago(w.tAt)+'">'+full(w.tBuy)+'/'+full(w.tSell)+'</span> <button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
+      : hasTest
+      ? '<span class="num dim" title="Tested '+ago(w.tAt)+' — over 16h old, so live prices are back in charge. Re-test to refresh.">'+full(w.tBuy)+'/'+full(w.tSell)+' <span class="badge b-warn">expired</span></span> '
+        + '<button class="sm" data-test="'+w.id+'" title="Re-run the one-unit margin test and record the new fills">re-test</button>'
+        + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : '<button class="sm" data-test="'+w.id+'" title="Record the prices your one-unit margin test actually filled at">set</button>';
     return '<tr>'
       + '<td><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
@@ -2005,7 +2100,7 @@ function clearEstFields(){
 
 /* ── toast, with optional undo ────────────────────────────────── */
 let toastT = null;
-function toast(msg, undo){
+function toast(msg, undo, ms){
   const t = $("#toast");
   t.innerHTML = '<span>' + esc(msg) + '</span>';
   if (undo){
@@ -2016,8 +2111,17 @@ function toast(msg, undo){
   }
   t.classList.add("on");
   clearTimeout(toastT);
-  toastT = setTimeout(() => t.classList.remove("on"), undo ? 6000 : 2800);
+  toastT = setTimeout(() => t.classList.remove("on"), ms || (undo ? 6000 : 2800));
 }
+
+/* Phones can't hover, so every title-tooltip in the app is also tappable:
+   tap a badge, tag or column header and its explanation shows as a toast.
+   Interactive elements and sortable headers keep their own tap behavior. */
+document.addEventListener("click", e => {
+  if (e.target.closest("button, a, input, select, textarea, summary, th.s, [data-qty]")) return;
+  const t = e.target.closest("[title]");
+  if (t && t.title) toast(t.title, null, Math.min(9000, 2000 + t.title.length * 35));
+});
 
 function logPreview(){
   const el = $("#lPreview");
@@ -2036,8 +2140,8 @@ const CHECKLISTS = {
   morning: { title: "☀ Morning — 5–10 min, coffee", foot: "Then close the app. Offers fill while you bill hours.", steps: [
     ["Refresh and glance at the menu", "Hit ↻. The scout has already refreshed the watchlist overnight — check its status line for what it added or evicted, then scan for anything it missed.", "watch"],
     ["Check the charts before you trust a margin", "Flat-ish is what you want. A wide margin on a plunging chart isn't a flip, it's catching a knife.", "watch"],
-    ["Margin-test anything new", "Buy one unit at instabuy, sell it at instasell, then record it in the Tested column so the plan uses the real spread.", "watch"],
-    ["Place these buys", "All 8 GE slots working. Idle slots are idle capital.", "watch", "plan"],
+    ["Margin-test anything new", "One unit, instantly, both ways: buy it ~5% over the shown sell price (that fill = your true sell), sell it back ~5% under the shown buy price (that fill = your true buy). The unit loses the spread + tax — expected, it buys you real numbers. Over ~5 min without a fill = cancel and bench. Record both fills in the Tested column.", "watch"],
+    ["Place these buys", "Every planned slot working — the 8th stays free so buying gear or supplies never means cancelling a flip. Idle planned slots are idle capital.", "watch", "plan"],
     ["Mark them placed", "So tonight's sell plan knows what you're holding and the next plan won't double-commit the same gp.", "watch"],
     ["Close the app", "Nothing more to do until evening. Don't babysit."]
   ]},
@@ -2396,21 +2500,34 @@ function removeWatch(id){
 }
 
 /* Margin test capture — the guide's "truth". Prompt is deliberate: it's two
-   numbers typed once, and it must not be mistaken for a logged flip. */
+   numbers typed once, and it must not be mistaken for a logged flip.
+   Mapping matters: the INSTANT-BUY fill (the high number) is the price impatient
+   buyers pay — that's the sell side of the flip. The INSTANT-SELL fill (low) is
+   the buy side. Storing them the intuitive-but-wrong way round is exactly how
+   every tested margin comes out "terrible". */
 function askTested(id){
   const c = calc(id);
-  const b = prompt("Margin test for " + itemName(id) + "\n\nWhat did your single unit BUY fill at?",
+  const s = prompt("Margin test for " + itemName(id)
+                 + "\n\nStep 1 — the INSTANT BUY (your offer above the going price that filled at once):"
+                 + "\nwhat price did it fill at?"
+                 + "\n\nThat fill is the SELL side — where your patient sell offer will list.",
+                   c && c.sell != null ? String(c.sell) : "");
+  if (s === null) return;
+  const b = prompt("Step 2 — the INSTANT SELL (that unit offered back below the going price):"
+                 + "\nwhat price did it fill at?"
+                 + "\n\nThat fill is the BUY side — where your patient buy offer will list.",
                    c && c.buy != null ? String(c.buy) : "");
   if (b === null) return;
-  const s = prompt("And what did it SELL at?", c && c.sell != null ? String(c.sell) : "");
-  if (s === null) return;
   const nb = Math.round(clampNum(b, NaN)), ns = Math.round(clampNum(s, NaN));
   if (!(nb > 0) || !(ns > 0)){ toast("Both prices must be positive numbers."); return; }
+  if (nb >= ns && !confirm("Buy " + full(nb) + " ≥ sell " + full(ns) + " — a negative spread.\n\n"
+      + "Most likely the two fills are swapped: the instant-BUY fill (the higher number) belongs on the sell side.\n\n"
+      + "Save anyway?")) return;
   const w = DB.watch.find(x => x.id === id);
   if (!w) return;
   w.tBuy = nb; w.tSell = ns; w.tAt = Date.now();
   save(); renderWatch();
-  toast("Tested spread saved — it now overrides live prices for this item.");
+  toast("Tested spread saved — it overrides live prices for this item for the next 16h, then live data takes back over.");
 }
 
 document.addEventListener("change", e => {
@@ -2617,7 +2734,7 @@ function validateImport(d){
           lastExportAt: Math.max(0, num(d.lastExportAt) || 0),
           scoutOn: d.scoutOn !== false,
           watchCap: Math.min(60, Math.max(5, num(d.watchCap) || 25)),
-          slots: Math.min(8, Math.max(1, num(d.slots) || 8)),
+          slots: Math.min(8, Math.max(1, num(d.slots) || 7)),
           horizonH: Math.min(16, Math.max(4, num(d.horizonH) || 10)),
           reserve: Math.max(0, num(d.reserve) != null ? num(d.reserve) : 3000000),
           filters: (d.filters && typeof d.filters === "object") ? d.filters : {...DEFAULT_FILTERS},
@@ -2668,7 +2785,7 @@ $("#planCopy").onclick = async () => {
   } else {
     const { picks, avail, deployed } = buildPlan();
     if (!picks.length){ toast("Nothing to copy — no picks today."); return; }
-    txt = ["Today's plan — margin-test one unit of anything new first.", ""]
+    txt = ["Today's plan — margin-test anything new first: instant-buy 1 unit (fill = sell side), instant-sell it back (fill = buy side), record both.", ""]
       .concat(picks.map(planLineText))
       .concat(["", "Deploys " + gp(deployed) + " of " + gp(avail) + " free across " + picks.length + " slots."])
       .join("\n");
@@ -2689,7 +2806,7 @@ load();
 paintFilters(); paintSortHeads();
 $("#shBank").value = DB.bank || "";
 $("#lMins").value = DB.minsPerTouch || 7;
-$("#szSlots").value = DB.slots || 8;
+$("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
 S.mode = new Date().getHours() < 15 ? "morning" : "evening";
