@@ -352,6 +352,13 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>Open positions</h2><span class="sub" id="posSub"></span>
         <span style="margin-left:auto"><button class="sm ghost" id="posClear">Clear all</button></span>
       </div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="ac" id="acPos" style="max-width:280px"><input placeholder="Track an offer already in the GE…"></div>
+        <span class="note" style="align-self:center;max-width:460px">
+          For repair: if an offer exists in-game that the tracker lost (wrong button, cleared by mistake),
+          re-enter it here and it rejoins the lifecycle.
+        </span>
+      </div>
       <div class="tw"><table>
         <thead><tr>
           <th>Item</th><th>Qty</th><th>Bought at</th><th>Cost</th>
@@ -2854,6 +2861,35 @@ const acLog    = makeAC("#acLog", () => {
   prefillFresh(true).then(() => { q.focus(); q.select(); });
 }, true);
 const acTarget = makeAC("#acTarget", it => { if (!DB.targets.includes(it.n)) DB.targets.push(it.n); save(); renderShadow(); });
+/* Repair path: re-create a position the tracker lost (wrong button, expired
+   undo). Walks the same lifecycle stages. Deliberately records NO timings —
+   placedAt/stageAt would be guesses, and the fill-time telemetry must never
+   learn from guessed hours, so buyH/sellH stay unset for repaired positions. */
+const acPos = makeAC("#acPos", it => {
+  const q = prompt("Track existing offer — " + it.n + "\n\nQuantity?", "");
+  if (q === null) return;
+  const qty = Math.floor(clampNum(q, NaN));
+  if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+  const b = prompt("Buy price each — what you paid (or your standing buy offer)?", "");
+  if (b === null) return;
+  const buy = Math.round(clampNum(b, NaN));
+  if (!(buy > 0)){ toast("Buy price must be a positive number."); return; }
+  const p = { id: Date.now(), itemId: it.i, name: it.n, qty, buy, placedAt: Date.now(), repaired: 1 };
+  if (confirm("Has the BUY filled?\n\nOK — yes, I hold the items.\nCancel — no, the buy offer is still pending.")){
+    if (confirm("Is a SELL offer already listed in-game?\n\nOK — yes.\nCancel — not yet.")){
+      const a = prompt("Sell offer price each?", "");
+      if (a === null) return;
+      const ask = Math.round(clampNum(a, NaN));
+      if (!(ask > 0)){ toast("Ask must be a positive number."); return; }
+      p.stage = "selling"; p.ask = ask;
+    } else p.stage = "bought";
+  }
+  DB.positions.push(p);
+  save(); renderWatch();
+  toast(it.n + " × " + full(qty) + " is being tracked again"
+    + (p.stage === "selling" ? " — sell pending at " + full(p.ask) + "." : "."));
+});
+
 const acHold = makeAC("#acHold", it => {
   if (DB.holds.some(h => h.itemId === it.i)){ toast("Already tracking " + it.n + "."); return; }
   DB.holds.push({ itemId: it.i, name: it.n, qty: 1, addedAt: Date.now(), baseline: null, note: "" });
