@@ -331,11 +331,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="row" style="margin-bottom:10px">
         <label class="f">Offers<input type="number" id="szSlots" min="1" max="8" style="width:58px"></label>
         <label class="f">Day horizon (h)<input type="number" id="szH" min="4" max="16" style="width:64px"></label>
+        <label class="f" title="How long a buy leg is allowed to take. Positions are sized so the bid fills inside this window; anything that can't is benched as a predicted slow fill. A bid still working past it is stale — the market moved, not you.">Fill horizon (h)<input type="number" id="szFill" min="1" max="12" style="width:64px"></label>
+        <label class="f" title="Minimum post-tax margin in ticks (1 tick = 1 gp). Below this, one tick of adverse move eats too much of the edge — the cheap-item trap.">Tick floor<input type="number" id="szTick" min="1" max="100" style="width:56px"></label>
+        <label class="f" title="Scanner's minimum unit price. Sub-400gp items rarely clear the tick floor — raise or lower deliberately.">Min unit (gp)<input type="number" id="szMinPx" min="0" step="50" style="width:80px"></label>
+        <label class="f" title="Inventory mode never quotes its bid and ask closer than this many ticks — quoting tighter trades against yourself after tax.">Quote width<input type="number" id="szQuote" min="1" max="20" style="width:56px"></label>
+        <label class="f" title="An item whose adverse markout exceeds this × its margin gets flagged toxic flow in the weekly review.">Markout ×<input type="number" id="szMkX" min="0.1" max="5" step="0.1" style="width:56px"></label>
         <label class="f">Reserve (gp)<input type="number" id="szRes" step="500000" min="0" style="width:110px"></label>
         <span class="note" style="align-self:center;max-width:520px">
-          Sizing assumes offers sit the whole horizon: liquidity budget = hours × flow × 15% capture,
-          and buy limits roll every 4h while an offer stands. The reserve is never allocated.
-          Offers defaults to 7 of the 8 GE slots so one always stays free for game-content buys.
+          Buy legs are sized to fill inside the <b>fill horizon</b> (flow × 15% capture × hours);
+          buy limits still roll every 4h across the day horizon while offers stand.
+          The reserve is never allocated, and Offers keeps one GE slot free for game-content buys.
         </span>
       </div>
       <div class="plan-note" id="planHint"></div>
@@ -381,6 +386,30 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </div>
     </div>
 
+    <div class="panel" id="invPanel" style="display:none">
+      <div class="ph"><h2>Inventory — market-maker mode</h2><span class="sub" id="invSub"></span></div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Item</th>
+          <th title="The buffer you aim to keep on hand — each touch quotes both legs to walk the holding back to this">Target</th>
+          <th>Held</th>
+          <th title="FIFO cost of the units on hand — what you actually paid">At cost</th>
+          <th title="held × current instabuy, net of tax — what patient liquidation would fetch">At market</th>
+          <th title="market minus cost — unrealized until sells actually fill">P/L</th>
+          <th title="Cost basis as a share of your stack — the one-third rule counts inventory too">% stack</th>
+          <th></th><th></th><th></th>
+        </tr></thead>
+        <tbody id="invBody"></tbody>
+        <tfoot id="invFoot"></tfoot>
+      </table></div>
+      <div class="note" style="margin-top:8px">
+        Lots are FIFO: <b>buy filled…</b> records a lot at your fill price, <b>sold…</b> consumes the oldest
+        lots and prefills the flip log with their true cost — nothing is ever logged for you. Turn the mode
+        on per item with the <b>mm</b> button on a watchlist row (proven items only — this is a standing
+        commitment of capital, not a flip).
+      </div>
+    </div>
+
     <div class="panel">
       <div class="ph"><h2>Watchlist</h2><span class="sub" id="watchStack"></span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -402,6 +431,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
           <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
           <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
           <th title="Profit per unit for one full round trip: sell − buy − tax">Margin</th>
+          <th title="The same margin counted in ticks (1 tick = 1 gp, the minimum price step). The plan's floor is 15: at 4 ticks, one tick of adverse move erases a quarter of the edge — this is why cheap items keep losing despite healthy-looking ROI %">Ticks</th>
           <th title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
           <th title="Your margin-tested prices override live data everywhere for 16h after the test — then live prices take back over">Tested</th>
           <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
@@ -459,7 +489,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h3>Equity curve</h3>
         <span class="sub" id="eqSub" style="margin-left:auto"></span>
       </div>
-      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. A flip is ~2 touches (place the buy; collect and relist), each costing your minutes-per-touch setting — editable here in the log and in Morning/Evening mode. Compare it against just playing content you enjoy."></div>
+      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. Divides realized profit by touch sessions — one sit-down at the GE services every offer at once, so flips don't each get charged their own touches. Sessions count from routine checkmarks and logging activity (pre-tracking days count as two); minutes-per-touch is editable in the log header and in Morning/Evening mode. Compare it against just playing content you enjoy."></div>
       <div id="eqChart"></div>
       <div id="eqBars"></div>
       <div class="stats" id="eqStats" style="margin-top:10px"></div>
@@ -487,11 +517,15 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
         <span class="sub" id="worstNote" style="margin-left:auto"></span>
       </div>
+      <div class="note" id="timingBox" style="margin-bottom:8px"></div>
       <div class="tw"><table>
         <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th>
-        <th title="Profit per time you handled the GE — a flip is ~2 touches (place the buy; collect and relist). Your minutes-per-touch setting turns this into gp/minute">gp / touch</th>
+        <th title="Profit ÷ (flips × 2 handlings) — a RELATIVE rank for comparing items, not a time rate. The real attention rate divides by touch sessions and lives on the equity panel, since one sitting services many flips at once">gp / touch</th>
         <th title="Measured from the position lifecycle: profit ÷ hours the flip actually occupied a GE slot">gp / slot-h</th>
-        <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th><th></th></tr></thead>
+        <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th>
+        <th class="sec" title="Where the price went ~30m after your fills, per unit (+ favorable, − adverse), from timed flips against the 7-day series. Consistently negative = informed flow is picking your quotes off">Markout</th>
+        <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift while holding. Below 50% means the gp came from the market moving, not from market making — luck, not edge">Capture %</th>
+        <th></th></tr></thead>
         <tbody id="logByItem"></tbody>
       </table></div>
     </div>
@@ -610,8 +644,19 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         (3 profitable flips in 14 days).</p>
         <p><b>Undercut to exit.</b> A sell that won't fill: relist it 1 gp under the current low sell price and
         take the small loss. Hoping is how a 2% edge becomes a 10% hole.</p>
-        <p><b>Capture rate & horizon.</b> Sizing assumes your offers sit ~10h and capture ~15% of the item's flow
-        — you're one buyer among many, not the whole market. The reserve is gp the plan never touches.</p>
+        <p><b>Capture rate & horizons.</b> Sizing assumes a standing offer captures ~15% of the item's flow —
+        you're one buyer among many, not the whole market. Buy legs are sized to fill inside the <em>fill
+        horizon</em> (default 4h); buy limits keep rolling every 4h across the full <em>day horizon</em> while
+        offers stand. The reserve is gp the plan never touches.</p>
+        <p><b>Tax-multiple rule.</b> Margin must clear <em>3× the per-unit tax</em> and <em>15 ticks</em>. When
+        margin ≈ tax, even a scratch exit (selling at your own buy price) loses the entire tax — the Tarromin
+        shape. At 3×, giving back two-thirds of the edge still exits positive.</p>
+        <p><b>Ticks.</b> Prices move in 1 gp steps, so a 4 gp margin is four ticks of room: one tick of adverse
+        move erases a quarter of the edge. This is why cheap items lose with healthy-looking ROI % — the floor
+        here is 15 ticks and the scanner defaults to 400+ gp items.</p>
+        <p><b>Adverse selection (stale bids).</b> A bid that fills hours after placing usually fills because the
+        price moved <em>down through it</em>, not because patience paid. That's why unfilled buys are flagged
+        "cancel — market moved" after the fill horizon, and why late fills aren't a win.</p>
         <p><b>gp / slot-hour.</b> Profit divided by the hours a flip actually occupied a slot — the truest
         measure of what deserves your 7 slots, and what the plan learns from your log.</p>
         <p><b>What's this item even for?</b> Hover or tap any item's name for what it ultimately becomes
@@ -632,6 +677,11 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       Data: <a href="https://prices.runescape.wiki/api/v1/osrs" target="_blank" rel="noopener">RuneLite / OSRS Wiki real-time prices</a>
       — polled no faster than 60s, with backoff when the API is unhappy.
     </div>
+  </div>
+
+  <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+    <button class="sm ghost" id="fricBtn" title="One line about anything annoying, slow, or missing — timestamped with where you were. The weekly review collects them for the Sunday tooling session.">✎ note friction</button>
+    <span id="fricRow" class="hide"><input id="fricInput" placeholder="one line — Enter saves, Esc cancels" style="width:min(320px,80vw)"></span>
   </div>
 </div>
 
@@ -681,7 +731,9 @@ const CONSUMABLE_RX = /(potion|brew|restore|rune$|rune\(|arrow|bolt|dart|knife|j
 
 /* ── storage ─────────────────────────────────────────────────── */
 const K = "gef.v1";
-const DEFAULT_FILTERS = { vol:1000, min:0, max:2_000_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
+/* min unit price 400: below it, a healthy-looking ROI is only a handful of
+   ticks of absolute margin — the cheap-item trap the first 18 flips paid for. */
+const DEFAULT_FILTERS = { vol:1000, min:400, max:2_000_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
 let DB = {
   filters: {...DEFAULT_FILTERS},
   sort: {k:"roi", dir:-1},
@@ -694,6 +746,12 @@ let DB = {
   lastExportAt: 0,
   bankSnaps: [],    // daily bank snapshots [{d:"YYYY-MM-DD", v:gp}] — dots on the equity curve
   gameLedger: [],   // non-flip bank changes [{id,t,d,v,note}] — v<0 spent on gameplay, v>0 drops sold
+  touchLog: [],     // GE sittings [{d:"YYYY-MM-DD", m:"morning"|"evening"}] — the attention-metric denominator
+  invLots: [],      // inventory-mode FIFO lots [{id,itemId,qty,cost,t}] — cost = per-unit buy price
+  frictionLog: [],  // one-line annoyance notes [{t,d,ctx,text}] for the Sunday review
+  tickFloor: 15,    // minimum post-tax margin in ticks (1 tick = 1 gp)
+  quoteTicks: 3,    // inventory mode never quotes bid and ask closer than this
+  markoutX: 0.5,    // adverse markout beyond this × margin flags an item as toxic flow
   planPriority: [],   // promoted item ids, in order — jump the funding queue
   planDemoted: [],    // demoted item ids — drop to NEXT UP
   planDate: "",       // both reset when the day rolls over
@@ -702,6 +760,7 @@ let DB = {
   watchCap: 25,       // scout tops the list up to this size
   slots: 7,           // offers per morning touch — the 8th GE slot stays free for game-content buys
   horizonH: 10,       // hours the offers sit before the evening touch
+  fillHorizonH: 4,    // hours a buy leg is allowed to take — sizing and the slow-fill gates use this
   reserve: 3_000_000, // gp held back for incidentals, never allocated
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
   holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
@@ -712,7 +771,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
@@ -721,6 +780,10 @@ function load(){
        Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
        raise Offers back to 7 in the sizing row. */
     if (!DB.slotsSRA1){ if (DB.slots === 7) DB.slots = 6; DB.slotsSRA1 = 1; }
+    /* One-time: min unit price raised to 400 — sub-400gp items kept losing on
+       tick granularity (margin of 3-4 gp IS 3-4 ticks). Lower it deliberately
+       in the scanner filters if you want the cheap stuff back. */
+    if (!DB.minPx400){ if (!(DB.filters.min >= 400)) DB.filters.min = 400; DB.minPx400 = 1; }
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -970,9 +1033,59 @@ async function sparkFor(id){
     byHour[h] += v; hourN[h]++;
   }
   for (let h = 0; h < 24; h++) if (hourN[h]) byHour[h] /= hourN[h];
-  const rec = { at: Date.now(), pts, vols, byHour, noData: raw.length === 0 };
+  /* series keeps timestamped midpoints for the markout analysis — price drift
+     measured 30m/2h after each of your fills. */
+  const series = raw.map((p, i) => ({ t: p.timestamp, mid: pts[i] })).filter(x => Number.isFinite(x.mid));
+  const rec = { at: Date.now(), pts, vols, byHour, series, noData: raw.length === 0 };
   S.spark.set(id, rec);
   return rec;
+}
+
+/* Interpolated midpoint at an arbitrary time; null outside the series window
+   (old flips age out of the 7-day history — that's "no data", not an error). */
+function seriesMid(series, tSec){
+  if (!series || series.length < 2) return null;
+  if (tSec < series[0].t || tSec > series[series.length - 1].t) return null;
+  for (let i = 1; i < series.length; i++){
+    if (series[i].t >= tSec){
+      const a = series[i - 1], b = series[i];
+      const f = (tSec - a.t) / ((b.t - a.t) || 1);
+      return a.mid + (b.mid - a.mid) * f;
+    }
+  }
+  return null;
+}
+
+/* Markouts: where the price went after your fill. A buy is favorable if the
+   mid RISES after it (+), a sell if the mid FALLS (+). Consistently negative
+   numbers mean informed traders are hitting your quotes — toxic flow. Fill
+   times are reconstructed from the lifecycle (sell ≈ log moment, buy ≈ sh
+   hours earlier), so they're approximate by construction. */
+function flipMarkouts(f){
+  if (!Number.isFinite(f.bh) || !Number.isFinite(f.sh)) return null;
+  const sp = S.spark.get(f.itemId);
+  if (!sp || !sp.series || sp.series.length < 2) return null;
+  const sellAt = f.id / 1000, buyAt = sellAt - f.sh * 3600;
+  const at = (t0, px, isBuy) => {
+    const m = seriesMid(sp.series, t0);
+    return m == null ? null : (isBuy ? m - px : px - m);
+  };
+  const r = { b30: at(buyAt + 1800, f.buy, true),  b2h: at(buyAt + 7200, f.buy, true),
+              s30: at(sellAt + 1800, f.sell, false), s2h: at(sellAt + 7200, f.sell, false) };
+  return (r.b30 == null && r.b2h == null && r.s30 == null && r.s2h == null) ? null : r;
+}
+function itemMarkouts(id){
+  let n = 0, m30 = 0, n30 = 0, m2h = 0, n2h = 0;
+  for (const f of DB.flips){
+    if (f.itemId !== id) continue;
+    const r = flipMarkouts(f);
+    if (!r) continue;
+    n++;
+    for (const k of ["b30", "s30"]) if (r[k] != null){ m30 += r[k]; n30++; }
+    for (const k of ["b2h", "s2h"]) if (r[k] != null){ m2h += r[k]; n2h++; }
+  }
+  if (!n) return null;
+  return { n, avg30: n30 ? m30 / n30 : null, avg2h: n2h ? m2h / n2h : null };
 }
 
 /* ── refresh orchestration ───────────────────────────────────── */
@@ -1109,6 +1222,29 @@ const gameSince = ts => DB.gameLedger.reduce((a,g) => a + (g.t > ts ? g.v : 0), 
 const gameUpTo  = d  => DB.gameLedger.reduce((a,g) => a + (g.d <= d ? g.v : 0), 0);
 const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0) + gameSince(DB.bankAsOf || 0);
 const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0);
+
+/* A touch session = one real sit-down at the GE (morning or evening), however
+   many flips it services. Dividing attention by flips × touches overstated the
+   cost ~5×: an 18-flip fortnight is ~15 sittings, not 36 touches. Sessions are
+   stamped by routine checkmarks and by logging activity in that half-day. */
+function markTouch(m){
+  const mode = m || (new Date().getHours() < 15 ? "morning" : "evening");
+  if (mode !== "morning" && mode !== "evening") return;
+  const day = today();
+  if (!DB.touchLog.some(t => t.d === day && t.m === mode))
+    DB.touchLog.push({ d: day, m: mode });
+}
+/* Days flipped before session-tracking existed count as two sessions each —
+   the schedule was always two-touch, so that's the honest historical guess. */
+function touchSessions(){
+  const tracked = new Set(DB.touchLog.map(t => t.d));
+  const untracked = new Set();
+  for (const f of DB.flips){
+    const d = String(f.date || "").slice(0, 10);
+    if (d && !tracked.has(d)) untracked.add(d);
+  }
+  return DB.touchLog.length + untracked.size * 2;
+}
 const available = () => Math.max(0, stack() - committed());
 
 /* ── charts ──────────────────────────────────────────────────── */
@@ -1380,7 +1516,53 @@ const GATE = { roi:1.2, trendSoft:-5, trendWarn:-3, falling:-8, volPerQty:4,
                balHardLo:0.15, balHardHi:0.85, balWarnLo:0.30, balWarnHi:0.70,
                skewHard:60, skewWarn:30, volDecline:-40,
                seedSizeFactor:0.5, seedSlots:1,
+               taxMult:3,        // per-unit margin must clear 3× the per-unit tax (plus the tick floor below)
                capture:0.15 };   // share of one side's flow a standing offer can realistically capture
+
+const FILLH = () => Math.max(1, DB.fillHorizonH || 4);
+const TICKF = () => Math.max(1, DB.tickFloor || 15);      // margin floor in ticks (1 tick = 1 gp)
+const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
+const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
+
+/* Buy-leg fill forecast: qty ÷ (buy-side 1h flow × the 15% capture share a
+   standing bid realistically takes of it). Shown on every funded line so the
+   forecast can be checked against the measured bh times it will grow into. */
+function estFillH(qty, c){
+  const flow = (c.volLow || 0) * GATE.capture;
+  return flow > 0 && qty > 0 ? qty / flow : Infinity;
+}
+
+/* Learned fill times: the log's bh (hours the buy leg took), per item. An item
+   whose MEDIAN sits past the fill horizon is benched — unless the most recent
+   timed fill came in fast, which is the "market woke back up" signal. */
+function fillHistory(id){
+  return DB.flips.filter(f => f.itemId === id && Number.isFinite(f.bh))
+                 .sort((a,b) => a.id - b.id).map(f => f.bh);
+}
+function slowHistory(id){
+  const h = fillHistory(id);
+  if (h.length < 2) return null;
+  const s = h.slice().sort((a,b) => a - b);
+  const med = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length/2 - 1] + s[s.length/2]) / 2;
+  if (med <= FILLH() || h[h.length - 1] <= FILLH()) return null;
+  return { med, hist: h };
+}
+
+/* Momentum vs the last 4h of price: bidding into the top of a rising range is
+   chasing (the patient bid sits unfilled below a runaway market); bidding into
+   the bottom of a falling one gets filled precisely when it shouldn't. */
+function momentum(c, sp){
+  const pts = ((sp && sp.pts) || []).filter(Number.isFinite);
+  if (pts.length < 5 || c.buy == null) return { state: "flat" };
+  const last4 = pts.slice(-5);            // five hourly points = four hours of range
+  const lo = Math.min(...last4), hi = Math.max(...last4);
+  if (hi - lo < Math.max(1, hi * 0.001)) return { state: "flat" };
+  const q = (c.buy - lo) / (hi - lo);
+  const dir = last4[last4.length - 1] - last4[0];
+  if (q >= 0.75 && dir > 0) return { state: "chasing", q };
+  if (q <= 0.25 && dir < 0) return { state: "knife", q };
+  return { state: "neutral", q };
+}
 
 /* Offers sit from the morning touch to the evening one, so the liquidity budget
    is hours × hourly flow × capture share — not one hour's worth. Buy limits
@@ -1445,6 +1627,24 @@ function itemWins(id){
 }
 const provenCaution = id => itemWins(id) >= 3;
 
+/* The log's other verdict: an item net-negative across its last 3 completed
+   flips is a proven loser — whatever regime made the spread real is gone.
+   It stays benched until a FRESH one-unit margin test, recorded after that
+   last losing flip, shows the spread still exists. First real catches:
+   Tarromin and Bones to peaches, both margin-≈-tax bleeders. */
+function recentNet(id, n){
+  const fl = DB.flips.filter(f => f.itemId === id).sort((a,b) => a.id - b.id);
+  if (fl.length < n) return null;
+  const last = fl.slice(-n);
+  return { net: last.reduce((s,f) => s + flipProfit(f), 0), lastAt: fl[fl.length-1].id, n };
+}
+function provenLoser(id, w){
+  const r = recentNet(id, 3);
+  if (!r || r.net >= 0) return null;
+  if (w && (w.tAt || 0) > r.lastAt) return null;   // fresh re-test unbenches
+  return r;
+}
+
 /* ── plan-level overrides (reset daily with the checklist) ──── */
 function resetPlanOverrides(){
   DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
@@ -1476,10 +1676,23 @@ function planCandidates(){
     const eMargin = effMargin(c);
     const eRoi = (eMargin != null && c.buy > 0) ? eMargin / c.buy * 100 : null;
 
-    let failed = null;
-    if (eRoi == null || eRoi < GATE.roi)
+    const loser = provenLoser(w.id, w);
+    let failed = null, mo = { state: "flat" }, sh = null;
+    if (loser)
+      failed = "proven loser — net " + gp(loser.net) + " over your last " + loser.n
+             + " completed flips; re-test to unbench (a fresh one-unit margin test recorded after that loss)";
+    else if (eRoi == null || eRoi < GATE.roi)
       failed = "sustained ROI " + (eRoi == null ? "unknown" : eRoi.toFixed(2) + "%") + " — under the " + GATE.roi + "% floor"
              + (c.roi != null && eRoi != null && c.roi - eRoi > 1 ? " (live " + c.roi.toFixed(2) + "% doesn't hold over 1h)" : "");
+    /* Margin ≈ tax is a structural trap: a scratch exit (selling at your own
+       buy price) still pays the whole tax, so any adverse move bleeds. 3× tax
+       means even giving back two-thirds of the edge still exits positive. */
+    else if (eMargin != null && eMargin < Math.max(GATE.taxMult * (c.tax || 0), TICKF()))
+      failed = eMargin < TICKF() && eMargin >= GATE.taxMult * (c.tax || 0)
+        ? "only " + full(eMargin) + " ticks of margin — under the " + TICKF() + "-tick floor; a 1-tick move eats "
+          + Math.round(100 / Math.max(1, eMargin)) + "% of the edge"
+        : "margin ≈ tax — " + full(eMargin) + " gp/unit against " + full(c.tax || 0) + " gp/unit tax; needs ≥"
+          + GATE.taxMult + "× the tax and ≥" + TICKF() + " ticks, or scratch exits bleed";
     else if (c.skewMin != null && c.skewMin > GATE.skewHard)
       failed = "one-sided book — " + Math.round(c.skewMin) + " min between last buy and last sell";
     else if (c.imbalance != null && (c.imbalance < GATE.balHardLo || c.imbalance > GATE.balHardHi))
@@ -1498,6 +1711,12 @@ function planCandidates(){
       failed = "plan qty clamps to 0 — one unit exceeds a third of your stack";
     else if (volGate < DB.filters.vol)
       failed = "volume " + gp(volGate) + "/h on the thin side — under your " + full(DB.filters.vol) + "/h floor";
+    else if ((mo = momentum(c, sp)).state === "knife")
+      failed = "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
+             + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid";
+    else if ((sh = slowHistory(w.id)))
+      failed = "historically slow fills — median " + fmtHrs(sh.med) + " buy leg across " + sh.hist.length
+             + " timed flips (" + sh.hist.map(fmtHrs).join(", ") + "); a fresh fill under " + FILLH() + "h unbenches it";
     /* NB: moderate imbalance and 30–60 min book-skew only TAG (see whyTag) —
        volSide sizing already prices asymmetric flow; benching it twice was
        the same double-count as the old slow-fill gate. */
@@ -1507,9 +1726,15 @@ function planCandidates(){
        boosts an item's score 10%, capped at +50%. The book trades what the
        log has proven — that's the whole edge, systematized. */
     const wins = itemWins(w.id);
-    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins,
+    /* Rank by expected gp per fill horizon — post-tax margin × the units that
+       can actually fill inside it — not ROI alone. ROI-ranking is how a 2%
+       item at 60gp beat a 1.5% item at 900gp that made 9× the gp per slot:
+       fatter, fewer, faster positions over churn. */
+    const horizonUnits = Math.min(qty, Math.floor(volGate * GATE.capture * FILLH()));
+    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins, mo,
+             estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
-             score: failed ? 0 : eRoi * Math.log(Math.max(volGate, 2)) * (1 + Math.min(wins, 5) * 0.1) };
+             score: failed ? 0 : eMargin * Math.max(1, horizonUnits) * (1 + Math.min(wins, 5) * 0.1) };
   });
 }
 
@@ -1558,7 +1783,9 @@ function buildPlan(){
   /* Pass 1: fund up to targetSlots picks at an even per-slot budget, so eight
      offers exist before anything gets greedy. */
   for (const x of pass){
-    const byLiquidity = Math.floor(x.volGate * H * GATE.capture);
+    /* Buy legs are sized to fill inside the FILL horizon (default 4h), not the
+       whole day — a bid still working at hour six is stale, not patient. */
+    const byLiquidity = Math.floor(x.volGate * FILLH() * GATE.capture);
     let cap = Math.min(x.qty, byLiquidity);
     const rawCaution = x.caution && !x.cautionProven;   // proven items trade as regular items
     if (rawCaution) cap = Math.floor(cap * GATE.seedSizeFactor);
@@ -1572,6 +1799,16 @@ function buildPlan(){
     const tooSmall = cap > 0 && cap * x.eMargin < minExpect;
     const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, remaining) / x.c.buy)));
     if (demoted.has(x.id) || full_ || blockedSeed || cap <= 0 || qty <= 0 || tooSmall){
+      /* Predicted-slow-fill bench: when the fill horizon is what shrank this
+         below worth-a-slot, the honest reason is the fill forecast, and it's
+         a bench, not a filler — a slot spent waiting on a slow book is the
+         exact churn the horizon exists to kill. */
+      if ((tooSmall || cap <= 0) && byLiquidity < x.qty && !demoted.has(x.id) && !full_ && !blockedSeed){
+        bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estFillH(x.qty, x.c)) + " for the planned "
+          + full(x.qty) + " — only " + full(byLiquidity) + " fit the " + FILLH() + "h fill horizon"
+          + (byLiquidity > 0 ? ", not worth a slot" : "") });
+        continue;
+      }
       if (tooSmall && !demoted.has(x.id) && !full_ && !blockedSeed && qty > 0){
         smalls.push({ ...x, capQty: cap, rawCaution });   // filler candidate — decided after pass 2
         continue;
@@ -1634,6 +1871,10 @@ function whyTag(x){
   const bits = [];
   const r = x.eRoi != null ? x.eRoi : x.c.roi;
   bits.push(r >= 4 ? "high ROI" : r >= 2.5 ? "solid ROI" : "thin but clean ROI");
+  if (x.c.tax > 0 && x.eMargin != null)
+    bits.push((x.eMargin / x.c.tax).toFixed(1) + "× tax cushion — a scratch exit still clears the fee");
+  if (x.mo && x.mo.state === "chasing")
+    bits.push("chasing flag — instasell is in the top quartile of the last 4h and rising; a bid below market is unlikely to fill until the run stalls. Bid closer to the print or let it cool");
   bits.push(x.volGate >= 100000 ? "deep volume" : x.volGate >= 25000 ? "good volume" : "adequate volume");
   if (x.tr != null){
     if (x.tr <= GATE.trendWarn) bits.push("drifting " + x.tr.toFixed(1) + "% — watch it");
@@ -1677,7 +1918,7 @@ const startOfToday = () => new Date(new Date().toDateString()).getTime();
 
 const planLineText = (p, i) =>
   (i+1) + ". BUY " + full(p.allocQty) + " " + p.name + " at " + full(p.c.buy) +
-  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle";
+  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtHrs(estFillH(p.allocQty, p.c));
 
 /* Position lifecycle: buying → bought → selling → sold (= log entry).
    Each stage has one obvious next action; nothing advances on its own. */
@@ -1691,6 +1932,7 @@ const posStage = p => p.stage || "buying";
 function advancePosition(pid){
   const p = DB.positions.find(x => x.id === pid);
   if (!p) return;
+  markTouch();          // advancing a position = you're at the GE right now
   const st = posStage(p);
   if (st === "buying"){
     p.stage = "bought"; p.stageAt = Date.now();
@@ -1718,6 +1960,7 @@ function advancePosition(pid){
 function partialPosition(pid){
   const p = DB.positions.find(x => x.id === pid);
   if (!p) return;
+  markTouch();
   const st = posStage(p), nm = itemName(p.itemId, p.name);
   if (st === "buying"){
     const a = prompt("Partial buy fill — how many of the " + full(p.qty) + " " + nm + " were bought?", "");
@@ -1751,6 +1994,137 @@ function partialPosition(pid){
   }
 }
 
+/* A buy still pending after 4h (one full limit window) or hanging into the
+   next touch was priced for a market that has since moved. If it fills now,
+   it fills because the price came DOWN through the bid — adverse selection,
+   not patience rewarded. The flag says cancel; the button is still yours. */
+function staleBuyInfo(p){
+  if (posStage(p) !== "buying") return null;
+  const now = Date.now(), ageH = (now - p.placedAt) / 3600e3;
+  const slot = ts => { const d = new Date(ts); return d.toLocaleDateString("en-CA") + (d.getHours() >= 15 ? "pm" : "am"); };
+  const crossed = slot(p.placedAt) !== slot(now);
+  return (ageH > FILLH() || crossed) ? { ageH, crossed } : null;
+}
+function staleBuyBadge(p){
+  const sb = staleBuyInfo(p);
+  if (!sb) return "";
+  const fmtH = h => h < 1 ? Math.round(h * 60) + "m" : h.toFixed(1) + "h";
+  const fs = fillStats(p.itemId);
+  return ' <span class="badge b-risk" title="Unfilled for ' + fmtH(sb.ageH)
+    + (sb.crossed ? ", into the next touch" : ", past the " + FILLH() + "h fill horizon")
+    + (fs && fs.n ? ". Your measured buy fills on this item average " + fmtH(fs.avgBuyH)
+        + " across " + fs.n + " timed flip" + (fs.n === 1 ? "" : "s") + " — this bid is far outside that." : ".")
+    + " A late fill on a stale bid means the price moved down through it — adverse selection, not patience rewarded. Cancel and re-test."
+    + '">cancel — market moved</span>';
+}
+
+/* ═══════════ INVENTORY MODE — two-sided quoting on proven items ═══════════ */
+const invLotsFor = id => DB.invLots.filter(l => l.itemId === id);
+const invHeld    = id => invLotsFor(id).reduce((a, l) => a + l.qty, 0);
+const invCostGp  = id => invLotsFor(id).reduce((a, l) => a + l.qty * l.cost, 0);
+const invItems   = () => DB.watch.filter(w => w.invTarget > 0);
+const invTotalCost = () => DB.invLots.reduce((a, l) => a + l.qty * l.cost, 0);
+
+/* FIFO: oldest lots sell first. Returns what actually came out and its true
+   per-unit cost — that number prefills the flip log so P/L stays honest. */
+function invConsume(id, qty){
+  let need = qty, cost = 0;
+  for (const l of DB.invLots){
+    if (l.itemId !== id || need <= 0) continue;
+    const take = Math.min(l.qty, need);
+    cost += take * l.cost; l.qty -= take; need -= take;
+  }
+  DB.invLots = DB.invLots.filter(l => l.qty > 0);
+  const got = qty - need;
+  return got > 0 ? { qty: got, avgCost: cost / got } : null;
+}
+
+function standingOrders(itemId){
+  return { buys:  DB.positions.filter(p => p.itemId === itemId && posStage(p) === "buying"),
+           sells: DB.positions.filter(p => p.itemId === itemId && posStage(p) === "selling") };
+}
+/* Self-cross guard: a proposed price that would trade against your own
+   standing opposite order fills you against yourself — you pay the tax for
+   the privilege of moving items between your own offers. */
+function crossWarn(itemId, side, price){
+  const o = standingOrders(itemId);
+  if (side === "sell"){
+    const b = o.buys.find(x => price <= x.buy);
+    if (b) return "CANCEL your buy at " + full(b.buy) + " FIRST — a sell at " + full(price) + " would cross it";
+  } else {
+    const s = o.sells.find(x => Number.isFinite(x.ask) && price >= x.ask);
+    if (s) return "CANCEL your sell at " + full(s.ask) + " FIRST — a buy at " + full(price) + " would cross it";
+  }
+  return null;
+}
+
+/* One quote proposal per inventory item: sell from the buffer at the ask, buy
+   replenishment at the bid, sized to walk the buffer back toward its target.
+   Missing flow data falls back to a 50/50 split, labeled rough. */
+function invQuote(w){
+  const c = calc(w.id);
+  if (!c || c.buy == null || c.sell == null)
+    return { w, name: itemName(w.id), err: "no live price in /latest" };
+  const held = invHeld(w.id);
+  const bid = c.buy, ask = c.sell;
+  if (ask - bid < QUOTEW())
+    return { w, name: c.name, c, held,
+             err: "spread is " + full(ask - bid) + " tick" + (ask - bid === 1 ? "" : "s")
+                + " — under your " + QUOTEW() + "-tick quote width; quoting both sides here trades with yourself. Sit this touch out" };
+  const rough = c.imbalance == null;
+  const buyFlow  = (c.vol || 0) * (rough ? 0.5 : c.imbalance) * GATE.capture;
+  const sellFlow = (c.vol || 0) * (rough ? 0.5 : 1 - c.imbalance) * GATE.capture;
+  const sellQty = Math.max(0, Math.min(held, Math.floor(sellFlow * FILLH())));
+  const thirdCap = Math.max(0, Math.floor((stack() / 3 - invCostGp(w.id)) / bid));
+  const buyQty = Math.max(0, Math.min(
+    (w.invTarget - held) + sellQty,
+    Math.floor(buyFlow * FILLH()),
+    c.limit ? c.limit * limitWindows() : Infinity,
+    thirdCap));
+  return { w, name: c.name, c, held, bid, ask, sellQty, buyQty, rough,
+           crossSell: crossWarn(w.id, "sell", ask), crossBuy: crossWarn(w.id, "buy", bid) };
+}
+const invQuoteText = q => q.err
+  ? q.name + " — " + q.err
+  : (q.crossSell ? "⚠ " + q.crossSell + ", then " : "")
+    + (q.sellQty > 0 ? "SELL " + full(q.sellQty) + " " + q.name + " at " + full(q.ask) : "no sell leg (buffer empty)")
+    + " · "
+    + (q.crossBuy ? "⚠ " + q.crossBuy + ", then " : "")
+    + (q.buyQty > 0 ? "BUY " + full(q.buyQty) + " at " + full(q.bid) : "no buy leg (buffer full or capped)")
+    + " — buffer " + full(q.held) + "/" + full(q.w.invTarget)
+    + (q.rough ? " · rough estimate (no flow data, assuming 50/50)" : "");
+
+/* ═══════════ SELL AGING LADDER ═══════════ */
+/* A sell is stale on the same clock a buy is: at 1× the fill horizon it gets
+   repriced to the current instabuy; at 2× it undercuts by a tick and exits.
+   Capital stuck in a hopeful ask earns exactly zero. */
+function sellAgeInfo(p){
+  if (posStage(p) !== "selling") return null;
+  const ageH = (Date.now() - (p.stageAt || p.placedAt)) / 3600e3;
+  if (ageH >= 2 * FILLH()) return { ageH, rung: 2 };
+  if (ageH >= FILLH())     return { ageH, rung: 1 };
+  return null;
+}
+function repriceSell(pid, undercut){
+  const p = DB.positions.find(x => x.id === pid);
+  if (!p) return;
+  const c = calc(p.itemId);
+  if (!c || c.sell == null){ toast("No live price to reprice against — refresh first."); return; }
+  const target = undercut ? c.sell - 1 : c.sell;
+  const warn = crossWarn(p.itemId, "sell", target);
+  const a = prompt((warn ? "⚠ " + warn + "\n\n" : "")
+    + (undercut
+        ? "Undercut & exit: cancel the sell in-game, relist 1 tick under the current instabuy. Small loss beats a dead slot."
+        : "Reprice: cancel the sell in-game, relist at the current instabuy.")
+    + "\n\nNew ask for " + full(p.qty) + " " + itemName(p.itemId, p.name) + ":", String(target));
+  if (a === null) return;
+  const ask = Math.round(clampNum(a, NaN));
+  if (!(ask > 0)){ toast("Ask must be a positive number."); return; }
+  p.ask = ask; p.stageAt = Date.now();
+  markTouch(); save(); renderWatch();
+  toast("Ask updated to " + full(ask) + " — the aging clock on this sell restarts.");
+}
+
 /* One action strip per position, used everywhere a position renders. */
 function posActions(p){
   const stage = posStage(p), st = STAGES[stage];
@@ -1762,8 +2136,12 @@ function posActions(p){
     + (stage === "buying"
         ? '<button class="sm ghost" data-delpos="'+p.id+'" title="You cancelled the buy offer in-game before it filled — nothing was bought, the gp is free again">cancelled</button>'
       : stage === "selling"
-        ? '<button class="sm ghost" data-unlist="'+p.id+'" title="You cancelled the sell offer in-game — you still hold the items, so this goes back to awaiting sell">cancelled sell</button>'
-          + '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position entirely without logging — only if the items left your hands some other way">✕</button>'
+        ? (() => { const sa = sellAgeInfo(p);
+            return (sa ? (sa.rung >= 2
+                ? '<button class="sm" data-undercut="'+p.id+'" title="Unfilled for '+sa.ageH.toFixed(1)+'h — 2× the fill horizon. Undercut the instabuy by 1 tick and exit; the ask you are protecting is already gone.">undercut & exit</button>'
+                : '<button class="sm" data-reprice="'+p.id+'" title="Unfilled for '+sa.ageH.toFixed(1)+'h — past the fill horizon. Reprice to the current instabuy; the market moved below your ask.">reprice ↓</button>') : '')
+              + '<button class="sm ghost" data-unlist="'+p.id+'" title="You cancelled the sell offer in-game — you still hold the items, so this goes back to awaiting sell">cancelled sell</button>'
+              + '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position entirely without logging — only if the items left your hands some other way">✕</button>'; })()
         : '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position without logging — only if the items left your hands some other way">✕</button>');
 }
 
@@ -1888,11 +2266,34 @@ function renderPlan(){
       + '<span class="plan-actions">'+posActions(p)+'</span></li>';
   }).join("");
 
+  /* Inventory quotes lead the plan: they're standing commitments, and their
+     legs are the first thing to place at each touch. Proposal only — the
+     sold…/buy filled… buttons record what actually happened in-game. */
+  const quotesHTML = invItems().map(q0 => {
+    const q = invQuote(q0);
+    if (q.err) return '<li><div class="body"><b>QUOTE</b> ' + esc(q.name) + ' <span class="dim">— ' + esc(q.err) + '</span></div></li>';
+    return '<li><div class="body"><b class="sell">QUOTE</b> <span title="'+nameTitle(q.name)+'">' + esc(q.name) + '</span>'
+      + ' — buffer <span class="num">' + full(q.held) + '/' + full(q.w.invTarget) + '</span>'
+      + (q.rough ? ' <span class="badge b-warn" title="No flow-share data this cycle — legs sized on a 50/50 split until /1h answers again">rough</span>' : '')
+      + '<div class="why">'
+      + (q.crossSell ? '<b class="neg">⚠ ' + esc(q.crossSell) + '</b>, then ' : '')
+      + (q.sellQty > 0 ? 'SELL <span class="num">' + full(q.sellQty) + '</span> at <span class="num">' + full(q.ask) + '</span>' : 'no sell leg — buffer empty')
+      + ' · '
+      + (q.crossBuy ? '<b class="neg">⚠ ' + esc(q.crossBuy) + '</b>, then ' : '')
+      + (q.buyQty > 0 ? 'BUY <span class="num">' + full(q.buyQty) + '</span> at <span class="num">' + full(q.bid) + '</span>' : 'no buy leg — buffer full or capped')
+      + ' · spread ' + full(q.ask - q.bid) + ' ticks</div></div>'
+      + '<span class="plan-actions">'
+      + (q.sellQty > 0 ? '<button class="sm" data-invsell="' + q.w.id + '" data-q="' + q.sellQty + '" data-p="' + q.ask + '">sold…</button>' : '')
+      + (q.buyQty > 0 ? '<button class="sm" data-invlot="' + q.w.id + '" data-q="' + q.buyQty + '" data-p="' + q.bid + '">buy filled…</button>' : '')
+      + '</span></li>';
+  }).join("");
+
   const pickHTML = picks.map(p => {
     n++;
     return '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
       + '<span title="'+nameTitle(p.name)+'">' + esc(p.name) + '</span> at <span class="num">' + full(p.c.buy) + '</span> each '
       + '<span class="dim">(' + gp(p.cost) + ')</span> — expect <span class="pos num">~' + gp(p.expect) + '</span>/cycle'
+      + ' · <span class="dim" title="Buy-leg forecast: qty ÷ (buy-side 1h flow × 15% capture). Sanity-check it against the measured bh times the lifecycle records — if reality keeps running slower, the capture share is optimistic for this item.">est. fill ~' + fmtHrs(estFillH(p.allocQty, p.c)) + '</span>'
       + (p.filler ? ' <span class="badge b-ok" title="Below the worth-a-slot floor, but this slot would otherwise sit idle — small profit beats none">filler</span>' : '')
       + (p.caution ? (p.cautionProven
           ? ' <span class="badge b-tax" title="Your log shows 3+ profitable round trips in 14 days — full sizing earned">proven '+esc(p.caution.label)+'</span>'
@@ -1930,7 +2331,7 @@ function renderPlan(){
   }
 
   const emptyMsg = '<li><span class="dim">Nothing clears today\'s gates. Sitting out is a position — don\'t force a flip into a market that isn\'t offering one.</span></li>';
-  list.innerHTML = (placedHTML + pickHTML + nextHTML) || emptyMsg;
+  list.innerHTML = (placedHTML + quotesHTML + pickHTML + nextHTML) || emptyMsg;
 
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
@@ -2061,7 +2462,8 @@ function renderPositions(){
     cost += p.qty * p.buy; if (net != null) unreal += net;
     return '<tr><td>'+esc(itemName(p.itemId, p.name))
       + ' <span class="badge '+st.cls+'">'+st.label+'</span>'
-      + (ageH > 24 && stage === "buying" ? ' <span class="badge b-risk" title="Buy sat more than a day — cancel and re-test rather than chasing the fill">stale</span>' : '')
+      + staleBuyBadge(p)
+      + (sellAgeInfo(p) ? ' <span class="badge b-warn" title="This sell has aged past '+(sellAgeInfo(p).rung >= 2 ? "2×" : "1×")+' the fill horizon — use the ladder action on the right">aging sell</span>' : '')
       + '</td>'
       + '<td class="num">'+full(p.qty)+'</td><td class="num">'+full(p.buy)+'</td>'
       + '<td class="num">'+gp(p.qty*p.buy)+'</td>'
@@ -2072,6 +2474,45 @@ function renderPositions(){
   }).join("");
   $("#posFoot").innerHTML = '<tr><td colspan="3">Committed</td><td class="num">'+gp(cost)+'</td>'
     + '<td class="dim">unrealized</td><td class="num '+sign(unreal)+'">'+gp(unreal)+'</td><td colspan="3"></td></tr>';
+  renderInv();
+}
+
+function renderInv(){
+  const items = invItems();
+  const lotIds = [...new Set(DB.invLots.map(l => l.itemId))];
+  const ids = [...new Set([...items.map(w => w.id), ...lotIds])];
+  const panel = $("#invPanel");
+  if (!ids.length){ panel.style.display = "none"; return; }
+  panel.style.display = "";
+  const st = stack();
+  let totCost = 0, totMkt = 0;
+  $("#invBody").innerHTML = ids.map(id => {
+    const w = DB.watch.find(x => x.id === id);
+    const c = calc(id);
+    const held = invHeld(id), cost = invCostGp(id);
+    const mkt = (c && c.sell != null) ? held * (c.sell - geTax(c.sell, id)) : null;
+    const pl = mkt != null ? mkt - cost : null;
+    const pctStack = st > 0 ? cost / st * 100 : null;
+    totCost += cost; if (mkt != null) totMkt += mkt;
+    const over = pctStack != null && pctStack > 100 / 3;
+    return '<tr><td>' + esc(itemName(id))
+      + (w && w.invTarget > 0 ? '' : ' <span class="badge b-warn" title="Lots remain but inventory mode is off for this item — sell them down or turn mm back on">mode off</span>') + '</td>'
+      + '<td class="num">' + (w && w.invTarget > 0 ? full(w.invTarget) : '—') + '</td>'
+      + '<td class="num">' + full(held) + '</td>'
+      + '<td class="num">' + gp(cost) + '</td>'
+      + '<td class="num">' + (mkt != null ? gp(mkt) : '—') + '</td>'
+      + '<td class="num ' + sign(pl) + '">' + (pl != null ? gp(pl) : '—') + '</td>'
+      + '<td class="num' + (over ? ' neg' : '') + '"' + (over ? ' title="Inventory in this item exceeds a third of your stack — the one-third rule counts standing buffers too"' : '') + '>'
+      + (pctStack != null ? pctStack.toFixed(1) + '%' + (over ? ' ⚠' : '') : '—') + '</td>'
+      + '<td><button class="sm" data-invlot="' + id + '" title="A replenishment buy filled — record the lot at your fill price">buy filled…</button></td>'
+      + '<td><button class="sm" data-invsell="' + id + '" title="A sell from the buffer filled — FIFO-consumes the oldest lots and prefills the flip log with their true cost">sold…</button></td>'
+      + '<td><button class="sm ghost" data-inv="' + id + '" title="Change or clear the target buffer">target…</button></td></tr>';
+  }).join("");
+  const totPct = st > 0 ? totCost / st * 100 : null;
+  $("#invFoot").innerHTML = '<tr><td colspan="3">Total inventory</td><td class="num">' + gp(totCost) + '</td>'
+    + '<td class="num">' + gp(totMkt) + '</td><td class="num ' + sign(totMkt - totCost) + '">' + gp(totMkt - totCost) + '</td>'
+    + '<td class="num">' + (totPct != null ? totPct.toFixed(1) + '%' : '—') + '</td><td colspan="3" class="dim">of stack at cost</td></tr>';
+  $("#invSub").textContent = ids.length + " item" + (ids.length === 1 ? "" : "s") + " · " + gp(totCost) + " at cost";
 }
 
 /* ═══════════ WATCHLIST ═══════════ */
@@ -2086,7 +2527,7 @@ function renderWatch(){
   renderScoutLog();
   $("#stackNote").textContent = gp(st) + " ÷ 3 = " + gp(third);
   if (!DB.watch.length){
-    body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
+    body.innerHTML = '<tr><td colspan="17" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
     $("#watchFoot").innerHTML = "";
     renderPlan(); renderPositions();
     return;
@@ -2101,7 +2542,7 @@ function renderWatch(){
     .sort((a, b) => roiOf.get(b.id) - roiOf.get(a.id))
     .map(w => {
     const c = calc(w.id);
-    if (!c) return '<tr><td colspan="15" class="dim">'+esc(itemName(w.id))+' — no data</td><td><button class="sm ghost" data-del="'+w.id+'">✕</button></td></tr>';
+    if (!c) return '<tr><td colspan="16" class="dim">'+esc(itemName(w.id))+' — no data</td><td><button class="sm ghost" data-del="'+w.id+'">✕</button></td></tr>';
     const { qty, cap, auto } = planQty(w, c);
     const position = c.buy != null ? qty * c.buy : null;
     const profit = c.margin != null ? qty * c.margin : null;
@@ -2120,6 +2561,8 @@ function renderWatch(){
     if (c.volSide < DB.filters.vol) flags.push('<span class="badge b-warn" title="Thin side of the book is below your volume floor — fills will be slow">thin</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
     if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
+    const pl = provenLoser(w.id, w);
+    if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column)">proven loser — re-test to unbench</span>');
     const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
     const testCell = c.tested
       ? '<span class="num" title="tested '+ago(w.tAt)+'">'+full(w.tBuy)+'/'+full(w.tSell)+'</span> <button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
@@ -2135,6 +2578,11 @@ function renderWatch(){
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
+      + '<td class="num '+(c.margin == null ? "dim" : c.margin >= TICKF() ? "pos" : "neg")+'"'
+      + ' title="'+(c.margin == null ? "no margin yet" : c.margin >= TICKF()
+          ? full(c.margin)+" ticks of room — clears the "+TICKF()+"-tick floor"
+          : full(c.margin)+" ticks: one 1-gp adverse step erases "+Math.round(100/Math.max(1,c.margin))+"% of the edge — under the "+TICKF()+"-tick floor")+'">'
+      + (c.margin != null ? full(c.margin)+(c.margin >= TICKF() ? " ✓" : " ✗") : "—")+'</td>'
       + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
       + '<td>'+testCell+'</td>'
       + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
@@ -2149,14 +2597,17 @@ function renderWatch(){
       + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
       + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
       + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
-      + '<td><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button></td>'
+      + '<td style="white-space:nowrap"><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button>'
+      + '<button class="sm'+(w.invTarget > 0 ? ' primary' : '')+'" data-inv="'+w.id+'" title="'+(w.invTarget > 0
+          ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
+          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. For proven items only.')+'">mm</button></td>'
       + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
       + '</tr>';
   }).join("");
 
   const over = st > 0 && totalPos > st;
   $("#watchFoot").innerHTML = '<tr>'
-    + '<td colspan="8">Total across '+priced+' item'+(priced===1?"":"s")
+    + '<td colspan="9">Total across '+priced+' item'+(priced===1?"":"s")
     + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire stack">over stack</span>' : '') + '</td>'
     + '<td class="num'+(over ? " neg" : "")+'">'+gp(totalPos)+'</td>'
     + '<td class="num sec '+sign(totalProfit)+'">'+gp(totalProfit)+'</td>'
@@ -2198,7 +2649,7 @@ function renderLog(){
   const profits = DB.flips.map(flipProfit);
   const best  = DB.flips.length ? DB.flips[profits.indexOf(Math.max(...profits))] : null;
   const worst = DB.flips.length ? DB.flips[profits.indexOf(Math.min(...profits))] : null;
-  const touches = DB.flips.length * 2;
+  const sessions = touchSessions();
   const capital = DB.flips.reduce((a,f) => a + f.qty*f.buy, 0);
 
   const unex = flipsSince(DB.lastExportAt || 0);
@@ -2210,15 +2661,31 @@ function renderLog(){
     ["Realized profit", '<span class="'+sign(total)+'">'+gp(total)+'</span>'],
     ["Flips logged", DB.flips.length],
     ["Avg / flip", DB.flips.length ? gp(Math.round(total/DB.flips.length)) : "—"],
-    ["gp / touch", touches ? gp(Math.round(total/touches)) : "—"],
+    ['<span title="A touch session = one sit-down at the GE (morning or evening), however many flips it services. Counted from routine checkmarks and logging activity; days flipped before tracking existed count as two.">gp / touch session</span>',
+      sessions ? gp(Math.round(total/sessions)) : "—"],
     ["gp / slot-hour (measured)", (() => { const s = fillStats(null);
         return s && s.gpPerSlotH != null
           ? '<span title="'+s.n+' flips with both legs timed via the position lifecycle">'+gp(Math.round(s.gpPerSlotH))+'</span>'
           : '<span class="dim v sm" title="Appears once flips are logged through the position lifecycle (placed → filled → listed → sold), which times each leg">no timed flips yet</span>'; })()],
     ["Return on capital", capital ? (total/capital*100).toFixed(2)+"%" : "—"],
+    ['<span title="Profit per gp-day actually deployed, from timed flips: each flip ties up qty × buy for its measured slot-hours. The truest rate on the gp itself — high velocity beats high ROI held forever.">Capital velocity</span>',
+      (() => { const tf = DB.flips.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh));
+        if (!tf.length) return '<span class="dim v sm">needs timed flips</span>';
+        const gpDays = tf.reduce((a,f) => a + f.qty*f.buy*(f.bh+f.sh)/24, 0);
+        const p = tf.reduce((a,f) => a + flipProfit(f), 0);
+        return gpDays > 0 ? '<span class="'+sign(p)+'">'+(p/gpDays*100).toFixed(2)+'%</span><span class="v sm dim"> / gp-day</span>' : "—"; })()],
+    ['<span title="Committed slot-hours going unused, per day with flips: your slots × day horizon minus the hours timed flips actually occupied. Idle slots are idle capital — but some idle is healthy; 100% usage means you\'re never selective.">Slot idle</span>',
+      (() => { const tf = DB.flips.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh));
+        if (!tf.length) return '<span class="dim v sm">needs timed flips</span>';
+        const days = new Set(tf.map(f => String(f.date||"").slice(0,10))).size || 1;
+        const availH = days * Math.max(1, DB.slots || 6) * Math.max(4, DB.horizonH || 10);
+        const usedH = tf.reduce((a,f) => a + f.bh + f.sh, 0);
+        return '<span>'+Math.max(0, Math.round((availH - usedH)/days))+'h</span><span class="v sm dim"> /day</span>'; })()],
     ["Best", best ? '<span class="pos v sm">'+esc(itemName(best.itemId,best.name))+'</span><br><span class="pos">'+gp(flipProfit(best))+'</span>' : "—"],
     ["Worst", worst ? '<span class="neg v sm">'+esc(itemName(worst.itemId,worst.name))+'</span><br><span class="neg">'+gp(flipProfit(worst))+'</span>' : "—"]
   ].map(([k,v]) => '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join("");
+
+  renderTiming();
 
   const agg = new Map();
   for (const f of DB.flips){
@@ -2243,8 +2710,38 @@ function renderLog(){
     + '>'+(fs && fs.gpPerSlotH != null ? gp(Math.round(fs.gpPerSlotH)) : "—")+'</td>'
     + '<td class="num dim sec">'+(fs ? fmtH(fs.avgBuyH)+" + "+fmtH(fs.avgSellH) : "—")+'</td>'
     + '<td class="num sec '+sign(a.p)+'">'+(a.cap ? (a.p/a.cap*100).toFixed(2) : "—")+'</td>'
+    + (() => {   /* markout + capture columns — analysis, never a blocker */
+        const mk = itemMarkouts(a.id);
+        const marginPU = a.qty ? a.p / a.qty : 0;
+        const mx = Math.max(0.05, DB.markoutX || 0.5);
+        const toxic = mk && marginPU > 0 && ((mk.avg30 != null && -mk.avg30 > mx * marginPU)
+                                          || (mk.avg2h != null && -mk.avg2h > mx * marginPU));
+        const mkCell = mk && mk.avg30 != null
+          ? '<td class="num sec '+sign(mk.avg30)+'" title="'+mk.n+' timed flip'+(mk.n===1?"":"s")+' · +30m '
+            + mk.avg30.toFixed(1)+' gp/unit'+(mk.avg2h != null ? ' · +2h '+mk.avg2h.toFixed(1) : '')
+            + (toxic ? ' · adverse beyond '+mx+'× your '+marginPU.toFixed(1)+' gp/unit margin' : '')+'">'
+            + mk.avg30.toFixed(1)
+            + (toxic ? ' <span class="badge b-risk" title="Adverse markout exceeds '+mx+'× margin — informed flow is picking your quotes off. Widen, shrink, or drop this item.">toxic flow</span>' : '')
+            + '</td>'
+          : '<td class="num dim sec" title="Needs timed flips inside the 7-day price history — older fills age out; unwatched items have no series fetched">no data</td>';
+        const qmf = DB.flips.filter(f => f.itemId === a.id && Number.isFinite(f.qm));
+        let capCell = '<td class="num dim sec" title="Needs flips placed through the plan, which records the quoted spread at entry">no data</td>';
+        if (qmf.length){
+          const cap = qmf.reduce((s,f) => s + f.qm * f.qty, 0);
+          const pSub = qmf.reduce((s,f) => s + flipProfit(f), 0);
+          const drift = pSub - cap;
+          const pct = (Math.abs(cap) + Math.abs(drift)) > 0 ? cap / (Math.abs(cap) + Math.abs(drift)) * 100 : null;
+          capCell = pct == null ? capCell
+            : '<td class="num sec '+(pct >= 50 ? "pos" : "neg")+'" title="'+qmf.length+' flip'+(qmf.length===1?"":"s")
+              +' with entry quotes · spread capture '+gp(Math.round(cap))+' vs drift '+gp(Math.round(drift))+'">'
+              + pct.toFixed(0)+'%'
+              + (pct < 50 ? ' <span class="badge b-warn" title="Most of this item\'s profit came from price drift while holding, not the quoted spread — directional, not market making. It can stay, but know which game it\'s winning.">directional</span>' : '')
+              + '</td>';
+        }
+        return mkCell + capCell;
+      })()
     + '<td>'+(watched.has(a.id) ? '<button class="sm ghost" data-cut="'+a.id+'" title="Remove from watchlist">cut</button>' : '')+'</td></tr>';
-  }).join("") : '<tr><td colspan="10" class="empty">Log a few round trips — this table is the weekly review.</td></tr>';
+  }).join("") : '<tr><td colspan="12" class="empty">Log a few round trips — this table is the weekly review.</td></tr>';
 
   $("#logBody").innerHTML = flips.length ? flips.map(f => {
     const tax = geTax(f.sell, f.itemId) * f.qty, p = flipProfit(f);
@@ -2332,14 +2829,16 @@ function renderEquity(){
   const dots = rebasedSnaps(days);
   const rets = dailyReturns(days);
 
-  /* hero — the house metric */
-  const total = realized(), touches = DB.flips.length * 2;
+  /* hero — the house metric. Denominator is touch SESSIONS, not flips×2: one
+     seven-minute sitting services every offer at once, so charging each flip
+     its own touches understated the rate ~5×. */
+  const total = realized(), sessions = touchSessions();
   const mins = Math.max(1, DB.minsPerTouch || 10);
   $("#eqHero").innerHTML =
       '<div class="k">Couch-Minute Sharpe — gp per minute of attention</div>'
-    + '<div class="v">' + (touches ? gp(Math.round(total / (touches * mins))) + ' gp / min' : '—') + '</div>'
-    + '<div class="f num">' + (touches
-        ? gp(total) + ' realized ÷ (' + DB.flips.length + ' flips × 2 touches × ' + mins + ' min each)'
+    + '<div class="v">' + (sessions ? gp(Math.round(total / (sessions * mins))) + ' gp / min' : '—') + '</div>'
+    + '<div class="f num">' + (sessions
+        ? gp(total) + ' realized ÷ (' + sessions + ' touch session' + (sessions === 1 ? '' : 's') + ' × ' + mins + ' min each)'
         : 'log a round trip and this becomes the only number that matters') + '</div>';
 
   $("#eqSub").innerHTML = days.length
@@ -2373,6 +2872,44 @@ function renderEquity(){
   ].map(([k, v]) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>').join("");
 
   renderGame();
+}
+
+/* ── touch timing: when you place vs how long buys take ───────── */
+/* Placement hour reconstructed from timed flips (log moment minus both legs).
+   Approximate by design — it needs enough flips to mean anything, and says so. */
+function touchTimingCells(){
+  const cells = Array.from({ length: 24 }, () => ({ n: 0, sum: 0 }));
+  for (const f of DB.flips){
+    if (!Number.isFinite(f.bh) || !Number.isFinite(f.sh)) continue;
+    const h = new Date(f.id - (f.bh + f.sh) * 3600e3).getHours();
+    cells[h].n++; cells[h].sum += f.bh;
+  }
+  return cells;
+}
+function renderTiming(){
+  const cells = touchTimingCells();
+  const total = cells.reduce((a, c) => a + c.n, 0);
+  const box = $("#timingBox");
+  if (total < 3){ box.innerHTML = 'Touch timing appears after a few flips run the full lifecycle (placed → filled → listed → sold) — it maps which placement hours fill fastest.'; return; }
+  const w = 240, h = 30, bw = w / 24;
+  let bars = "";
+  for (let i = 0; i < 24; i++){
+    const c = cells[i];
+    if (!c.n){ bars += '<rect x="' + (i * bw).toFixed(1) + '" y="' + (h - 3) + '" width="' + (bw - 1).toFixed(1) + '" height="3" fill="var(--line)"><title>' + i + ':00 — no timed flips placed</title></rect>'; continue; }
+    const avg = c.sum / c.n;
+    const col = avg <= 1 ? "var(--green)" : avg <= FILLH() ? "var(--amber)" : "var(--red)";
+    const bh2 = Math.min(h - 2, 4 + (c.n / total) * 4 * (h - 8));   // height ∝ share of flips, floor 4px
+    bars += '<rect x="' + (i * bw).toFixed(1) + '" y="' + (h - bh2).toFixed(1) + '" width="' + (bw - 1).toFixed(1)
+          + '" height="' + bh2.toFixed(1) + '" rx="1" fill="' + col + '" title="' + i + ':00 — avg buy fill ' + avg.toFixed(1) + 'h over ' + c.n + ' flip' + (c.n === 1 ? '' : 's') + '">'
+          + '<title>' + i + ':00 — avg buy fill ' + avg.toFixed(1) + 'h over ' + c.n + ' flip' + (c.n === 1 ? '' : 's') + '</title></rect>';
+  }
+  const good = cells.map((c, i) => ({ i, n: c.n, avg: c.n ? c.sum / c.n : Infinity }))
+                    .filter(x => x.n >= 2).sort((a, b) => a.avg - b.avg).slice(0, 2);
+  box.innerHTML = '<b>Touch timing</b> (placement hour vs buy fill speed — green ≤1h, amber ≤' + FILLH() + 'h, red slower): '
+    + '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" style="vertical-align:middle">' + bars + '</svg> '
+    + '<span class="dim">0h→23h</span>'
+    + (good.length ? ' · fastest fills from offers placed around <b>' + good.map(x => x.i + ':00 (' + x.avg.toFixed(1) + 'h avg)').join('</b> and <b>') + '</b> — aim the touches there' : '')
+    + ' <span class="dim">· ' + total + ' timed flips, hours approximate</span>';
 }
 
 /* ── game-gp ledger ───────────────────────────────────────────── */
@@ -2572,23 +3109,29 @@ const CHECKLISTS = {
     ["Check the charts before you trust a margin", "Flat-ish is what you want. A wide margin on a plunging chart isn't a flip, it's catching a knife.", "watch"],
     ["Margin-test anything new", "One unit, instantly, both ways: buy it ~5% over the shown sell price (that fill = your true sell), sell it back ~5% under the shown buy price (that fill = your true buy). The unit loses the spread + tax — expected, it buys you real numbers. Over ~5 min without a fill = cancel and bench. Record both fills in the Tested column.", "watch"],
     ["Place these buys", "Every planned slot working — the 8th stays free so buying gear or supplies never means cancelling a flip. Idle planned slots are idle capital.", "watch", "plan"],
+    ["Quote your inventory items", "Both legs per market-maker item: sell from the buffer at the ask, replenish at the bid. The plan card has the exact lines — heed any CANCEL-FIRST warning, it stops you trading against your own standing offer.", "watch", "quotes"],
     ["Mark them placed", "So tonight's sell plan knows what you're holding and the next plan won't double-commit the same gp.", "watch"],
+    ["Note any friction", "One line about anything that was annoying or slow just now — it feeds the Sunday review.", null, "fricin"],
     ["Close the app", "Nothing more to do until evening. Don't babysit."]
   ]},
   evening: { title: "☾ Evening — 5–10 min", foot: "Wednesday note: game updates reprice consumables violently. Hold lighter into update day and read patch notes before re-arming.", steps: [
     ["Collect fills", "Everything that filled, out of the collection box."],
     ["Relist these as sells", "At your tested margin — not at the number the tracker showed this morning.", "watch", "sell"],
     ["Re-arm buys on proven items", "The 4-hour limit window has reset several times since morning.", "watch"],
-    ["Cancel anything that never filled", "Never chase a fill. Positions held over a day are flagged stale.", "watch"],
-    ["Undercut to exit, don't hope", "A sell that won't move: drop it below instabuy and take the small loss."],
+    ["Re-quote inventory items", "Same two legs as this morning, at tonight's prices — the buffer walks back toward target every touch.", "watch", "quotes"],
+    ["Cancel anything that never filled", "Never chase a fill. Anything past the fill horizon is flagged cancel — market moved.", "watch"],
+    ["Work the sell aging ladder", "Sells past 1× the fill horizon reprice to the current instabuy; past 2× they undercut a tick and exit. The buttons on each position prefill it — capital stuck in a hopeful ask earns zero.", "watch", "ladder"],
     ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"],
-    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Bought supplies or sold drops today? Put those in the Game gp box (Flip Log tab) first so the dot stays clean. Gaps are fine; the chart never invents points.", null, "snap"]
+    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Bought supplies or sold drops today? Put those in the Game gp box (Flip Log tab) first so the dot stays clean. Gaps are fine; the chart never invents points.", null, "snap"],
+    ["Note any friction", "One line about anything that was annoying or slow tonight — it feeds the Sunday review.", null, "fricin"]
   ]},
   weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log"],
     ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log"],
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
     ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log"],
+    ["Check markouts and capture", "Toxic-flow and directional tags in the per-item table say which items are picking you off or paying you for luck — widen, shrink, or cut those.", "log"],
+    ["Read the week's friction notes", "Everything that annoyed you this week, one place — copy as markdown for the Sunday tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
   ]}
@@ -2624,6 +3167,33 @@ function renderRoutine(){
       inline = lines.length
         ? '<div class="inline">' + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
         : '<div class="inline"><div class="dim">No open positions.</div></div>';
+    } else if (s[3] === "quotes"){
+      const qs = invItems().map(w2 => invQuoteText(invQuote(w2)));
+      inline = '<div class="inline">' + (qs.length
+        ? qs.map(x => '<div>' + esc(x) + '</div>').join("")
+        : '<div class="dim">No inventory-mode items — turn one on with the mm button on a proven watchlist row.</div>') + '</div>';
+    } else if (s[3] === "ladder"){
+      const rungs = DB.positions.map(p => ({ p, sa: sellAgeInfo(p) })).filter(x => x.sa);
+      inline = '<div class="inline">' + (rungs.length
+        ? rungs.map(x => {
+            const c2 = calc(x.p.itemId);
+            const tgt = c2 && c2.sell != null ? (x.sa.rung >= 2 ? c2.sell - 1 : c2.sell) : null;
+            const warn = tgt != null ? crossWarn(x.p.itemId, "sell", tgt) : null;
+            return '<div>' + (warn ? '⚠ ' + esc(warn) + ', then ' : '')
+              + (x.sa.rung >= 2 ? 'UNDERCUT & EXIT: ' : 'REPRICE to instabuy: ')
+              + full(x.p.qty) + ' ' + esc(itemName(x.p.itemId, x.p.name))
+              + ' listed at ' + full(x.p.ask) + ' — unfilled ' + x.sa.ageH.toFixed(1) + 'h'
+              + (tgt != null ? ' → ' + full(tgt) : '') + '</div>';
+          }).join("")
+        : '<div class="dim">No aging sells — everything listed is inside the fill horizon.</div>') + '</div>';
+    } else if (s[3] === "fricin"){
+      inline = '<div class="inline"><div><input data-fric placeholder="one line — Enter saves it" style="width:min(320px,90%)"></div></div>';
+    } else if (s[3] === "friction"){
+      const wk = DB.frictionLog.filter(f => Date.now() - f.t < 7 * 86400e3);
+      inline = '<div class="inline">' + (wk.length
+        ? wk.map(f => '<div class="dim">' + esc(f.d) + ' <span class="badge b-ok">' + esc(f.ctx) + '</span> ' + esc(f.text) + '</div>').join("")
+          + '<div style="margin-top:4px"><button class="sm" data-fricopy="1">copy all as markdown</button></div>'
+        : '<div class="dim">No friction notes this week — either it was smooth, or nothing got written down.</div>') + '</div>';
     } else if (s[3] === "snap"){
       const sn = snapToday();
       inline = '<div class="inline"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
@@ -2892,6 +3462,10 @@ document.addEventListener("click", e => {
   if (place){
     const id = +place.dataset.place, qty = +place.dataset.q, buy = +place.dataset.b;
     const rec = { id: Date.now(), itemId: id, name: itemName(id), qty, buy, placedAt: Date.now(), stage: "buying" };
+    /* quoted spread at entry, for the capture-vs-drift decomposition later */
+    const cq = calc(id);
+    if (cq && cq.margin != null) rec.qm = cq.margin;
+    markTouch();
     DB.positions.push(rec);
     S.promoteFor = null;
     save(); renderWatch();
@@ -2995,6 +3569,73 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const inv = t.closest("[data-inv]");
+  if (inv){
+    const id = +inv.dataset.inv, w = DB.watch.find(x => x.id === id);
+    if (!w){ toast("Add the item to the watchlist first — inventory mode lives on a watch row."); return; }
+    const a = prompt("Inventory target buffer for " + itemName(id)
+      + " — units to keep on hand and re-quote each touch.\n\nBlank or 0 turns inventory mode off"
+      + (invHeld(id) > 0 ? " (your " + full(invHeld(id)) + " held lots stay tracked until sold)" : "") + ".",
+      w.invTarget > 0 ? String(w.invTarget) : "");
+    if (a === null) return;
+    const n = Math.floor(clampNum(a, 0));
+    if (n > 0){ w.invTarget = n; toast("Inventory mode on: " + itemName(id) + " targets a " + full(n) + "-unit buffer. The plan now quotes both legs each touch."); }
+    else { delete w.invTarget; toast("Inventory mode off for " + itemName(id) + "."); }
+    save(); renderWatch(); return;
+  }
+  const il = t.closest("[data-invlot]");
+  if (il){
+    const id = +il.dataset.invlot, c = calc(id);
+    const q = prompt("Replenishment buy filled for " + itemName(id) + " — how many units?", il.dataset.q || "");
+    if (q === null) return;
+    const qty = Math.floor(clampNum(q, NaN));
+    if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+    const pr = prompt("At what price each? (your actual fill)", il.dataset.p || (c && c.buy != null ? String(c.buy) : ""));
+    if (pr === null) return;
+    const px = Math.round(clampNum(pr, NaN));
+    if (!(px > 0)){ toast("Price must be a positive number."); return; }
+    const lot = { id: Date.now(), itemId: id, qty, cost: px, t: Date.now() };
+    DB.invLots.push(lot);
+    markTouch(); save(); renderWatch();
+    toast("Lot recorded: " + full(qty) + " at " + full(px) + " — FIFO basis " + gp(invCostGp(id)) + " across " + full(invHeld(id)) + " held.",
+          () => { DB.invLots = DB.invLots.filter(l => l.id !== lot.id); save(); renderWatch(); });
+    return;
+  }
+  const iv = t.closest("[data-invsell]");
+  if (iv){
+    const id = +iv.dataset.invsell, c = calc(id), held = invHeld(id);
+    if (!(held > 0)){ toast("No units in the buffer — record the buy lots first."); return; }
+    const q = prompt("Sell from the " + itemName(id) + " buffer — how many sold? (held: " + full(held) + ")", iv.dataset.q || "");
+    if (q === null) return;
+    let qty = Math.floor(clampNum(q, NaN));
+    if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+    if (qty > held){ qty = held; toast("Clamped to the " + full(held) + " actually held."); }
+    const pr = prompt("At what price each did they sell?", iv.dataset.p || (c && c.sell != null ? String(c.sell) : ""));
+    if (pr === null) return;
+    const px = Math.round(clampNum(pr, NaN));
+    if (!(px > 0)){ toast("Price must be a positive number."); return; }
+    const out = invConsume(id, qty);
+    markTouch(); save(); renderWatch();
+    logFromWatch(id, out.qty, Math.round(out.avgCost), px);
+    toast("FIFO: " + full(out.qty) + " consumed at true cost " + full(Math.round(out.avgCost))
+        + " each — the log form is prefilled, press + Log flip to record the P/L.");
+    return;
+  }
+  const fc = t.closest("[data-fricopy]");
+  if (fc){
+    const wk = DB.frictionLog.filter(f => Date.now() - f.t < 7 * 86400e3);
+    const md = wk.map(f => {
+      const dt = new Date(f.t);
+      const hm = String(dt.getHours()).padStart(2,"0") + ":" + String(dt.getMinutes()).padStart(2,"0");
+      return "- " + f.d + " " + hm + " [" + f.ctx + "] " + f.text;
+    }).join("\n");
+    copyText(md || "- (no friction notes this week)", "Copied " + wk.length + " note" + (wk.length === 1 ? "" : "s") + " as markdown.");
+    return;
+  }
+  const rp = t.closest("[data-reprice]");
+  if (rp){ repriceSell(+rp.dataset.reprice, false); return; }
+  const uc = t.closest("[data-undercut]");
+  if (uc){ repriceSell(+uc.dataset.undercut, true); return; }
   const dg = t.closest("[data-delgame]");
   if (dg){
     const idx = DB.gameLedger.findIndex(g => g.id === +dg.dataset.delgame);
@@ -3016,7 +3657,7 @@ document.addEventListener("click", e => {
   if (step && !t.closest("[data-goto], input, label")){
     const i = +step.dataset.step, arr = DB.checks[S.mode];
     const at = arr.indexOf(i);
-    if (at >= 0) arr.splice(at,1); else arr.push(i);
+    if (at >= 0) arr.splice(at,1); else { arr.push(i); markTouch(S.mode); }
     save(); renderRoutine(); return;
   }
   const go = t.closest("[data-goto]");
@@ -3141,6 +3782,7 @@ function closePosition(pid){
      logged — set AFTER logFromWatch, which clears any stale pending metric. */
   S.pendingFill = {
     itemId: p.itemId,
+    qm: Number.isFinite(p.qm) ? p.qm : null,
     buyH: Number.isFinite(p.buyH) ? p.buyH : null,
     sellH: posStage(p) === "selling" && p.stageAt
       ? Math.round((Date.now() - p.stageAt) / 36e3) / 100 : null
@@ -3232,6 +3874,7 @@ $("#lAdd").onclick = () => {
   const id = acLog.itemId, qty = +$("#lQty").value, buy = +$("#lBuy").value, sell = +$("#lSell").value;
   if (!id){ toast("Pick an item from the suggestions first."); return; }
   if (!(qty > 0) || !(buy > 0) || !(sell > 0)){ toast("Qty, buy and sell must all be positive numbers."); return; }
+  markTouch();          // logging a flip = a live sitting, only if today isn't stamped yet
   const rec = {
     id: Date.now(), itemId: id, name: itemName(id),
     qty, buy, sell, date: $("#lDate").value || today(), note: $("#lNote").value.trim()
@@ -3239,6 +3882,7 @@ $("#lAdd").onclick = () => {
   if (S.pendingFill && S.pendingFill.itemId === id){
     if (S.pendingFill.buyH  != null) rec.bh = S.pendingFill.buyH;
     if (S.pendingFill.sellH != null) rec.sh = S.pendingFill.sellH;
+    if (S.pendingFill.qm    != null) rec.qm = S.pendingFill.qm;
   }
   S.pendingFill = null;
   DB.flips.push(rec);
@@ -3250,6 +3894,45 @@ $("#lAdd").onclick = () => {
 $("#lMins").addEventListener("change", e => { DB.minsPerTouch = Math.max(1, clampNum(e.target.value,10)); save(); renderLog(); });
 $("#gSpend").onclick = () => addGame(-1);
 $("#gGain").onclick  = () => addGame(1);
+
+/* ── friction log: one tap + type + enter ─────────────────────── */
+function addFriction(text, ctx){
+  const tx = String(text || "").trim();
+  if (!tx) return false;
+  DB.frictionLog.push({ t: Date.now(), d: today(), ctx, text: tx });
+  DB.frictionLog = DB.frictionLog.slice(-300);
+  save();
+  return true;
+}
+const fricCtx = () => S.tab + (S.tab === "routine" ? "/" + S.mode : "");
+$("#fricBtn").onclick = () => {
+  const row = $("#fricRow");
+  row.classList.toggle("hide");
+  if (!row.classList.contains("hide")) $("#fricInput").focus();
+};
+document.addEventListener("keydown", e => {
+  const isFooter = e.target.id === "fricInput";
+  const isStep = e.target.matches && e.target.matches("[data-fric]");
+  if (!isFooter && !isStep) return;
+  if (e.key === "Escape" && isFooter){ $("#fricRow").classList.add("hide"); e.target.value = ""; return; }
+  if (e.key !== "Enter") return;
+  if (addFriction(e.target.value, isStep ? "routine/" + S.mode : fricCtx())){
+    e.target.value = "";
+    if (isFooter) $("#fricRow").classList.add("hide");
+    toast("Noted — it'll be in the weekly review.");
+  }
+});
+async function copyText(txt, okMsg){
+  try { await navigator.clipboard.writeText(txt); toast(okMsg); }
+  catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); toast(okMsg); }
+    catch(e2){ toast("Copy blocked — select the text manually."); }
+    ta.remove();
+  }
+}
 
 /* export / import */
 $("#lExport").onclick = () => {
@@ -3302,6 +3985,7 @@ function validateImport(d){
                 qty, buy, sell, date: String(f.date || today()).slice(0,10), note: String(f.note || "") };
     if (num(f.bh) != null && num(f.bh) >= 0) o.bh = num(f.bh);
     if (num(f.sh) != null && num(f.sh) >= 0) o.sh = num(f.sh);
+    if (num(f.qm) != null) o.qm = num(f.qm);
     return o;
   }).filter(Boolean);
   const positions = (Array.isArray(d.positions) ? d.positions : []).map(p => {
@@ -3313,6 +3997,7 @@ function validateImport(d){
     if (num(p.ask) > 0) o.ask = num(p.ask);
     if (num(p.stageAt) > 0) o.stageAt = num(p.stageAt);
     if (num(p.buyH) != null && num(p.buyH) >= 0) o.buyH = num(p.buyH);
+    if (num(p.qm) != null) o.qm = num(p.qm);
     return o;
   }).filter(Boolean);
   const watch = (Array.isArray(d.watch) ? d.watch : []).map(w => {
@@ -3323,6 +4008,7 @@ function validateImport(d){
     if (num(w.addedAt) > 0) o.addedAt = num(w.addedAt);
     if (num(w.lastPass) > 0) o.lastPass = num(w.lastPass);
     if (num(w.tBuy) > 0 && num(w.tSell) > 0){ o.tBuy = num(w.tBuy); o.tSell = num(w.tSell); o.tAt = num(w.tAt) || Date.now(); }
+    if (num(w.invTarget) > 0) o.invTarget = Math.floor(num(w.invTarget));
     return o;
   }).filter(Boolean);
   const targets = (Array.isArray(d.targets) ? d.targets : []).filter(t => typeof t === "string" && t.trim()).map(String);
@@ -3357,11 +4043,35 @@ function validateImport(d){
     return { id: num(g.id) || uid(), t: num(g.t) > 0 ? num(g.t) : Date.now(),
              d: dd, v: Math.round(v), note: String(g.note || "") };
   }).filter(Boolean);
+  const invLots = (Array.isArray(d.invLots) ? d.invLots : []).map(l => {
+    const itemId = num(l && l.itemId), qty = num(l && l.qty), cost = num(l && l.cost);
+    if (!(itemId > 0) || !(qty > 0) || !(cost > 0)){ rejected++; return null; }
+    return { id: num(l.id) || uid(), itemId, qty: Math.floor(qty), cost: Math.round(cost), t: num(l.t) > 0 ? num(l.t) : Date.now() };
+  }).filter(Boolean);
+  const frictionLog = (Array.isArray(d.frictionLog) ? d.frictionLog : []).map(f => {
+    const t = num(f && f.t), tx = String((f && f.text) || "").trim();
+    if (!(t > 0) || !tx) return null;
+    return { t, d: String(f.d || "").slice(0, 10), ctx: String(f.ctx || ""), text: tx };
+  }).filter(Boolean).slice(-300);
+  const tlSeen = new Set();
+  const touchLog = (Array.isArray(d.touchLog) ? d.touchLog : []).map(t => {
+    const dd = String((t && t.d) || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dd) || (t.m !== "morning" && t.m !== "evening")) return null;
+    const k = dd + t.m;
+    if (tlSeen.has(k)) return null;
+    tlSeen.add(k);
+    return { d: dd, m: t.m };
+  }).filter(Boolean);
   return { flips, positions, watch, targets, rejected,
-    db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps, gameLedger,
+    db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps, gameLedger, touchLog, invLots, frictionLog,
           holdsSeed1: d.holdsSeed1 ? 1 : 0,
           slotCapV2: d.slotCapV2 ? 1 : 0,
           slotsSRA1: d.slotsSRA1 ? 1 : 0,
+          minPx400: d.minPx400 ? 1 : 0,
+          fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
+          tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
+          quoteTicks: Math.min(20, Math.max(1, num(d.quoteTicks) || 3)),
+          markoutX: Math.min(5, Math.max(0.1, num(d.markoutX) || 0.5)),
           bank: Math.max(0, num(d.bank) || 0),
           bankAsOf: Math.max(0, num(d.bankAsOf) || 0),
           minsPerTouch: Math.max(1, num(d.minsPerTouch) || 10),
@@ -3389,7 +4099,9 @@ $("#shBankNow").onclick = () => {
   DB.bankAsOf = Date.now(); save(); renderShadow(); renderWatch();
   toast("Bank figure stamped as current — earlier profit is no longer added on top.");
 };
-for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szRes","reserve",0,2e9]]){
+for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szFill","fillHorizonH",1,12],
+                                 ["szTick","tickFloor",1,100],["szQuote","quoteTicks",1,20],["szMkX","markoutX",0.1,5],
+                                 ["szRes","reserve",0,2e9]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -3443,6 +4155,16 @@ $("#lMins").value = DB.minsPerTouch || 10;
 $("#gDate").value = today();
 $("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
+$("#szFill").value = DB.fillHorizonH || 4;
+$("#szTick").value = DB.tickFloor || 15;
+$("#szMinPx").value = DB.filters.min != null ? DB.filters.min : 400;
+$("#szQuote").value = DB.quoteTicks || 3;
+$("#szMkX").value = DB.markoutX || 0.5;
+$("#szMinPx").addEventListener("change", e => {
+  DB.filters.min = Math.max(0, clampNum(e.target.value, DB.filters.min));
+  e.target.value = DB.filters.min;
+  save(); paintFilters(); renderAll();
+});
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
 S.mode = new Date().getHours() < 15 ? "morning" : "evening";
 S.planMode = S.mode === "evening" ? "sell" : "buy";
