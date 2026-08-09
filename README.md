@@ -15,7 +15,9 @@ or back it up — the log is the only irreplaceable part.
 ## What's inside
 
 - **Scanner** — post-tax margins over the whole market, gated on the thin side of the order book,
-  with crowding ranks and a conversion-spreads panel (decanting, herb cleaning)
+  with crowding ranks
+- **NOW bar** — one always-visible line naming the single next move (stuck capital first, then
+  the current routine step, then export hygiene, then an explicit "nothing needs you")
 - **Watchlist** — auto-scouted on sustained ROI (with a journaled add/evict log and reasons),
   sparklines, hour-of-day volume profiles, margin-test capture (16h TTL), and hard sizing clamps
   (one-third rule, buy-limit windows, liquidity)
