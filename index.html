@@ -398,9 +398,11 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </table></div>
       <div class="note" style="margin-top:8px">
         Lots are FIFO: <b>buy filled…</b> records a lot at your fill price, <b>sold…</b> consumes the oldest
-        lots and prefills the flip log with their true cost — nothing is ever logged for you. Turn the mode
-        on per item with the <b>mm</b> button on a watchlist row (proven items only — this is a standing
-        commitment of capital, not a flip).
+        lots and prefills the flip log with their true cost — nothing is ever logged for you. The flip log
+        decides which items qualify: rows earn an <b>mm-ready</b> badge (5+ profitable recent flips, clean
+        markouts, fills inside the horizon) with a suggested buffer. Click the badge — or the <b>mm</b>
+        button in the row's Actions column — to set it. A standing buffer is a commitment of capital, not
+        a flip, so enabling it is always your press.
       </div>
     </div>
 
@@ -774,6 +776,9 @@ function load(){
        Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
        raise Offers back to 7 in the sizing row. */
     if (!DB.slotsSRA1){ if (DB.slots === 7) DB.slots = 6; DB.slotsSRA1 = 1; }
+    /* One-time: that axe sell FILLED (433m, Aug 9 2026) — the slot is free
+       again, so committed offers go back 6 → 7. */
+    if (!DB.slotsSRA2){ if (DB.slotsSRA1 && DB.slots === 6) DB.slots = 7; DB.slotsSRA2 = 1; }
     /* One-time: min unit price raised to 400 — sub-400gp items kept losing on
        tick granularity (margin of 3-4 gp IS 3-4 ticks). Lower it deliberately
        in the scanner filters if you want the cheap stuff back. */
@@ -1445,6 +1450,11 @@ const TICKF = () => Math.max(1, DB.tickFloor || 15);      // margin floor in tic
    margin≈tax bleed on scratch exits, and with zero tax a scratch exit costs
    nothing — only tick-granularity risk remains. */
 const tickFloorFor = id => exemptIds.has(id) ? Math.max(1, Math.ceil(TICKF() / 2)) : TICKF();
+/* gp-aware volume floor: the unit floor was tuned for sub-2k consumables.
+   For pricier items the honest measure is gp flow, so the unit floor scales
+   down with price — never below 4/h, where even a full fill horizon can't
+   move a handful of units. */
+const volFloorFor = px => Math.max(4, Math.round((DB.filters.vol || 1000) * Math.min(1, 2000 / Math.max(1, px || 1))));
 const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
 const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
 
@@ -1569,6 +1579,59 @@ function provenLoser(id, w){
   return r;
 }
 
+/* ── inventory-mode readiness: the log decides here too ──────────
+   "Proven items only" used to be enforced by feel; this makes it computable.
+   READY = enough recent completed flips, net-positive, clean markouts, fills
+   inside the horizon, and (when capture data exists) profit that came from
+   the spread rather than price drift — drift is exactly what a standing
+   buffer doesn't get to keep. The verdict only ever proposes: enabling mm
+   stays a button press, and the suggested buffer prefills the prompt. */
+const MM_MIN_FLIPS = 5, MM_WINDOW_MS = 30 * 86400e3;
+function mmVerdict(id){
+  const w = DB.watch.find(x => x.id === id);
+  const fl = DB.flips.filter(f => f.itemId === id && f.id >= Date.now() - MM_WINDOW_MS);
+  const net = fl.reduce((s, f) => s + flipProfit(f), 0);
+  const lacks = [];
+  if (fl.length < MM_MIN_FLIPS)
+    lacks.push(fl.length + " of the " + MM_MIN_FLIPS + " completed flips needed in 30d");
+  if (fl.length && net <= 0) lacks.push("net " + gp(net) + " across those flips");
+  if (provenLoser(id, w)) lacks.push("proven loser — needs a fresh margin test first");
+  const qty = fl.reduce((s, f) => s + f.qty, 0);
+  const marginPU = qty ? net / qty : 0;
+  const mk = itemMarkouts(id);
+  const mx = Math.max(0.05, DB.markoutX || 0.5);
+  if (mk && marginPU > 0 && ((mk.avg30 != null && -mk.avg30 > mx * marginPU)
+                          || (mk.avg2h != null && -mk.avg2h > mx * marginPU)))
+    lacks.push("toxic flow — adverse markout exceeds " + mx + "× the realized margin");
+  const sh = slowHistory(id);
+  if (sh) lacks.push("median buy fill " + fmtHrs(sh.med) + ", past the " + FILLH() + "h horizon");
+  const qmf = fl.filter(f => Number.isFinite(f.qm));
+  if (qmf.length >= 3){
+    const capGp = qmf.reduce((s, f) => s + f.qm * f.qty, 0);
+    const driftGp = qmf.reduce((s, f) => s + flipProfit(f), 0) - capGp;
+    const capPct = (Math.abs(capGp) + Math.abs(driftGp)) > 0
+      ? capGp / (Math.abs(capGp) + Math.abs(driftGp)) * 100 : null;
+    if (capPct != null && capPct < 50)
+      lacks.push("only " + capPct.toFixed(0) + "% of profit was spread capture — the rest was price drift");
+  }
+  const c = calc(id);
+  if (c && c.buy != null && c.sell != null && c.sell - c.buy < QUOTEW())
+    lacks.push("live spread is under your " + QUOTEW() + "-tick quote width right now");
+  if (c && c.volSide < volFloorFor(c.buy)) lacks.push("thin-side flow under the volume floor");
+  const ready = !lacks.length && fl.length >= MM_MIN_FLIPS;
+  /* Suggested buffer: what one fill horizon of thin-side flow can actually
+     sell, clamped by the buy limit and HALF the one-third rule — the other
+     half stays free for the replenishment leg. */
+  let target = null;
+  if (ready && c && c.buy > 0){
+    target = Math.max(1, Math.min(
+      Math.floor((c.volSide || 0) * GATE.capture * FILLH()),
+      c.limit || Infinity,
+      Math.max(1, Math.floor(stack() / 3 / c.buy / 2))));
+  }
+  return { ready, lacks, target, n: fl.length, net };
+}
+
 /* ── plan-level overrides (reset daily with the checklist) ──── */
 function resetPlanOverrides(){
   DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
@@ -1638,8 +1701,8 @@ function planCandidates(){
         : c.limit
         ? "plan qty clamps to 0 — one unit exceeds a third of your stack"
         : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its watch row to include it";
-    else if (volGate < DB.filters.vol)
-      failed = "volume " + gp(volGate) + "/h on the thin side — under your " + full(DB.filters.vol) + "/h floor";
+    else if (volGate < volFloorFor(c.buy))
+      failed = "volume " + gp(volGate) + "/h on the thin side — under the " + full(volFloorFor(c.buy)) + "/h floor (price-scaled)";
     else if ((mo = momentum(c, sp)).state === "knife")
       failed = "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
              + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid";
@@ -2217,6 +2280,18 @@ function renderPlan(){
       + '</span></li>';
   }).join("");
 
+  /* Log-qualified mm candidates, surfaced where the day starts. The verdict
+     is computed from the flip log (mmVerdict) — this line only proposes;
+     nothing quotes until the buffer is set by hand. */
+  const mmCandHTML = DB.watch.filter(w => !(w.invTarget > 0))
+    .map(w => ({ w, v: mmVerdict(w.id) })).filter(x => x.v.ready)
+    .map(x => '<li class="next"><div class="body"><b>MM-READY</b> '
+      + '<span title="'+nameTitle(itemName(x.w.id))+'">' + esc(itemName(x.w.id)) + '</span>'
+      + ' — <span class="num">' + x.v.n + '</span> flips in 30d, net <span class="num ' + sign(x.v.net) + '">' + gp(x.v.net) + '</span>, clean flow'
+      + '<div class="why">The log qualifies it for a standing two-sided buffer — suggested <span class="num">' + full(x.v.target) + '</span> units. Nothing quotes until you set it.</div></div>'
+      + '<span class="plan-actions"><button class="sm" data-inv="' + x.w.id + '">set buffer…</button></span></li>')
+    .join("");
+
   const pickHTML = picks.map(p => {
     n++;
     return '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
@@ -2260,7 +2335,7 @@ function renderPlan(){
   }
 
   const emptyMsg = '<li><span class="dim">Nothing clears today\'s gates. Sitting out is a position — don\'t force a flip into a market that isn\'t offering one.</span></li>';
-  list.innerHTML = (placedHTML + quotesHTML + pickHTML + nextHTML) || emptyMsg;
+  list.innerHTML = (placedHTML + quotesHTML + mmCandHTML + pickHTML + nextHTML) || emptyMsg;
 
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
@@ -2269,7 +2344,16 @@ function renderPlan(){
       + 'expected <span class="pos num">' + gp(expect) + '</span> per full cycle'
       + ' · <span class="dim">' + gp(DB.reserve||0) + ' reserved for incidentals</span>'
       + (committed() > 0 ? ' · <span class="dim">' + gp(committed()) + ' committed in open positions</span>' : '')
-      + (remaining > 0 ? ' · <span class="dim">' + gp(remaining) + ' unallocated (item caps bind before capital)</span>' : '');
+      + (remaining > 0 ? ' · <span class="dim">' + gp(remaining) + ' unallocated (item caps bind before capital)</span>' : '')
+      /* Capital-absorption advisory: when a quarter of the deployable pool
+         can't find a home, the watchlist is the constraint, not the market.
+         Advice only — the scout widens its own band; the rest is button
+         presses the user makes. */
+      + (remaining > deployable * 0.25 && remaining > 20e6
+         ? '<div class="plan-note" style="margin-top:6px">' + gp(remaining) + ' has nowhere to go — the watchlist can\'t absorb the stack. '
+           + 'The scout now screens up to <b>' + gp(Math.max(DB.filters.max, Math.floor(st / 20))) + '</b> per unit (stack-scaled); '
+           + 'margin-test the high-value items it surfaces, and set mm buffers on anything flagged <b>mm-ready</b> so standing capital earns between touches.</div>'
+         : '');
   } else foot.textContent = "";
 
   $("#benchSummary").textContent = "Benched — " + bench.length + " item" + (bench.length === 1 ? "" : "s");
@@ -2285,19 +2369,26 @@ function renderPlan(){
    Anything you added, margin-tested, hold, or recently flipped is untouchable. */
 function scoutScreen(){
   const out = [];
+  /* Price ceiling scales with the stack: the scanner's cap was tuned for a
+     stack the 2m consumable band could absorb. At stack/20 per unit, the
+     one-third rule still allows a ~6-unit position — so the high-value band
+     opens exactly when capital starts going unallocated, and closes again if
+     the stack shrinks. The user's scanner filter is the floor of the band,
+     never overridden downward. */
+  const ceil = Math.max(DB.filters.max, Math.floor(stack() / 20));
   for (const it of S.items){
     if (!it.l) continue;
     const c = calc(it.i);
     if (!c || c.buy == null || c.sell == null) continue;
-    if (c.buy < Math.max(150, DB.filters.min) || c.buy > DB.filters.max) continue;
-    if (c.volSide < DB.filters.vol) continue;
+    if (c.buy < Math.max(150, DB.filters.min) || c.buy > ceil) continue;
+    if (c.volSide < volFloorFor(c.buy)) continue;   // price-scaled: gp flow, not unit count
     if (c.age == null || c.age > DB.filters.age) continue;
     const eM = effMargin(c);
     const eR = (eM != null && c.buy > 0) ? eM / c.buy * 100 : null;
     if (eR == null || eR < GATE.roi) continue;
     let score = eR * Math.log(Math.max(c.volSide, 2));
     if (c.crowdRank && c.crowdRank <= 100) score *= 0.5;   // crowding is a penalty, not a ban
-    out.push({ id: it.i, score, eR, vol: c.volSide });
+    out.push({ id: it.i, score, eR, vol: c.volSide, px: c.buy });
   }
   out.sort((a,b) => b.score - a.score);
   return out;
@@ -2340,7 +2431,8 @@ function runScout(force){
     DB.watch.push({ id: x.id, qty: null, src: "scout", addedAt: now, lastPass: now });
     have.add(x.id); added.push(itemName(x.id));
     DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
-      why: "sustained ROI " + x.eR.toFixed(1) + "% on " + full(Math.round(x.vol)) + "/h thin-side volume" });
+      why: "sustained ROI " + x.eR.toFixed(1) + "% on " + full(Math.round(x.vol)) + "/h thin-side volume"
+         + (x.px > DB.filters.max ? " · high-value band, unlocked by stack size (scanner cap stays " + gp(DB.filters.max) + ")" : "") });
   }
   /* Journal retention: three days is enough to review a weekend away. */
   DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
@@ -2379,7 +2471,9 @@ function renderPositions(){
     : "none open";
   if (!DB.positions.length){
     body.innerHTML = '<tr><td colspan="9" class="empty">No open positions.</td></tr>';
-    $("#posFoot").innerHTML = ""; return;
+    $("#posFoot").innerHTML = "";
+    renderInv();   // the inventory panel must not depend on having open positions
+    return;
   }
   let cost = 0, unreal = 0;
   body.innerHTML = DB.positions.map(p => {
@@ -2487,11 +2581,20 @@ function renderWatch(){
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
     if (c.tested) flags.push('<span class="badge b-ok" title="Using your margin-tested prices from '+ago(w.tAt)+'">tested</span>');
     if (cap === 0) flags.push('<span class="badge b-risk" title="A single unit costs more than a third of your stack">too big</span>');
-    if (c.volSide < DB.filters.vol) flags.push('<span class="badge b-warn" title="Thin side of the book is below your volume floor — fills will be slow">thin</span>');
+    if (c.volSide < volFloorFor(c.buy)) flags.push('<span class="badge b-warn" title="Thin side of the book is below the volume floor (price-scaled: '+full(volFloorFor(c.buy))+'/h at this price) — fills will be slow">thin</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
     if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
     const pl = provenLoser(w.id, w);
     if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column)">proven loser — re-test to unbench</span>');
+    /* mm state lives in the Item cell too — the Actions column sits behind a
+       horizontal scroll on a 17-column table, so the one decision the log
+       automates must be visible without scrolling. Buttons, not spans: the
+       tap-to-explain handler skips buttons, so the click reaches the prompt. */
+    const mv = w.invTarget > 0 ? null : mmVerdict(w.id);
+    if (w.invTarget > 0)
+      flags.push('<button class="badge b-tax" data-inv="'+w.id+'" title="Inventory (market-maker) mode ON — target buffer '+full(w.invTarget)+'. Click to change or clear it.">mm '+full(w.invTarget)+'</button>');
+    else if (mv.ready)
+      flags.push('<button class="badge b-ok" data-inv="'+w.id+'" title="Log-qualified for inventory mode: '+mv.n+' completed flips in 30d, net '+gp(mv.net)+', clean markouts, fills inside the horizon. Click to set the suggested '+full(mv.target)+'-unit buffer — nothing is placed or logged for you.">mm-ready</button>');
     const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
     const testCell = c.tested
       ? '<span class="num" title="tested '+ago(w.tAt)+'">'+full(w.tBuy)+'/'+full(w.tSell)+'</span> <button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
@@ -2530,7 +2633,9 @@ function renderWatch(){
       + '<td style="white-space:nowrap"><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button>'
       + '<button class="sm'+(w.invTarget > 0 ? ' primary' : '')+'" data-inv="'+w.id+'" title="'+(w.invTarget > 0
           ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
-          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. For proven items only.')+'">mm</button></td>'
+          : mv.ready
+          ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv.target)+' units.'
+          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button></td>'
       + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
       + '</tr>';
   }).join("");
@@ -3093,7 +3198,7 @@ function renderRoutine(){
       const qs = invItems().map(w2 => invQuoteText(invQuote(w2)));
       inline = '<div class="inline">' + (qs.length
         ? qs.map(x => '<div>' + esc(x) + '</div>').join("")
-        : '<div class="dim">No inventory-mode items — turn one on with the mm button on a proven watchlist row.</div>') + '</div>';
+        : '<div class="dim">No inventory-mode items — watchlist rows earn an mm-ready badge when your log qualifies them; click it to set a buffer.</div>') + '</div>';
     } else if (s[3] === "ladder"){
       const rungs = DB.positions.map(p => ({ p, sa: sellAgeInfo(p) })).filter(x => x.sa);
       inline = '<div class="inline">' + (rungs.length
@@ -3580,10 +3685,18 @@ document.addEventListener("click", e => {
   if (inv){
     const id = +inv.dataset.inv, w = DB.watch.find(x => x.id === id);
     if (!w){ toast("Add the item to the watchlist first — inventory mode lives on a watch row."); return; }
+    /* The log's verdict rides along in the prompt — advice, never a lock. */
+    const mv = w.invTarget > 0 ? null : mmVerdict(id);
+    const verdictLine = !mv ? ""
+      : mv.ready
+      ? "\n\nLog verdict: READY — " + mv.n + " completed flips in 30d, net " + gp(mv.net)
+        + ". Suggested buffer " + full(mv.target) + " (one fill horizon of thin-side flow, prefilled below)."
+      : "\n\nLog verdict: not yet — " + mv.lacks.join("; ") + ". You can still turn it on; the verdict advises, it doesn't lock.";
     const a = prompt("Inventory target buffer for " + itemName(id)
       + " — units to keep on hand and re-quote each touch.\n\nBlank or 0 turns inventory mode off"
-      + (invHeld(id) > 0 ? " (your " + full(invHeld(id)) + " held lots stay tracked until sold)" : "") + ".",
-      w.invTarget > 0 ? String(w.invTarget) : "");
+      + (invHeld(id) > 0 ? " (your " + full(invHeld(id)) + " held lots stay tracked until sold)" : "") + "."
+      + verdictLine,
+      w.invTarget > 0 ? String(w.invTarget) : (mv && mv.ready && mv.target ? String(mv.target) : ""));
     if (a === null) return;
     const n = Math.floor(clampNum(a, 0));
     if (n > 0){ w.invTarget = n; toast("Inventory mode on: " + itemName(id) + " targets a " + full(n) + "-unit buffer. The plan now quotes both legs each touch."); }
@@ -4085,6 +4198,7 @@ function validateImport(d){
           holdsSeed1: d.holdsSeed1 ? 1 : 0,
           slotCapV2: d.slotCapV2 ? 1 : 0,
           slotsSRA1: d.slotsSRA1 ? 1 : 0,
+          slotsSRA2: d.slotsSRA2 ? 1 : 0,
           minPx400: d.minPx400 ? 1 : 0,
           fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
           tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
