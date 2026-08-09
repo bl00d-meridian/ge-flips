@@ -1578,7 +1578,15 @@ function posActions(p){
   const stage = posStage(p), st = STAGES[stage];
   return '<button class="sm" data-adv="'+p.id+'">'+st.next+'</button>'
     + (stage !== "bought" ? '<button class="sm" data-part="'+p.id+'" title="Partially filled — enter the filled quantity and the split is handled">partial…</button>' : '')
-    + '<button class="sm ghost" data-delpos="'+p.id+'" title="cancel without logging">✕</button>';
+    /* Cancelling means different things per stage: an unfilled buy vanishes
+       (nothing was bought), but pulling a sell offer back leaves you holding
+       the items — that's a return to awaiting-sell, not a deletion. */
+    + (stage === "buying"
+        ? '<button class="sm ghost" data-delpos="'+p.id+'" title="You cancelled the buy offer in-game before it filled — nothing was bought, the gp is free again">cancelled</button>'
+      : stage === "selling"
+        ? '<button class="sm ghost" data-unlist="'+p.id+'" title="You cancelled the sell offer in-game — you still hold the items, so this goes back to awaiting sell">cancelled sell</button>'
+          + '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position entirely without logging — only if the items left your hands some other way">✕</button>'
+        : '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position without logging — only if the items left your hands some other way">✕</button>');
 }
 
 function sellLines(){
@@ -2431,6 +2439,18 @@ document.addEventListener("click", e => {
   }
   const close_ = t.closest("[data-close]");
   if (close_){ closePosition(+close_.dataset.close); return; }
+  const ul = t.closest("[data-unlist]");
+  if (ul){
+    const p = DB.positions.find(x => x.id === +ul.dataset.unlist);
+    if (p){
+      const oldAsk = p.ask, oldAt = p.stageAt;
+      p.stage = "bought"; delete p.ask; p.stageAt = Date.now();
+      save(); renderWatch();
+      toast("Sell offer cancelled — " + full(p.qty) + " " + itemName(p.itemId, p.name) + " back to awaiting sell.",
+            () => { p.stage = "selling"; p.ask = oldAsk; p.stageAt = oldAt; save(); renderWatch(); });
+    }
+    return;
+  }
   const dp = t.closest("[data-delpos]");
   if (dp){
     const idx = DB.positions.findIndex(p => p.id === +dp.dataset.delpos);
