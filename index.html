@@ -376,6 +376,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         </span>
       </div>
       <div class="note" id="scoutMsg" style="margin-bottom:8px"></div>
+      <details class="note" id="scoutLogBox" style="margin-bottom:8px">
+        <summary style="cursor:pointer" id="scoutLogSum"></summary>
+        <div id="scoutLogBody" style="margin-top:6px"></div>
+      </details>
       <div class="row" style="margin-bottom:10px">
         <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
       </div>
@@ -492,6 +496,25 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     </div>
 
     <div class="panel">
+      <div class="ph"><h2>Long-term holds</h2>
+        <span class="sub" title="Bank assets you're sitting on until a thesis plays out. They are items, not gp — so they're never counted in the flipping stack or the fund until you actually sell.">bank assets with an exit thesis</span></div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="ac" id="acHold" style="max-width:280px"><input placeholder="Add a hold…"></div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Item</th>
+        <th>Qty</th>
+        <th title="The high side (instabuy) — roughly what a patient sell would fetch today">Live price</th>
+        <th>Value</th>
+        <th title="Price drift since you started tracking this hold — the thesis scoreboard">Since tracked</th>
+        <th class="sec" title="7-day price sparkline">7-day</th>
+        <th title="Why you're holding and when you plan to exit — tap to edit">Exit thesis</th><th></th></tr></thead>
+        <tbody id="holdBody"></tbody>
+      </table></div>
+      <div class="note" id="holdFoot" style="margin-top:8px"></div>
+    </div>
+
+    <div class="panel">
       <div class="ph"><h2>Other gear targets</h2><span class="sub">live prices</span></div>
       <div class="row" style="margin-bottom:10px">
         <div class="ac" id="acTarget" style="max-width:280px"><input placeholder="Add a target item…"></div>
@@ -547,6 +570,9 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         — you're one buyer among many, not the whole market. The reserve is gp the plan never touches.</p>
         <p><b>gp / slot-hour.</b> Profit divided by the hours a flip actually occupied a slot — the truest
         measure of what deserves your 7 slots, and what the plan learns from your log.</p>
+        <p><b>What's this item even for?</b> Hover or tap any item's name for what it ultimately becomes
+        in-game and why it has the daily volume it does — consistent volume always has a consumption engine
+        behind it (XP grinds, PvM burn, teleports, prayer). The ↗ next to watchlist names opens the wiki page.</p>
       </div>
     </details>
   </div>
@@ -626,11 +652,13 @@ let DB = {
   planDemoted: [],    // demoted item ids — drop to NEXT UP
   planDate: "",       // both reset when the day rolls over
   scoutOn: true,      // auto-scout maintains its own watchlist entries
+  scoutLog: [],       // journal of scout adds/evicts with reasons, 72h retention
   watchCap: 25,       // scout tops the list up to this size
   slots: 7,           // offers per morning touch — the 8th GE slot stays free for game-content buys
   horizonH: 10,       // hours the offers sit before the evening touch
   reserve: 3_000_000, // gp held back for incidentals, never allocated
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
+  holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
   checks: { date:"", morning:[], evening:[], weekly:[] }
 };
 function load(){
@@ -638,7 +666,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
@@ -690,6 +718,88 @@ const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clampNum = (v, d) => Number.isFinite(+v) ? +v : d;
+
+/* ── what an item becomes, and why it trades every day ──────────
+   Rule-based over name patterns: covers the classes that dominate GE volume.
+   Hover or tap an item's name to read it; unmatched items just show the name.
+   The point: consistent daily volume always has a consumption engine behind
+   it — XP grinds, PvM burn, transport, prayer. Knowing the engine tells you
+   whether the volume is durable or a fad. */
+const HERB_TO_POTION = {
+  guam: "Attack potion", marrentill: "Antipoison", tarromin: "Strength potion",
+  harralander: "Restore & Combat potions", ranarr: "Prayer potion",
+  toadflax: "Saradomin brew", irit: "Super antipoison",
+  avantoe: "Super energy & Fishing potions", kwuarm: "Super strength potion",
+  snapdragon: "Super restore", cadantine: "Super & Bastion defence potions",
+  lantadyme: "Antifire & Magic potions", "dwarf weed": "Ranging potion",
+  torstol: "Super combat potion"
+};
+const RUNE_USE = {
+  nature: "High Alchemy — thousands burned per hour turning gear into raw gp",
+  law: "every teleport cast in the game",
+  death: "high-tier combat spells (a barrage component)",
+  blood: "Ancient Magicks blood spells — the self-healing PvM meta",
+  soul: "the strongest Ancient and Arceuus spells",
+  chaos: "bolt spells — the mid-level magic training staple",
+  cosmic: "enchanting jewellery and bolts",
+  astral: "Lunar utility casts (Plank Make, Spellbook Swap, Humidify)",
+  wrath: "the strongest standard elemental spells",
+  mind: "low-level combat spells", body: "low-level curse spells",
+  air: "nearly every spell in the game", water: "water spells",
+  earth: "earth spells", fire: "fire spells and High Alchemy"
+};
+const SECONDARY_USE = {
+  "snape grass": "Prayer potions", "limpwurt root": "Strength & Super strength potions",
+  "red spiders' eggs": "Restore & Super restore potions", "white berries": "Super defence potions",
+  "potato cactus": "Magic potions", "wine of zamorak": "Ranging & Bastion potions",
+  "crushed nest": "Saradomin brews", "mort myre fungus": "Super energy potions",
+  "unicorn horn": "Antipoisons", "goat horn": "Combat potions",
+  "dragon scale dust": "Antifire potions", "chocolate": "Energy potions",
+  "eye of newt": "Attack potions"
+};
+function itemUse(rawName){
+  const n = String(rawName).toLowerCase();
+  for (const herb in HERB_TO_POTION){
+    if (!n.includes(herb)) continue;
+    const pot = HERB_TO_POTION[herb];
+    if (n.includes("(unf)")) return "Unfinished potion — a herblore player adds the secondary ingredient and it becomes " + pot + ". This is the conveyor belt of herblore XP, so the volume never stops.";
+    if (n.startsWith("grimy")) return "Grimy herb — cleaned, mixed into an unfinished potion, finished as " + pot + ". Herblore training and daily herb runs keep demand steady.";
+    if (n.includes("seed")) return "Farming seed — grows the herb behind " + pot + ". Herb runs are daily routine for thousands of players, so seeds move in bulk.";
+    return "Herb — becomes " + pot + " via herblore. Demand tracks potion consumption, which never stops.";
+  }
+  for (const s in SECONDARY_USE)
+    if (n.includes(s)) return "Potion secondary — mixed into " + SECONDARY_USE[s] + ". Demand is welded to potion production, hence the steady daily volume.";
+  const rm = n.match(/^([a-z]+(?: [a-z]+)?) rune$/);
+  if (rm && RUNE_USE[rm[1]]) return "Rune — consumed by " + RUNE_USE[rm[1]] + ". Runes are destroyed on every cast, so demand renews daily.";
+  if (/essence/.test(n)) return "Runecrafting input — crafted into runes, the raw material of the whole rune supply. Runecrafters buy it by the tens of thousands.";
+  if (/ensouled/.test(n)) return "Reanimated with Arceuus magic for Prayer XP — one head, one cast, gone. Bulk prayer training burns these constantly (and they're a classic pump vehicle).";
+  if (/impling jar/.test(n)) return "Opened for a loot roll — clue steps, seeds, gear. Gamble-opening destroys thousands a day (another classic pump vehicle).";
+  if (/teleport/.test(n)) return "One-click transport — the tablet breaks on use, so stock burns with every trip. Utility demand is the most reliable kind.";
+  if (/cannonball/.test(n)) return "Dwarf multicannon ammo — the definitive slayer accelerant, fired away by the thousand per task.";
+  if (/zulrah's scales/.test(n)) return "Charges the toxic blowpipe and serpentine helm — scales drain the whole time those items are in use.";
+  if (/chinchompa/.test(n)) return "Thrown ammo AND the meta ranged-XP grind — every throw destroys one. XP-hungry demand at scale.";
+  if (/(arrowtips|arrow tips|bolt tips|dart tip|feather$|headless arrow)/.test(n)) return "Fletching component — assembled into finished ammo. Demand feeds the ammunition pipeline one step upstream.";
+  if (/(dart|arrow|bolt|javelin|throwing)s?( \(e|\(p|\(unf)?/.test(n) && !/bolt of cloth/.test(n)) return "Ammunition — destroyed on every shot. Ranged PvM and slayer grind through these by the thousand, every day.";
+  if (/bones$/.test(n)) return "Prayer training — offered at an altar and gone in one click. Prayer is effectively bought with bones, hence relentless volume.";
+  if (/ashes$/.test(n)) return "Scattered for Prayer XP — the same one-use burn as bones.";
+  if (/^raw /.test(n)) return "Cooked for cooking XP, then eaten as combat food — demand from two skills at once.";
+  if (/(shark|monkfish|karambwan|anglerfish|manta ray|lobster|swordfish|potato with cheese)/.test(n)) return "Combat food — eaten mid-fight for hitpoints. Bossing, slayer and PvP burn stacks daily.";
+  if (/sapling/.test(n)) return "Tree run input — one sapling per patch per run, the big farming XP. Planted and gone.";
+  if (/seed$/.test(n)) return "Farming — planted for XP and crop value. Daily farm runs make seed demand rhythmic and reliable (seeds are also classic pump vehicles).";
+  if (/compost/.test(n)) return "Farming — protects and boosts crops on every run. Steady utility burn.";
+  if (/nest/.test(n)) return "Crushed for Saradomin brews, or holds seeds/rings — herblore and farming both pull on nests.";
+  if (/plank$/.test(n)) return "Construction — the fastest gp-to-XP skill in the game. Planks vanish into POH furniture by the inventory-load.";
+  if (/logs?$/.test(n)) return "Firemaking (Wintertodt) and fletching into bows — training fodder bought in bulk.";
+  if (/(^| )(ore|coal)$/.test(n)) return "Smelted into bars — the smithing XP chain starts here.";
+  if (/ bar$/.test(n)) return "Smithed into gear and alchables — smithing XP burns bars by the thousand.";
+  if (/(d'hide|dragonhide|dragon leather)/.test(n)) return "Crafted into d'hide bodies (often then alched) — the standard mid-level crafting grind.";
+  if (/^uncut /.test(n)) return "Cut for crafting XP, then enchanted into jewellery or tipped onto bolts.";
+  if (/battlestaff|orb$/.test(n)) return "Combined into elemental battlestaves for crafting XP, then typically alched — a classic gp/XP loop.";
+  if (/\([1-4]\)$/.test(n)) return "Finished potion — drunk for its buff during PvM/PvP. Consumed on use, restocked constantly.";
+  if (/(grapes|jug of water)/.test(n)) return "Cooking XP — fermented into wine by the thousand.";
+  return null;
+}
+const nameTitle = name => { const u = itemUse(name); return esc(u ? name + " — " + u : name); };
 
 /* Trailing zeros may only be dropped after a decimal point. Stripping them from
    an integer turned 790 into 79 — a silent 10× understatement on every
@@ -756,6 +866,17 @@ function applyMapping(items, at){
   for (const it of items){
     S.byId.set(it.i, it);
     if (EXEMPT_SET.has(it.n.toLowerCase())) exemptIds.add(it.i);
+  }
+  /* One-time seed of the user's standing long-term holds; needs the mapping
+     to resolve names, so it lives here rather than in load(). */
+  if (!DB.holdsSeed1){
+    for (const nm of ["Soulreaper axe", "Crimson kisten"]){
+      const it = items.find(x => x.n === nm);
+      if (it && !DB.holds.some(h => h.itemId === it.i))
+        DB.holds.push({ itemId: it.i, name: it.n, qty: 1, addedAt: Date.now(), baseline: null,
+                        note: "exit around Raids 4 release — crush expected BiS" });
+    }
+    DB.holdsSeed1 = 1; save();
   }
   /* A wiki rename silently un-exempts an item and quietly taxes it 2%. This
      already happened once with the "(tablet)" suffix — so assert the count. */
@@ -1051,7 +1172,7 @@ function renderScan(){
     if (c.skewMin != null && c.skewMin > 30)
       flags.push('<span class="badge b-warn" title="'+Math.round(c.skewMin)+' min between the last buy and last sell — one side of the book is asleep.">one-sided</span>');
     return '<tr>'
-      + '<td><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
+      + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num dim sec">'+full(c.tax)+'</td>'
@@ -1713,7 +1834,7 @@ function renderPlan(){
   const pickHTML = picks.map(p => {
     n++;
     return '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
-      + esc(p.name) + ' at <span class="num">' + full(p.c.buy) + '</span> each '
+      + '<span title="'+nameTitle(p.name)+'">' + esc(p.name) + '</span> at <span class="num">' + full(p.c.buy) + '</span> each '
       + '<span class="dim">(' + gp(p.cost) + ')</span> — expect <span class="pos num">~' + gp(p.expect) + '</span>/cycle'
       + (p.filler ? ' <span class="badge b-ok" title="Below the worth-a-slot floor, but this slot would otherwise sit idle — small profit beats none">filler</span>' : '')
       + (p.caution ? (p.cautionProven
@@ -1739,7 +1860,7 @@ function renderPlan(){
               + ' <button class="sm ghost" data-cancelprom="1">cancel</button></div>'
             : '';
           return '<li class="next"><div class="body"><b>' + n + '. BUY</b> <span class="num">' + full(x.wouldQty) + '</span> '
-            + esc(x.name) + ' at <span class="num">' + full(x.c.buy) + '</span> each '
+            + '<span title="'+nameTitle(x.name)+'">' + esc(x.name) + '</span> at <span class="num">' + full(x.c.buy) + '</span> each '
             + '<span class="dim">(' + gp(x.wouldCost) + ')</span> — expect <span class="num">~' + gp(x.wouldExpect) + '</span>/cycle'
             + (x.caution ? (x.cautionProven ? ' <span class="badge b-tax">proven '+esc(x.caution.label)+'</span>' : ' <span class="badge b-seed">caution '+esc(x.caution.label)+'</span>') : '')
             + '<div class="why">passed gates, unfunded — ' + esc(x.why) + ' · ' + esc(whyTag(x)) + '</div>'
@@ -1789,7 +1910,7 @@ function scoutScreen(){
     if (eR == null || eR < GATE.roi) continue;
     let score = eR * Math.log(Math.max(c.volSide, 2));
     if (c.crowdRank && c.crowdRank <= 100) score *= 0.5;   // crowding is a penalty, not a ban
-    out.push({ id: it.i, score });
+    out.push({ id: it.i, score, eR, vol: c.volSide });
   }
   out.sort((a,b) => b.score - a.score);
   return out;
@@ -1814,7 +1935,12 @@ function runScout(force){
     if (w.src !== "scout") return true;                       // yours — never touched
     if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
     if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
-    if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){ removed.push(itemName(w.id)); return false; }
+    if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){
+      removed.push(itemName(w.id));
+      DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
+        why: "hasn't passed the sustained-ROI screen since " + ago(w.lastPass || w.addedAt).replace(" ago", "") + " ago (48h grace)" });
+      return false;
+    }
     return true;
   });
 
@@ -1826,7 +1952,11 @@ function runScout(force){
     if (have.has(x.id)) continue;
     DB.watch.push({ id: x.id, qty: null, src: "scout", addedAt: now, lastPass: now });
     have.add(x.id); added.push(itemName(x.id));
+    DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
+      why: "sustained ROI " + x.eR.toFixed(1) + "% on " + full(Math.round(x.vol)) + "/h thin-side volume" });
   }
+  /* Journal retention: three days is enough to review a weekend away. */
+  DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
 
   if (added.length || removed.length){
     S.scoutMsg = "scout: "
@@ -1836,6 +1966,22 @@ function runScout(force){
     save();
     if (S.tab === "watch"){ renderWatch(); fillSparks(); }
   }
+}
+
+/* Scout journal — the "what changed while I wasn't looking" answer. Entries
+   are written by runScout with the reason captured at decision time. */
+function renderScoutLog(){
+  const log = (DB.scoutLog || []).slice().reverse();
+  const day = log.filter(e => Date.now() - e.t < 86400e3);
+  const a = day.filter(e => e.act === "add").length, r = day.length - a;
+  const span = log.length ? Math.max(1, Math.round((Date.now() - log[log.length-1].t) / 3600e3)) : 0;
+  $("#scoutLogSum").textContent = "Scout activity — last 24h: +" + a + " added, −" + r + " evicted"
+    + (log.length ? " (full log covers ~" + span + "h)" : "");
+  $("#scoutLogBody").innerHTML = log.length
+    ? log.map(e => '<div class="bench-row"><span><b class="'+(e.act === "add" ? "pos" : "neg")+'">'
+        + (e.act === "add" ? "+" : "−") + '</b> ' + esc(e.name) + '</span>'
+        + '<span class="r">' + esc(e.why) + ' · ' + ago(e.t) + '</span></div>').join("")
+    : '<div class="bench-row"><span class="dim">Nothing recorded yet — entries appear as the scout adds or evicts items, with the reason it decided.</span></div>';
 }
 
 /* ═══════════ OPEN POSITIONS ═══════════ */
@@ -1880,6 +2026,7 @@ function renderWatch(){
   $("#scoutTog").textContent = DB.scoutOn ? "⚡ scout ON (" + scoutN + "/" + (DB.watchCap||25) + ")" : "⚡ scout OFF";
   $("#scoutTog").classList.toggle("primary", !!DB.scoutOn);
   $("#scoutMsg").textContent = DB.scoutOn ? (S.scoutMsg || "") : "";
+  renderScoutLog();
   $("#stackNote").textContent = gp(st) + " ÷ 3 = " + gp(third);
   if (!DB.watch.length){
     body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
@@ -1925,7 +2072,9 @@ function renderWatch(){
         + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : '<button class="sm" data-test="'+w.id+'" title="Record the prices your one-unit margin test actually filled at">set</button>';
     return '<tr>'
-      + '<td><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
+      + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
+      + ' <a href="https://oldschool.runescape.wiki/w/'+encodeURIComponent(c.name.replace(/ /g,"_"))+'" target="_blank" rel="noopener" class="dim" style="text-decoration:none" title="Open the OSRS wiki page — full uses, sources and sinks">↗</a>'
+      + flags.join("")+'</td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
@@ -1966,19 +2115,22 @@ function renderWatch(){
    the whole plan twenty times. */
 let sparkBusy = false;
 async function fillSparks(force){
-  if (sparkBusy || !DB.watch.length) return;
+  /* Watchlist first (it drives the plan), then long-term holds. */
+  const ids = [...new Set([ ...DB.watch.map(w => w.id), ...DB.holds.map(h => h.itemId) ])];
+  if (sparkBusy || !ids.length) return;
   sparkBusy = true;
   try {
     let since = 0;
-    for (const w of DB.watch){
-      if (force) S.spark.delete(w.id);
-      const c = S.spark.get(w.id);
+    for (const id of ids){
+      if (force) S.spark.delete(id);
+      const c = S.spark.get(id);
       if (c && Date.now() - c.at < SPARK_TTL) continue;
-      try { await sparkFor(w.id); } catch(e){ /* one bad series shouldn't stop the rest */ }
+      try { await sparkFor(id); } catch(e){ /* one bad series shouldn't stop the rest */ }
       if (++since >= 5){ since = 0; if (S.tab === "watch") renderWatch(); }
       await new Promise(r => setTimeout(r, 250));
     }
     if (S.tab === "watch") renderWatch();
+    if (S.tab === "shadow") renderHolds();
   } finally { sparkBusy = false; }
 }
 
@@ -2286,6 +2438,41 @@ function renderShadow(){
   });
   $("#tgtBody").innerHTML = rows.length ? rows.join("")
     : '<tr><td colspan="7" class="empty">No secondary targets. Add one above.</td></tr>';
+  renderHolds();
+}
+
+/* Long-term holds — a thesis scoreboard, deliberately outside the flipping
+   machinery: not in stack(), not in the fund, never touched by the plan. */
+function renderHolds(){
+  const body = $("#holdBody");
+  if (!DB.holds.length){
+    body.innerHTML = '<tr><td colspan="8" class="empty">No holds tracked. Add bank assets you\'re sitting on long-term.</td></tr>';
+    $("#holdFoot").textContent = ""; return;
+  }
+  let totalVal = 0;
+  body.innerHTML = DB.holds.map((h, i) => {
+    const p = livePrice(h.itemId);
+    /* Baseline stamps itself the first time a live price shows up. */
+    if (h.baseline == null && p != null){ h.baseline = p; h.baseAt = Date.now(); save(); }
+    const val = p != null ? p * (h.qty || 1) : null;
+    if (val != null) totalVal += val;
+    const drift = (p != null && h.baseline) ? (p - h.baseline) / h.baseline * 100 : null;
+    const sp = S.spark.get(h.itemId);
+    return '<tr><td><span class="name" title="'+nameTitle(h.name)+'">'+esc(h.name)+'</span>'
+      + ' <a href="https://oldschool.runescape.wiki/w/'+encodeURIComponent(h.name.replace(/ /g,"_"))+'" target="_blank" rel="noopener" class="dim" style="text-decoration:none" title="Open the OSRS wiki page">↗</a></td>'
+      + '<td><input type="number" class="num" style="width:56px" value="'+(h.qty||1)+'" min="1" data-holdqty="'+i+'"></td>'
+      + '<td class="num">'+(p != null ? full(p) : "—")+ageTag(h.itemId)+'</td>'
+      + '<td class="num">'+(val != null ? gp(val) : "—")+'</td>'
+      + '<td class="num '+(drift == null ? "dim" : sign(drift))+'" title="'
+      + (h.baseline ? 'baseline '+full(h.baseline)+' stamped '+ago(h.baseAt || h.addedAt) : 'baseline pending — stamps at the first live price')+'">'
+      + (drift != null ? (drift>0?"+":"") + drift.toFixed(1) + "%" : "—")+'</td>'
+      + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
+      + '<td><span class="dim" style="cursor:pointer" data-holdnote="'+i+'" title="Tap to edit the exit thesis">'
+      + esc(h.note || "tap to add a thesis…")+'</span></td>'
+      + '<td><button class="sm ghost" data-delhold="'+i+'" title="Stop tracking (does not log anything — when you actually sell, log it as a flip if you want it in the profit history)">✕</button></td></tr>';
+  }).join("");
+  $("#holdFoot").innerHTML = "Combined hold value <b>" + gp(totalVal) + "</b> — separate from the flipping stack. "
+    + "When a thesis pays off, sell in-game and log it as a flip (buy = what you paid) so the profit lands in your history.";
 }
 
 /* ═══════════ autocomplete ═══════════ */
@@ -2357,7 +2544,7 @@ function setTab(t){
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $$("section.tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + t));
   renderAll();
-  if (t === "watch") fillSparks();
+  if (t === "watch" || t === "shadow") fillSparks();
 }
 
 const FMAP = { fVol:"vol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
@@ -2492,6 +2679,24 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const hn = t.closest("[data-holdnote]");
+  if (hn){
+    const h = DB.holds[+hn.dataset.holdnote];
+    if (h){
+      const v = prompt("Exit thesis for " + h.name + " — why are you holding, and what triggers the sell?", h.note || "");
+      if (v !== null){ h.note = v.trim(); save(); renderShadow(); }
+    }
+    return;
+  }
+  const dh = t.closest("[data-delhold]");
+  if (dh){
+    const idx = +dh.dataset.delhold, gone = DB.holds[idx];
+    if (gone){
+      DB.holds.splice(idx, 1); save(); renderShadow();
+      toast("Stopped tracking " + gone.name + ".", () => { DB.holds.splice(idx, 0, gone); save(); renderShadow(); });
+    }
+    return;
+  }
   const dt = t.closest("[data-deltgt]");
   if (dt){
     const name = dt.dataset.deltgt, idx = DB.targets.indexOf(name);
@@ -2551,6 +2756,12 @@ function askTested(id){
 }
 
 document.addEventListener("change", e => {
+  const hq = e.target.closest("[data-holdqty]");
+  if (hq){
+    const h = DB.holds[+hq.dataset.holdqty];
+    if (h){ h.qty = Math.max(1, Math.floor(clampNum(hq.value, 1))); save(); renderShadow(); }
+    return;
+  }
   const q = e.target.closest("[data-qty]");
   if (!q) return;
   const w = DB.watch.find(x => x.id === +q.dataset.qty);
@@ -2620,6 +2831,12 @@ const acLog    = makeAC("#acLog", () => {
   prefillFresh(true).then(() => { q.focus(); q.select(); });
 }, true);
 const acTarget = makeAC("#acTarget", it => { if (!DB.targets.includes(it.n)) DB.targets.push(it.n); save(); renderShadow(); });
+const acHold = makeAC("#acHold", it => {
+  if (DB.holds.some(h => h.itemId === it.i)){ toast("Already tracking " + it.n + "."); return; }
+  DB.holds.push({ itemId: it.i, name: it.n, qty: 1, addedAt: Date.now(), baseline: null, note: "" });
+  save(); renderShadow(); fillSparks();
+  toast(it.n + " tracked as a long-term hold — tap its thesis cell to say why you're holding.");
+});
 
 ["lQty","lBuy","lSell"].forEach(id => $("#"+id).addEventListener("input", logPreview));
 
@@ -2746,8 +2963,24 @@ function validateImport(d){
   const targets = (Array.isArray(d.targets) ? d.targets : []).filter(t => typeof t === "string" && t.trim()).map(String);
   const checks = (d.checks && typeof d.checks === "object") ? d.checks : { date:"", morning:[], evening:[], weekly:[] };
   for (const k of ["morning","evening","weekly"]) if (!Array.isArray(checks[k])) checks[k] = [];
+  const holds = (Array.isArray(d.holds) ? d.holds : []).map(h => {
+    const itemId = num(h && h.itemId);
+    if (!(itemId > 0)){ rejected++; return null; }
+    const o = { itemId, name: String(h.name || itemName(itemId)),
+                qty: Math.max(1, num(h.qty) || 1), addedAt: num(h.addedAt) || Date.now(),
+                baseline: num(h.baseline) > 0 ? num(h.baseline) : null, note: String(h.note || "") };
+    if (num(h.baseAt) > 0) o.baseAt = num(h.baseAt);
+    return o;
+  }).filter(Boolean);
+  const scoutLog = (Array.isArray(d.scoutLog) ? d.scoutLog : []).map(e => {
+    const t = num(e && e.t);
+    if (!(t > 0) || (e.act !== "add" && e.act !== "evict")) return null;
+    return { t, act: e.act, id: num(e.id) || 0, name: String(e.name || ""), why: String(e.why || "") };
+  }).filter(Boolean).slice(-80);
   return { flips, positions, watch, targets, rejected,
-    db: { flips, positions, watch, targets, checks,
+    db: { flips, positions, watch, targets, checks, holds, scoutLog,
+          holdsSeed1: d.holdsSeed1 ? 1 : 0,
+          slotCapV2: d.slotCapV2 ? 1 : 0,
           bank: Math.max(0, num(d.bank) || 0),
           bankAsOf: Math.max(0, num(d.bankAsOf) || 0),
           minsPerTouch: Math.max(1, num(d.minsPerTouch) || 7),

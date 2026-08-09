@@ -13,15 +13,19 @@ or back it up — the log is the only irreplaceable part.
 
 - **Scanner** — post-tax margins over the whole market, gated on the thin side of the order book,
   with crowding ranks and a conversion-spreads panel (decanting, herb cleaning)
-- **Watchlist** — auto-scouted on sustained ROI, with sparklines, hour-of-day volume profiles,
-  margin-test capture, and hard sizing clamps (one-third rule, buy-limit windows, liquidity)
+- **Watchlist** — auto-scouted on sustained ROI (with a journaled add/evict log and reasons),
+  sparklines, hour-of-day volume profiles, margin-test capture (16h TTL), and hard sizing clamps
+  (one-third rule, buy-limit windows, liquidity)
 - **Today's Plan** — gated, ranked, capital-allocated buy list with NEXT UP substitutes,
   promote/demote, caution categories for pump-prone items, and per-item graduation from your log
 - **Positions** — full lifecycle (buy pending → awaiting sell → sell pending → sold) with partial
   fills; leg timings feed gp-per-slot-hour analytics
 - **Flip log** — realized post-tax profit, gp/touch, gp/minute, gp/slot-hour, weekly-review table
 - **Routine** — morning / evening / weekly checklists with the live plan inlined
-- **Shadow fund** — progress toward Tumeken's Shadow at its live price, plus secondary targets
+- **Shadow fund** — progress toward Tumeken's Shadow at its live price, secondary targets, and
+  long-term holds tracked against a baseline with an exit thesis per item
+- **Explainers everywhere** — a trading glossary, tap-to-explain tooltips on mobile, and per-item
+  "what does this become in-game" notes that explain where the daily volume comes from
 
 GE tax (2%, floored, 5M cap, 48 exempt items) verified against the
 [OSRS Wiki](https://oldschool.runescape.wiki/w/Grand_Exchange#Convenience_fee_and_item_sink).
