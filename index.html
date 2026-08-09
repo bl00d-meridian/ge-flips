@@ -680,6 +680,10 @@ function load(){
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
     if (!DB.slotCapV2){ if (DB.slots === 8) DB.slots = 7; DB.slotCapV2 = 1; }
+    /* One-time: a long-standing Soulreaper axe sell occupies a slot (listed
+       Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
+       raise Offers back to 7 in the sizing row. */
+    if (!DB.slotsSRA1){ if (DB.slots === 7) DB.slots = 6; DB.slotsSRA1 = 1; }
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -3041,6 +3045,7 @@ function validateImport(d){
     db: { flips, positions, watch, targets, checks, holds, scoutLog,
           holdsSeed1: d.holdsSeed1 ? 1 : 0,
           slotCapV2: d.slotCapV2 ? 1 : 0,
+          slotsSRA1: d.slotsSRA1 ? 1 : 0,
           bank: Math.max(0, num(d.bank) || 0),
           bankAsOf: Math.max(0, num(d.bankAsOf) || 0),
           minsPerTouch: Math.max(1, num(d.minsPerTouch) || 7),
