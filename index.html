@@ -1521,6 +1521,10 @@ const GATE = { roi:1.2, trendSoft:-5, trendWarn:-3, falling:-8, volPerQty:4,
 
 const FILLH = () => Math.max(1, DB.fillHorizonH || 4);
 const TICKF = () => Math.max(1, DB.tickFloor || 15);      // margin floor in ticks (1 tick = 1 gp)
+/* Tax-exempt items get half the floor: the floor's main job is stopping the
+   margin≈tax bleed on scratch exits, and with zero tax a scratch exit costs
+   nothing — only tick-granularity risk remains. */
+const tickFloorFor = id => exemptIds.has(id) ? Math.max(1, Math.ceil(TICKF() / 2)) : TICKF();
 const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
 const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
 
@@ -1687,12 +1691,13 @@ function planCandidates(){
     /* Margin ≈ tax is a structural trap: a scratch exit (selling at your own
        buy price) still pays the whole tax, so any adverse move bleeds. 3× tax
        means even giving back two-thirds of the edge still exits positive. */
-    else if (eMargin != null && eMargin < Math.max(GATE.taxMult * (c.tax || 0), TICKF()))
-      failed = eMargin < TICKF() && eMargin >= GATE.taxMult * (c.tax || 0)
-        ? "only " + full(eMargin) + " ticks of margin — under the " + TICKF() + "-tick floor; a 1-tick move eats "
+    else if (eMargin != null && eMargin < Math.max(GATE.taxMult * (c.tax || 0), tickFloorFor(w.id)))
+      failed = eMargin < tickFloorFor(w.id) && eMargin >= GATE.taxMult * (c.tax || 0)
+        ? "only " + full(eMargin) + " ticks of margin — under the " + tickFloorFor(w.id) + "-tick floor"
+          + (c.exempt ? " (already halved for tax-exempt items)" : "") + "; a 1-tick move eats "
           + Math.round(100 / Math.max(1, eMargin)) + "% of the edge"
         : "margin ≈ tax — " + full(eMargin) + " gp/unit against " + full(c.tax || 0) + " gp/unit tax; needs ≥"
-          + GATE.taxMult + "× the tax and ≥" + TICKF() + " ticks, or scratch exits bleed";
+          + GATE.taxMult + "× the tax and ≥" + tickFloorFor(w.id) + " ticks, or scratch exits bleed";
     else if (c.skewMin != null && c.skewMin > GATE.skewHard)
       failed = "one-sided book — " + Math.round(c.skewMin) + " min between last buy and last sell";
     else if (c.imbalance != null && (c.imbalance < GATE.balHardLo || c.imbalance > GATE.balHardHi))
@@ -1708,7 +1713,11 @@ function planCandidates(){
     else if (vt != null && vt <= GATE.volDecline)
       failed = "volume dying — " + vt.toFixed(0) + "% vs the prior 6 days";
     else if (!(qty > 0))
-      failed = "plan qty clamps to 0 — one unit exceeds a third of your stack";
+      failed = stack() < 100000
+        ? "can't size on this device — recorded stack is " + gp(stack()) + ". Stamp the bank (Shadow Fund tab) or import your laptop export; the plan can't size against gp it doesn't know about"
+        : c.limit
+        ? "plan qty clamps to 0 — one unit exceeds a third of your stack"
+        : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its watch row to include it";
     else if (volGate < DB.filters.vol)
       failed = "volume " + gp(volGate) + "/h on the thin side — under your " + full(DB.filters.vol) + "/h floor";
     else if ((mo = momentum(c, sp)).state === "knife")
@@ -2578,11 +2587,12 @@ function renderWatch(){
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
-      + '<td class="num '+(c.margin == null ? "dim" : c.margin >= TICKF() ? "pos" : "neg")+'"'
-      + ' title="'+(c.margin == null ? "no margin yet" : c.margin >= TICKF()
-          ? full(c.margin)+" ticks of room — clears the "+TICKF()+"-tick floor"
-          : full(c.margin)+" ticks: one 1-gp adverse step erases "+Math.round(100/Math.max(1,c.margin))+"% of the edge — under the "+TICKF()+"-tick floor")+'">'
-      + (c.margin != null ? full(c.margin)+(c.margin >= TICKF() ? " ✓" : " ✗") : "—")+'</td>'
+      + (() => { const tf = tickFloorFor(w.id);
+        return '<td class="num '+(c.margin == null ? "dim" : c.margin >= tf ? "pos" : "neg")+'"'
+        + ' title="'+(c.margin == null ? "no margin yet" : c.margin >= tf
+            ? full(c.margin)+" ticks of room — clears the "+tf+"-tick floor"+(c.exempt ? " (halved for tax-exempt items: no tax bleed on a scratch exit, only granularity risk)" : "")
+            : full(c.margin)+" ticks: one 1-gp adverse step erases "+Math.round(100/Math.max(1,c.margin))+"% of the edge — under the "+tf+"-tick floor"+(c.exempt ? ", even halved for tax-exempt" : ""))+'">'
+        + (c.margin != null ? full(c.margin)+(c.margin >= tf ? " ✓" : " ✗") : "—")+'</td>'; })()
       + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
       + '<td>'+testCell+'</td>'
       + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
