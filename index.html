@@ -2034,7 +2034,7 @@ function logPreview(){
 /* ═══════════ ROUTINE ═══════════ */
 const CHECKLISTS = {
   morning: { title: "☀ Morning — 5–10 min, coffee", foot: "Then close the app. Offers fill while you bill hours.", steps: [
-    ["Refresh and scan", "Hit ↻, open the Scanner. Filters at guide defaults.", "scan"],
+    ["Refresh and glance at the menu", "Hit ↻. The scout has already refreshed the watchlist overnight — check its status line for what it added or evicted, then scan for anything it missed.", "watch"],
     ["Check the charts before you trust a margin", "Flat-ish is what you want. A wide margin on a plunging chart isn't a flip, it's catching a knife.", "watch"],
     ["Margin-test anything new", "Buy one unit at instabuy, sell it at instasell, then record it in the Tested column so the plan uses the real spread.", "watch"],
     ["Place these buys", "All 8 GE slots working. Idle slots are idle capital.", "watch", "plan"],
@@ -2047,11 +2047,11 @@ const CHECKLISTS = {
     ["Re-arm buys on proven items", "The 4-hour limit window has reset several times since morning.", "watch"],
     ["Cancel anything that never filled", "Never chase a fill. Positions held over a day are flagged stale.", "watch"],
     ["Undercut to exit, don't hope", "A sell that won't move: drop it below instabuy and take the small loss."],
-    ["Log every completed round trip", "Every one, including the duds. Use close → log on each position.", "log"]
+    ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"]
   ]},
   weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
-    ["Read the per-item table", "Sorted by gp per touch. The bottom row is highlighted.", "log"],
-    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment.", "log"],
+    ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log"],
+    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log"],
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
     ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
