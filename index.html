@@ -482,7 +482,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>Thesis clusters</h2><span class="sub" id="cluSub"></span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           <button class="sm" id="cluNew" title="Create an empty named cluster, then tag members with the ⬡ button on watchlist rows.">+ new cluster</button>
-          <button class="sm" id="cluScan" title="Run the weekly co-movement scan now: daily returns net of the all-item average, pairs past the excess-correlation threshold, connected groups of 3+ become SUSPECTED candidates. Advisory only — nothing caps capital until you confirm.">↻ scan co-movement</button>
+          <button class="sm" id="cluScan" title="Runs weekly on its own; this button runs it now.">↻ find co-moving groups</button>
         </span>
       </div>
       <div class="row" style="margin-bottom:8px">
@@ -3100,7 +3100,15 @@ function renderPlan(){
       + (posStage(p) === "selling" ? ' · listed at <span class="num">'+full(p.ask)+'</span>' : '')
       + '<div class="why">placed ' + ago(p.placedAt)
       + (posStage(p) === "buying" && c && c.sell != null ? ' · sell now ' + full(c.sell) : '')
-      + (pass.some(x => x.id === p.itemId) ? ' · still passes today\'s gates' : '')
+      /* Gate status must be stated both ways: silence when an item stops
+         passing reads as "still fine" — the divine-battlemage friction. */
+      + (pass.some(x => x.id === p.itemId)
+          ? ' · still passes today\'s gates'
+          : (b => b
+              ? ' · <span class="neg" title="' + esc(b.failed) + '">⚠ no longer passes today\'s gates — '
+                + esc(gateName(b.failed) || "plan gate") + ' (passed when you placed it; hover for detail)</span>'
+              : ' · <span class="dim">not on the watchlist — gates not evaluated for it</span>'
+            )(bench.find(x => x.id === p.itemId)))
       + ' — nothing is logged until the round trip completes</div></div>'
       + '<span class="plan-actions">'+posActions(p)+'</span></li>';
   }).join("");
@@ -3890,11 +3898,15 @@ function renderClusters(){
   const pending = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded");
   $("#cluSub").textContent = DB.clusters.length + " confirmed · " + pending.length + " awaiting your ruling"
     + (DB.lastCoScanAt ? " · scanned " + ago(DB.lastCoScanAt) : " · never scanned");
+  /* The scan explains itself in standing copy, not only in a hover tooltip —
+     "what does this button do" should never require a mouseover to answer. */
   $("#cluScanMsg").innerHTML = S.cluMsg ? esc(S.cluMsg)
     : (S.cluThin && S.cluThin.length
        ? 'Insufficient data — fewer than ' + Math.max(5, DB.clusterMinDays || 20)
          + ' overlapping trading days, so not flagged and not guessed at: <span class="dim">' + esc(S.cluThin.join(", ")) + '</span>'
-       : '');
+       : '<span class="dim">The scan reads 31 days of daily prices for every watchlist item, subtracts the market-wide tide, '
+         + 'and queues groups of 3+ that still move together into the review queue below — proposals only, nothing caps capital until you confirm. '
+         + 'Runs weekly on its own; ' + (DB.lastCoScanAt ? 'last ran ' + ago(DB.lastCoScanAt) : 'never run yet') + '.</span>');
   const watchIds = new Set(DB.watch.map(w => w.id));
   $("#cluBody").innerHTML = DB.clusters.length ? DB.clusters.map(cl => {
     const ex = clusterExposure(cl), cap = clusterCapGp(cl);
