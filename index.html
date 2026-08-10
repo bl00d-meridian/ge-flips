@@ -6465,6 +6465,8 @@ function intelScorecardInline(){
     lines.push('<div>By source: <b>' + esc([...byT.entries()].sort((a, b) => a[0].localeCompare(b[0]))
       .map(([k, g]) => k + " " + g.right + "/" + g.n + " right").join(" · ")) + '</b>'
       + ' <span class="dim">— has T3 ever produced a correct, non-priced-in call? Now it\'s measurable.</span></div>');
+    lines.push('<div class="dim">Standing revisit (ruled Aug 10 2026): the ' + gp(DB.pumpThinGp != null ? DB.pumpThinGp : 10e6)
+      + '/day thin-book floor is a starting value — at the first monthly read, check it against the flagged items\' actual books and rule on a correction.</div>');
   }
   return '<div class="inline">' + (lines.length ? lines.join("")
     : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';

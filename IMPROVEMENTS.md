@@ -261,6 +261,12 @@ Revisit after the panel has earned trust on live data.
 The market factor needs dailies for the whole watchlist at 250ms politeness spacing; the 20h cache makes
 subsequent opens instant. Could prefetch after the weekly scan, which already pulls the same series.
 
+### 6.6 Thin-book floor (10m gp/day) — revisit at the first monthly scorecard read — S · **3**
+Ratified Aug 10 2026 as a **starting value** for the pump fingerprint's structural check
+(promoted + daily gp flow below the floor = pump vehicle). The right floor is empirical:
+at the first monthly read of the briefing scorecard, check it against the flagged items'
+actual books and propose a correction. The setting lives in the intel panel (`pumpThin`).
+
 ---
 
 ## Suggested order

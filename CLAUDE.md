@@ -20,6 +20,15 @@ faster than 60s.
   inline where the user reads it.
 - Known repeated bug class: gates that re-punish what sizing already priced in
   (double-counting). Bench only on information the sizing/margin logic doesn't use.
+- **Restraint may auto-arm; deployment never** (user ruling, Aug 10 2026). Defensive
+  intel may act pre-ratification precisely because its only power is restraint — a false
+  caution costs nothing (absence, lifted by one dismissal), a late defense costs whatever
+  the pump extracts before the next walk-up. Anything that could DEPLOY capital stays
+  ratification-gated. New features inherit this distinction.
+- **A manipulation defense never relaxes on the manipulator's chosen evidence** (user
+  ruling, Aug 10 2026). Recent wins during a pump are the bait, so wins never graduate a
+  flagged pump caution; the only lift path is the user dismissing the warning record —
+  nothing else.
 - **Disclosure-in-summary is not ratification** (user ruling, Aug 10 2026). Judgment
   thresholds and verdict boundaries discovered mid-build are strategy parameters: propose
   them and leave them unapplied until the user rules. Applying one and mentioning it in
