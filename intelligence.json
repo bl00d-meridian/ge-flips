@@ -1,0 +1,129 @@
+{
+  "generatedAt": "2026-08-10T22:33:46Z",
+  "coversFrom": "2026-08-03",
+  "coversTo": "2026-08-10",
+  "records": [
+    {
+      "id": "2026-08-10-graveyard-quest-calendar",
+      "type": "catalyst",
+      "confidence": "confirmed",
+      "title": "The Graveyard (master sailing quest) targeted for Autumn 2026",
+      "thesis": "Jagex has announced The Graveyard, a master-level sequel to Olaf's Quest with a new Agility course (65 visible / 80 boostable requirement), targeted Autumn 2026. Quest reward and requirement items are not yet named; no position is proposable until a dev blog lists them. Targeted window, not a scheduled date.",
+      "direction": "unclear",
+      "items": [],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Upcoming_updates", "note": "Confirmed-updates entry: timeline, agility course requirements", "tier": 1 }
+      ],
+      "sourceTier": 1,
+      "validUntil": "2026-11-30",
+      "contrary": "The window is a broad target, not a date; OSRS content windows slip routinely (NPC boat combat was announced and is now 'delayed; future date TBD').",
+      "pricedIn": { "checked": false, "verdict": "no", "detail": "No tradeable items named yet; the priced-in check runs when a dev blog identifies requirement or reward items." },
+      "catalyst": { "name": "The Graveyard quest release", "windowStart": "2026-09-01", "windowEnd": "2026-11-30" }
+    },
+    {
+      "id": "2026-08-10-hallowfell-new-supply",
+      "type": "deflation-flag",
+      "confidence": "confirmed",
+      "title": "Hallowfell in launch-supply decay since July 29",
+      "thesis": "Hallowfell (two-handed sword, 75 Attack, cleaves up to two additional targets) entered the game with Wyrmscraig on 2026-07-29. New boss-drop supply is still ramping while launch demand fades; the standard trajectory is continued decline until supply and demand equilibrate.",
+      "direction": "down",
+      "items": [{ "id": 34027, "name": "Hallowfell" }],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Item introduced with Wyrmscraig launch", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig-is-out-today?oldschool=1", "note": "Official launch newspost (linked from wiki update page; direct fetch returned 403 this sweep)", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=34027", "note": "Price history since listing", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-10-01",
+      "contrary": "A pending-poll buff to the related Jeweller's chisel shows Jagex is still tuning Wyrmscraig rewards; a Hallowfell buff, if one ever polls, would invalidate the decay path.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "6.24m at listing (2026-07-29) to 2.49m on 2026-08-10, a 60% decline in 12 days on ~7,300 units/day; drop-source supply is still ramping, so further decline is plausible but most of the launch premium is already gone." }
+    },
+    {
+      "id": "2026-08-10-golem-crafting-uncut-gems",
+      "type": "deflation-flag",
+      "confidence": "confirmed",
+      "title": "Wyrmscraig Golem Crafting adds a new uncut gem supply source",
+      "thesis": "Golem Crafting (Wyrmscraig, live since 2026-07-29) drops uncut sapphires, emeralds, rubies, and diamonds, adding a standing supply source for all four. Daily traded volume has roughly 2.5x'd since launch while prices have so far held, which means supply pressure is real but currently absorbed.",
+      "direction": "down",
+      "items": [
+        { "id": 1623, "name": "Uncut sapphire" },
+        { "id": 1621, "name": "Uncut emerald" },
+        { "id": 1619, "name": "Uncut ruby" },
+        { "id": 1617, "name": "Uncut diamond" }
+      ],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Golem Crafting drop table includes the four uncut gems", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig-is-out-today?oldschool=1", "note": "Official launch newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-30",
+      "contrary": "Twelve days of 2.5x volume have NOT moved prices (sapphire 0%, emerald -1.2%, ruby -0.1%, diamond +3.9% since Jul 29) — crafting sink demand may be fully absorbing the new supply, in which case this flag expires harmlessly.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "Since 2026-07-29: uncut sapphire 223 gp flat (vol 501k to 1.27m/day), emerald 492 to 486, ruby 1114 to 1113 (vol 739k to 1.88m/day), diamond 2406 to 2500. No price decline yet; the flag is forward-looking caution against accumulating, not a claim the drop already happened." }
+    },
+    {
+      "id": "2026-08-10-goat-horn-supply",
+      "type": "deflation-flag",
+      "confidence": "confirmed",
+      "title": "Wyrmscraig goat hunting adds goat horn supply; drop rate buffed Aug 5",
+      "thesis": "Wyrmscraig goat hunting (live 2026-07-29) drops goat horns, feeding the combat potion ingredient chain, and the 2026-08-05 update buffed hunter-rumour hoof drops from 1/50 to 1/48, speeding the activity. Goat horn dust is already down 18% since launch on doubled volume.",
+      "direction": "down",
+      "items": [
+        { "id": 9735, "name": "Goat horn" },
+        { "id": 9736, "name": "Goat horn dust" }
+      ],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Goat horns on the goat hunting loot table", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "2026-08-05 drop-rate buff to goat hunter rumours", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-30",
+      "contrary": "Raw goat horn has only fallen ~6% (33 to 31 gp) — most of the move is concentrated in the dust, so the grinding bottleneck, not horn supply, may be what repriced.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29: goat horn 33 to 31 gp (-6.1%, vol 21k to 64k/day); goat horn dust 105 to 86 gp (-18.1%, vol 18k to 34k/day). Decline underway, supply source is permanent and was buffed Aug 5." }
+    },
+    {
+      "id": "2026-08-10-jewellers-chisel-poll",
+      "type": "demand-context",
+      "confidence": "hinted",
+      "title": "Pending poll: Jeweller's chisel bolt-tip buff (opal/jade/topaz chain)",
+      "thesis": "The 2026-08-05 update proposed (pending poll, not yet scheduled) buffing the Jeweller's chisel to cut bolt tips in 2 ticks instead of 5 with a 1-in-10 chance of double gems. If polled and passed, bolt tip production speed roughly doubles for chisel owners, changing throughput economics across the uncut opal/jade/red topaz and bolt tip chain in directions that depend on where the bottleneck currently sits.",
+      "direction": "unclear",
+      "items": [
+        { "id": 1625, "name": "Uncut opal" },
+        { "id": 1627, "name": "Uncut jade" },
+        { "id": 1629, "name": "Uncut red topaz" },
+        { "id": 45, "name": "Opal bolt tips" },
+        { "id": 9187, "name": "Jade bolt tips" },
+        { "id": 9188, "name": "Topaz bolt tips" }
+      ],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Pending-poll proposal text", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-15",
+      "contrary": "The chain is already moving on Wyrmscraig supply before any poll: since Jul 29 uncut jade -32.8% and uncut red topaz -26.4% on ~2.5x volume (mechanism unsourced - no record claims it), while topaz bolt tips are +23.9% and opal bolt tips -21.2%. Mixed, high-variance chain; and the poll may never be scheduled or may fail.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29: uncut opal 74 to 75 gp, uncut jade 137 to 92 gp, uncut red topaz 2146 to 1580 gp; opal bolt tips 33 to 26 gp, jade bolt tips 6 gp flat, topaz bolt tips 92 to 114 gp. Large moves already occurred in parts of the chain, but they trace to Wyrmscraig supply, not to the (unscheduled) poll this record is about." }
+    },
+    {
+      "id": "2026-08-10-archaic-emblems-ge-listing",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Archaic emblems (tier 1 and tier 5) newly tradeable on the GE",
+      "thesis": "The 2026-08-05 permanent Deadman world changes made Archaic emblems (tier 1 and tier 5) GE-tradeable, with tier 5 supplied by hourly Deadman's Chest spawns (250k risk minimum). These are brand-new GE markets with no price history and an unusual, DMM-gated supply loop; expect thin books and volatile discovery.",
+      "direction": "unclear",
+      "items": [
+        { "id": 12746, "name": "Archaic emblem (tier 1)" },
+        { "id": 12751, "name": "Archaic emblem (tier 5)" }
+      ],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Emblems made GE-tradeable; Deadman's Chest supply mechanic", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-15",
+      "contrary": "Demand exists only inside the permanent Deadman world loop; if that mode's population fades, both emblems fade with it. Thin-book items are also classic manipulation targets.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "Timeseries for ids 12746 and 12751 returned empty on 2026-08-10 - no GE trade history exists yet. Nothing can be priced in; equally, nothing about a fair price is known." }
+    }
+  ]
+}
