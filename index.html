@@ -438,21 +438,22 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="tw"><table>
         <thead><tr>
           <th>Item</th>
-          <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
-          <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
           <th title="Profit per unit for one full round trip: sell − buy − tax">Margin</th>
           <th title="The same margin counted in ticks (1 tick = 1 gp, the minimum price step). The plan's floor is 15: at 4 ticks, one tick of adverse move erases a quarter of the edge — this is why cheap items keep losing despite healthy-looking ROI %">Ticks</th>
           <th title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
+          <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
+          <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
+          <th title="Suggested size — auto-clamped to the smallest of: one-third of working capital, the 4h buy limit, and what the book can absorb">Plan qty</th>
+          <th></th>
           <th title="Your margin-tested prices override live data everywhere for 16h after the test — then live prices take back over">Tested</th>
-          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
-          <th title="Suggested size — auto-clamped to the smallest of: one-third of your stack, the 4h buy limit, and what the book can absorb">Plan qty</th>
           <th title="gp tied up at the planned quantity (qty × buy)">Position</th>
           <th class="sec" title="Expected profit per full cycle at the planned quantity">Profit</th>
+          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
           <th class="sec" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
           <th class="sec" title="Price over the last 7 days — flat is good, plunging is a knife">7-day</th>
           <th class="sec" title="Fitted 7-day price drift in % — the plan benches anything below −5%">Trend</th>
           <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
-          <th></th><th></th>
+          <th></th>
         </tr></thead>
         <tbody id="watchBody"></tbody>
         <tfoot id="watchFoot"></tfoot>
@@ -2886,19 +2887,21 @@ function renderWatch(){
     else if (mv.ready)
       flags.push('<button class="badge b-ok" data-inv="'+w.id+'" title="Log-qualified for inventory mode: '+mv.n+' completed flips in 30d, net '+gp(mv.net)+', clean markouts, fills inside the horizon. Click to set the suggested '+full(mv.target)+'-unit buffer — nothing is placed or logged for you.">mm-ready</button>');
     const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
+    /* Compact tested cell: exact fills in small type, icon buttons, state
+       details in the title — the old inline badge + word-buttons made this
+       the widest column on the row. */
     const testCell = c.tested
-      ? '<span class="num" title="tested '+ago(w.tAt)+'">'+full(w.tBuy)+'/'+full(w.tSell)+'</span> <button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
+      ? '<span class="num" style="font-size:11px" title="Margin-tested '+ago(w.tAt)+' — these fills override live prices for 16h.">'+full(w.tBuy)+'/'+full(w.tSell)+'</span>'
+        + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : hasTest
-      ? '<span class="num dim" title="Tested '+ago(w.tAt)+' — over 16h old, so live prices are back in charge. Re-test to refresh.">'+full(w.tBuy)+'/'+full(w.tSell)+' <span class="badge b-warn">expired</span></span> '
-        + '<button class="sm" data-test="'+w.id+'" title="Re-run the one-unit margin test and record the new fills">re-test</button>'
+      ? '<span class="num dim" style="font-size:11px" title="Tested '+ago(w.tAt)+' — over 16h old (EXPIRED), live prices are back in charge. ↻ records a fresh test.">'+full(w.tBuy)+'/'+full(w.tSell)+'</span>'
+        + '<button class="sm" data-test="'+w.id+'" title="Re-run the one-unit margin test and record the new fills">↻</button>'
         + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : '<button class="sm" data-test="'+w.id+'" title="Record the prices your one-unit margin test actually filled at">set</button>';
     return '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
       + ' <a href="https://oldschool.runescape.wiki/w/'+encodeURIComponent(c.name.replace(/ /g,"_"))+'" target="_blank" rel="noopener" class="dim" style="text-decoration:none" title="Open the OSRS wiki page — full uses, sources and sinks">↗</a>'
       + flags.join("")+'</td>'
-      + '<td class="num">'+full(c.buy)+'</td>'
-      + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
       + (() => { const tf = tickFloorFor(w.id);
         return '<td class="num '+(c.margin == null ? "dim" : c.margin >= tf ? "pos" : "neg")+'"'
@@ -2907,25 +2910,27 @@ function renderWatch(){
             : full(c.margin)+" ticks: one 1-gp adverse step erases "+Math.round(100/Math.max(1,c.margin))+"% of the edge — under the "+tf+"-tick floor"+(c.exempt ? ", even halved for tax-exempt" : ""))+'">'
         + (c.margin != null ? full(c.margin)+(c.margin >= tf ? " ✓" : " ✗") : "—")+'</td>'; })()
       + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
-      + '<td>'+testCell+'</td>'
-      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
+      + '<td class="num">'+full(c.buy)+'</td>'
+      + '<td class="num">'+full(c.sell)+'</td>'
       + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
       + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
       + '</td>'
-      + '<td class="num">'+gp(position)+'</td>'
-      + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
-      + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
-      + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
-      + '<td class="num sec '+(tr == null ? "dim" : sign(tr))+'">'+(tr == null ? "—" : (tr>0?"+":"") + tr.toFixed(1) + "%")+'</td>'
-      + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
-      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
-      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
       + '<td style="white-space:nowrap"><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button>'
       + '<button class="sm'+(w.invTarget > 0 ? ' primary' : '')+'" data-inv="'+w.id+'" title="'+(w.invTarget > 0
           ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
           : mv.ready
           ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv.target)+' units.'
           : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button></td>'
+      + '<td style="white-space:nowrap">'+testCell+'</td>'
+      + '<td class="num">'+gp(position)+'</td>'
+      + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
+      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
+      + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
+      + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
+      + '<td class="num sec '+(tr == null ? "dim" : sign(tr))+'">'+(tr == null ? "—" : (tr>0?"+":"") + tr.toFixed(1) + "%")+'</td>'
+      + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
+      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
+      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
       + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
       + '</tr>';
   }).join("");
