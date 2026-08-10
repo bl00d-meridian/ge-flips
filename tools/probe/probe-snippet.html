@@ -487,6 +487,49 @@
     DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
     S.qualStamp = S.latestAt + "|" + S.hourAt;
 
+    // ═══ DEPLOYMENT PANEL: funnel, near-miss split, pipeline, proposals ═══
+    // Cast: 9001 funded (qualified) · 9031-9033 tax-exempt ROI near-misses
+    // (1.15/1.10/1.05% vs the 1.2% floor) · 9002 a multi-gate wreck · 9003 qualifying.
+    DB.flips = []; DB.positions = []; DB.clusters = []; DB.planPriority = []; DB.planDemoted = [];
+    DB.gateLog = []; DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    S.vol5Low = new Map();
+    const mkNearMiss = (id, nm, sell) => {
+      mkItem(id, nm);
+      exemptIds.add(id);   // tax 0 → the ROI floor binds before the 3×tax margin floor can
+      S.latest[id] = { high: sell, low: 4000, highTime: nowS-60, lowTime: nowS-120 };
+      S.hour[id]   = { avgHighPrice: sell, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    };
+    mkNearMiss(9031, "Probe near-a", 4046);   // ROI 1.15%
+    mkNearMiss(9032, "Probe near-b", 4044);   // ROI 1.10%
+    mkNearMiss(9033, "Probe near-c", 4042);   // ROI 1.05%
+    S.latest[9002] = { high: 4010, low: 4000, highTime: nowS-60, lowTime: nowS-120 };   // multi-gate wreck
+    S.hour[9002]   = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 100 };
+    DB.watch = [9001, 9002, 9003, 9031, 9032, 9033].map(id => ({ id, qty: null }));
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9031: qualified(), 9032: qualified(), 9033: qualified() };
+    S.qualStamp = null;   // 9003 has no streak → seasons this snapshot
+    S.tab = "watch"; renderWatch();
+    const dep = document.querySelector("#depBody").innerHTML;
+    ok("funnel renders enter → kills → funded", /candidates enter/.test(dep) && /funded/.test(dep)
+       && /ROI floor/.test(dep) && /seasoning \(qualifying\)/.test(dep), dep.slice(0, 600));
+    // ROI floor kills 4 first-fail (the 3 near-misses + the wreck's first failure)
+    ok("funnel kills 4 at the ROI floor and flags it a top killer", /⚑ ROI floor/.test(dep) && /−4 · 2 remain/.test(dep),
+       dep.slice(0, 800));
+    ok("near-miss split shows the one number short", /3 near-misses/.test(dep)
+       && /sustained ROI 1\.15% vs 1\.2% floor/.test(dep), dep);
+    ok("multi-gate wreck listed as genuinely unfit", /Multi-gate \(3\+\), genuinely unfit/.test(dep)
+       && /Probe beta \(\d+ gates\)/.test(dep), dep);
+    ok("pipeline shows the seasoning item with an ETA", /Probe gamma/.test(dep) && /qualifies at ~/.test(dep), dep);
+    ok("proposal indicts the ROI floor with numbers, propose-only", /ROI floor<\/b> alone blocks 3 items/.test(dep)
+       && /Propose: sustained-ROI floor 1\.2% → 1\.1%/.test(dep) && /your ruling/.test(dep)
+       && /nothing changes without your per-gate ruling/i.test(dep), dep);
+    // teardown: restore 9002, drop the extras
+    S.latest[9002] = { high: 4400, low: 4000, highTime: nowS-60, lowTime: nowS-120 };
+    S.hour[9002]   = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
+    S.qualStamp = S.latestAt + "|" + S.hourAt;
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,

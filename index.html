@@ -130,6 +130,15 @@ tr.worst td{background:#3a1b18}
 .bar.thin{height:8px}
 .bar.thin i{background:linear-gradient(90deg,#4d7a3a,#78bf5e)}
 
+/* ---- deployment funnel ---- */
+.funrow{display:grid;grid-template-columns:230px 1fr 130px;gap:8px;align-items:center;margin:2px 0;font-size:12.5px}
+.funrow .fbar{height:9px;background:#141109;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.funrow .fbar i{display:block;height:100%;background:linear-gradient(90deg,#8a4438,#cf5a4e)}
+.funrow.fen .fbar i{background:linear-gradient(90deg,#4d7a3a,#78bf5e)}
+.funrow .fn{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dep-h{margin:12px 0 4px;font-weight:600;color:var(--gold)}
+.dep-h:first-child{margin-top:0}
+
 /* ---- checklist ---- */
 .ck{list-style:none;margin:0;padding:0}
 .ck li{
@@ -476,6 +485,11 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         Plan qty is auto-clamped to <b>min(one-third of stack, 4-hour buy limit)</b> — <span id="stackNote">—</span>.
         Type over it; anything above the cap is re-clamped on commit.
       </div>
+    </div>
+
+    <div class="panel" id="deployPanel">
+      <div class="ph"><h2>Deployment — why is capital idle?</h2><span class="sub" id="depSub"></span></div>
+      <div id="depBody"></div>
     </div>
 
     <div class="panel" id="clusterPanel">
@@ -2797,7 +2811,7 @@ function buildPlan(){
     }
   } catch(e){}
 
-  return { picks, nextUp, qualifying, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
+  return { all, picks, nextUp, qualifying, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
            reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
            t1Budget, t2Budget, t1Spent, t2Spent, t1Pool: pool0[1], t2Pool: pool0[2],
            shadowReserve: Math.min(DB.shadowReserve || 0, stack()) };
@@ -3246,6 +3260,7 @@ function renderPlan(){
     $("#benchSummary").textContent = "Benched — n/a on the sell plan";
     $("#benchBody").innerHTML = "";
     $("#planSub").textContent = lines.length + " position" + (lines.length===1?"":"s") + " open";
+    renderDeploy();   // the idle-capital diagnosis is about the buy side but stays current in sell mode
     return;
   }
 
@@ -3271,6 +3286,7 @@ function renderPlan(){
     $("#planSub").textContent = "";
     list.innerHTML = '<li><span class="dim">Watchlist is empty — nothing to plan.</span></li>';
     foot.textContent = ""; $("#benchBody").innerHTML = ""; $("#benchSummary").textContent = "Benched — 0 items";
+    renderDeploy();
     return;
   }
   const { picks, nextUp, qualifying, bench, pass, remaining, st, avail, deployable, deployed,
@@ -3502,6 +3518,184 @@ function renderPlan(){
   $("#benchBody").innerHTML = bench.length
     ? bench.map(b => '<div class="bench-row"><span>' + esc(b.name) + '</span><span class="r">' + esc(b.failed) + '</span></div>').join("")
     : '<div class="bench-row"><span class="dim">Nothing benched — every watchlist item passed.</span></div>';
+  renderDeploy();
+}
+
+/* ═══════════ DEPLOYMENT — WHY IS CAPITAL IDLE? ═══════════
+   Computed LIVE from the same candidateFor/buildPlan results the plan uses —
+   one rulebook, one dataset, no second opinion to disagree with. Metric
+   honesty: every count is items-at-this-refresh; per-gate day counts come
+   from the 30d gate-health ledger and claim only "benched by this gate on d
+   of the last 7 days" — never held spreads or missed profit. Proposal lines
+   are PROPOSALS (house convention): nothing changes without a per-gate
+   ruling from the user. */
+const GATE_CHAIN_ORDER = ["no live price","blacklist","proven-loser bench","ROI floor",
+  "margin floor (ticks / 3× tax)","book skew","flow imbalance","no history","chart still loading",
+  "trend","volume trend","sizing","volume floor","momentum","fill history","drift bench"];
+function daysBenchedBy(id, g, days){
+  const cutoff = new Date(Date.now() - days * 86400e3).toLocaleDateString("en-CA");
+  return new Set(DB.gateLog.filter(e => e.id === id && e.g === g && e.d >= cutoff).map(e => e.d)).size;
+}
+const medianOf = a => {
+  const s = a.slice().sort((x, y) => x - y);
+  return !s.length ? null : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+};
+/* One concrete, numbered proposal per indicted gate — claiming exactly what
+   the snapshot measures and nothing more. */
+function depProposalFor(g, arr){
+  const haves = arr.map(x => x.fails[0].have).filter(Number.isFinite);
+  const needs = arr.map(x => x.fails[0].need).filter(Number.isFinite);
+  if (!haves.length || !needs.length)
+    return "Propose: review this gate's constant against the misses above — no single number captures it. Your ruling.";
+  const m = medianOf(haves);
+  if (g === "ROI floor"){
+    const p = Math.max(0.5, Math.floor(m * 20 + 1e-9) / 20);
+    const k = arr.filter(x => x.fails[0].have >= p - 1e-9).length;
+    return "Propose: sustained-ROI floor " + GATE.roi + "% → " + p + "% — admits " + k + " of the " + arr.length
+         + " at this refresh. Snapshot margins, not realized trips; your ruling.";
+  }
+  if (g === "volume floor"){
+    const base = (DB.filtersT1 && DB.filtersT1.vol) || 1000;
+    const ratio = medianOf(arr.map(x => x.fails[0].have / Math.max(1, x.fails[0].need)));
+    const nb = Math.max(50, Math.floor(base * ratio / 50) * 50);
+    const k = arr.filter(x => x.fails[0].have >= x.fails[0].need * (nb / base)).length;
+    return "Propose: unit-volume floor base " + full(base) + " → " + full(nb) + "/h (price-scaled as today) — admits "
+         + k + " of " + arr.length + ". The trade is fill speed; your ruling.";
+  }
+  if (g === "trend"){
+    const p = Math.max(GATE.falling + 1, Math.floor(m));
+    const k = arr.filter(x => x.fails[0].have > p).length;
+    return "Propose: downtrend floor " + GATE.trendSoft + "% → " + p + "% — admits " + k + " of " + arr.length
+         + ". The " + GATE.falling + "% knife line stays; your ruling.";
+  }
+  return "Propose: shift this constant toward the median miss (" + (Math.round(m * 100) / 100) + " vs "
+       + (Math.round(medianOf(needs) * 100) / 100) + " today). Your ruling.";
+}
+function renderDeploy(plan){
+  const box = $("#depBody"); if (!box) return;
+  if (!DB.watch.length){
+    $("#depSub").textContent = "";
+    box.innerHTML = '<span class="dim">Watchlist is empty — nothing to diagnose.</span>';
+    return;
+  }
+  const P = plan || buildPlan();
+  const all = P.all || [];
+  const N = all.length;
+
+  /* ── funnel: first-fail attribution, in the order the chain applies ── */
+  const firstGate = x => x.fails && x.fails.length ? x.fails[0].g : (gateName(x.failed) || "plan gate");
+  const kills = new Map();
+  for (const x of all) if (x.failed) kills.set(firstGate(x), (kills.get(firstGate(x)) || 0) + 1);
+  const cnt = rx => P.bench.filter(b => rx.test(b.failed || "")).length;
+  const stages = [];
+  for (const g of GATE_CHAIN_ORDER) if (kills.get(g)) stages.push({ label: g, kill: kills.get(g) });
+  for (const [g, k] of kills) if (GATE_CHAIN_ORDER.indexOf(g) < 0) stages.push({ label: g, kill: k });
+  const post = [
+    { label: "family rule (one per family)", kill: cnt(/^family overlap/) },
+    { label: "untiered", kill: cnt(/^untiered/) },
+    { label: "participation (would move the market)", kill: cnt(/^would move the market/) },
+    { label: "ignored by you today", kill: cnt(/^ignored by you/) },
+    { label: "seasoning (qualifying)", kill: P.qualifying.length },
+    { label: "predicted slow fill", kill: cnt(/^predicted slow fill/) }
+  ].filter(s => s.kill);
+  const NU_LABEL = { cluster: "cluster cap at limit", t2cap: "T2 concurrency cap", seed: "caution-category slot",
+                     full: "plan full (slots)", toosmall: "worth-a-slot floor", budget: "tier budget exhausted" };
+  const nuByKey = {};
+  for (const x of P.nextUp) nuByKey[x.whyKey || "other"] = (nuByKey[x.whyKey || "other"] || 0) + 1;
+  const alloc = Object.entries(nuByKey).map(([k, v]) => ({ label: (NU_LABEL[k] || "unfunded (other)") + " → NEXT UP", kill: v }));
+  const allStages = stages.concat(post, alloc);
+  const heldResidual = N - allStages.reduce((s, x) => s + x.kill, 0) - P.picks.length;
+  if (heldResidual > 0) allStages.push({ label: "live position / inventory — capital already committed", kill: heldResidual });
+  const ranked = allStages.slice().sort((a, b) => b.kill - a.kill);
+  const top = new Set(ranked.slice(0, 2).filter(s => s.kill > 1 || (s.kill === 1 && N <= 3)).map(s => s.label));
+  let remain = N;
+  const funRow = s => {
+    remain -= s.kill;
+    return '<div class="funrow"><span>' + (top.has(s.label) ? '⚑ ' : '') + esc(s.label) + '</span>'
+      + '<span class="fbar"><i style="width:' + Math.round(s.kill / Math.max(1, N) * 100) + '%"></i></span>'
+      + '<span class="fn">−' + s.kill + ' · ' + remain + ' remain</span></div>';
+  };
+  const funnel =
+    '<div class="funrow fen"><span><b>' + N + ' candidates enter</b></span><span class="fbar"><i style="width:100%"></i></span><span class="fn">' + N + '</span></div>'
+    + allStages.map(funRow).join("")
+    + '<div class="funrow fen"><span><b>funded</b></span><span class="fbar"><i style="width:'
+    + Math.round(P.picks.length / Math.max(1, N) * 100) + '%"></i></span><span class="fn">' + P.picks.length + '</span></div>'
+    + (top.size ? '<div class="dim" style="font-size:12px;margin-top:2px">⚑ = the two biggest killers this refresh.</div>' : '');
+
+  /* ── marginal-gate attribution: near-misses vs walls ── */
+  const gated = all.filter(x => x.failed && Array.isArray(x.fails) && x.fails.length);
+  const near = gated.filter(x => x.fails.length === 1);
+  const two = gated.filter(x => x.fails.length === 2);
+  const wall = gated.filter(x => x.fails.length >= 3);
+  const nmByGate = new Map();
+  for (const x of near){ const g = x.fails[0].g; if (!nmByGate.has(g)) nmByGate.set(g, []); nmByGate.get(g).push(x); }
+  let verdict = "";
+  if (near.length || wall.length)
+    verdict = near.length > wall.length
+      ? "a near-miss pile behind a single gate reads as a binding constraint worth a tuning conversation"
+      : wall.length > near.length
+      ? "a wall of multi-gate failures reads as a market that is genuinely thin right now"
+      : "mixed picture — some tuning candidates, some genuinely unfit";
+  let attrib = '<div class="dep-h">Marginal-gate attribution</div>'
+    + '<div class="dim" style="font-size:12px;margin-bottom:4px">' + near.length + ' near-miss' + (near.length === 1 ? "" : "es")
+    + ' (fail exactly one gate) · ' + two.length + ' fail two · ' + wall.length + ' fail three or more'
+    + (verdict ? ' — ' + verdict : '') + '</div>';
+  attrib += near.map(x => {
+    const f = x.fails[0];
+    const d7 = daysBenchedBy(x.id, f.g, 7);
+    return '<div class="bench-row"><span>' + esc(x.name) + ' <span class="dim">· ' + esc(f.g) + '</span></span>'
+      + '<span class="r">' + esc(f.short || f.detail)
+      + (d7 > 1 ? ' · benched by this gate on ' + d7 + ' of the last 7 days' : '') + '</span></div>';
+  }).join("");
+  if (two.length) attrib += '<div class="bench-row"><span class="dim">Two-gate: '
+    + esc(two.map(x => x.name + " (" + x.fails.map(f => f.g).join(" + ") + ")").join(", ")) + '</span></div>';
+  if (wall.length) attrib += '<div class="bench-row"><span class="dim">Multi-gate (3+), genuinely unfit right now: '
+    + esc(wall.map(x => x.name + " (" + x.fails.length + " gates)").join(", ")) + '</span></div>';
+  if (!gated.length) attrib += '<div class="bench-row"><span class="dim">Nothing benched at the gate stage.</span></div>';
+
+  /* ── qualifying pipeline: resolves by itself or on one user action ── */
+  const pipe = [];
+  for (const x of P.qualifying){
+    const eta = x.qual.eta ? new Date(x.qual.eta) : null;
+    pipe.push({ nm: x.name, txt: "qualifying " + x.qual.n + "/" + QUAL_PASSES
+      + (eta ? " — qualifies at ~" + eta.toTimeString().slice(0, 5) + " if it holds" : "")
+      + " · a fresh margin test funds it now" });
+  }
+  for (const x of near){
+    const g = x.fails[0].g;
+    if (g === "chart still loading") pipe.push({ nm: x.name, txt: "chart still loading — the verdict improves on its own" });
+    else if (g === "proven-loser bench") pipe.push({ nm: x.name, txt: "awaiting your re-test — a fresh one-unit margin test unbenches it" });
+    else if (g === "drift bench") pipe.push({ nm: x.name, txt: "resolves on your next walk-up — the bench is about the visit gap, not the item" });
+  }
+  const pipeHTML = '<div class="dep-h">Qualifying pipeline</div>'
+    + (pipe.length ? pipe.map(p => '<div class="bench-row"><span>' + esc(p.nm) + '</span><span class="r">' + esc(p.txt) + '</span></div>').join("")
+                   : '<div class="bench-row"><span class="dim">Nothing mid-pipeline — no item is one timer or one action away from funding.</span></div>');
+
+  /* ── proposals (5d): evidence first, then the specific change, never applied ── */
+  const props = [];
+  for (const [g, arr] of nmByGate){
+    if (arr.length < 3) continue;
+    const persist = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4).length;
+    const shorts = arr.slice(0, 3).map(x => x.name + ": " + (x.fails[0].short || "miss"));
+    props.push('<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh'
+      + (persist ? ' (' + persist + ' of them benched by it on 4+ of the last 7 days)' : '')
+      + ' — ' + esc(shorts.join("; ")) + '. ' + esc(depProposalFor(g, arr)));
+  }
+  const v5 = gated.filter(x => x.fails.some(f => f.g === "volume floor") && x.volBound === "5m");
+  if (v5.length) props.push('On ' + v5.length + ' volume-floor bench' + (v5.length === 1 ? "" : "es")
+    + ' the binding side is the confirmed 5m sample, not the 1h book: ' + esc(v5.map(x => x.name).join(", "))
+    + '. The ruled binding conditions (≥5 units, 2 consecutive refreshes) are already applied — this reads as a real die-off, not sampling noise.');
+  if (P.qualifying.length >= 3) props.push('Seasoning holds ' + P.qualifying.length + ' passing items ('
+    + gp(P.qualifying.reduce((s, x) => s + x.qty * x.c.buy, 0)) + ' of would-buys) — they fund themselves at their ETAs, and a fresh margin test'
+    + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.');
+  const propHTML = '<div class="dep-h">Proposals — house convention: nothing changes without your per-gate ruling</div>'
+    + (props.length ? props.map(p => '<div class="plan-note" style="margin-top:4px">' + p + '</div>').join("")
+                    : '<div class="bench-row"><span class="dim">No gate accumulates 3+ single-gate near-misses this refresh — no tuning case to make from today\'s data.</span></div>');
+
+  const pool = P.t1Pool + P.t2Pool;
+  $("#depSub").textContent = P.pass.length + " of " + N + " pass · " + P.picks.length + " funded · "
+    + gp(P.deployed) + " of " + gp(pool) + " tier pool deployed" + (pool > 0 ? " (" + Math.round(P.deployed / pool * 100) + "%)" : "");
+  box.innerHTML = '<div class="dep-h">Gate funnel — cumulative, in the order applied</div>' + funnel + attrib + pipeHTML + propHTML;
 }
 
 /* ═══════════ AUTO-SCOUT ═══════════
