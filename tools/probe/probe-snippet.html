@@ -530,6 +530,27 @@
     DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
     S.qualStamp = S.latestAt + "|" + S.hourAt;
 
+    // ═══ CLUSTERS TAB: thesis detail (matrix, decay view, overlay) ═══
+    // dailyCache still holds the detector fixtures: 9001/9002 co-move (p),
+    // 9003 tracks them at 0.9×, 9004 diverges (q), 9005 a third pattern.
+    DB.clusters = [{ id: 5, name: "probe-detail", members: [9001, 9002, 9004], capPct: null, story: "", src: "manual", confirmedAt: Date.now() }];
+    DB.watch = [9001, 9002, 9003, 9004, 9005].map(id => ({ id, qty: null }));
+    S.tab = "clusters"; renderClusters();
+    ok("cluster ledger offers the detail button", /data-cldetail="5"/.test(document.querySelector("#cluBody").innerHTML),
+       document.querySelector("#cluBody").innerHTML.slice(0, 300));
+    await openClusterDetail(5);
+    const det = document.querySelector("#cluDetail").innerHTML;
+    ok("thesis detail renders all three views", /Pairwise excess correlation/.test(det)
+       && /Correlation over time/.test(det) && /Members, overlaid/.test(det), det.slice(0, 400));
+    ok("matrix shows the co-moving pair strong", /class="num pos"/.test(det), det.slice(0, 1200));
+    ok("decay view renders rolling windows against the threshold", /rolling 10-day window/.test(det)
+       && /skipped, not guessed/.test(det), det.slice(Math.max(0, det.indexOf("Correlation over time")), det.indexOf("Correlation over time") + 500));
+    ok("overlay draws normalized member polylines", (det.match(/<polyline/g) || []).length >= 2
+       && /normalized to its own first day/.test(det), String((det.match(/<polyline/g) || []).length));
+    // restore for the import round-trip
+    DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
+    DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,

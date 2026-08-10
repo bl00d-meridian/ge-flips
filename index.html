@@ -264,6 +264,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
   <nav class="tabs" id="tabs">
     <button data-tab="watch" class="on">Watchlist</button>
+    <button data-tab="clusters">Clusters</button>
     <button data-tab="routine">Routine</button>
     <button data-tab="log">Flip Log</button>
     <button data-tab="shadow">Shadow Fund</button>
@@ -492,6 +493,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div id="depBody"></div>
     </div>
 
+  </section>
+
+  <!-- ═══════════ THESIS CLUSTERS ═══════════ -->
+  <section class="tab" id="tab-clusters">
     <div class="panel" id="clusterPanel">
       <div class="ph"><h2>Thesis clusters</h2><span class="sub" id="cluSub"></span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -523,6 +528,13 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <summary style="cursor:pointer" id="cluQueueSum"></summary>
         <div id="cluQueueBody" style="margin-top:6px"></div>
       </details>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Thesis detail</h2><span class="sub" id="cluDetSub"></span></div>
+      <div id="cluDetail"><span class="dim">Pick a confirmed cluster's <b>detail…</b> button above to see whether — and to
+        what extent — its correlation is holding: the pairwise excess-correlation matrix, a rolling correlation-over-time
+        view to watch the thesis decay, and the members' normalized 31-day charts overlaid.</span></div>
     </div>
   </section>
 
@@ -4379,7 +4391,8 @@ function renderClusters(){
       + ' value="' + (cl.capPct != null ? cl.capPct : '') + '" placeholder="' + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + '"></td>'
       + '<td class="num ' + sign(pl14) + '">' + gp(pl14) + '</td>'
       + '<td class="num ' + sign(plAll) + '">' + gp(plAll) + '</td>'
-      + '<td><button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
+      + '<td style="white-space:nowrap"><button class="sm" data-cldetail="' + cl.id + '" title="Is the thesis holding? Pairwise correlation, decay over time, overlaid charts.">detail…</button>'
+      + '<button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="7" class="empty">No confirmed clusters — correlated positions are currently treated as independent bets. Confirm a candidate below, or press + new cluster and tag rows with ⬡.</td></tr>';
   const dismissedCands = DB.clusterCands.filter(c => c.status === "dismissed");
   const dismissed = dismissedCands.length;
@@ -4405,6 +4418,131 @@ function renderClusters(){
       + '<button class="sm" data-clmerge="' + c.id + '" title="Fold these members into an existing confirmed cluster">merge…</button>'
       + '<button class="sm ghost" data-cldismiss="' + c.id + '" title="Not a real cluster — silence this candidate for good">dismiss</button></span></div>';
   }).join("") : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories and the seed list refill it as evidence appears.</span></div>';
+}
+
+/* ═══ THESIS DETAIL — is the correlation holding? ═══
+   The market factor is the same construction the detector uses (all-watchlist
+   average daily return over dates with 3+ reporters), so this view and the
+   scan that flagged the cluster can never disagree by construction. Fetches
+   are polite (250ms apart) and mostly served from the 20h daily cache. */
+let cluDetailBusy = false;
+async function openClusterDetail(clId){
+  const cl = DB.clusters.find(x => x.id === clId);
+  const box = $("#cluDetail");
+  if (!cl || !box || cluDetailBusy) return;
+  if (cl.members.length < 2){
+    box.innerHTML = '<span class="dim">Fewer than 2 members — nothing to correlate.</span>';
+    return;
+  }
+  cluDetailBusy = true;
+  try {
+    $("#cluDetSub").textContent = "⬡ " + cl.name;
+    box.innerHTML = '<span class="dim">Fetching daily history for ' + cl.members.length
+      + ' members plus the watchlist market factor…</span>';
+    const ids = [...new Set(cl.members.concat(DB.watch.map(w => w.id)))];
+    const rets = new Map();
+    for (const id of ids){
+      try { rets.set(id, dailyRetMap((await dailyFor(id)).days)); } catch(e){ rets.set(id, new Map()); }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    const byDate = new Map();
+    for (const r of rets.values()) for (const [d, v] of r){ if (!byDate.has(d)) byDate.set(d, []); byDate.get(d).push(v); }
+    const mkt = new Map();
+    for (const [d, vs] of byDate) if (vs.length >= 3) mkt.set(d, vs.reduce((a, b) => a + b, 0) / vs.length);
+    const excess = new Map();
+    for (const m of cl.members){
+      const e = new Map();
+      for (const [d, v] of (rets.get(m) || new Map())) if (mkt.has(d)) e.set(d, v - mkt.get(d));
+      excess.set(m, e);
+    }
+    box.innerHTML = clusterDetailHTML(cl, excess);
+  } finally { cluDetailBusy = false; }
+}
+
+function clusterDetailHTML(cl, excess){
+  const M = cl.members;
+  const minDays = Math.max(5, DB.clusterMinDays || 20);
+  const thr = Math.max(0.1, Math.min(0.95, DB.clusterCorr || 0.5));
+
+  /* full-period pairwise matrix */
+  const pairCorr = (a, b) => {
+    const ea = excess.get(a) || new Map(), eb = excess.get(b) || new Map();
+    const xs = [], ys = [];
+    for (const [d, v] of ea) if (eb.has(d)){ xs.push(v); ys.push(eb.get(d)); }
+    return { c: xs.length >= 5 ? pearson(xs, ys) : null, n: xs.length };
+  };
+  let matrix = '<div class="tw"><table><thead><tr><th></th>'
+    + M.map(m => '<th>' + esc(itemName(m)) + '</th>').join("") + '</tr></thead><tbody>';
+  for (const a of M){
+    matrix += '<tr><td><b>' + esc(itemName(a)) + '</b></td>';
+    for (const b of M){
+      if (a === b){ matrix += '<td class="dim">—</td>'; continue; }
+      const { c, n } = pairCorr(a, b);
+      matrix += '<td class="num ' + (c == null ? 'dim' : c >= thr ? 'pos' : c >= 0 ? '' : 'neg') + '"'
+        + ' title="' + n + ' overlapping trading days' + (n < minDays ? ' — under your ' + minDays + '-day floor, read with suspicion' : '') + '">'
+        + (c == null ? 'thin' : c.toFixed(2) + (n < minDays ? '*' : '')) + '</td>';
+    }
+    matrix += '</tr>';
+  }
+  matrix += '</tbody></table></div>';
+
+  /* rolling correlation-over-time — the decay view */
+  const dates = [...new Set([].concat(...M.map(m => [...(excess.get(m) || new Map()).keys()])))].sort();
+  const W = 10, STEP = 3, roll = [];
+  for (let i = 0; i + W <= dates.length; i += STEP){
+    const win = dates.slice(i, i + W);
+    const cs = [];
+    for (let a = 0; a < M.length; a++) for (let b = a + 1; b < M.length; b++){
+      const ea = excess.get(M[a]) || new Map(), eb = excess.get(M[b]) || new Map();
+      const xs = [], ys = [];
+      for (const d of win) if (ea.has(d) && eb.has(d)){ xs.push(ea.get(d)); ys.push(eb.get(d)); }
+      if (xs.length >= 6){ const c = pearson(xs, ys); if (c != null) cs.push(c); }
+    }
+    if (cs.length) roll.push({ end: win[win.length - 1], avg: cs.reduce((a, b) => a + b, 0) / cs.length, pairs: cs.length });
+  }
+  const rollHTML = roll.length
+    ? '<div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 2px">'
+      + roll.map(r => {
+          const h = Math.round(Math.max(0, Math.min(1, (r.avg + 1) / 2)) * 56) + 4;
+          return '<div style="text-align:center" title="' + r.pairs + ' pair(s) with ≥6 shared days in the 10-day window ending ' + r.end + '">'
+            + '<div class="num" style="font-size:10.5px">' + r.avg.toFixed(2) + '</div>'
+            + '<div style="width:34px;height:' + h + 'px;margin:2px auto 0;border-radius:2px 2px 0 0;background:'
+            + (r.avg >= thr ? 'var(--green)' : r.avg >= 0 ? 'var(--amber)' : 'var(--red)') + '"></div>'
+            + '<div class="dim" style="font-size:10px">' + r.end.slice(5) + '</div></div>';
+        }).join("")
+      + '</div><div class="dim" style="font-size:12px">Average pairwise excess correlation per rolling 10-day window (3-day step) against your '
+      + thr + ' threshold — green holds the thesis, amber drifts, red is decay. Windows with under 6 shared days are skipped, not guessed.</div>'
+    : '<span class="dim">Not enough overlapping trading days for a rolling view — the thesis has no track to decay on yet.</span>';
+
+  /* overlaid normalized member charts, from the daily cache */
+  const palette = ["#e8b64c", "#78bf5e", "#7fa9d4", "#cf5a4e", "#a07fd6", "#d9a441", "#6fbfb0", "#c77fae"];
+  const lines = [];
+  for (let i = 0; i < M.length; i++){
+    const rec = dailyCache.get(M[i]);
+    if (!rec || !rec.days || rec.days.length < 2) continue;
+    const base = rec.days[0].mid;
+    lines.push({ nm: itemName(M[i]), col: palette[i % palette.length],
+                 pts: rec.days.map((d, j) => ({ x: j / (rec.days.length - 1), y: d.mid / base })) });
+  }
+  let overlay;
+  if (lines.length){
+    let lo = Infinity, hi = -Infinity;
+    for (const L of lines) for (const p of L.pts){ if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y; }
+    if (hi - lo < 0.02){ lo -= 0.01; hi += 0.01; }
+    const w = 560, h = 90;
+    overlay = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;max-width:680px;height:auto;background:#141109;border:1px solid var(--line);border-radius:3px">'
+      + lines.map(L => '<polyline fill="none" stroke="' + L.col + '" stroke-width="1.5" points="'
+          + L.pts.map(p => (p.x * (w - 8) + 4).toFixed(1) + "," + ((1 - (p.y - lo) / (hi - lo)) * (h - 10) + 5).toFixed(1)).join(" ") + '"/>').join("")
+      + '</svg>'
+      + '<div style="font-size:12px;margin-top:2px">' + lines.map(L => '<span style="color:' + L.col + '">▬ ' + esc(L.nm) + '</span>').join(" · ") + '</div>'
+      + '<div class="dim" style="font-size:12px">31-day daily midpoints, each normalized to its own first day — parallel shapes are the thesis, divergence is its decay.</div>';
+  } else overlay = '<span class="dim">No cached daily series yet — run the co-movement scan, then reopen this detail.</span>';
+
+  return '<div class="dep-h">Pairwise excess correlation — full period</div>' + matrix
+    + '<div class="dim" style="font-size:12px;margin-top:2px">Daily returns net of the all-watchlist average — the same market factor the detector uses; * = under the '
+    + minDays + '-day overlap floor.</div>'
+    + '<div class="dep-h">Correlation over time — watch the thesis decay</div>' + rollHTML
+    + '<div class="dep-h">Members, overlaid</div>' + overlay;
 }
 
 function tagClusterPrompt(id){
@@ -4514,6 +4652,8 @@ document.addEventListener("click", e => {
   if (dm){ dismissCand(+dm.dataset.cldismiss); return; }
   const ds = t.closest("[data-cldis]");
   if (ds){ dissolveCluster(+ds.dataset.cldis); return; }
+  const dd = t.closest("[data-cldetail]");
+  if (dd){ openClusterDetail(+dd.dataset.cldetail); return; }
   const as = t.closest("[data-audseed]");
   if (as){ const [id, act] = as.dataset.audseed.split(":"); auditSeedAction(+id, act); return; }
   const ab = t.closest("[data-audsib]");
@@ -5335,7 +5475,7 @@ const CHECKLISTS = {
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
     ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
-    ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "watch#clusterPanel", "clusters"],
+    ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "clusters#clusterPanel", "clusters"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
@@ -5729,6 +5869,7 @@ function renderNow(){
 function renderAll(){
   if (S.tab === "scan")    renderScan();
   if (S.tab === "watch")   renderWatch();
+  if (S.tab === "clusters") renderClusters();
   if (S.tab === "log")     renderLog();
   if (S.tab === "routine") renderRoutine();
   if (S.tab === "shadow")  renderShadow();
