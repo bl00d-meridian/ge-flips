@@ -172,6 +172,12 @@ Things the headless suite can't see — walk these by hand when they change:
   (`--max-turns 1` stops it before the actual web sweep runs). Fallback if the command
   ever won't resolve: the skill is a thin pointer — telling Claude to "run the
   BRIEFING.md procedure" produces the same output (BRIEFING.md is the binding contract).
+- **After any edit to BRIEFING.md or `.claude/skills/briefing/SKILL.md`, re-verify the
+  equivalence invariant.** The two paths are stated-equivalent: the skill is a thin
+  pointer, BRIEFING.md the binding source. Diff the skill's step summary and standing
+  rules against BRIEFING.md's run procedure and confirm neither path carries a rule the
+  other lacks — a guard living in only one path (the caught drift: the do-not-commit
+  guard existed only in the skill) is the failure mode.
 
 ## Kit inventory
 
