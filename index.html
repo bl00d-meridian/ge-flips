@@ -1891,6 +1891,26 @@ function upsertCand(members, patch){
     }
     return c;
   }
+  /* Dismissed-variant absorption (user ruling, Aug 10 2026): the detector
+     re-emits near-identical member sets (same cluster ±1 item), and an exact
+     sig key let every variant dodge the user's dismissal. A new detection
+     overlapping a dismissed candidate at Jaccard ≥ 0.6 is that dismissal's
+     business: evidence merges silently, the variant count is visible in the
+     queue line, and nothing re-queues. */
+  const mset = new Set(members);
+  const variantOf = DB.clusterCands.find(x => {
+    if (x.status !== "dismissed") return false;
+    let inter = 0;
+    for (const m of x.members) if (mset.has(m)) inter++;
+    const uni = x.members.length + members.length - inter;
+    return uni > 0 && inter / uni >= 0.6;
+  });
+  if (variantOf){
+    variantOf.evidence = Object.assign({}, variantOf.evidence || {}, patch.evidence || {});
+    variantOf.variants = (variantOf.variants || 0) + 1;
+    variantOf.lastVariantAt = Date.now();
+    return null;
+  }
   c = { id: cluId(), sig, members: members.slice(), at: Date.now(),
         status: patch.status, src: patch.src, story: patch.story || "", evidence: patch.evidence || {} };
   if (patch.name) c.name = patch.name;
@@ -4045,9 +4065,12 @@ function renderClusters(){
       + '<td class="num ' + sign(plAll) + '">' + gp(plAll) + '</td>'
       + '<td><button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="7" class="empty">No confirmed clusters — correlated positions are currently treated as independent bets. Confirm a candidate below, or press + new cluster and tag rows with ⬡.</td></tr>';
-  const dismissed = DB.clusterCands.filter(c => c.status === "dismissed").length;
+  const dismissedCands = DB.clusterCands.filter(c => c.status === "dismissed");
+  const dismissed = dismissedCands.length;
+  const absorbed = dismissedCands.reduce((s, c) => s + (c.variants || 0), 0);
   $("#cluQueueSum").textContent = "Review queue — " + pending.length + " candidate" + (pending.length === 1 ? "" : "s")
-    + (dismissed ? " (" + dismissed + " dismissed)" : "");
+    + (dismissed ? " (" + dismissed + " dismissed"
+        + (absorbed ? ", " + absorbed + " variant" + (absorbed === 1 ? "" : "s") + " absorbed" : "") + ")" : "");
   const BADGES = {
     suspected: '<span class="badge b-warn" title="Co-movement detected: excess correlation past your threshold across 3+ items. The detector knows they move together, not why — the label stays honest until a story earns its place.">suspected</span>',
     dormant:   '<span class="badge b-seed" title="Story without smoke: these items share a rare wiki category but have not co-moved yet.">dormant</span>',
@@ -6225,6 +6248,8 @@ function validateImport(d){
                         at: num(c.at) || Date.now() };
             if (c.name) o.name = String(c.name);
             if (num(c.dismissedAt) > 0) o.dismissedAt = num(c.dismissedAt);
+            if (num(c.variants) > 0) o.variants = num(c.variants);
+            if (num(c.lastVariantAt) > 0) o.lastVariantAt = num(c.lastVariantAt);
             return o;
           }).filter(Boolean).slice(-100),
           clusterCapPct: Math.min(100, Math.max(1, num(d.clusterCapPct) != null ? num(d.clusterCapPct) : 15)),

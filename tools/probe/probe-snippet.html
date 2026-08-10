@@ -380,10 +380,29 @@
        S.promoteFor === 9020 && /budget is exhausted and no funded pick draws on it/.test(pk2)
        && !/data-demote=/.test(pk2), pk2.slice(0, 400));
     S.promoteFor = null; DB.t2Budget = 50e6;
-    // restore cluster state for the import round-trip below
+    // restore cluster state for the blocks below
     DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
-    DB.clusterCands = [{ id: 71, sig: cluSig([9001,9002,9003]), members: [9001,9002,9003], status: "suspected",
-                         src: "comove", story: "co-moves — reason unknown", evidence: { corr: 0.7, days: 25 }, at: Date.now() }];
+
+    // ═══ DISMISSED-VARIANT ABSORPTION (ruled Aug 10 2026: Jaccard ≥ 0.6) ═══
+    DB.clusterCands = [];
+    const cd = upsertCand([9002,9003,9004], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.7, days:25} });
+    cd.status = "dismissed"; cd.dismissedAt = Date.now();
+    // J({9002,9003,9004},{9002,9003,9004,9005}) = 3/4 = 0.75 ≥ 0.6 → absorbed, evidence merged, never re-queued
+    const v1 = upsertCand([9002,9003,9004,9005], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.8, days:26} });
+    ok("dismissed variant absorbed, evidence merged silently", v1 === null && DB.clusterCands.length === 1
+       && cd.variants === 1 && cd.evidence.corr === 0.8 && cd.status === "dismissed",
+       JSON.stringify(DB.clusterCands));
+    // J({9002,9003,9004},{9002,9005,9006}) = 1/5 = 0.2 < 0.6 → genuinely new, queues normally
+    const v2 = upsertCand([9002,9005,9006], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.9, days:20} });
+    ok("low-overlap detection is a new candidate", !!v2 && v2.status === "suspected" && DB.clusterCands.length === 2,
+       JSON.stringify(DB.clusterCands.map(x => x.sig + ":" + x.status)));
+    S.tab = "watch"; renderClusters();
+    ok("queue line counts dismissed and absorbed variants",
+       /1 dismissed, 1 variant absorbed/.test(document.querySelector("#cluQueueSum").textContent),
+       document.querySelector("#cluQueueSum").textContent);
+    const vAbs = validateImport(JSON.parse(JSON.stringify({ clusterCands: DB.clusterCands })));
+    ok("import keeps variant bookkeeping", vAbs.db.clusterCands.some(x => x.variants === 1 && x.status === "dismissed"),
+       JSON.stringify(vAbs.db.clusterCands));
 
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
