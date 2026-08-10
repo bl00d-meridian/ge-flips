@@ -562,6 +562,23 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </div>
     </div>
 
+    <div class="panel" id="intelPanel">
+      <div class="ph"><h3>Intelligence — ratification queue</h3><span class="sub" id="intelSub"></span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="sm" id="intelImport" title="Reads an intelligence.json produced by the /briefing analyst run into this queue. Nothing activates until you ratify it here.">⭱ Import briefing</button>
+          <input type="file" id="intelFile" accept="application/json,.json" class="hide">
+        </span>
+      </div>
+      <div class="note" style="margin-bottom:8px">
+        Typed records from the analyst briefing — each with its thesis, sources, confidence tier, and expiry.
+        <b>Ratify / edit-then-ratify / dismiss</b>; every ruling is decision-logged, dismissals are remembered
+        (Jaccard ≥ 0.6 overlap absorption; a dismissed story resurfaces only on material change).
+        Intel cannot touch the blacklist, the proven-loser bench, realized metrics, gate constants, or the
+        reserve — where intel and your realized history disagree, history wins and the copy says so.
+      </div>
+      <div id="intelBody"></div>
+    </div>
+
     <div class="panel" id="catPanel">
       <div class="ph"><h3>Catalyst calendar & entry watch</h3><span class="sub" id="catSub"></span></div>
       <div class="row" style="margin-bottom:8px">
@@ -1006,6 +1023,8 @@ let DB = {
   anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v}] — "reason unknown; find the catalyst"; 30d retention
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
+  intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
+  lastBriefImportAt: 0,   // when intelligence.json was last imported (the analyst-freshness clock)
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
   checks: { date:"", walkup:[], weekly:[] }
 };
@@ -1014,7 +1033,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -2928,6 +2947,19 @@ function buildPlan(){
       p.sizeNotes = [...p.sizeNotes, "cluster cap: " + clHit.name + " — top-up stopped at the cluster ceiling"];
   }
 
+  /* Optional intel teeth (user-toggled per ratified record): a 0.5× sizing
+     haircut on affected items until the record expires. Applied AFTER every
+     cap and pour — it halves the final size and never benches. Advisory
+     layers stay advisory; the toggle itself is the user's ruling, and the
+     reason renders inline on the line it shrinks. No double-counting: news
+     risk is information no other gate or clamp in this chain reads. */
+  for (const p of picks){
+    if (intelHaircut(p.id)){
+      p.allocQty = Math.max(1, Math.floor(p.allocQty / 2));
+      p.sizeNotes = [...p.sizeNotes, "sized down 0.5×: news risk (my ruling)"];
+    }
+  }
+
   for (const p of picks){ p.cost = p.allocQty * p.c.buy; p.expect = p.allocQty * p.eMargin; }
   const t1Spent = pool0[1] - pools[1], t2Spent = pool0[2] - pools[2];
 
@@ -3559,6 +3591,9 @@ function renderPlan(){
       + '<div class="why">' + esc(whyTag(p))
       + (p.caution && !p.cautionProven ? ' · half-sized, ' + esc(p.caution.why) : '')
       + (p.sizeNotes && p.sizeNotes.length ? ' · ' + esc(p.sizeNotes.join(" · ")) : '')
+      /* Advisory ⚡ intel tags — never bench, never resize (the optional
+         haircut arrives via sizeNotes above, and only on the user's toggle). */
+      + intelTagText(p.id).map(tx => ' · ⚡ ' + esc(tx)).join("")
       + '</div></div>'
       + '<span class="plan-actions">'
       + '<button class="sm" data-place="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">placed</button>'
@@ -3653,7 +3688,7 @@ function renderPlan(){
 
   /* Update-day caution: on Wednesdays, clusters with committed or about-to-
      be-armed members get the hold-lighter advisory called out by name. */
-  const wedNote = wedClusterAdvisoryText(picks.map(p => p.id));
+  const wedNote = [wedClusterAdvisoryText(picks.map(p => p.id)), wedIntelAdvisoryText()].filter(Boolean).join(" ");
   const wedHTML = wedNote ? '<div class="plan-note" style="margin-top:6px">🔧 ' + esc(wedNote) + '</div>' : '';
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
@@ -4353,6 +4388,12 @@ function renderWatch(){
     if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column). The unbench lasts only while the test is fresh (16h).">proven loser — re-test to unbench</span>');
     for (const cl of clustersFor(w.id))
       flags.push('<span class="badge b-seed" title="Member of ratified thesis cluster \''+esc(cl.name)+'\' — combined exposure across all its members is capped at '+clusterCapPctOf(cl)+'% of working capital by the allocator, regardless of family. Manage it in the Thesis clusters panel below.">⬡ '+esc(cl.name)+'</span>');
+    /* Ratified-intel tags: advisory display only — the tag never benches or
+       resizes (an optional 0.5× haircut exists solely as a per-record user
+       toggle and announces itself on the plan line). */
+    for (const tx of intelTagText(w.id))
+      flags.push('<span class="badge ' + (/^sell-on-drop/.test(tx) ? 'b-risk' : 'b-ok') + '" title="' + esc(tx) + '">⚡ '
+        + (/^sell-on-drop/.test(tx) ? 'sell-on-drop' : /^demand context/.test(tx) ? 'demand context' : 'update-sensitive') + '</span>');
     /* Tier badge doubles as the manual-override control: click cycles
        auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
     const tv = itemTier(w.id, c);
@@ -5453,6 +5494,9 @@ function saveSleeveFromForm(){
   if (!editing){
     const conflict = sleeveMandateConflict(d.itemId);
     if (conflict){ msg('<span class="neg">Blocked: ' + esc(itemName(d.itemId)) + ' is ' + conflict + ' — one item, one mandate.</span>'); return; }
+    const defl = intelForItem(d.itemId).find(r => r.type === "deflation-flag");
+    if (defl){ msg('<span class="neg">Refused: ' + esc(itemName(d.itemId)) + ' carries a ratified deflation flag ("'
+      + esc(defl.title) + '") — sell-on-drop, don\'t accumulate. The sleeve does not take deflation candidates.</span>'); return; }
     if (sleeveHas(d.itemId)){ msg('<span class="neg">' + esc(itemName(d.itemId)) + ' is already an open sleeve position.</span>'); return; }
     if (sleeveNewOpenCount() >= (DB.sleeveMaxPos || 3)){
       msg('<span class="neg">Max ' + (DB.sleeveMaxPos || 3) + ' concurrent new positions — closing one is the only way to a seat.</span>'); return;
@@ -5594,6 +5638,7 @@ function renderSleeve(){
   renderSlvRungs();
   renderSleeveEngine();
   renderCatDraft();
+  renderIntel();
 }
 
 /* ── sleeve wiring ── */
@@ -6060,6 +6105,363 @@ document.addEventListener("click", e => {
   }
 });
 $("#anomRun").onclick = () => { runAnomalyScan(true); toast("Anomaly scan started — top >1m items by gp flow, politely, ~20s."); };
+
+/* ═══════════ INTELLIGENCE LAYER — import, ratification, activation ═══════════
+   Analyst records arrive from intelligence.json, sit PENDING until the user
+   rules, and activate per type only on ratify. INTEL CANNOT TOUCH: the
+   blacklist, the proven-loser bench, realized metrics, gate constants, or
+   the reserve — structurally (nothing here writes them) and in the copy
+   (where intel and realized history disagree, history wins and says so). */
+const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag"];
+const CONF_RANK = { rumor: 0, hinted: 1, polled: 2, confirmed: 3 };
+const CONF_BADGE = { confirmed: "b-tax", polled: "b-ok", hinted: "b-warn", rumor: "b-risk" };
+function intelExpired(r){
+  return !!(r.validUntil && Date.parse(r.validUntil + "T23:59:59") < Date.now());
+}
+function intelActive(){
+  return (DB.intel || []).filter(r => r.status === "ratified" && !intelExpired(r));
+}
+function intelForItem(id){
+  return intelActive().filter(r => (r.items || []).includes(id));
+}
+function deflationFlagged(id){
+  return intelForItem(id).some(r => r.type === "deflation-flag");
+}
+function intelHaircut(id){
+  return intelForItem(id).some(r => r.teeth);
+}
+function itemRealizedNet(id){
+  return DB.flips.filter(f => f.itemId === id).reduce((a, f) => a + flipProfit(f), 0);
+}
+/* Advisory ⚡ tags for an item's plan line / watch row. Claims exactly what
+   the record claims, tier stated; a bullish record against negative realized
+   history states the conflict — history wins. */
+function intelTagText(id){
+  const tags = [];
+  for (const r of intelForItem(id)){
+    if (r.type === "deflation-flag"){
+      tags.push("sell-on-drop, don't accumulate — " + r.title + " [" + r.confidence + "]");
+      continue;
+    }
+    let t = (r.type === "demand-context" ? "demand context: " : "update-sensitive: ") + r.title
+      + (r.catalyst && r.catalyst.windowStart ? ", window " + r.catalyst.windowStart + " → " + r.catalyst.windowEnd
+         : ", until " + r.validUntil)
+      + " [" + r.confidence + "]";
+    const net = itemRealizedNet(id);
+    if (r.direction === "up" && net < 0) t += " — intel bullish; realized history " + gp(net) + " — history wins";
+    tags.push(t);
+  }
+  return tags;
+}
+
+/* Import: every record validated, "no source, no record" enforced, expiry
+   mandatory, flipping-inventory conflicts annotated (standing rule), same-id
+   updates merged, and dismissals remembered: same-type overlap at Jaccard
+   ≥ 0.6 absorbs silently unless the confidence tier rose or the direction
+   flipped — the material changes that earn a resurface. */
+function importIntelligence(d){
+  if (!d || typeof d !== "object" || !Array.isArray(d.records)) throw new Error("not an intelligence.json (no records array)");
+  let added = 0, updated = 0, absorbed = 0, noSource = 0, malformed = 0, resurfaced = 0;
+  for (const raw of d.records){
+    if (!raw || typeof raw !== "object"){ malformed++; continue; }
+    const type = INTEL_TYPES.includes(raw.type) ? raw.type : null;
+    const conf = CONF_RANK[raw.confidence] != null ? raw.confidence : null;
+    const id = String(raw.id || "").trim();
+    const sources = (Array.isArray(raw.sources) ? raw.sources : [])
+      .filter(s => s && /^https?:\/\//.test(String(s.url || "")))
+      .map(s => ({ url: String(s.url), note: String(s.note || "") }));
+    if (!id || !type || !conf){ malformed++; continue; }
+    if (!sources.length){ noSource++; continue; }
+    const items = [...new Set((Array.isArray(raw.items) ? raw.items : [])
+      .map(x => +((x && x.id) != null ? x.id : x)).filter(x => x > 0))];
+    const rec = { id, type, confidence: conf, title: String(raw.title || "").slice(0, 200),
+      thesis: String(raw.thesis || ""),
+      direction: ["up", "down", "unclear"].includes(raw.direction) ? raw.direction : "unclear",
+      items, sources, validUntil: String(raw.validUntil || "").slice(0, 10),
+      contrary: raw.contrary ? String(raw.contrary) : null,
+      pricedIn: (raw.pricedIn && typeof raw.pricedIn === "object")
+        ? { verdict: String(raw.pricedIn.verdict || ""), detail: String(raw.pricedIn.detail || "") } : null,
+      catalyst: (raw.catalyst && typeof raw.catalyst === "object")
+        ? { name: String(raw.catalyst.name || ""), windowStart: String(raw.catalyst.windowStart || "").slice(0, 10),
+            windowEnd: String(raw.catalyst.windowEnd || "").slice(0, 10) } : null,
+      updatesCatalyst: raw.updatesCatalyst ? String(raw.updatesCatalyst) : null,
+      cluster: (raw.cluster && typeof raw.cluster === "object")
+        ? { name: String(raw.cluster.name || ""),
+            addMembers: [...new Set((Array.isArray(raw.cluster.addMembers) ? raw.cluster.addMembers : []).map(Number).filter(x => x > 0))],
+            story: String(raw.cluster.story || "") } : null,
+      importedAt: Date.now(), status: "pending", teeth: 0, outcome: null };
+    if (!rec.validUntil || !Number.isFinite(Date.parse(rec.validUntil + "T00:00:00"))){ malformed++; continue; }
+    const conflicts = items.filter(x => sleeveMandateConflict(x)).map(x => itemName(x));
+    if (conflicts.length) rec.conflict = conflicts.join(", ");
+    const existing = DB.intel.find(x => x.id === id);
+    if (existing){
+      if (existing.status === "pending"){ Object.assign(existing, rec, { importedAt: existing.importedAt }); updated++; continue; }
+      if (existing.status === "dismissed"
+          && (CONF_RANK[conf] > CONF_RANK[existing.confidence] || rec.direction !== existing.direction)){
+        rec.resurfaced = "material change: " + (CONF_RANK[conf] > CONF_RANK[existing.confidence]
+          ? existing.confidence + " → " + conf : "direction " + existing.direction + " → " + rec.direction);
+        DB.intel = DB.intel.filter(x => x.id !== id);
+        DB.intel.push(rec); resurfaced++; continue;
+      }
+      absorbed++; continue;
+    }
+    const mset = new Set(items);
+    const variantOf = items.length ? DB.intel.find(x => {
+      if (x.status !== "dismissed" || x.type !== type) return false;
+      let inter = 0;
+      for (const m of (x.items || [])) if (mset.has(m)) inter++;
+      const uni = (x.items || []).length + items.length - inter;
+      if (!(uni > 0 && inter / uni >= 0.6)) return false;
+      return !(CONF_RANK[conf] > CONF_RANK[x.confidence]);
+    }) : null;
+    if (variantOf){ variantOf.variants = (variantOf.variants || 0) + 1; absorbed++; continue; }
+    DB.intel.push(rec); added++;
+  }
+  DB.intel = DB.intel.slice(-200);
+  DB.lastBriefImportAt = Date.now();
+  save();
+  return { added, updated, absorbed, noSource, malformed, resurfaced };
+}
+
+/* Activation on ratify — per type, and only then. Returns the effect line
+   for the decision log so the ruling records what it actually did. */
+function activateIntel(r){
+  if (r.type === "catalyst" || r.type === "catalyst-update"){
+    const nm = (r.catalyst && r.catalyst.name) || r.updatesCatalyst || r.title;
+    const hit = DB.catalysts.find(c => c.name.toLowerCase() === String(nm).toLowerCase()
+      || (r.updatesCatalyst && c.name.toLowerCase() === r.updatesCatalyst.toLowerCase()));
+    if (hit){
+      if (r.catalyst && r.catalyst.windowStart) hit.windowStart = r.catalyst.windowStart;
+      if (r.catalyst && r.catalyst.windowEnd) hit.windowEnd = r.catalyst.windowEnd;
+      for (const id of r.items || []) if (!hit.items.includes(id)) hit.items.push(id);
+      hit.notes = (hit.notes ? hit.notes + " · " : "") + "updated from briefing " + today() + ": " + r.title;
+      return "calendar entry \"" + hit.name + "\" updated in place — never duplicated";
+    }
+    DB.catalysts.push({ id: Date.now(), name: String(nm),
+      windowStart: r.catalyst && r.catalyst.windowStart ? r.catalyst.windowStart : r.validUntil,
+      windowEnd: r.catalyst && r.catalyst.windowEnd ? r.catalyst.windowEnd : r.validUntil,
+      items: (r.items || []).slice(), clusters: [], notes: r.thesis, src: "intel", createdAt: Date.now() });
+    return "catalyst \"" + nm + "\" added to the calendar";
+  }
+  if (r.type === "cluster-membership"){
+    const members = (r.cluster && r.cluster.addMembers && r.cluster.addMembers.length
+      ? r.cluster.addMembers : r.items) || [];
+    if (!members.length) return "no resolvable members — nothing queued";
+    DB.clusterCands.push({ id: cluId(), sig: cluSig(members), members: members.slice(), at: Date.now(),
+      status: "suspected", src: "intel", name: (r.cluster && r.cluster.name) || "",
+      story: "analyst-sourced: " + ((r.cluster && r.cluster.story) || r.thesis) + " [" + r.confidence + "]",
+      evidence: { intel: r.id } });
+    return "membership proposal queued in the cluster review — membership never recomposes silently";
+  }
+  if (r.type === "deflation-flag")
+    return "standing sell-on-drop tag active on " + (r.items || []).length + " item(s); the sleeve refuses them as candidates";
+  return "advisory ⚡ tags active on " + (r.items || []).length + " item(s)";
+}
+
+/* Pending records whose validity window already passed archive themselves —
+   ruled by the calendar, logged as such, resurrectable only via material
+   change like any dismissal. */
+function intelSweep(){
+  let changed = false;
+  for (const r of DB.intel || []){
+    if (r.status === "pending" && intelExpired(r)){
+      r.status = "dismissed"; r.expiredUnruled = 1; r.ruledAt = Date.now();
+      logDecision("intel", r.title, "auto-dismiss", "expired unruled — resurface only on material change");
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
+
+const intelPending = () => (DB.intel || []).filter(r => r.status === "pending");
+const intelToGrade = () => (DB.intel || []).filter(r => r.status === "ratified" && intelExpired(r) && !r.outcome);
+
+function intelRecordHTML(r, compact){
+  const conf = '<span class="badge ' + (CONF_BADGE[r.confidence] || "b-ok") + '">' + r.confidence + '</span>';
+  const dir = r.direction === "up" ? "↑" : r.direction === "down" ? "↓" : "·";
+  const srcs = (r.sources || []).map((s, i) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" title="' + esc(s.note || s.url) + '">[' + (i + 1) + ']</a>').join(" ");
+  return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:8px 11px;margin-bottom:6px">'
+    + '<div><span class="badge b-seed">' + r.type + '</span> ' + conf + ' <b>' + dir + ' ' + esc(r.title) + '</b>'
+    + ' <span class="dim">until ' + esc(r.validUntil) + '</span> ' + srcs
+    + (r.resurfaced ? ' <span class="badge b-warn" title="' + esc(r.resurfaced) + '">resurfaced</span>' : '')
+    + '</div>'
+    + (r.thesis ? '<div style="white-space:normal;margin-top:2px">' + esc(r.thesis) + '</div>' : '')
+    + (r.items && r.items.length ? '<div class="dim" style="white-space:normal">affects: ' + esc(r.items.map(id => itemName(id)).join(", ")) + '</div>' : '')
+    + (r.pricedIn && r.pricedIn.verdict ? '<div class="dim" style="white-space:normal">priced-in check: <b>' + esc(r.pricedIn.verdict) + '</b>' + (r.pricedIn.detail ? ' — ' + esc(r.pricedIn.detail) : '') + '</div>' : '')
+    + (r.contrary ? '<div class="dim" style="white-space:normal">contrary: ' + esc(r.contrary) + '</div>' : '')
+    + (r.conflict ? '<div class="plan-note" style="margin-top:4px">⚠ names flipping-inventory item(s): ' + esc(r.conflict) + ' — advisory tags only; the sleeve refuses these as candidates.</div>' : '')
+    + (compact ? '' :
+      '<div style="margin-top:5px">'
+      + (r.status === "pending"
+        ? '<button class="sm" data-intelrat="' + esc(r.id) + '">ratify</button> '
+          + '<button class="sm" data-inteledit="' + esc(r.id) + '">edit, then ratify…</button> '
+          + '<button class="sm ghost" data-inteldis="' + esc(r.id) + '">dismiss</button>'
+        : r.status === "ratified" && !intelExpired(r)
+        ? '<span class="badge b-tax">ratified</span> '
+          + (r.items && r.items.length && r.type !== "deflation-flag"
+            ? '<button class="sm' + (r.teeth ? ' primary' : '') + '" data-intelteeth="' + esc(r.id)
+              + '" title="Optional teeth, your ruling: a 0.5× sizing haircut on affected plan lines until this record expires. Off by default — ratified intel never resizes anything on its own.">'
+              + (r.teeth ? '0.5× haircut ON — sized down: news risk (my ruling)' : 'toggle 0.5× sizing haircut') + '</button>' : '')
+        : '') + '</div>')
+    + '</div>';
+}
+
+function renderIntel(){
+  if (!$("#intelBody")) return;
+  intelSweep();
+  const pending = intelPending();
+  const act = intelActive();
+  const toGrade = intelToGrade();
+  const dismissed = (DB.intel || []).filter(r => r.status === "dismissed");
+  const absorbedN = dismissed.reduce((a, r) => a + (r.variants || 0), 0);
+  $("#intelSub").textContent = pending.length + " pending · " + act.length + " active · " + toGrade.length + " awaiting grade"
+    + (dismissed.length ? " · " + dismissed.length + " dismissed" + (absorbedN ? " (" + absorbedN + " variants absorbed)" : "") : "")
+    + (DB.lastBriefImportAt ? " · last import " + ago(DB.lastBriefImportAt) : " · never imported");
+  let html = pending.map(r => intelRecordHTML(r, false)).join("");
+  if (act.length)
+    html += '<details style="margin-top:4px"><summary style="cursor:pointer" class="dim">Active ratified intel — ' + act.length + '</summary>'
+      + act.map(r => intelRecordHTML(r, false)).join("") + '</details>';
+  if (toGrade.length)
+    html += '<div class="nexthead"><b>Scorecard — grade expired calls</b> (window passed; the analyst is judged on realized outcomes, your ruling):</div>'
+      + toGrade.map(r => '<div class="bench-row"><span>' + esc(r.title) + ' [' + r.confidence + '] — window passed — call was:</span>'
+        + '<span class="r"><button class="sm" data-intelgrade="' + esc(r.id) + ':right">right</button> '
+        + '<button class="sm" data-intelgrade="' + esc(r.id) + ':wrong">wrong</button> '
+        + '<button class="sm ghost" data-intelgrade="' + esc(r.id) + ':unclear">unclear</button></span></div>').join("");
+  $("#intelBody").innerHTML = html || '<div class="empty">No intelligence records. Run the briefing at the desk (/briefing in Claude Code), then press Import briefing.</div>';
+}
+
+/* Briefing scorecard — analyst hit rate by confidence tier, graded calls
+   only. Renders in the weekly review. */
+function intelScorecardInline(){
+  const lines = [];
+  for (const r of intelToGrade())
+    lines.push('<div>' + esc(r.title) + ' [' + r.confidence + '] — window passed — call was: '
+      + '<button class="sm" data-intelgrade="' + esc(r.id) + ':right">right</button> '
+      + '<button class="sm" data-intelgrade="' + esc(r.id) + ':wrong">wrong</button> '
+      + '<button class="sm ghost" data-intelgrade="' + esc(r.id) + ':unclear">unclear</button></div>');
+  const graded = (DB.intel || []).filter(r => r.outcome);
+  if (graded.length){
+    const tiers = ["confirmed", "polled", "hinted", "rumor"].map(tier => {
+      const g = graded.filter(r => r.confidence === tier);
+      if (!g.length) return null;
+      const right = g.filter(r => r.outcome === "right").length;
+      const wrong = g.filter(r => r.outcome === "wrong").length;
+      return tier + " " + right + "/" + g.length + " right" + (wrong ? " (" + wrong + " wrong)" : "");
+    }).filter(Boolean);
+    lines.push('<div style="margin-top:4px">Analyst hit rate by tier: <b>' + esc(tiers.join(" · ")) + '</b>'
+      + ' <span class="dim">(graded calls only — unclear counts against no one)</span></div>');
+  }
+  return '<div class="inline">' + (lines.length ? lines.join("")
+    : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';
+}
+
+/* Wednesday advisory, intel-aware: names what's shipping and which
+   watchlist/sleeve items are in blast radius; generic line when no intel. */
+function wedIntelAdvisoryText(){
+  if (!isUpdateDay()) return "";
+  const act = intelActive();
+  if (!act.length) return "Update Wednesday — no ratified intel names today's update; consumables still reprice, so read the patch notes before re-arming.";
+  const watchIds = new Set(DB.watch.map(w => w.id));
+  const slvIds = new Set(sleeveOpenPositions().map(p => p.itemId));
+  const bits = act.map(r => {
+    const blast = (r.items || []).filter(id => watchIds.has(id) || slvIds.has(id))
+      .map(id => itemName(id) + (slvIds.has(id) ? " (sleeve)" : ""));
+    return r.title + " [" + r.confidence + "]" + (blast.length ? " — blast radius: " + blast.join(", ") : "");
+  });
+  return "Update Wednesday, per ratified intel: " + bits.join(" · ");
+}
+
+/* ── intel wiring ── */
+$("#intelImport").onclick = () => $("#intelFile").click();
+$("#intelFile").onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const res = importIntelligence(JSON.parse(r.result));
+      renderSleeve();
+      toast("Briefing imported: " + res.added + " new, " + res.updated + " updated, " + res.resurfaced + " resurfaced, "
+        + res.absorbed + " absorbed by prior rulings"
+        + (res.noSource ? ", " + res.noSource + " REJECTED (no source, no record)" : "")
+        + (res.malformed ? ", " + res.malformed + " malformed dropped" : "")
+        + ". Nothing activates until you ratify.");
+    } catch(err){ alert("Briefing import failed: " + err.message); }
+    e.target.value = "";
+  };
+  r.readAsText(f);
+};
+document.addEventListener("click", e => {
+  const t = e.target;
+  const rat = t.closest("[data-intelrat]");
+  if (rat){
+    const r = DB.intel.find(x => x.id === rat.dataset.intelrat);
+    if (!r || r.status !== "pending") return;
+    r.status = "ratified"; r.ruledAt = Date.now();
+    const effect = activateIntel(r);
+    logDecision("intel", r.title, "ratify", effect + " · " + r.confidence + ", until " + r.validUntil);
+    save(); renderSleeve();
+    if (S.tab === "watch") renderWatch();
+    toast("Ratified — " + effect + ".");
+    return;
+  }
+  const edr = t.closest("[data-inteledit]");
+  if (edr){
+    const r = DB.intel.find(x => x.id === edr.dataset.inteledit);
+    if (!r || r.status !== "pending") return;
+    const th = prompt("Edit the thesis (what you actually believe, then ratify):", r.thesis);
+    if (th === null) return;
+    const vu = prompt("Edit the expiry (YYYY-MM-DD):", r.validUntil);
+    if (vu === null) return;
+    if (!Number.isFinite(Date.parse(String(vu).trim() + "T00:00:00"))){ toast("Unreadable expiry date — nothing ratified."); return; }
+    const edits = [];
+    if (String(th).trim() !== r.thesis) edits.push("thesis edited");
+    if (String(vu).trim() !== r.validUntil) edits.push("expiry " + r.validUntil + " → " + String(vu).trim());
+    r.thesis = String(th).trim(); r.validUntil = String(vu).trim();
+    r.status = "ratified"; r.ruledAt = Date.now(); r.edited = 1;
+    const effect = activateIntel(r);
+    logDecision("intel", r.title, "edit-ratify", (edits.join("; ") || "ratified unchanged") + " · " + effect);
+    save(); renderSleeve();
+    if (S.tab === "watch") renderWatch();
+    toast("Edited and ratified — " + effect + ".");
+    return;
+  }
+  const dis = t.closest("[data-inteldis]");
+  if (dis){
+    const r = DB.intel.find(x => x.id === dis.dataset.inteldis);
+    if (!r || r.status !== "pending") return;
+    r.status = "dismissed"; r.ruledAt = Date.now();
+    logDecision("intel", r.title, "dismiss", r.confidence + " — dismissal remembered; overlapping variants absorb at Jaccard ≥ 0.6");
+    save(); renderSleeve();
+    toast("Dismissed — remembered. It resurfaces only on material change (confidence upgrade or direction flip).",
+          () => { r.status = "pending"; delete r.ruledAt; save(); renderSleeve(); });
+    return;
+  }
+  const th2 = t.closest("[data-intelteeth]");
+  if (th2){
+    const r = DB.intel.find(x => x.id === th2.dataset.intelteeth);
+    if (!r) return;
+    r.teeth = r.teeth ? 0 : 1;
+    logDecision("intel", r.title, r.teeth ? "teeth-on" : "teeth-off",
+      r.teeth ? "0.5× sizing haircut on affected items until expiry (my ruling)" : "haircut removed");
+    save(); renderSleeve();
+    if (S.tab === "watch") renderWatch();
+    toast(r.teeth ? "Haircut ON — affected plan lines size down 0.5× until " + r.validUntil + ", reason shown inline."
+                  : "Haircut removed — lines size normally again.");
+    return;
+  }
+  const gr = t.closest("[data-intelgrade]");
+  if (gr){
+    const [id, outcome] = gr.dataset.intelgrade.split(":");
+    const r = DB.intel.find(x => x.id === id);
+    if (!r) return;
+    r.outcome = outcome; r.outcomeAt = Date.now();
+    logDecision("intel", r.title, "grade", "window passed — call was " + outcome);
+    save();
+    if (S.tab === "routine") renderRoutine(); else renderSleeve();
+    return;
+  }
+});
 
 /* ═══════════ FLIP LOG ═══════════ */
 function renderLog(){
@@ -6538,6 +6940,7 @@ const CHECKLISTS = {
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
     ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "clusters#clusterPanel", "clusters"],
     ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
+    ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
@@ -6573,7 +6976,9 @@ function renderRoutine(){
   /* Wednesday hold-lighter advisory, cluster members called out by name.
      Sleeve items ride along informationally (§ guardrail: update advisories
      apply to sleeve items too, never as a bench). */
-  const wed = m === "walkup" ? wedClusterAdvisoryText(sleeveOpenPositions().map(p => p.itemId)) : "";
+  const wed = m === "walkup"
+    ? [wedClusterAdvisoryText(sleeveOpenPositions().map(p => p.itemId)), wedIntelAdvisoryText()].filter(Boolean).join(" ")
+    : "";
   $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   $("#ckList").innerHTML = list.steps.map((s,i) => {
@@ -6659,6 +7064,8 @@ function renderRoutine(){
         : '<div class="dim">No confirmed clusters — correlated positions are currently treated as independent bets. The Thesis clusters panel (Watchlist tab) collects candidates.</div>') + '</div>';
     } else if (s[3] === "sleeve"){
       inline = sleeveWeeklyInline();
+    } else if (s[3] === "intelscore"){
+      inline = intelScorecardInline();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -7755,6 +8162,37 @@ function validateImport(d){
           }).filter(Boolean),
           sleeveExitLiqPct: Math.min(100, Math.max(1, num(d.sleeveExitLiqPct) != null ? num(d.sleeveExitLiqPct) : 15)),
           lastAnomalyScanAt: Math.max(0, num(d.lastAnomalyScanAt) || 0),
+          lastBriefImportAt: Math.max(0, num(d.lastBriefImportAt) || 0),
+          intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
+            const id = String((r && r.id) || "").trim();
+            const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag"].includes(r && r.type) ? r.type : null;
+            const conf = ["confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
+            const sources = (Array.isArray(r && r.sources) ? r.sources : [])
+              .filter(s => s && /^https?:\/\//.test(String(s.url || ""))).map(s => ({ url: String(s.url), note: String(s.note || "") }));
+            if (!id || !type || !conf || !sources.length){ rejected++; return null; }
+            const o = { id, type, confidence: conf, title: String(r.title || "").slice(0, 200),
+              thesis: String(r.thesis || ""),
+              direction: ["up","down","unclear"].includes(r.direction) ? r.direction : "unclear",
+              items: [...new Set((Array.isArray(r.items) ? r.items : []).map(x => num(x)).filter(x => x > 0))],
+              sources, validUntil: String(r.validUntil || "").slice(0, 10),
+              contrary: r.contrary ? String(r.contrary) : null,
+              pricedIn: (r.pricedIn && typeof r.pricedIn === "object") ? { verdict: String(r.pricedIn.verdict || ""), detail: String(r.pricedIn.detail || "") } : null,
+              catalyst: (r.catalyst && typeof r.catalyst === "object") ? { name: String(r.catalyst.name || ""), windowStart: String(r.catalyst.windowStart || "").slice(0, 10), windowEnd: String(r.catalyst.windowEnd || "").slice(0, 10) } : null,
+              updatesCatalyst: r.updatesCatalyst ? String(r.updatesCatalyst) : null,
+              cluster: (r.cluster && typeof r.cluster === "object") ? { name: String(r.cluster.name || ""), addMembers: [...new Set((Array.isArray(r.cluster.addMembers) ? r.cluster.addMembers : []).map(x => num(x)).filter(x => x > 0))], story: String(r.cluster.story || "") } : null,
+              importedAt: num(r.importedAt) || Date.now(),
+              status: ["pending","ratified","dismissed"].includes(r.status) ? r.status : "pending",
+              teeth: r.teeth ? 1 : 0,
+              outcome: ["right","wrong","unclear"].includes(r.outcome) ? r.outcome : null };
+            if (num(r.ruledAt) > 0) o.ruledAt = num(r.ruledAt);
+            if (num(r.outcomeAt) > 0) o.outcomeAt = num(r.outcomeAt);
+            if (num(r.variants) > 0) o.variants = num(r.variants);
+            if (r.conflict) o.conflict = String(r.conflict);
+            if (r.resurfaced) o.resurfaced = String(r.resurfaced);
+            if (r.expiredUnruled) o.expiredUnruled = 1;
+            if (r.edited) o.edited = 1;
+            return o;
+          }).filter(Boolean).slice(-200),
           catalysts: (Array.isArray(d.catalysts) ? d.catalysts : []).map(c => {
             const name = String((c && c.name) || "").trim();
             if (!name){ rejected++; return null; }
