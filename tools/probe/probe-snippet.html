@@ -871,6 +871,7 @@
     // ─── R4.2a: catalyst records create then update — never duplicate ───
     DB.catalysts = [];
     const catRec = mkRec({ id: "r-cat", type: "catalyst", items: [{ id: 9002 }],
+      sources: [{ url: "https://example.test/official", note: "newspost", tier: 0 }],
       catalyst: { name: "Probe Event X", windowStart: inDays(10), windowEnd: inDays(20) } });
     const impC = importIntelligence({ records: [catRec] });
     const rCat = DB.intel.find(x => x.id === "r-cat");
@@ -879,7 +880,8 @@
     ok("[R4.2a] ratified catalyst record lands on the calendar",
        DB.catalysts.length === 1 && DB.catalysts[0].name === "Probe Event X" && DB.catalysts[0].src === "intel"
        && DB.catalysts[0].items.includes(9002), JSON.stringify(DB.catalysts));
-    const updRec = { ...mkRec({ id: "r-cat-upd", type: "catalyst-update", items: [{ id: 9003 }] }),
+    const updRec = { ...mkRec({ id: "r-cat-upd", type: "catalyst-update", items: [{ id: 9003 }],
+        sources: [{ url: "https://example.test/wiki", note: "update page", tier: 1 }] }),
       updatesCatalyst: "Probe Event X", catalyst: { name: "Probe Event X", windowStart: inDays(12), windowEnd: inDays(22) } };
     importIntelligence({ records: [updRec] });
     const rUpd = DB.intel.find(x => x.id === "r-cat-upd");
@@ -1035,22 +1037,117 @@
        document.querySelector("#briefRemind").innerHTML);
     DB.lastBriefImportAt = Date.now();
 
+    // ─── R7: MANIPULATION DEFENSES — tiers, promotion coercion, pump fingerprint ───
+    DB.intel = []; DB.anomalyFlags = []; DB.catalysts = [];
+    DB.pumpWindowD = 14; DB.pumpThinGp = 10e6;
+    const impT = importIntelligence({ records: [
+      mkRec({ id: "r-t3cat", type: "catalyst", catalyst: { name: "T3 Story", windowStart: inDays(5), windowEnd: inDays(15) },
+        sources: [{ url: "https://example.test/discord", note: "flip call", tier: 3, community: "merch-discord-x" }] }),
+      mkRec({ id: "r-t0cat", type: "catalyst", catalyst: { name: "Official Story", windowStart: inDays(5), windowEnd: inDays(15) },
+        sources: [{ url: "https://example.test/news", note: "newspost", tier: 0 },
+                  { url: "https://example.test/discord", note: "chatter", tier: 3, community: "merch-discord-x" }] }),
+      mkRec({ id: "r-promo", type: "promotion-warning", direction: "up", items: [{ id: 9051 }],
+        title: "Probe sleeve second being promoted",
+        sources: [{ url: "https://example.test/discord2", note: "get in before Tuesday", tier: 3, community: "merch-discord-x" }] })
+    ] });
+    ok("[R7.1] catalyst without a T0/T1 primary is rejected at import",
+       impT.tierRejected === 1 && !DB.intel.some(x => x.id === "r-t3cat"), JSON.stringify(impT));
+    const t0cat = DB.intel.find(x => x.id === "r-t0cat");
+    ok("[R7.1] best-tier stamping: T0 primary carries the record, T3 rides along",
+       !!t0cat && t0cat.sourceTier === 0 && t0cat.community === "merch-discord-x",
+       JSON.stringify(t0cat && { tier: t0cat.sourceTier, community: t0cat.community }));
+    const promo = DB.intel.find(x => x.id === "r-promo");
+    ok("[R7.2] promotion-warning direction is coerced to caution, never buy",
+       !!promo && promo.direction === "caution" && promo.sourceTier === 3, JSON.stringify(promo && promo.direction));
+
+    // pump fingerprint: promotion + anomaly inside the window
+    S.volumes[9051] = 100000;   // thick books: 100k units × 4400 ≈ 440m/day
+    ok("[R7.3] promotion alone on thick books is not yet a pump",
+       suspectedPump(9051) === null, JSON.stringify(suspectedPump(9051)));
+    DB.anomalyFlags.push({ id: 1, itemId: 9051, name: "Probe sleeve second", at: Date.now() - 2 * 86400e3,
+      d: today(), strength: 9, rise14p: 12, rise14v: 80 });
+    const pumpA = suspectedPump(9051);
+    ok("[R7.3] promotion + accumulation anomaly escalates to SUSPECTED PUMP, posture absence",
+       !!pumpA && /SUSPECTED PUMP/.test(pumpA.why) && /merch-discord-x/.test(pumpA.why) && /absence/.test(pumpA.why),
+       JSON.stringify(pumpA));
+    // thin + promoted = structural pump vehicle, no anomaly needed
+    DB.anomalyFlags = [];
+    S.volumes[9051] = 100;      // 100 × 4400 = 440k/day, under the 10m floor
+    S.latest[9051] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
+    const pumpB = suspectedPump(9051);
+    ok("[R7.3] thin books + promotion = structural pump vehicle regardless of anomaly",
+       !!pumpB && /thin books/.test(pumpB.why) && /structural pump vehicle/.test(pumpB.why), JSON.stringify(pumpB));
+    // the caution cap in the plan: half-size, one slot, wins never graduate it
+    DB.flips = []; DB.positions = []; DB.invLots = [];
+    DB.watch = [{ id: 9051, qty: null }];
+    DB.clusters = []; DB.clusterCands = []; DB.planPriority = []; DB.planDemoted = [];
+    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
+    S.vol5Low = new Map();
+    DB.qual = { 9051: qualified() }; S.qualStamp = S.latestAt + "|" + S.hourAt;
+    S.min5[9051] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.hour[9051] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    for (let i = 0; i < 3; i++) DB.flips.push({ id: Date.now() - (i + 1) * 3600e3, itemId: 9051,
+      name: "Probe sleeve second", qty: 10, buy: 4000, sell: 4400, date: today(), note: "" });
+    const promoJSON = JSON.stringify(DB.intel);
+    let pPump = buildPlan().picks.find(p => p.id === 9051);
+    ok("[R7.3] pump caution caps the plan line half-sized with the reason inline",
+       !!pPump && pPump.caution && pPump.caution.key === "pump" && !pPump.cautionProven
+       && (pPump.sizeNotes || []).some(s => /half-sized: SUSPECTED PUMP/.test(s)),
+       JSON.stringify(pPump && { caution: pPump.caution, notes: pPump.sizeNotes, proven: pPump.cautionProven }));
+    ok("[R7.3] recent wins never graduate a pump flag — the wins are the bait",
+       !!pPump && itemWins(9051) >= 3 && !pPump.cautionProven, JSON.stringify({ wins: itemWins(9051) }));
+    // sleeve refuses the pump candidate with the reason
+    DB.sleeve = []; DB.sleeveBudget = 60e6; DB.sleeveMaxPos = 3;
+    DB.watch = [];   // clear so the mandate guard isn't what fires
+    fillSlvForm(9051, "Probe sleeve second");
+    saveSleeveFromForm();
+    ok("[R7.3] sleeve candidacy benched under SUSPECTED PUMP",
+       DB.sleeve.length === 0 && /SUSPECTED PUMP/.test(document.querySelector("#slvFormMsg").textContent)
+       && /absence/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+    // dismissing the warning record lifts every surface
+    promo.status = "dismissed"; promo.ruledAt = Date.now();
+    ok("[R7.3] dismissing the warning record lifts the pump flag",
+       suspectedPump(9051) === null && JSON.stringify(DB.intel) !== promoJSON);
+    promo.status = "pending"; delete promo.ruledAt;
+    // scorecard grades by source tier and named community
+    DB.intel.push({ id: "r-t3-graded", type: "promotion-warning", confidence: "rumor", title: "Old T3 call",
+      thesis: "t", direction: "caution", items: [], sources: [{ url: "https://example.test/d3", tier: 3, community: "merch-discord-x" }],
+      sourceTier: 3, community: "merch-discord-x", validUntil: yd2, importedAt: Date.now() - 20 * 86400e3,
+      status: "ratified", teeth: 0, outcome: "wrong" });
+    const sc7 = intelScorecardInline();
+    ok("[R7.4] scorecard grades by source tier and named community",
+       /T3 \(merch-discord-x\) 0\/1 right/.test(sc7) && /non-priced-in call/.test(sc7), sc7);
+    S.volumes[9051] = 0; DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    DB.flips = [];
+
     // ─── R1.5: everything rides Export JSON ───
     const vSlv = validateImport(JSON.parse(JSON.stringify({
       sleeve: DB.sleeve, sleeveExits: [{ t: 1, d: today(), posId: 900, itemId: 9052, name: "Probe rungs",
         qty: 50, price: 1200, basis: 1000, net: 8800, rung: 0 }],
       catalysts: DB.catalysts, anomalyFlags: [{ id: 1, itemId: 9001, name: "Probe alpha", at: Date.now(), d: today(), strength: 9, rise14p: 5, rise14v: 40 }],
       intel: [{ id: "r-keep", type: "catalyst", confidence: "polled", title: "K", thesis: "t", direction: "up",
-        items: [9001], sources: [{ url: "https://example.test/k" }], validUntil: inDays(5), status: "ratified", teeth: 1 }],
+        items: [9001], sources: [{ url: "https://example.test/k", tier: 0 }], sourceTier: 0,
+        validUntil: inDays(5), status: "ratified", teeth: 1 },
+        { id: "r-keep2", type: "promotion-warning", confidence: "rumor", title: "P", thesis: "t", direction: "up",
+        items: [9002], sources: [{ url: "https://example.test/p", tier: 3, community: "merch-discord-x" }],
+        sourceTier: 3, community: "merch-discord-x", validUntil: inDays(5), status: "pending", teeth: 0 }],
+      pumpWindowD: 21, pumpThinGp: 5e6,
       sleeveBudget: 60e6, sleeveMaxPos: 3, sleeveRungPct: 5, sleeveExitLiqPct: 15, rulingsCap: 4,
       lastBriefImportAt: 123, briefRemindDismissKey: "wed-2026-08-05", recalV1: 1, sleeveMigV1: 1 })));
     ok("[R1.5] import keeps sleeve, exits, catalysts, intel, and the flags",
        vSlv.db.sleeve.length === DB.sleeve.length && vSlv.db.sleeveExits.length === 1
        && vSlv.db.sleeveExits[0].net === 8800 && vSlv.db.catalysts.length === DB.catalysts.length
-       && vSlv.db.intel.length === 1 && vSlv.db.intel[0].teeth === 1 && vSlv.db.intel[0].status === "ratified"
+       && vSlv.db.intel.length === 2 && vSlv.db.intel[0].teeth === 1 && vSlv.db.intel[0].status === "ratified"
        && vSlv.db.anomalyFlags.length === 1 && vSlv.db.rulingsCap === 4
        && vSlv.db.recalV1 === 1 && vSlv.db.sleeveMigV1 === 1,
        JSON.stringify({ s: vSlv.db.sleeve.length, x: vSlv.db.sleeveExits, i: vSlv.db.intel }));
+    ok("[R7.1] import keeps source tiers, communities, and pump settings; coerces promo direction",
+       vSlv.db.intel[0].sourceTier === 0 && vSlv.db.intel[1].sourceTier === 3
+       && vSlv.db.intel[1].community === "merch-discord-x" && vSlv.db.intel[1].direction === "caution"
+       && vSlv.db.pumpWindowD === 21 && vSlv.db.pumpThinGp === 5e6,
+       JSON.stringify(vSlv.db.intel.map(r => [r.sourceTier, r.direction])));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

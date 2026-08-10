@@ -48,5 +48,11 @@ gates: a row in this table without a probe tag says so out loud.
 | R5.3 | Staleness ladder: >14d default-action suggestion; >30d auto-dismiss logged "expired unruled — resurface only on material change" | probe `[R5.3]` |
 | R5.4 | Header badge with pending count on every tab; no modals, nothing blocks execution | probe `[R5.4]` |
 | R5.5 | Briefing reminder: last briefing >7d OR update Wednesday passed since it (Wednesdays assumed — no cheap endpoint); dismissible per occurrence, returns on next trigger; tracker cannot run the briefing itself | probe `[R5.5]` |
+| **§7 Manipulation defenses (ruled Aug 10 2026)** | | |
+| R7.1 | Source tiers T0–T3 stamped per record (best cited tier); T3 adversarial by default — never the sole basis of a catalyst/thesis; no catalyst record without a T0/T1 primary (enforced at emit AND at import); tiers/communities survive export | probe `[R7.1]` · BRIEFING.md (emit side, inspection) |
+| R7.2 | Incentive heuristic: buy rec / price target / urgency framing = PROMOTION, emitted only as a `promotion-warning` record with direction=caution, never buy (tracker coerces regardless) | probe `[R7.2]` · BRIEFING.md (inspection) |
+| R7.3 | Pump fingerprint: anomaly flag + promotion record within 14d (setting) → SUSPECTED PUMP; promoted + thin books (gp/day floor, setting) → same regardless of anomaly. Escalation: benched from sleeve candidacy with the reason, seed-style caution cap in the plan (half-size, one slot, wins never graduate it while flagged), posture-is-absence copy on every surface; dismissing the warning lifts it | probe `[R7.3]` |
+| R7.4 | Scorecard grades by source tier and named community, not just confidence — "has T3 ever produced a correct, non-priced-in call" is measurable | probe `[R7.4]` |
+| R7.5 | Human-layer rule, permanent in BRIEFING.md: never join, monitor, or fetch invite-gated trading discords or paid signal groups; public visibility is a minimum bar, not a guarantee | inspection: BRIEFING.md (a rule about the analyst's own conduct — nothing tracker-side to probe) |
 | **§6 Verification** | | |
 | R6.1 | Probe report cross-references this file (`===REQS===` section from `[R#]` assertion tags) | the report itself |

@@ -571,6 +571,11 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         </span>
       </div>
       <div class="note" style="margin-bottom:8px">
+        <span style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
+          <label class="f" title="Pump fingerprint window: a promotion warning and an accumulation-anomaly flag on the same item inside this many days escalate to SUSPECTED PUMP.">Pump window (d)<input type="number" id="pumpWin" min="1" max="60" style="width:56px"></label>
+          <label class="f" title="Thin-book floor: a promoted item whose daily gp flow sits below this is the structural pump vehicle regardless of anomaly timing — same escalation.">Thin-book floor (gp/day)<input type="number" id="pumpThin" step="1000000" min="0" style="width:120px"></label>
+          <span class="note" style="max-width:520px">SUSPECTED PUMP benches sleeve candidacy, applies a seed-style caution cap in the plan (half-size, one slot, never wins-graduated while flagged), and states its reason on every surface. The posture is absence. Dismissing the warning record lifts it.</span>
+        </span>
         Typed records from the analyst briefing — each with its thesis, sources, confidence tier, and expiry.
         <b>Ratify / edit-then-ratify / dismiss</b>; every ruling is decision-logged, dismissals are remembered
         (Jaccard ≥ 0.6 overlap absorption; a dismissed story resurfaces only on material change).
@@ -1027,6 +1032,8 @@ let DB = {
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
   lastBriefImportAt: 0,   // when intelligence.json was last imported (the analyst-freshness clock)
+  pumpWindowD: 14,    // pump fingerprint: promotion + anomaly (or flag freshness) must overlap inside this many days
+  pumpThinGp: 10_000_000, // thin-book floor (gp/day): promoted + below this = structural pump vehicle regardless of anomaly timing
   rulingSnooze: {},   // walk-up RULINGS PENDING line key → snoozed-until ms (3d per press)
   rulingsCap: 5,      // max rulings-pending lines per walk-up — overflow counted, never silently hidden
   briefRemindDismissKey: "",  // which briefing-reminder occurrence was dismissed — returns on the next trigger
@@ -2649,6 +2656,11 @@ function candidateFor(w){
     const failed = fails.length ? fails[0].detail : null;
 
     const cat = cautionCat(c.name);
+    /* Pump fingerprint outranks the name-pattern categories: while a
+       SUSPECTED PUMP flag stands, the item wears a seed-style caution cap
+       (half-size, one slot) and wins never graduate it — a pump is exactly
+       the market where recent wins are the bait. */
+    const pump = suspectedPump(w.id);
     /* Realized alpha ranks up: every profitable round trip in the last 14 days
        boosts an item's score 10%, capped at +50%. The book trades what the
        log has proven — that's the whole edge, systematized. */
@@ -2666,7 +2678,9 @@ function candidateFor(w){
              failed, fails, eMargin, eRoi, wins, mo, tier,
              hw, stw, rel,
              estH: estFillH(Math.max(1, horizonUnits), c),
-             fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
+             fam: familyKey(c.name),
+             caution: pump ? { key: "pump", label: "suspected pump", why: pump.why } : cat,
+             cautionProven: !pump && !!cat && wins >= 3,
              /* lifetime-net boost (wins) × hour × stability × reliability —
                 each clamped, each explained in the reason string. */
              score: failed ? 0 : eMargin * Math.max(1, horizonUnits)
@@ -4398,8 +4412,11 @@ function renderWatch(){
        resizes (an optional 0.5× haircut exists solely as a per-record user
        toggle and announces itself on the plan line). */
     for (const tx of intelTagText(w.id))
-      flags.push('<span class="badge ' + (/^sell-on-drop/.test(tx) ? 'b-risk' : 'b-ok') + '" title="' + esc(tx) + '">⚡ '
-        + (/^sell-on-drop/.test(tx) ? 'sell-on-drop' : /^demand context/.test(tx) ? 'demand context' : 'update-sensitive') + '</span>');
+      flags.push('<span class="badge ' + (/^(sell-on-drop|being promoted)/.test(tx) ? 'b-risk' : 'b-ok') + '" title="' + esc(tx) + '">⚡ '
+        + (/^sell-on-drop/.test(tx) ? 'sell-on-drop' : /^being promoted/.test(tx) ? 'promoted — caution'
+           : /^demand context/.test(tx) ? 'demand context' : 'update-sensitive') + '</span>');
+    const pmpW = suspectedPump(w.id);
+    if (pmpW) flags.push('<span class="badge b-risk" title="' + esc(pmpW.why) + '">⚠ suspected pump</span>');
     /* Tier badge doubles as the manual-override control: click cycles
        auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
     const tv = itemTier(w.id, c);
@@ -5503,6 +5520,8 @@ function saveSleeveFromForm(){
     const defl = intelForItem(d.itemId).find(r => r.type === "deflation-flag");
     if (defl){ msg('<span class="neg">Refused: ' + esc(itemName(d.itemId)) + ' carries a ratified deflation flag ("'
       + esc(defl.title) + '") — sell-on-drop, don\'t accumulate. The sleeve does not take deflation candidates.</span>'); return; }
+    const pmp = suspectedPump(d.itemId);
+    if (pmp){ msg('<span class="neg">Benched from sleeve candidacy: ' + esc(pmp.why) + '</span>'); return; }
     if (sleeveHas(d.itemId)){ msg('<span class="neg">' + esc(itemName(d.itemId)) + ' is already an open sleeve position.</span>'); return; }
     if (sleeveNewOpenCount() >= (DB.sleeveMaxPos || 3)){
       msg('<span class="neg">Max ' + (DB.sleeveMaxPos || 3) + ' concurrent new positions — closing one is the only way to a seat.</span>'); return;
@@ -6018,11 +6037,13 @@ function renderSleeveEngine(){
   const fresh = (DB.anomalyFlags || []).filter(f => Date.now() - f.at < 30 * 86400e3);
   $("#anomSub").textContent = (DB.lastAnomalyScanAt ? "last scan " + ago(DB.lastAnomalyScanAt) : "never run")
     + (S.anomScanned != null ? " · screened top " + S.anomScanned + " of " + S.anomPool + " >1m items by gp flow" : "");
-  $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f =>
-    '<div class="bench-row"><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
+  $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f => {
+    const pf = suspectedPump(f.itemId);
+    return '<div class="bench-row"><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
     + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
-    + '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position</div></span>'
-    + '<span class="r">' + esc(f.d) + '</span></div>').join("")
+    + '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position</div>'
+    + (pf ? '<div class="neg">⚠ ' + esc(pf.why) + '</div>' : '') + '</span>'
+    + '<span class="r">' + esc(f.d) + '</span></div>'; }).join("")
     : '<div class="bench-row"><span class="dim">No anomaly flags in the last 30 days.</span></div>';
 }
 
@@ -6118,9 +6139,14 @@ $("#anomRun").onclick = () => { runAnomalyScan(true); toast("Anomaly scan starte
    blacklist, the proven-loser bench, realized metrics, gate constants, or
    the reserve — structurally (nothing here writes them) and in the copy
    (where intel and realized history disagree, history wins and says so). */
-const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag"];
+const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag", "promotion-warning"];
 const CONF_RANK = { rumor: 0, hinted: 1, polled: 2, confirmed: 3 };
 const CONF_BADGE = { confirmed: "b-tax", polled: "b-ok", hinted: "b-warn", rumor: "b-risk" };
+const INTEL_DIRS = ["up", "down", "unclear", "caution"];
+const TIER_BADGE = t => t == null ? "" : '<span class="badge ' + (t >= 3 ? "b-risk" : t === 2 ? "b-warn" : "b-tax")
+  + '" title="' + (t >= 3 ? "T3 trading community — adversarial by default: evidence someone WANTS the price to move, never that it will"
+                 : t === 2 ? "T2 general community discussion — corroborated before claiming"
+                 : t === 1 ? "T1 OSRS wiki — primary" : "T0 official — primary") + '">T' + t + '</span>';
 function intelExpired(r){
   return !!(r.validUntil && Date.parse(r.validUntil + "T23:59:59") < Date.now());
 }
@@ -6149,6 +6175,12 @@ function intelTagText(id){
       tags.push("sell-on-drop, don't accumulate — " + r.title + " [" + r.confidence + "]");
       continue;
     }
+    if (r.type === "promotion-warning"){
+      tags.push("being promoted in " + (r.community || "a trading community")
+        + " — possible coordinated accumulation; posture: absence ["
+        + r.confidence + (r.sourceTier != null ? ", T" + r.sourceTier : "") + "]");
+      continue;
+    }
     let t = (r.type === "demand-context" ? "demand context: " : "update-sensitive: ") + r.title
       + (r.catalyst && r.catalyst.windowStart ? ", window " + r.catalyst.windowStart + " → " + r.catalyst.windowEnd
          : ", until " + r.validUntil)
@@ -6167,7 +6199,7 @@ function intelTagText(id){
    flipped — the material changes that earn a resurface. */
 function importIntelligence(d){
   if (!d || typeof d !== "object" || !Array.isArray(d.records)) throw new Error("not an intelligence.json (no records array)");
-  let added = 0, updated = 0, absorbed = 0, noSource = 0, malformed = 0, resurfaced = 0;
+  let added = 0, updated = 0, absorbed = 0, noSource = 0, malformed = 0, resurfaced = 0, tierRejected = 0;
   for (const raw of d.records){
     if (!raw || typeof raw !== "object"){ malformed++; continue; }
     const type = INTEL_TYPES.includes(raw.type) ? raw.type : null;
@@ -6175,14 +6207,36 @@ function importIntelligence(d){
     const id = String(raw.id || "").trim();
     const sources = (Array.isArray(raw.sources) ? raw.sources : [])
       .filter(s => s && /^https?:\/\//.test(String(s.url || "")))
-      .map(s => ({ url: String(s.url), note: String(s.note || "") }));
+      .map(s => {
+        const o = { url: String(s.url), note: String(s.note || "") };
+        if ([0, 1, 2, 3].includes(+s.tier)) o.tier = +s.tier;
+        if (s.community) o.community = String(s.community);
+        return o;
+      });
     if (!id || !type || !conf){ malformed++; continue; }
     if (!sources.length){ noSource++; continue; }
+    /* Source tier: best (lowest) tier among cited sources; a record-level
+       claim can only ever WORSEN it (the citations are the evidence). */
+    const tiers = sources.map(s => s.tier).filter(t => t != null);
+    const sourceTier = tiers.length ? Math.min(...tiers)
+      : ([0, 1, 2, 3].includes(+raw.sourceTier) ? +raw.sourceTier : null);
+    /* Catalyst/thesis records require a T0/T1 primary in the citations —
+       T3 can trigger investigation, never BE the record. Untiered legacy
+       files fail this on purpose: re-run the briefing, don't grandfather. */
+    if ((type === "catalyst" || type === "catalyst-update") && !(sourceTier != null && sourceTier <= 1)){
+      tierRejected++; continue;
+    }
     const items = [...new Set((Array.isArray(raw.items) ? raw.items : [])
       .map(x => +((x && x.id) != null ? x.id : x)).filter(x => x > 0))];
     const rec = { id, type, confidence: conf, title: String(raw.title || "").slice(0, 200),
       thesis: String(raw.thesis || ""),
-      direction: ["up", "down", "unclear"].includes(raw.direction) ? raw.direction : "unclear",
+      /* Promotion is not information: a promotion-warning's direction is
+         caution by definition — a "buy" arriving under that type is coerced,
+         never honored. */
+      direction: type === "promotion-warning" ? "caution"
+        : INTEL_DIRS.includes(raw.direction) ? raw.direction : "unclear",
+      sourceTier, community: raw.community ? String(raw.community)
+        : (sources.find(s => s.community) || {}).community || null,
       items, sources, validUntil: String(raw.validUntil || "").slice(0, 10),
       contrary: raw.contrary ? String(raw.contrary) : null,
       pricedIn: (raw.pricedIn && typeof raw.pricedIn === "object")
@@ -6226,7 +6280,48 @@ function importIntelligence(d){
   DB.intel = DB.intel.slice(-200);
   DB.lastBriefImportAt = Date.now();
   save();
-  return { added, updated, absorbed, noSource, malformed, resurfaced };
+  return { added, updated, absorbed, noSource, malformed, resurfaced, tierRejected };
+}
+
+/* ═══ PUMP FINGERPRINT — market structure meets narrative ═══
+   A promotion-warning record (someone WANTS the price up) crossed with
+   either the accumulation-anomaly scan or thin books escalates to
+   SUSPECTED PUMP. The correct posture is neither buying nor shorting the
+   story but ABSENCE — enforced as: benched from sleeve candidacy, a
+   seed-style caution cap in the flip plan (half-size, one slot, never
+   wins-graduated while the flag stands), and the reason stated on every
+   surface. Pending warnings count — a pump defense that waits for
+   ratification arrives late; dismissing the warning record lifts it. */
+function dailyGpFlow(id){
+  const L = S.latest[id];
+  if (!L) return null;
+  const px = Number.isFinite(L.high) ? L.high : L.low;
+  const v = S.volumes[id];
+  return (px > 0 && v > 0) ? px * v : null;
+}
+function promotionWarningsFor(id){
+  const win = (DB.pumpWindowD != null ? DB.pumpWindowD : 14) * 86400e3;
+  return (DB.intel || []).filter(r => r.type === "promotion-warning"
+    && r.status !== "dismissed"
+    && (r.items || []).includes(id)
+    && (Date.now() - (r.importedAt || 0) <= win || (r.status === "ratified" && !intelExpired(r))));
+}
+function suspectedPump(id){
+  const warns = promotionWarningsFor(id);
+  if (!warns.length) return null;
+  const src = warns[0].community || "a trading community";
+  const win = (DB.pumpWindowD != null ? DB.pumpWindowD : 14) * 86400e3;
+  const anom = (DB.anomalyFlags || []).find(f => f.itemId === id && Date.now() - f.at <= win);
+  const lift = " Posture: absence — neither buying nor shorting the story. Lifts when the warning record is dismissed or expires.";
+  if (anom)
+    return { why: "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
+      + "%, volume +" + anom.rise14v + "% vs 2–3wk ago)." + lift };
+  const flow = dailyGpFlow(id);
+  const thin = DB.pumpThinGp != null ? DB.pumpThinGp : 10e6;
+  if (flow != null && flow < thin)
+    return { why: "SUSPECTED PUMP: promoted in " + src + " with thin books (" + gp(flow) + "/day vs the "
+      + gp(thin) + " floor) — the structural pump vehicle regardless of anomaly timing." + lift };
+  return null;
 }
 
 /* Activation on ratify — per type, and only then. Returns the effect line
@@ -6287,7 +6382,9 @@ function intelRecordHTML(r, compact){
   const dir = r.direction === "up" ? "↑" : r.direction === "down" ? "↓" : "·";
   const srcs = (r.sources || []).map((s, i) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" title="' + esc(s.note || s.url) + '">[' + (i + 1) + ']</a>').join(" ");
   return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:8px 11px;margin-bottom:6px">'
-    + '<div><span class="badge b-seed">' + r.type + '</span> ' + conf + ' <b>' + dir + ' ' + esc(r.title) + '</b>'
+    + '<div><span class="badge b-seed">' + r.type + '</span> ' + conf + ' ' + TIER_BADGE(r.sourceTier)
+    + (r.community ? ' <span class="dim">' + esc(r.community) + '</span>' : '')
+    + ' <b>' + dir + ' ' + esc(r.title) + '</b>'
     + ' <span class="dim">until ' + esc(r.validUntil) + '</span> ' + srcs
     + (r.resurfaced ? ' <span class="badge b-warn" title="' + esc(r.resurfaced) + '">resurfaced</span>' : '')
     + '</div>'
@@ -6356,6 +6453,18 @@ function intelScorecardInline(){
     }).filter(Boolean);
     lines.push('<div style="margin-top:4px">Analyst hit rate by tier: <b>' + esc(tiers.join(" · ")) + '</b>'
       + ' <span class="dim">(graded calls only — unclear counts against no one)</span></div>');
+    /* By SOURCE tier and named community — the standing question is whether
+       anything T3 has ever produced a correct, non-priced-in call. */
+    const byT = new Map();
+    for (const r of graded){
+      const k = (r.sourceTier != null ? "T" + r.sourceTier : "T?") + (r.community ? " (" + r.community + ")" : "");
+      const g = byT.get(k) || { n: 0, right: 0 };
+      g.n++; if (r.outcome === "right") g.right++;
+      byT.set(k, g);
+    }
+    lines.push('<div>By source: <b>' + esc([...byT.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([k, g]) => k + " " + g.right + "/" + g.n + " right").join(" · ")) + '</b>'
+      + ' <span class="dim">— has T3 ever produced a correct, non-priced-in call? Now it\'s measurable.</span></div>');
   }
   return '<div class="inline">' + (lines.length ? lines.join("")
     : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';
@@ -6390,6 +6499,7 @@ $("#intelFile").onchange = e => {
       toast("Briefing imported: " + res.added + " new, " + res.updated + " updated, " + res.resurfaced + " resurfaced, "
         + res.absorbed + " absorbed by prior rulings"
         + (res.noSource ? ", " + res.noSource + " REJECTED (no source, no record)" : "")
+        + (res.tierRejected ? ", " + res.tierRejected + " catalyst record(s) REJECTED (no T0/T1 primary source)" : "")
         + (res.malformed ? ", " + res.malformed + " malformed dropped" : "")
         + ". Nothing activates until you ratify.");
     } catch(err){ alert("Briefing import failed: " + err.message); }
@@ -8352,16 +8462,26 @@ function validateImport(d){
           rulingsCap: Math.min(10, Math.max(1, num(d.rulingsCap) != null ? num(d.rulingsCap) : 5)),
           briefRemindDismissKey: String(d.briefRemindDismissKey || ""),
           rulingSnooze: (d.rulingSnooze && typeof d.rulingSnooze === "object" && !Array.isArray(d.rulingSnooze)) ? d.rulingSnooze : {},
+          pumpWindowD: Math.min(60, Math.max(1, num(d.pumpWindowD) != null ? num(d.pumpWindowD) : 14)),
+          pumpThinGp: Math.min(1e10, Math.max(0, num(d.pumpThinGp) != null ? num(d.pumpThinGp) : 10000000)),
           intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
             const id = String((r && r.id) || "").trim();
-            const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag"].includes(r && r.type) ? r.type : null;
+            const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag","promotion-warning"].includes(r && r.type) ? r.type : null;
             const conf = ["confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
             const sources = (Array.isArray(r && r.sources) ? r.sources : [])
-              .filter(s => s && /^https?:\/\//.test(String(s.url || ""))).map(s => ({ url: String(s.url), note: String(s.note || "") }));
+              .filter(s => s && /^https?:\/\//.test(String(s.url || ""))).map(s => {
+                const o2 = { url: String(s.url), note: String(s.note || "") };
+                if ([0,1,2,3].includes(+s.tier)) o2.tier = +s.tier;
+                if (s.community) o2.community = String(s.community);
+                return o2;
+              });
             if (!id || !type || !conf || !sources.length){ rejected++; return null; }
             const o = { id, type, confidence: conf, title: String(r.title || "").slice(0, 200),
               thesis: String(r.thesis || ""),
-              direction: ["up","down","unclear"].includes(r.direction) ? r.direction : "unclear",
+              direction: type === "promotion-warning" ? "caution"
+                : ["up","down","unclear","caution"].includes(r.direction) ? r.direction : "unclear",
+              sourceTier: [0,1,2,3].includes(num(r.sourceTier)) ? num(r.sourceTier) : null,
+              community: r.community ? String(r.community) : null,
               items: [...new Set((Array.isArray(r.items) ? r.items : []).map(x => num(x)).filter(x => x > 0))],
               sources, validUntil: String(r.validUntil || "").slice(0, 10),
               contrary: r.contrary ? String(r.contrary) : null,
@@ -8523,7 +8643,8 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["szMinExp","minExpectGp",0,1e8],
                                  ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30],
                                  ["slvBudget","sleeveBudget",0,2e9],["slvMax","sleeveMaxPos",1,10],["slvRung","sleeveRungPct",1,25],
-                                 ["slvLiq","sleeveExitLiqPct",1,100]]){
+                                 ["slvLiq","sleeveExitLiqPct",1,100],
+                                 ["pumpWin","pumpWindowD",1,60],["pumpThin","pumpThinGp",0,1e10]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -8607,6 +8728,8 @@ $("#slvBudget").value = DB.sleeveBudget != null ? DB.sleeveBudget : 60000000;
 $("#slvMax").value = DB.sleeveMaxPos != null ? DB.sleeveMaxPos : 3;
 $("#slvRung").value = DB.sleeveRungPct != null ? DB.sleeveRungPct : 5;
 $("#slvLiq").value = DB.sleeveExitLiqPct != null ? DB.sleeveExitLiqPct : 15;
+$("#pumpWin").value = DB.pumpWindowD != null ? DB.pumpWindowD : 14;
+$("#pumpThin").value = DB.pumpThinGp != null ? DB.pumpThinGp : 10000000;
 /* Walk-up cadence: no schedule is assumed — the app opens on the same move
    list whenever you show up. */
 S.mode = "walkup";
