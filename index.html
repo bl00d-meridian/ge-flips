@@ -262,10 +262,12 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <section class="tab" id="tab-scan">
     <div class="panel">
       <div class="ph"><h2>Filters</h2><span class="sub" id="fPresetState"></span>
-        <span style="margin-left:auto;display:flex;gap:6px">
-          <button class="sm" id="pT1" title="One click: min unit 400, max 5,000, consumables on, thin-side volume ≥1,000/hr — the tier-1 consumable screen">T1 scan</button>
-          <button class="sm" id="pT2" title="One click: min unit 5,000, max 100,000, consumables off — volume gates on thin-side GP-FLOW (≥ the gp-flow floor) instead of unit count">T2 scan</button>
-          <button class="sm" id="fReset">Reset to guide</button>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <span class="seg" id="scanSeg">
+            <button data-st="t1" class="on" title="Tier-1 scanner: 400–5k consumables, unit volume floor. Its filter state is its own.">Scanner T1</button>
+            <button data-st="t2" title="Tier-2 scanner: 5k–100k, volume floor in thin-side gp-flow. Its filter state is its own.">Scanner T2</button>
+          </span>
+          <button class="sm" id="fReset" title="Reset THIS scanner's filters to its tier defaults — the other scanner is untouched">Reset to defaults</button>
         </span>
       </div>
       <div class="row">
@@ -430,6 +432,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </details>
       <div class="row" style="margin-bottom:10px">
         <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
+        <label class="f" title="How many scout·T1 candidates the pipeline maintains on the watchlist">T1 cand<input type="number" id="scT1Cap" min="0" max="20" style="width:52px"></label>
+        <label class="f" title="How many scout·T2 candidates the pipeline maintains on the watchlist">T2 cand<input type="number" id="scT2Cap" min="0" max="20" style="width:52px"></label>
       </div>
       <div class="tw"><table>
         <thead><tr>
@@ -760,8 +764,18 @@ const K = "gef.v1";
    for items at 5k+, where unit counts understate real liquidity. max ships at
    the tier-2 ceiling per the tranche design (user-set). */
 const DEFAULT_FILTERS = { vol:1000, gpvol:2_000_000, min:400, max:100_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
+/* Split scanners (user-set): each tier scanner keeps its own persisted
+   filter state — no shared values. These are the per-tab reset targets. */
+const SCAN_T1_DEFAULTS = { ...DEFAULT_FILTERS, vol:1000, min:400, max:5000, cons:true, margin:15 };
+const SCAN_T2_DEFAULTS = { ...DEFAULT_FILTERS, gpvol:2_000_000, min:5000, max:100_000, cons:false, margin:15 };
+const SF = () => DB.scanTab === "t2" ? DB.filtersT2 : DB.filtersT1;
 let DB = {
-  filters: {...DEFAULT_FILTERS},
+  filters: {...DEFAULT_FILTERS},   // legacy single-scanner state — migrates into filtersT1
+  filtersT1: {...SCAN_T1_DEFAULTS},
+  filtersT2: {...SCAN_T2_DEFAULTS},
+  scanTab: "t1",      // which scanner sub-tab is active
+  scoutT1Cap: 8,      // scout·T1 candidates the pipeline maintains
+  scoutT2Cap: 6,      // scout·T2 candidates
   sort: {k:"roi", dir:-1},
   watch: [],        // [{id, qty|null, tBuy, tSell, tAt}]
   flips: [],        // [{id,itemId,name,qty,buy,sell,date,note}]
@@ -821,6 +835,17 @@ function load(){
        the tier-2 maximum — capital above the tier budgets is a named reserve,
        not deployable float, so there is nothing to size above 100k. */
     if (!DB.capT2v1){ if (!(DB.filters.max <= 100000)) DB.filters.max = 100000; DB.capT2v1 = 1; }
+    /* One-time (split scanners, user-directed): the single scanner became
+       Scanner T1 / Scanner T2 with independent filter state. Existing filter
+       state migrates into T1; T2 starts at its tier defaults. */
+    if (!DB.splitScanV1){
+      if (raw) DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filters || {});
+      DB.filtersT2 = {...SCAN_T2_DEFAULTS};
+      DB.splitScanV1 = 1;
+    }
+    DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
+    DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
+    DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -1381,7 +1406,7 @@ function hourVerdict(byHour){
 
 /* ═══════════ SCANNER ═══════════ */
 function scanRows(){
-  const f = DB.filters, out = [];
+  const f = SF(), out = [];   // the active scanner sub-tab's own filter state
   for (const it of S.items){
     if (f.mem === "p2p" && !it.m) continue;
     if (f.mem === "f2p" &&  it.m) continue;
@@ -1412,7 +1437,7 @@ function scanRows(){
 function renderScan(){
   if (!S.items.length){ $("#scanBody").innerHTML = '<tr><td colspan="13" class="empty">Loading item mapping…</td></tr>'; return; }
   const rows = scanRows();
-  const shown = rows.slice(0, +DB.filters.rows || 50);
+  const shown = rows.slice(0, +SF().rows || 50);
   $("#scanCount").textContent = rows.length + " pass · showing " + shown.length +
     " · prices " + ago(S.latestAt) + " · volumes " + (S.hourAt ? ago(S.hourAt) : "—");
   if (!shown.length){
@@ -1503,7 +1528,7 @@ const tickFloorFor = id => exemptIds.has(id) ? Math.max(1, Math.ceil(TICKF() / 2
    For pricier items the honest measure is gp flow, so the unit floor scales
    down with price — never below 4/h, where even a full fill horizon can't
    move a handful of units. */
-const volFloorFor = px => Math.max(4, Math.round((DB.filters.vol || 1000) * Math.min(1, 2000 / Math.max(1, px || 1))));
+const volFloorFor = px => Math.max(4, Math.round(((DB.filtersT1 && DB.filtersT1.vol) || 1000) * Math.min(1, 2000 / Math.max(1, px || 1))));
 const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
 const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
 
@@ -1712,6 +1737,10 @@ function itemTier(id, c){
   const proven = tierProven(id);
   if (w && w.tierOv != null)
     return { t: w.tierOv, manual: true, proven, why: "manual override" };
+  /* Scout-admitted entries keep the tier their admitting scanner stamped;
+     only a manual override (above) re-classifies them. */
+  if (w && (w.scoutTier === 1 || w.scoutTier === 2))
+    return { t: w.scoutTier, manual: false, proven, why: "stamped by the admitting T" + w.scoutTier + " scanner" };
   const px = c && c.buy != null ? c.buy : null;
   const t = tierFromPrice(px);
   return { t, manual: false, proven,
@@ -1734,8 +1763,10 @@ function ensurePlanDate(){
   if (DB.planDate !== today()) resetPlanOverrides();
 }
 
-function planCandidates(){
-  return DB.watch.map(w => {
+/* The full gate chain for one entry. Shared by the plan (watch entries) and
+   the scout pipeline, which runs it on pseudo-entries {id, qty:null} so
+   admission means passing the SAME gates the allocator will apply. */
+function candidateFor(w){
     const c = calc(w.id);
     if (!c || c.buy == null || c.sell == null)
       return { id:w.id, name: itemName(w.id), failed:"no live price in /latest" };
@@ -1825,8 +1856,8 @@ function planCandidates(){
              estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
              score: failed ? 0 : eMargin * Math.max(1, horizonUnits) * (1 + Math.min(wins, 5) * 0.1) };
-  });
 }
+function planCandidates(){ return DB.watch.map(candidateFor); }
 
 /* One position per family, highest score wins. Applied after the gates so the
    bench reason names the winner rather than hiding the item entirely. */
@@ -2552,81 +2583,113 @@ function renderPlan(){
    whole market on SUSTAINED post-tax ROI (the honest number), rank, top up.
    Hard boundary: it only manages entries it added itself (src:"scout").
    Anything you added, margin-tested, hold, or recently flipped is untouchable. */
-function scoutScreen(){
+/* Per-tier scanner screen for the pipeline: the tier scanner's OWN filters,
+   plus the sustained-ROI floor. This is the cheap pre-screen; admission then
+   requires the FULL plan gate chain (candidateFor) below. */
+function scanScreenTier(t){
+  const f = t === 2 ? DB.filtersT2 : DB.filtersT1;
   const out = [];
-  /* Price ceiling = the tier-2 maximum (user-directed): capital above the
-     tier budgets is a named reserve, not deployable float, so nothing above
-     100k is worth surfacing. (The earlier stack-scaled ceiling is reverted.) */
-  const ceil = Math.min(DB.filters.max, TIER2_MAX);
   for (const it of S.items){
     if (!it.l) continue;
+    if (f.mem === "p2p" && !it.m) continue;
+    if (f.mem === "f2p" &&  it.m) continue;
+    if (f.cons && !CONSUMABLE_RX.test(it.n)) continue;
     const c = calc(it.i);
     if (!c || c.buy == null || c.sell == null) continue;
-    if (c.buy < Math.max(150, DB.filters.min) || c.buy > ceil) continue;
-    if (c.volSide < volFloorFor(c.buy)) continue;   // price-scaled: gp flow, not unit count
-    if (c.age == null || c.age > DB.filters.age) continue;
+    if (c.buy < Math.max(150, f.min) || c.buy > Math.min(f.max, TIER2_MAX)) continue;
+    if (c.buy < TIER1_MAX ? c.volSide < f.vol : c.volSide * c.buy < (f.gpvol || 2e6)) continue;
+    if (c.margin == null || c.margin < f.margin) continue;
+    if (c.age == null || c.age > f.age) continue;
     const eM = effMargin(c);
     const eR = (eM != null && c.buy > 0) ? eM / c.buy * 100 : null;
     if (eR == null || eR < GATE.roi) continue;
-    let score = eR * Math.log(Math.max(c.volSide, 2));
-    if (c.crowdRank && c.crowdRank <= 100) score *= 0.5;   // crowding is a penalty, not a ban
-    out.push({ id: it.i, score, eR, vol: c.volSide, px: c.buy });
+    /* Admission rank = the allocator's own currency: post-tax sustained
+       margin × the units a fill horizon can move. */
+    const volGate = c.vol5 != null ? Math.min(c.volSide, c.vol5) : c.volSide;
+    const hu = Math.max(1, Math.floor(volGate * GATE.capture * FILLH()));
+    out.push({ id: it.i, score: eM * hu, eR, vol: c.volSide, px: c.buy });
   }
   out.sort((a,b) => b.score - a.score);
   return out;
 }
 
 const SCOUT_EVERY = 10 * 60e3, SCOUT_EVICT_MS = 48 * 3600e3;
-function runScout(force){
+const SCOUT_EVAL_PER_TIER = 12;   // full-gate evaluations (spark fetches) per cycle — API politeness
+async function runScout(force){
   if (!DB.scoutOn || !S.items.length || !S.latestAt || !S.hourAt) return;
   const now = Date.now();
   if (!force && S.lastScout && now - S.lastScout < SCOUT_EVERY) return;
-  S.lastScout = now;
-
-  const screen = scoutScreen();
-  const passIds = new Set(screen.map(x => x.id));
-  for (const w of DB.watch) if (passIds.has(w.id)) w.lastPass = now;
-
-  /* Evict: scout-added only, and never anything with skin in the game. */
-  const held = new Set(DB.positions.map(p => p.itemId));
-  const recentFlip = new Set(DB.flips.filter(f => now - f.id < 7 * 86400e3).map(f => f.itemId));
-  const removed = [];
-  DB.watch = DB.watch.filter(w => {
-    if (w.src !== "scout") return true;                       // yours — never touched
-    if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
-    if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
-    if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){
-      removed.push(itemName(w.id));
-      DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
-        why: "hasn't passed the sustained-ROI screen since " + ago(w.lastPass || w.addedAt).replace(" ago", "") + " ago (48h grace)" });
-      return false;
+  if (S.scoutBusy) return;
+  S.lastScout = now; S.scoutBusy = true;
+  try {
+    /* 1) lastPass upkeep — against the FULL plan gates, not just the screen:
+       an entry that keeps failing gates is dead menu weight either way. */
+    for (const x of planCandidates()){
+      if (x.failed) continue;
+      const w = DB.watch.find(v => v.id === x.id);
+      if (w) w.lastPass = now;
     }
-    return true;
-  });
 
-  const cap = DB.watchCap || 25;
-  const have = new Set(DB.watch.map(w => w.id));
-  const added = [];
-  for (const x of screen){
-    if (DB.watch.length >= cap) break;
-    if (have.has(x.id)) continue;
-    DB.watch.push({ id: x.id, qty: null, src: "scout", addedAt: now, lastPass: now });
-    have.add(x.id); added.push(itemName(x.id));
-    DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
-      why: "sustained ROI " + x.eR.toFixed(1) + "% on " + full(Math.round(x.vol)) + "/h thin-side volume"
-         + (x.px > TIER1_MAX ? " · tier-2 band (5k–100k)" : "") });
-  }
-  /* Journal retention: three days is enough to review a weekend away. */
-  DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
+    /* 2) Evict: scout-added only, and never anything with skin in the game.
+       Manually-added items are NEVER auto-removed. */
+    const held = new Set(DB.positions.map(p => p.itemId));
+    const recentFlip = new Set(DB.flips.filter(f => now - f.id < 7 * 86400e3).map(f => f.itemId));
+    const removed = [];
+    DB.watch = DB.watch.filter(w => {
+      if (w.src !== "scout") return true;                       // yours — never touched
+      if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
+      if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
+      if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){
+        removed.push(itemName(w.id));
+        DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
+          why: "failed the full gate screen for 48h straight (scout·T" + (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy) || "?") + ")" });
+        return false;
+      }
+      return true;
+    });
 
-  if (added.length || removed.length){
-    S.scoutMsg = "scout: "
-      + (added.length ? "+" + added.length + " (" + added.slice(0,4).join(", ") + (added.length>4?"…":"") + ")" : "")
-      + (added.length && removed.length ? " · " : "")
-      + (removed.length ? "−" + removed.length + " (" + removed.slice(0,3).join(", ") + (removed.length>3?"…":"") + ")" : "");
-    save();
-    if (S.tab === "watch"){ renderWatch(); fillSparks(); }
-  }
+    /* 3) Top-up per tier: candidates must pass the tier scanner, then ALL
+       plan gates at scan time, not family-duplicate the watchlist, and fit
+       both the tier's candidate cap and the overall watch cap. */
+    const famTaken = new Set(DB.watch.map(w => familyKey(itemName(w.id))));
+    const have = new Set(DB.watch.map(w => w.id));
+    const added = [];
+    for (const t of [1, 2]){
+      const cap = t === 2 ? (DB.scoutT2Cap != null ? DB.scoutT2Cap : 6) : (DB.scoutT1Cap != null ? DB.scoutT1Cap : 8);
+      let haveT = DB.watch.filter(w => w.src === "scout" && (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy)) === t).length;
+      let evaluated = 0;
+      for (const x of scanScreenTier(t)){
+        if (haveT >= cap || DB.watch.length >= (DB.watchCap || 25) || evaluated >= SCOUT_EVAL_PER_TIER) break;
+        if (have.has(x.id)) continue;
+        const fam = familyKey(itemName(x.id));
+        if (fam && famTaken.has(fam)) continue;   // family duplicate of an existing entry
+        evaluated++;
+        /* Full gates need the 7-day chart — fetch politely, cache honors TTL. */
+        try { await sparkFor(x.id); } catch(e){ /* offline/miss → gate says "no chart yet" and we skip */ }
+        await new Promise(r => setTimeout(r, 250));
+        const cand = candidateFor({ id: x.id, qty: null });
+        if (cand.failed) continue;                // ALL plan gates, proven-loser bench included
+        DB.watch.push({ id: x.id, qty: null, src: "scout", scoutTier: t, addedAt: now, lastPass: now });
+        have.add(x.id); famTaken.add(fam); haveT++;
+        added.push(itemName(x.id) + " [T" + t + "]");
+        DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
+          why: "scout·T" + t + ": passed the T" + t + " scanner AND all plan gates — sustained ROI "
+             + x.eR.toFixed(1) + "%, " + full(Math.round(x.vol)) + "/h thin side, rank score " + gp(Math.round(x.score)) });
+      }
+    }
+    /* Journal retention: three days is enough to review a weekend away. */
+    DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
+
+    if (added.length || removed.length){
+      S.scoutMsg = "scout: "
+        + (added.length ? "+" + added.length + " (" + added.slice(0,4).join(", ") + (added.length>4?"…":"") + ")" : "")
+        + (added.length && removed.length ? " · " : "")
+        + (removed.length ? "−" + removed.length + " (" + removed.slice(0,3).join(", ") + (removed.length>3?"…":"") + ")" : "");
+      save();
+      if (S.tab === "watch"){ renderWatch(); fillSparks(); }
+    }
+  } catch(e){ console.warn("scout pipeline", e); }
+  finally { S.scoutBusy = false; }
 }
 
 /* Scout journal — the "what changed while I wasn't looking" answer. Entries
@@ -2725,8 +2788,11 @@ function renderWatch(){
   const body = $("#watchBody");
   const st = workingStack(), third = st/3;
   $("#watchStack").textContent = "working " + gp(st) + " (reserve " + gp(Math.min(DB.shadowReserve||0, stack())) + " excluded) · free " + gp(Math.max(0, st - committed())) + " · one-third cap " + gp(third);
-  const scoutN = DB.watch.filter(w => w.src === "scout").length;
-  $("#scoutTog").textContent = DB.scoutOn ? "⚡ scout ON (" + scoutN + "/" + (DB.watchCap||25) + ")" : "⚡ scout OFF";
+  const scT1 = DB.watch.filter(w => w.src === "scout" && (w.scoutTier || 1) === 1).length;
+  const scT2 = DB.watch.filter(w => w.src === "scout" && w.scoutTier === 2).length;
+  $("#scoutTog").textContent = DB.scoutOn
+    ? "⚡ scout ON (T1 " + scT1 + "/" + (DB.scoutT1Cap != null ? DB.scoutT1Cap : 8) + " · T2 " + scT2 + "/" + (DB.scoutT2Cap != null ? DB.scoutT2Cap : 6) + ")"
+    : "⚡ scout OFF";
   $("#scoutTog").classList.toggle("primary", !!DB.scoutOn);
   $("#scoutMsg").textContent = DB.scoutOn ? (S.scoutMsg || "") : "";
   renderScoutLog();
@@ -2757,7 +2823,7 @@ function renderWatch(){
     const tr = sp ? trendPct(sp.pts) : null;
     const hv = sp ? hourVerdict(sp.byHour) : null;
     const flags = [];
-    if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by auto-scout '+ago(w.addedAt)+' — it will remove this itself if it stops passing the screen for 48h. Margin-test it to claim it as yours.">scout</span>');
+    if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by the scout pipeline '+ago(w.addedAt)+' after passing its tier scanner AND every plan gate — it removes itself if it fails the gates for 48h straight. Margin-test it to claim it as yours.">scout·T'+(w.scoutTier || tierFromPrice(c.buy) || "?")+'</span>');
     else if (w.lastPass && Date.now() - w.lastPass > SCOUT_EVICT_MS)
       flags.push('<span class="badge b-warn" title="Hasn\'t passed the scout screen in '+ago(w.lastPass).replace(" ago","")+'. Yours, so it stays — but §5 says consider cutting it.">cold</span>');
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
@@ -2896,13 +2962,21 @@ function tierStats(t){
     if (!r) continue;
     for (const k of ["b30","s30"]) if (r[k] != null){ mkSum += r[k]; mkN++; }
   }
+  /* Verdict math runs on STAMPED flips only — flips logged after tier-tagging
+     went live. Pre-experiment (inferred) flips stay visible in the table but
+     never steer the scale-up verdict. */
+  const stamped = fl.filter(f => [0,1,2].includes(f.tier));
+  const sTimed = stamped.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh));
+  const sGpDays = sTimed.reduce((s,f) => s + f.qty*f.buy*(f.bh+f.sh)/24, 0);
+  const sVel = sGpDays > 0 ? sTimed.reduce((s,f) => s + flipProfit(f), 0) / sGpDays : null;
   return { t, n: fl.length, profit, gpDays, vel, capPct, mk: mkN ? mkSum/mkN : null, slotH,
-           inferred: fl.filter(f => ![0,1,2].includes(f.tier)).length };
+           stampedN: stamped.length, sVel,
+           inferred: fl.length - stamped.length };
 }
 function renderTierCompare(){
   const t1 = tierStats(1), t2 = tierStats(2), un = tierStats(0);
   const row = s => '<tr><td>' + (s.t ? "T"+s.t : "untiered")
-    + (s.inferred ? ' <span class="dim" title="'+s.inferred+' flip'+(s.inferred===1?"":"s")+' logged before tier stamping existed — tier inferred from the logged buy price">('+s.inferred+' inferred)</span>' : '') + '</td>'
+    + (s.inferred ? ' <span class="dim" title="'+s.inferred+' flip'+(s.inferred===1?"":"s")+' logged before tier stamping went live — tier inferred from the logged buy price; shown here but excluded from the verdict math">('+s.inferred+' pre-experiment)</span>' : '') + '</td>'
     + '<td class="num">' + (s.gpDays > 0 ? gp(Math.round(s.gpDays)) : '<span class="dim" title="Needs flips timed through the position lifecycle (placed → filled → listed → sold)">no data</span>') + '</td>'
     + '<td class="num '+sign(s.profit)+'">' + gp(s.profit) + '</td>'
     + '<td class="num">' + (s.vel != null ? '<span class="'+sign(s.vel)+'">'+(s.vel*100).toFixed(2)+'%</span><span class="dim"> /gp-day</span>' : '<span class="dim">no data</span>') + '</td>'
@@ -2911,15 +2985,23 @@ function renderTierCompare(){
     + '<td class="num sec">' + (s.slotH ? s.slotH.toFixed(1)+'h' : '—') + '</td>'
     + '<td class="num">' + s.n + '</td></tr>';
   $("#tierBody").innerHTML = row(t1) + row(t2) + (un.n ? row(un) : '');
+  /* The verdict waits for evidence: ≥5 STAMPED flips per tier (logged after
+     tier-tagging went live), then velocity on stamped flips only. */
+  const NEED = 5;
   let verdict = "", note = "";
-  if (t1.vel != null && t2.vel != null && t1.vel > 0){
-    const r = t2.vel / t1.vel;
+  if (t1.stampedN < NEED || t2.stampedN < NEED){
+    verdict = "collecting data — " + t2.stampedN + "/" + NEED + " T2 flips"
+      + (t1.stampedN < NEED ? " · " + t1.stampedN + "/" + NEED + " T1" : "");
+    note = "The scale-up verdict unlocks at " + NEED + " tier-stamped flips per tier. Pre-experiment flips are shown above but don't count.";
+  } else if (t1.sVel != null && t2.sVel != null && t1.sVel > 0){
+    const r = t2.sVel / t1.sVel;
     verdict = "T2/T1 velocity " + r.toFixed(2) + " — "
       + (r > 0.8 ? "scales cleanly" : r >= 0.5 ? "scales with friction" : "edge doesn't scale — recall capital to reserve");
-    note = r > 0.8 ? "Tier-2 capital earns close to tier-1's rate per gp-day deployed. The mid-tier band is earning its budget."
+    note = (r > 0.8 ? "Tier-2 capital earns close to tier-1's rate per gp-day deployed. The mid-tier band is earning its budget."
          : r >= 0.5 ? "Tier-2 earns, but slower per gp-day. Keep its budget modest and let the ramp rules do the filtering."
-         : "Tier-2 gp-days earn under half of tier-1's rate. PROPOSAL (your call, per house convention): lower the T2 budget and/or raise the shadow reserve by the difference — the tool will not change either setting itself.";
-  } else verdict = "verdict needs timed flips in both tiers";
+         : "Tier-2 gp-days earn under half of tier-1's rate. PROPOSAL (your call, per house convention): lower the T2 budget and/or raise the shadow reserve by the difference — the tool will not change either setting itself.")
+      + " Verdict computed on stamped flips only.";
+  } else verdict = "verdict needs timed flips in both tiers (stamped since tier-tagging)";
   $("#tierVerdict").textContent = verdict;
   $("#tierNote").textContent = note;
 }
@@ -3773,55 +3855,45 @@ function setTab(t){
 
 const FMAP = { fVol:"vol", fGpVol:"gpvol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
 
-/* One-click scanner presets. A preset is "active" while every field it sets
-   still matches — touch any of them and the state reads custom. T1 gates on
-   the unit floor (its whole band is sub-5k); T2's band is 5k+ so the gp-flow
-   floor governs and the unit floor is irrelevant by construction. */
-const SCAN_PRESETS = {
-  t1: { btn:"pT1", label:"T1 scan", f:{ min:400,  max:5000,   cons:true,  vol:1000 } },
-  t2: { btn:"pT2", label:"T2 scan", f:{ min:5000, max:100000, cons:false } }
-};
-function activePreset(){
-  outer: for (const [k, p] of Object.entries(SCAN_PRESETS)){
-    for (const [fk, fv] of Object.entries(p.f)) if (DB.filters[fk] !== fv) continue outer;
-    return k;
-  }
-  return null;
-}
-function paintPresetState(){
-  const a = activePreset();
-  $("#fPresetState").textContent = a
-    ? "preset: " + SCAN_PRESETS[a].label + (a === "t2" ? " · gp-flow floor " + gp(DB.filters.gpvol || 2e6) + "/hr" : "")
-    : "custom filters";
-  for (const [k, p] of Object.entries(SCAN_PRESETS))
-    $("#" + p.btn).classList.toggle("primary", a === k);
+/* Two scanners, one set of controls: the inputs bind to whichever tab is
+   active (SF()), each tab's state persisted independently — no shared values. */
+function paintScanState(){
+  $$("#scanSeg button").forEach(b => b.classList.toggle("on", b.dataset.st === DB.scanTab));
+  $("#fPresetState").textContent = DB.scanTab === "t2"
+    ? "T2 · gp-flow floor " + gp(SF().gpvol || 2e6) + "/hr thin side"
+    : "T1 · unit floor " + full(SF().vol || 1000) + "/hr thin side";
 }
 function paintFilters(){
+  const f = SF();
   for (const [el,key] of Object.entries(FMAP)){
     const n = $("#"+el);
-    if (n.type === "checkbox") n.checked = !!DB.filters[key];
-    else n.value = DB.filters[key];
+    if (n.type === "checkbox") n.checked = !!f[key];
+    else n.value = f[key];
   }
-  paintPresetState();
+  paintScanState();
 }
 for (const [el,key] of Object.entries(FMAP)){
   $("#"+el).addEventListener("change", e => {
-    const n = e.target;
-    DB.filters[key] = n.type === "checkbox" ? n.checked
-                    : n.type === "number"   ? clampNum(n.value, DEFAULT_FILTERS[key])
-                    : n.value;
-    if (key === "rows") DB.filters.rows = +n.value;
-    save(); paintPresetState(); renderScan();
+    const n = e.target, f = SF();
+    const defs = DB.scanTab === "t2" ? SCAN_T2_DEFAULTS : SCAN_T1_DEFAULTS;
+    f[key] = n.type === "checkbox" ? n.checked
+           : n.type === "number"   ? clampNum(n.value, defs[key])
+           : n.value;
+    if (key === "rows") f.rows = +n.value;
+    save(); paintScanState(); renderScan();
   });
 }
-for (const [k, p] of Object.entries(SCAN_PRESETS)){
-  $("#" + p.btn).onclick = () => {
-    Object.assign(DB.filters, p.f);
-    save(); paintFilters(); renderScan();
-    toast(p.label + " preset applied" + (k === "t2" ? " — volume now gates on gp-flow (" + gp(DB.filters.gpvol || 2e6) + "/hr thin side)" : "") + ".");
-  };
-}
-$("#fReset").onclick = () => { DB.filters = {...DEFAULT_FILTERS}; DB.sort = {k:"roi",dir:-1}; save(); paintFilters(); paintSortHeads(); renderScan(); };
+$("#scanSeg").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  DB.scanTab = b.dataset.st === "t2" ? "t2" : "t1";
+  save(); paintFilters(); renderScan();
+};
+$("#fReset").onclick = () => {
+  if (DB.scanTab === "t2") DB.filtersT2 = {...SCAN_T2_DEFAULTS};
+  else DB.filtersT1 = {...SCAN_T1_DEFAULTS};
+  DB.sort = {k:"roi",dir:-1};
+  save(); paintFilters(); paintSortHeads(); renderScan();
+};
 
 function paintSortHeads(){ $$("#scanTable th.s").forEach(th => th.classList.toggle("on", th.dataset.k === DB.sort.k)); }
 $$("#scanTable th.s").forEach(th => th.onclick = () => {
@@ -4442,6 +4514,7 @@ function validateImport(d){
     if (num(w.tBuy) > 0 && num(w.tSell) > 0){ o.tBuy = num(w.tBuy); o.tSell = num(w.tSell); o.tAt = num(w.tAt) || Date.now(); }
     if (num(w.invTarget) > 0) o.invTarget = Math.floor(num(w.invTarget));
     if ([0,1,2].includes(num(w.tierOv))) o.tierOv = num(w.tierOv);   // manual tier override
+    if ([1,2].includes(num(w.scoutTier))) o.scoutTier = num(w.scoutTier);   // admitting scanner's stamp
     if (w.t2Grad) o.t2Grad = 1;                                      // tier-2 graduation toast fired
     return o;
   }).filter(Boolean);
@@ -4523,6 +4596,15 @@ function validateImport(d){
           horizonH: Math.min(16, Math.max(4, num(d.horizonH) || 10)),
           reserve: Math.max(0, num(d.reserve) != null ? num(d.reserve) : 3000000),
           filters: Object.assign({...DEFAULT_FILTERS}, (d.filters && typeof d.filters === "object") ? d.filters : {}),
+          /* Old exports (pre-split) carry only `filters` — those migrate into T1, same as load(). */
+          filtersT1: Object.assign({...SCAN_T1_DEFAULTS},
+            (d.filtersT1 && typeof d.filtersT1 === "object") ? d.filtersT1
+              : (d.filters && typeof d.filters === "object" && !d.splitScanV1) ? d.filters : {}),
+          filtersT2: Object.assign({...SCAN_T2_DEFAULTS}, (d.filtersT2 && typeof d.filtersT2 === "object") ? d.filtersT2 : {}),
+          scanTab: d.scanTab === "t2" ? "t2" : "t1",
+          splitScanV1: 1,
+          scoutT1Cap: Math.min(20, Math.max(0, num(d.scoutT1Cap) != null ? num(d.scoutT1Cap) : 8)),
+          scoutT2Cap: Math.min(20, Math.max(0, num(d.scoutT2Cap) != null ? num(d.scoutT2Cap) : 6)),
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 
@@ -4543,7 +4625,8 @@ $("#shBankNow").onclick = () => {
 for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szFill","fillHorizonH",1,12],
                                  ["szTick","tickFloor",1,100],["szQuote","quoteTicks",1,20],["szMkX","markoutX",0.1,5],
                                  ["szRes","reserve",0,2e9],["szShadow","shadowReserve",0,10e9],
-                                 ["szT1","t1Budget",0,2e9],["szT2","t2Budget",0,2e9],["szPart","partCapPct",1,100]]){
+                                 ["szT1","t1Budget",0,2e9],["szT2","t2Budget",0,2e9],["szPart","partCapPct",1,100],
+                                 ["scT1Cap","scoutT1Cap",0,20],["scT2Cap","scoutT2Cap",0,20]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -4600,12 +4683,12 @@ $("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
 $("#szFill").value = DB.fillHorizonH || 4;
 $("#szTick").value = DB.tickFloor || 15;
-$("#szMinPx").value = DB.filters.min != null ? DB.filters.min : 400;
+$("#szMinPx").value = DB.filtersT1.min != null ? DB.filtersT1.min : 400;
 $("#szQuote").value = DB.quoteTicks || 3;
 $("#szMkX").value = DB.markoutX || 0.5;
 $("#szMinPx").addEventListener("change", e => {
-  DB.filters.min = Math.max(0, clampNum(e.target.value, DB.filters.min));
-  e.target.value = DB.filters.min;
+  DB.filtersT1.min = Math.max(0, clampNum(e.target.value, DB.filtersT1.min));
+  e.target.value = DB.filtersT1.min;
   save(); paintFilters(); renderAll();
 });
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
@@ -4613,6 +4696,8 @@ $("#szShadow").value = DB.shadowReserve != null ? DB.shadowReserve : 300000000;
 $("#szT1").value = DB.t1Budget != null ? DB.t1Budget : 100000000;
 $("#szT2").value = DB.t2Budget != null ? DB.t2Budget : 50000000;
 $("#szPart").value = Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10;
+$("#scT1Cap").value = DB.scoutT1Cap != null ? DB.scoutT1Cap : 8;
+$("#scT2Cap").value = DB.scoutT2Cap != null ? DB.scoutT2Cap : 6;
 S.mode = new Date().getHours() < 15 ? "morning" : "evening";
 S.planMode = S.mode === "evening" ? "sell" : "buy";
 
