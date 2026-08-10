@@ -331,10 +331,15 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <label class="f" title="Inventory mode never quotes its bid and ask closer than this many ticks — quoting tighter trades against yourself after tax.">Quote width<input type="number" id="szQuote" min="1" max="20" style="width:56px"></label>
         <label class="f" title="An item whose adverse markout exceeds this × its margin gets flagged toxic flow in the weekly review.">Markout ×<input type="number" id="szMkX" min="0.1" max="5" step="0.1" style="width:56px"></label>
         <label class="f">Reserve (gp)<input type="number" id="szRes" step="500000" min="0" style="width:110px"></label>
+        <label class="f" title="Named capital for the Shadow purchase — excluded from the allocator, the one-third denominator, and all position math. Recallable only here, by you.">Shadow reserve<input type="number" id="szShadow" step="10000000" min="0" style="width:120px"></label>
+        <label class="f" title="Allocation ceiling for tier-1 (400–5k consumables), carved from working capital.">T1 budget<input type="number" id="szT1" step="5000000" min="0" style="width:110px"></label>
+        <label class="f" title="Allocation ceiling for tier-2 (5k–100k mid-tier). Max 3 concurrent T2 items; new ones ramp at one-third size until 2 clean logged trips.">T2 budget<input type="number" id="szT2" step="5000000" min="0" style="width:110px"></label>
+        <label class="f" title="No plan line may exceed this share of an item's 1h unit volume — bigger than this and the offer IS the market. Bench reason: would move the market.">Part. cap %<input type="number" id="szPart" min="1" max="100" style="width:56px"></label>
         <span class="note" style="align-self:center;max-width:520px">
           Buy legs are sized to fill inside the <b>fill horizon</b> (flow × 15% capture × hours);
           buy limits still roll every 4h across the day horizon while offers stand.
-          The reserve is never allocated, and Offers keeps one GE slot free for game-content buys.
+          Reserves are never allocated: incidentals float here, the shadow reserve in full.
+          Offers keeps one GE slot free for game-content buys.
         </span>
       </div>
       <div class="plan-note" id="planHint"></div>
@@ -507,6 +512,23 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <thead><tr><th>Date</th><th>Δ gp</th><th>What</th><th></th></tr></thead>
         <tbody id="gameBody"></tbody>
       </table></div>
+    </div>
+
+    <div class="panel" id="tierPanel">
+      <div class="ph"><h3>Tier comparison — does the edge scale? (weekly review)</h3>
+        <span class="sub" id="tierVerdict" style="margin-left:auto"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Tier</th>
+          <th title="Σ qty × buy × measured slot-hours ÷ 24, from timed flips — the gp-days this tier actually occupied">gp-days deployed</th>
+          <th>Realized profit</th>
+          <th title="Profit per gp-day deployed — the truest rate on the capital itself. Needs timed flips.">Velocity</th>
+          <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift — needs flips placed through the plan">Capture %</th>
+          <th class="sec" title="Average +30m markout per unit across the tier's timed flips (+ favorable, − adverse)">Avg markout</th>
+          <th class="sec">Slot-hours</th><th>Flips</th></tr></thead>
+        <tbody id="tierBody"></tbody>
+      </table></div>
+      <div class="note" id="tierNote" style="margin-top:8px"></div>
     </div>
 
     <div class="panel" id="byItemPanel">
@@ -758,6 +780,10 @@ let DB = {
   horizonH: 10,       // hours the offers sit before the evening touch
   fillHorizonH: 4,    // hours a buy leg is allowed to take — sizing and the slow-fill gates use this
   reserve: 3_000_000, // gp held back for incidentals, never allocated
+  shadowReserve: 300_000_000, // named capital for the Shadow purchase — outside ALL allocator math, recallable by hand
+  t1Budget: 100_000_000,      // tier-1 (400–5k consumables) allocation ceiling, carved from working capital
+  t2Budget: 50_000_000,       // tier-2 (5k–100k mid-tier) allocation ceiling
+  partCapPct: 10,             // participation cap: max share of 1h unit volume any plan line may take
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
   holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
   checks: { date:"", morning:[], evening:[], weekly:[] }
@@ -783,6 +809,10 @@ function load(){
        tick granularity (margin of 3-4 gp IS 3-4 ticks). Lower it deliberately
        in the scanner filters if you want the cheap stuff back. */
     if (!DB.minPx400){ if (!(DB.filters.min >= 400)) DB.filters.min = 400; DB.minPx400 = 1; }
+    /* One-time (tranche update, user-directed): scanner/scout price ceiling is
+       the tier-2 maximum — capital above the tier budgets is a named reserve,
+       not deployable float, so there is nothing to size above 100k. */
+    if (!DB.capT2v1){ if (!(DB.filters.max <= 100000)) DB.filters.max = 100000; DB.capT2v1 = 1; }
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -1381,6 +1411,7 @@ function renderScan(){
   const watched = new Set(DB.watch.map(w => w.id));
   $("#scanBody").innerHTML = shown.map(c => {
     const flags = [];
+    flags.push(tierBadge(itemTier(c.id, c)));   // computed tier, override-aware
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
     if (c.roi > 12 && c.volSide < 20000) flags.push('<span class="badge b-warn" title="Fat ROI on modest volume — manipulation, dying item, or stale data. Margin-test before sizing.">check me</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — everyone\'s flipping tool recommends this item, so expect the spread compressed to the tax floor. Volume is safety, not margin.">crowded #'+c.crowdRank+'</span>');
@@ -1413,7 +1444,9 @@ function renderScan(){
 
 /* ═══════════ SIZING ═══════════ */
 function planCap(c){
-  const caps = [], st = stack();
+  /* One-third rule runs on WORKING capital — the shadow reserve is a named
+     purchase fund, not float, so it never inflates position sizing. */
+  const caps = [], st = workingStack();
   if (st > 0 && c.buy > 0) caps.push(Math.floor((st/3) / c.buy));
   if (c.limit) caps.push(c.limit * limitWindows());
   return caps.length ? Math.max(0, Math.min(...caps)) : null;
@@ -1425,15 +1458,20 @@ function planQty(w, c){
   return { qty, cap, auto: cap != null && (w.qty == null || w.qty > cap) };
 }
 function capReason(c, cap){
-  const st = stack();
+  const st = workingStack();
   const byThird = (st > 0 && c.buy > 0) ? Math.floor((st/3)/c.buy) : null;
   const w = limitWindows(), byLimit = c.limit ? c.limit * w : null;
   if (byLimit != null && cap === byLimit && (byThird == null || byLimit <= byThird))
     return "the 4-hour buy limit" + (w > 1 ? " × " + w + " windows over your " + (DB.horizonH||10) + "h day" : "");
-  return "one-third of your stack";
+  return "one-third of working capital";
 }
 
 /* ═══════════ TODAY'S PLAN ═══════════ */
+/* HOUSE CONVENTION (user-set, Aug 9 2026): strategy parameters — ceilings,
+   floors, budgets, gates, tier bands — change only on the user's explicit
+   instruction. The tool may PROPOSE parameter changes in review copy, never
+   self-apply them. Same law as logging and placing: the tool proposes, the
+   user disposes — at the strategy layer too. */
 /* Hard gates bench; soft bands only tag. The rule of thumb after three
    double-counting bugs: bench only on information that sizing and the
    effective-margin logic don't already price in. */
@@ -1627,10 +1665,55 @@ function mmVerdict(id){
     target = Math.max(1, Math.min(
       Math.floor((c.volSide || 0) * GATE.capture * FILLH()),
       c.limit || Infinity,
-      Math.max(1, Math.floor(stack() / 3 / c.buy / 2))));
+      Math.max(1, Math.floor(workingStack() / 3 / c.buy / 2))));
   }
   return { ready, lacks, target, n: fl.length, net };
 }
+
+/* ═══════════ CAPITAL TRANCHES & TIERS ═══════════
+   The stack splits into a SHADOW RESERVE (named capital for the Shadow
+   purchase — excluded from the allocator, the one-third denominator, and all
+   position math) and WORKING CAPITAL, from which tier budgets are carved.
+   Tier bands (user-set): T1 = 400–5,000 gp consumables, T2 = 5,000–100,000 gp
+   mid-tier. Everything else is untiered. The allocator never exceeds a tier's
+   budget and never touches the reserve. */
+const TIER1_MIN = 400, TIER1_MAX = 5_000, TIER2_MAX = 100_000;
+const T2_MAX_CONCURRENT = 3;   // live tier-2 items at once (positions + funded picks)
+const workingStack = () => Math.max(0, stack() - (DB.shadowReserve || 0));
+const partCap = () => Math.max(0.01, Math.min(1, (Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10) / 100));
+
+/* Proven for tier purposes: ≥2 completed logged round trips, positive net,
+   not sitting on the proven-loser bench. (Distinct from the 3-wins-in-14d
+   caution graduation — that one guards pump vehicles, this one gates size.) */
+function tierProven(id){
+  const fl = DB.flips.filter(f => f.itemId === id);
+  if (fl.length < 2) return false;
+  if (fl.reduce((s, f) => s + flipProfit(f), 0) <= 0) return false;
+  if (provenLoser(id, DB.watch.find(w => w.id === id))) return false;
+  return true;
+}
+/* Price-band tier, for stamping and for items with no watch entry. */
+const tierFromPrice = px =>
+  px == null ? 0 : (px >= TIER1_MIN && px <= TIER1_MAX) ? 1 : (px > TIER1_MAX && px <= TIER2_MAX) ? 2 : 0;
+/* Full classification: manual override (marked "manual") beats the band. */
+function itemTier(id, c){
+  const w = DB.watch.find(x => x.id === id);
+  const proven = tierProven(id);
+  if (w && w.tierOv != null)
+    return { t: w.tierOv, manual: true, proven, why: "manual override" };
+  const px = c && c.buy != null ? c.buy : null;
+  const t = tierFromPrice(px);
+  return { t, manual: false, proven,
+           why: px == null ? "no live price"
+              : t === 1 ? "unit price " + full(px) + " in the 400–5k consumable band"
+              : t === 2 ? "unit price " + full(px) + " in the 5k–100k mid-tier band"
+              : px < TIER1_MIN ? "under " + TIER1_MIN + " gp — too cheap to tier"
+              : "over " + gp(TIER2_MAX) + " — above the tier-2 ceiling" };
+}
+const tierBadge = tv => tv.t === 0 ? ""
+  : ' <span class="badge ' + (tv.t === 1 ? (tv.proven ? "b-tax" : "b-ok") : "b-seed") + '"'
+  + ' title="' + esc(tv.why) + (tv.t === 1 ? (tv.proven ? " · proven (2+ net-positive round trips)" : " · unproven — half-sized until 2 net-positive round trips") : (tv.proven ? " · graduated to full clamp" : " · ramping at one-third size until 2 clean round trips")) + '">'
+  + "T" + tv.t + (tv.manual ? " ·M" : "") + '</span>';
 
 /* ── plan-level overrides (reset daily with the checklist) ──── */
 function resetPlanOverrides(){
@@ -1696,10 +1779,10 @@ function planCandidates(){
     else if (vt != null && vt <= GATE.volDecline)
       failed = "volume dying — " + vt.toFixed(0) + "% vs the prior 6 days";
     else if (!(qty > 0))
-      failed = stack() < 100000
-        ? "can't size on this device — recorded stack is " + gp(stack()) + ". Stamp the bank (Shadow Fund tab) or import your laptop export; the plan can't size against gp it doesn't know about"
+      failed = workingStack() < 100000
+        ? "can't size — working capital is " + gp(workingStack()) + " (stack " + gp(stack()) + " minus " + gp(DB.shadowReserve||0) + " shadow reserve). Stamp the bank (Shadow Fund tab) or import your laptop export; the plan sizes only against working capital"
         : c.limit
-        ? "plan qty clamps to 0 — one unit exceeds a third of your stack"
+        ? "plan qty clamps to 0 — one unit exceeds a third of working capital"
         : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its watch row to include it";
     else if (volGate < volFloorFor(c.buy))
       failed = "volume " + gp(volGate) + "/h on the thin side — under the " + full(volFloorFor(c.buy)) + "/h floor (price-scaled)";
@@ -1723,7 +1806,11 @@ function planCandidates(){
        item at 60gp beat a 1.5% item at 900gp that made 9× the gp per slot:
        fatter, fewer, faster positions over churn. */
     const horizonUnits = Math.min(qty, Math.floor(volGate * GATE.capture * FILLH()));
-    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins, mo,
+    /* Tier is classified on every candidate — benched or not — so badges and
+       the allocator read the same verdict. Same gates for both tiers: no
+       mercy on fill horizon or momentum at tier 2. */
+    const tier = itemTier(w.id, c);
+    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins, mo, tier,
              estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
              score: failed ? 0 : eMargin * Math.max(1, horizonUnits) * (1 + Math.min(wins, 5) * 0.1) };
@@ -1754,83 +1841,122 @@ function buildPlan(){
   let pass = all.filter(x => !x.failed).sort((a,b) => b.score - a.score);
   pass = applyFamilyRule(pass, bench);
 
-  /* Manual promotions jump the queue; demoted picks drop to NEXT UP. */
+  /* Untiered items don't allocate — they're outside both bands. The reason
+     is stated, and a manual tier override on the watch row re-admits them. */
+  pass = pass.filter(x => {
+    if (x.tier.t !== 0) return true;
+    bench.push({ ...x, failed: "untiered — " + x.tier.why + "; the allocator funds only T1 (400–5k) and T2 (5k–100k). Override the tier on its watch row to include it" });
+    return false;
+  });
+
+  /* Manual promotions jump the queue; then tier order (T1 proven, T1
+     unproven, T2), then score. Demoted picks drop to NEXT UP. */
   const prio = DB.planPriority || [], demoted = new Set(DB.planDemoted || []);
   const rank = x => { const i = prio.indexOf(x.id); return i < 0 ? Infinity : i; };
-  pass.sort((a,b) => (rank(a) - rank(b)) || (b.score - a.score));
+  const groupOf = x => x.tier.t === 1 ? (x.tier.proven ? 0 : 1) : 2;
+  pass.sort((a,b) => (rank(a) - rank(b)) || (groupOf(a) - groupOf(b)) || (b.score - a.score));
 
-  const st = stack(), avail = available();
+  const st = workingStack(), avail = Math.max(0, st - committed());
   const targetSlots = Math.max(1, Math.min(8, DB.slots || 7));
   const H = DB.horizonH || 10;
-  /* Deployable = free capital minus the incidentals reserve, which is never touched. */
+  /* Deployable = free WORKING capital minus the incidentals reserve. The
+     shadow reserve never entered `st`, so it cannot be invaded from here. */
   const deployable = Math.max(0, avail - (DB.reserve || 0));
-  let remaining = deployable;
+  const t1Budget = Math.max(0, DB.t1Budget != null ? DB.t1Budget : 100e6);
+  const t2Budget = Math.max(0, DB.t2Budget != null ? DB.t2Budget : 50e6);
+  /* Per-tier pools: each capped by its budget, jointly capped by deployable.
+     T1 (the proven core) claims deployable first; T2 ramps in what's left. */
+  const pools = { 1: Math.min(t1Budget, deployable) };
+  pools[2] = Math.min(t2Budget, Math.max(0, deployable - pools[1]));
+  const pool0 = { 1: pools[1], 2: pools[2] };
+  const effTotal = pools[1] + pools[2];
   const catSlots = {};    // one funded slot per caution category (unproven items only)
   const smalls = [];      // below the worth-a-slot floor — fund only into idle slots
   const picks = [], nextUp = [];
   const held = new Set(DB.positions.map(p => p.itemId));
-  const minExpect = Math.max(1000, Math.round(deployable * 0.0002));
-  const perSlot = Math.floor(deployable / targetSlots);
+  /* Tier-2 concurrency: live tier-2 positions count against the cap before
+     any new line is funded. */
+  let t2Live = new Set(DB.positions.filter(p => itemTier(p.itemId, calc(p.itemId)).t === 2).map(p => p.itemId)).size;
+  const minExpect = Math.max(1000, Math.round(effTotal * 0.0002));
+  const perSlot = Math.floor(effTotal / targetSlots);
 
-  /* Pass 1: fund up to targetSlots picks at an even per-slot budget, so eight
+  /* Sizing per line: liquidity horizon, participation cap, then tier ramp.
+     Every clamp records its reason — automated decisions show their work. */
+  const sizeLine = x => {
+    const byLiquidity = Math.floor(x.volGate * FILLH() * GATE.capture);
+    const byPart = Math.floor((x.c.vol || 0) * partCap());
+    let cap = Math.min(x.qty, byLiquidity, Math.max(0, byPart));
+    const notes = [];
+    if (byPart > 0 && byPart < Math.min(x.qty, byLiquidity))
+      notes.push("participation-capped at " + (DB.partCapPct != null ? DB.partCapPct : 10) + "% of 1h volume (" + full(byPart) + ")");
+    const rawCaution = x.caution && !x.cautionProven;
+    if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
+    if (x.tier.t === 1 && !x.tier.proven){ cap = Math.floor(cap * 0.5); notes.push("unproven T1 — half size until 2 net-positive round trips"); }
+    if (x.tier.t === 2 && !x.tier.proven){ cap = Math.max(0, Math.floor(cap / 3)); notes.push("T2 ramp — one-third size until 2 clean logged trips, then auto-graduates"); }
+    return { cap, byLiquidity, byPart, rawCaution, notes };
+  };
+
+  /* Pass 1: fund up to targetSlots picks at an even per-slot budget, so all
      offers exist before anything gets greedy. */
   for (const x of pass){
-    /* Buy legs are sized to fill inside the FILL horizon (default 4h), not the
-       whole day — a bid still working at hour six is stale, not patient. */
-    const byLiquidity = Math.floor(x.volGate * FILLH() * GATE.capture);
-    let cap = Math.min(x.qty, byLiquidity);
-    const rawCaution = x.caution && !x.cautionProven;   // proven items trade as regular items
-    if (rawCaution) cap = Math.floor(cap * GATE.seedSizeFactor);
-
+    const { cap, byLiquidity, byPart, rawCaution, notes } = sizeLine(x);
+    /* Participation cap benches outright when 10% of an hour's volume is not
+       even one unit — any offer at all IS the market there. */
+    if (byPart < 1){
+      bench.push({ ...x, failed: "would move the market — " + (DB.partCapPct != null ? DB.partCapPct : 10)
+        + "% of its 1h volume (" + full(Math.round(x.c.vol || 0)) + "/h) is under one unit" });
+      continue;
+    }
     const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
+    const blockedT2 = x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT;
     const full_ = picks.length >= targetSlots;
 
     /* Held items are represented by their placed-position line, not duplicated
        into NEXT UP — the capital is committed, so it's not a substitute. */
     if (held.has(x.id)) continue;
+    const pool = pools[x.tier.t];
     const tooSmall = cap > 0 && cap * x.eMargin < minExpect;
-    const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, remaining) / x.c.buy)));
-    if (demoted.has(x.id) || full_ || blockedSeed || cap <= 0 || qty <= 0 || tooSmall){
+    const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, pool) / x.c.buy)));
+    /* Ramp factors (unproven half, T2 third, seed caution) are deliberate
+       shrinkage — an item they push below worth-a-slot is a filler candidate,
+       not a slow fill; blaming the fill horizon would mislabel the reason. */
+    const ramped = cap < Math.min(x.qty, byLiquidity, Math.max(0, byPart));
+    if (demoted.has(x.id) || full_ || blockedSeed || blockedT2 || cap <= 0 || qty <= 0 || tooSmall){
       /* Predicted-slow-fill bench: when the fill horizon is what shrank this
-         below worth-a-slot, the honest reason is the fill forecast, and it's
-         a bench, not a filler — a slot spent waiting on a slow book is the
-         exact churn the horizon exists to kill. */
-      if ((tooSmall || cap <= 0) && byLiquidity < x.qty && !demoted.has(x.id) && !full_ && !blockedSeed){
+         below worth-a-slot, the honest reason is the fill forecast. */
+      if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !demoted.has(x.id) && !full_ && !blockedSeed && !blockedT2){
         bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estFillH(x.qty, x.c)) + " for the planned "
           + full(x.qty) + " — only " + full(byLiquidity) + " fit the " + FILLH() + "h fill horizon"
           + (byLiquidity > 0 ? ", not worth a slot" : "") });
         continue;
       }
-      if (tooSmall && !demoted.has(x.id) && !full_ && !blockedSeed && qty > 0){
-        smalls.push({ ...x, capQty: cap, rawCaution });   // filler candidate — decided after pass 2
+      if (tooSmall && !demoted.has(x.id) && !full_ && !blockedSeed && !blockedT2 && qty > 0){
+        smalls.push({ ...x, capQty: cap, rawCaution, sizeNotes: notes });   // filler candidate
         continue;
       }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
         wouldExpect: Math.max(0, cap) * x.eMargin,
         why: demoted.has(x.id) ? "demoted by you"
+           : blockedT2 ? "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)"
            : blockedSeed ? x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used"
            : full_ ? "plan is full at " + targetSlots + " offers"
-           : "no capital left this rotation" });
+           : "tier-" + x.tier.t + " budget exhausted this rotation" });
       continue;
     }
-    remaining -= qty * x.c.buy;
+    pools[x.tier.t] -= qty * x.c.buy;
     if (rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
-    picks.push({ ...x, capQty: cap, allocQty: qty });
+    if (x.tier.t === 2) t2Live++;
+    picks.push({ ...x, capQty: cap, allocQty: qty, sizeNotes: notes });
   }
 
-  /* Pass 2: pour the leftover into the funded picks by rank, up to each item's
-     own caps (third-of-stack, limit windows, liquidity). The reserve is
-     already outside `deployable`, so it can't be invaded. */
-  /* Pass 2 — fillers claim idle slots BEFORE the top-up; otherwise the big
-     picks absorb the whole pool and slots sit empty. An idle GE slot earns
-     exactly zero; a small high-ROI position (the snape-grass shape: tiny
-     limit, instant fills, uncrowded) beats that, and by definition it
-     barely dents the pool. */
+  /* Pass 2 — fillers claim idle slots BEFORE the top-up; an idle GE slot
+     earns exactly zero. Each filler draws from its own tier pool. */
   for (const x of smalls){
-    if (picks.length >= targetSlots || remaining <= 0){
+    const pool = pools[x.tier.t];
+    if (picks.length >= targetSlots || pool <= 0){
       nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy,
                     wouldExpect: x.capQty * x.eMargin,
-                    why: picks.length >= targetSlots ? "small — every slot went to a full-size pick" : "no capital left this rotation" });
+                    why: picks.length >= targetSlots ? "small — every slot went to a full-size pick" : "tier-" + x.tier.t + " budget exhausted this rotation" });
       continue;
     }
     if (x.rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots){
@@ -1838,25 +1964,35 @@ function buildPlan(){
                     why: x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used" });
       continue;
     }
-    const qty = Math.min(x.capQty, Math.floor(remaining / x.c.buy));
+    if (x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT){
+      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy, wouldExpect: x.capQty * x.eMargin,
+                    why: "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)" });
+      continue;
+    }
+    const qty = Math.min(x.capQty, Math.floor(pool / x.c.buy));
     if (qty <= 0) continue;
-    remaining -= qty * x.c.buy;
+    pools[x.tier.t] -= qty * x.c.buy;
     if (x.rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
+    if (x.tier.t === 2) t2Live++;
     picks.push({ ...x, allocQty: qty, filler: true });
   }
 
-  /* Pass 3 — pour the leftover into the funded picks by rank, up to each
-     item's own caps. Fillers are already at cap, so this fattens the big picks. */
+  /* Pass 3 — pour each tier's leftover into its funded picks by rank, up to
+     each item's own caps. A tier's budget never spills into the other tier. */
   for (const p of picks){
-    if (remaining <= 0) break;
-    const extra = Math.min(p.capQty - p.allocQty, Math.floor(remaining / p.c.buy));
-    if (extra > 0){ p.allocQty += extra; remaining -= extra * p.c.buy; }
+    const pool = pools[p.tier.t];
+    if (pool <= 0) continue;
+    const extra = Math.min(p.capQty - p.allocQty, Math.floor(pool / p.c.buy));
+    if (extra > 0){ p.allocQty += extra; pools[p.tier.t] -= extra * p.c.buy; }
   }
 
   for (const p of picks){ p.cost = p.allocQty * p.c.buy; p.expect = p.allocQty * p.eMargin; }
+  const t1Spent = pool0[1] - pools[1], t2Spent = pool0[2] - pools[2];
 
-  return { picks, nextUp, bench, pass, remaining, st, avail, deployable,
-           reserve: DB.reserve || 0, deployed: deployable - remaining };
+  return { picks, nextUp, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
+           reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
+           t1Budget, t2Budget, t1Spent, t2Spent, t1Pool: pool0[1], t2Pool: pool0[2],
+           shadowReserve: Math.min(DB.shadowReserve || 0, stack()) };
 }
 
 function whyTag(x){
@@ -1909,8 +2045,13 @@ function whyTag(x){
 const startOfToday = () => new Date(new Date().toDateString()).getTime();
 
 const planLineText = (p, i) =>
-  (i+1) + ". BUY " + full(p.allocQty) + " " + p.name + " at " + full(p.c.buy) +
-  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtHrs(estFillH(p.allocQty, p.c));
+  (i+1) + ". " + (p.tier && p.tier.t ? "[T" + p.tier.t + "] " : "")
+  + (p.tier && p.tier.t === 2 && !p.tier.proven && p.c.sell != null
+     ? "TEST first: buy 1 at " + full(Math.ceil(p.c.sell * 1.05)) + ", sell 1 at " + full(Math.floor(p.c.buy * 0.95)) + ", record in Tested. Then "
+     : "")
+  + "BUY " + full(p.allocQty) + " " + p.name + " at " + full(p.c.buy) +
+  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtHrs(estFillH(p.allocQty, p.c))
+  + (p.sizeNotes && p.sizeNotes.length ? " [" + p.sizeNotes.join("; ") + "]" : "");
 
 /* Position lifecycle: buying → bought → selling → sold (= log entry).
    Each stage has one obvious next action; nothing advances on its own. */
@@ -2067,7 +2208,7 @@ function invQuote(w){
   const buyFlow  = (c.vol || 0) * (rough ? 0.5 : c.imbalance) * GATE.capture;
   const sellFlow = (c.vol || 0) * (rough ? 0.5 : 1 - c.imbalance) * GATE.capture;
   const sellQty = Math.max(0, Math.min(held, Math.floor(sellFlow * FILLH())));
-  const thirdCap = Math.max(0, Math.floor((stack() / 3 - invCostGp(w.id)) / bid));
+  const thirdCap = Math.max(0, Math.floor((workingStack() / 3 - invCostGp(w.id)) / bid));
   const buyQty = Math.max(0, Math.min(
     (w.invTarget - held) + sellQty,
     Math.floor(buyFlow * FILLH()),
@@ -2233,7 +2374,18 @@ function renderPlan(){
     foot.textContent = ""; $("#benchBody").innerHTML = ""; $("#benchSummary").textContent = "Benched — 0 items";
     return;
   }
-  const { picks, nextUp, bench, pass, remaining, st, avail, deployable, deployed } = buildPlan();
+  const { picks, nextUp, bench, pass, remaining, st, avail, deployable, deployed,
+          t1Budget, t2Budget, t1Spent, t2Spent, t1Pool, t2Pool, shadowReserve } = buildPlan();
+
+  /* Auto-graduation is informational — sizing already read tierProven. The
+     toast fires once per item, flagged on the watch entry. */
+  for (const x of pass){
+    const w = DB.watch.find(v => v.id === x.id);
+    if (w && x.tier && x.tier.t === 2 && x.tier.proven && !w.t2Grad){
+      w.t2Grad = 1; save();
+      toast(x.name + " graduated to full size — 2 clean logged round trips.");
+    }
+  }
   const loading = bench.filter(b => /still loading/.test(b.failed)).length;
   $("#planSub").textContent = pass.length + " of " + DB.watch.length + " pass the gates · prices " + ago(S.latestAt)
     + (loading ? " · ⏳ " + loading + " charts still loading — verdicts will improve" : "");
@@ -2292,17 +2444,38 @@ function renderPlan(){
       + '<span class="plan-actions"><button class="sm" data-inv="' + x.w.id + '">set buffer…</button></span></li>')
     .join("");
 
+  let unprovenBanner = false;
   const pickHTML = picks.map(p => {
     n++;
-    return '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
-      + '<span title="'+nameTitle(p.name)+'">' + esc(p.name) + '</span> at <span class="num">' + full(p.c.buy) + '</span> each '
+    let pre = "";
+    /* One banner before the first unproven tier-1 line — everything after it
+       in the T1 group is a test-first candidate at half size. */
+    if (p.tier && p.tier.t === 1 && !p.tier.proven && !unprovenBanner){
+      unprovenBanner = true;
+      pre += '<div class="nexthead"><b>Unproven tier-1 — margin-test first.</b> One unit, both ways, record in Tested. Half-sized until the log shows 2 net-positive round trips.</div>';
+    }
+    /* Every ungraduated tier-2 line is preceded by its explicit TEST
+       instruction — the ramp rule in imperative form. */
+    if (p.tier && p.tier.t === 2 && !p.tier.proven && p.c.sell != null && p.c.buy != null){
+      const tx = Math.ceil(p.c.sell * 1.05), ty = Math.floor(p.c.buy * 0.95);
+      pre += '<li class="next"><div class="body"><b>TEST</b> ' + esc(p.name)
+        + ' — buy 1 at <span class="num">' + full(tx) + '</span>, sell 1 at <span class="num">' + full(ty)
+        + '</span>, record both fills in Tested.'
+        + '<div class="why">Ramp rule: the line below stays at one-third size until 2 clean logged round trips, then it auto-graduates to full clamp.</div></div></li>';
+    }
+    return pre + '<li><div class="body"><b class="buy">BUY</b> <span class="num">' + full(p.allocQty) + '</span> '
+      + '<span title="'+nameTitle(p.name)+'">' + esc(p.name) + '</span>' + (p.tier ? tierBadge(p.tier) : '')
+      + ' at <span class="num">' + full(p.c.buy) + '</span> each '
       + '<span class="dim">(' + gp(p.cost) + ')</span> — expect <span class="pos num">~' + gp(p.expect) + '</span>/cycle'
       + ' · <span class="dim" title="Buy-leg forecast: qty ÷ (buy-side 1h flow × 15% capture). Sanity-check it against the measured bh times the lifecycle records — if reality keeps running slower, the capture share is optimistic for this item.">est. fill ~' + fmtHrs(estFillH(p.allocQty, p.c)) + '</span>'
       + (p.filler ? ' <span class="badge b-ok" title="Below the worth-a-slot floor, but this slot would otherwise sit idle — small profit beats none">filler</span>' : '')
       + (p.caution ? (p.cautionProven
           ? ' <span class="badge b-tax" title="Your log shows 3+ profitable round trips in 14 days — full sizing earned">proven '+esc(p.caution.label)+'</span>'
           : ' <span class="badge b-seed" title="'+esc(p.caution.why)+' — half-sized, one '+esc(p.caution.label)+' slot until your log proves it (3 profitable flips in 14 days)">caution '+esc(p.caution.label)+'</span>') : '')
-      + '<div class="why">' + esc(whyTag(p)) + (p.caution && !p.cautionProven ? ' · half-sized, ' + esc(p.caution.why) : '') + '</div></div>'
+      + '<div class="why">' + esc(whyTag(p))
+      + (p.caution && !p.cautionProven ? ' · half-sized, ' + esc(p.caution.why) : '')
+      + (p.sizeNotes && p.sizeNotes.length ? ' · ' + esc(p.sizeNotes.join(" · ")) : '')
+      + '</div></div>'
       + '<span class="plan-actions">'
       + '<button class="sm" data-place="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">placed</button>'
       + '<button class="sm" data-logline="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">log round trip</button>'
@@ -2322,7 +2495,8 @@ function renderPlan(){
               + ' <button class="sm ghost" data-cancelprom="1">cancel</button></div>'
             : '';
           return '<li class="next"><div class="body"><b>' + n + '. BUY</b> <span class="num">' + full(x.wouldQty) + '</span> '
-            + '<span title="'+nameTitle(x.name)+'">' + esc(x.name) + '</span> at <span class="num">' + full(x.c.buy) + '</span> each '
+            + '<span title="'+nameTitle(x.name)+'">' + esc(x.name) + '</span>' + (x.tier ? tierBadge(x.tier) : '')
+            + ' at <span class="num">' + full(x.c.buy) + '</span> each '
             + '<span class="dim">(' + gp(x.wouldCost) + ')</span> — expect <span class="num">~' + gp(x.wouldExpect) + '</span>/cycle'
             + (x.caution ? (x.cautionProven ? ' <span class="badge b-tax">proven '+esc(x.caution.label)+'</span>' : ' <span class="badge b-seed">caution '+esc(x.caution.label)+'</span>') : '')
             + '<div class="why">passed gates, unfunded — ' + esc(x.why) + ' · ' + esc(whyTag(x)) + '</div>'
@@ -2339,20 +2513,20 @@ function renderPlan(){
 
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
-    foot.innerHTML = 'Deploys <span class="num">' + gp(deployed) + '</span> of <span class="num">' + gp(deployable)
-      + '</span> deployable (' + (deployable ? (deployed/deployable*100).toFixed(0) : 0) + '%) across ' + picks.length + ' of ' + (DB.slots||7) + ' offers · '
-      + 'expected <span class="pos num">' + gp(expect) + '</span> per full cycle'
-      + ' · <span class="dim">' + gp(DB.reserve||0) + ' reserved for incidentals</span>'
+    foot.innerHTML = 'Deploys <span class="num">T1 ' + gp(t1Spent) + '</span> of ' + gp(t1Budget) + ' budget'
+      + ' · <span class="num">T2 ' + gp(t2Spent) + '</span> of ' + gp(t2Budget) + ' budget'
+      + ' · <span class="dim" title="The shadow reserve is named capital for the Shadow purchase — outside the allocator, the one-third rule, and every position calculation. Recallable only by you, in settings.">reserve untouched: ' + gp(shadowReserve) + '</span>'
+      + ' · across ' + picks.length + ' of ' + (DB.slots||7) + ' offers'
+      + ' · expected <span class="pos num">' + gp(expect) + '</span> per full cycle'
+      + ' · <span class="dim">' + gp(DB.reserve||0) + ' incidentals float</span>'
       + (committed() > 0 ? ' · <span class="dim">' + gp(committed()) + ' committed in open positions</span>' : '')
-      + (remaining > 0 ? ' · <span class="dim">' + gp(remaining) + ' unallocated (item caps bind before capital)</span>' : '')
-      /* Capital-absorption advisory: when a quarter of the deployable pool
-         can't find a home, the watchlist is the constraint, not the market.
-         Advice only — the scout widens its own band; the rest is button
-         presses the user makes. */
-      + (remaining > deployable * 0.25 && remaining > 20e6
-         ? '<div class="plan-note" style="margin-top:6px">' + gp(remaining) + ' has nowhere to go — the watchlist can\'t absorb the stack. '
-           + 'The scout now screens up to <b>' + gp(Math.max(DB.filters.max, Math.floor(st / 20))) + '</b> per unit (stack-scaled); '
-           + 'margin-test the high-value items it surfaces, and set mm buffers on anything flagged <b>mm-ready</b> so standing capital earns between touches.</div>'
+      /* Idle-WORKING-capital advisory: measured against the tier budgets only.
+         The shadow reserve is never part of this comparison and recalling it
+         is never suggested — that decision is the user's alone. */
+      + (remaining > (t1Pool + t2Pool) * 0.25 && remaining > 5e6
+         ? '<div class="plan-note" style="margin-top:6px">' + gp(remaining) + ' of tier budget found no home this rotation '
+           + '(T1 ' + gp(t1Pool - t1Spent) + ' idle · T2 ' + gp(t2Pool - t2Spent) + ' idle) — the watchlist can\'t absorb the working capital. '
+           + 'Margin-test more tier-1 candidates from the scanner, set mm buffers on anything flagged <b>mm-ready</b>, or raise the watch cap so the scout surfaces more of the band.</div>'
          : '');
   } else foot.textContent = "";
 
@@ -2369,13 +2543,10 @@ function renderPlan(){
    Anything you added, margin-tested, hold, or recently flipped is untouchable. */
 function scoutScreen(){
   const out = [];
-  /* Price ceiling scales with the stack: the scanner's cap was tuned for a
-     stack the 2m consumable band could absorb. At stack/20 per unit, the
-     one-third rule still allows a ~6-unit position — so the high-value band
-     opens exactly when capital starts going unallocated, and closes again if
-     the stack shrinks. The user's scanner filter is the floor of the band,
-     never overridden downward. */
-  const ceil = Math.max(DB.filters.max, Math.floor(stack() / 20));
+  /* Price ceiling = the tier-2 maximum (user-directed): capital above the
+     tier budgets is a named reserve, not deployable float, so nothing above
+     100k is worth surfacing. (The earlier stack-scaled ceiling is reverted.) */
+  const ceil = Math.min(DB.filters.max, TIER2_MAX);
   for (const it of S.items){
     if (!it.l) continue;
     const c = calc(it.i);
@@ -2432,7 +2603,7 @@ function runScout(force){
     have.add(x.id); added.push(itemName(x.id));
     DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
       why: "sustained ROI " + x.eR.toFixed(1) + "% on " + full(Math.round(x.vol)) + "/h thin-side volume"
-         + (x.px > DB.filters.max ? " · high-value band, unlocked by stack size (scanner cap stays " + gp(DB.filters.max) + ")" : "") });
+         + (x.px > TIER1_MAX ? " · tier-2 band (5k–100k)" : "") });
   }
   /* Journal retention: three days is enough to review a weekend away. */
   DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
@@ -2507,7 +2678,7 @@ function renderInv(){
   const panel = $("#invPanel");
   if (!ids.length){ panel.style.display = "none"; return; }
   panel.style.display = "";
-  const st = stack();
+  const st = workingStack();
   let totCost = 0, totMkt = 0;
   $("#invBody").innerHTML = ids.map(id => {
     const w = DB.watch.find(x => x.id === id);
@@ -2541,8 +2712,8 @@ function renderInv(){
 /* ═══════════ WATCHLIST ═══════════ */
 function renderWatch(){
   const body = $("#watchBody");
-  const st = stack(), third = st/3;
-  $("#watchStack").textContent = "stack " + gp(st) + " · free " + gp(available()) + " · one-third cap " + gp(third);
+  const st = workingStack(), third = st/3;
+  $("#watchStack").textContent = "working " + gp(st) + " (reserve " + gp(Math.min(DB.shadowReserve||0, stack())) + " excluded) · free " + gp(Math.max(0, st - committed())) + " · one-third cap " + gp(third);
   const scoutN = DB.watch.filter(w => w.src === "scout").length;
   $("#scoutTog").textContent = DB.scoutOn ? "⚡ scout ON (" + scoutN + "/" + (DB.watchCap||25) + ")" : "⚡ scout OFF";
   $("#scoutTog").classList.toggle("primary", !!DB.scoutOn);
@@ -2580,12 +2751,21 @@ function renderWatch(){
       flags.push('<span class="badge b-warn" title="Hasn\'t passed the scout screen in '+ago(w.lastPass).replace(" ago","")+'. Yours, so it stays — but §5 says consider cutting it.">cold</span>');
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
     if (c.tested) flags.push('<span class="badge b-ok" title="Using your margin-tested prices from '+ago(w.tAt)+'">tested</span>');
-    if (cap === 0) flags.push('<span class="badge b-risk" title="A single unit costs more than a third of your stack">too big</span>');
+    if (cap === 0) flags.push('<span class="badge b-risk" title="A single unit costs more than a third of your working capital (shadow reserve excluded)">too big</span>');
     if (c.volSide < volFloorFor(c.buy)) flags.push('<span class="badge b-warn" title="Thin side of the book is below the volume floor (price-scaled: '+full(volFloorFor(c.buy))+'/h at this price) — fills will be slow">thin</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
     if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
     const pl = provenLoser(w.id, w);
     if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column)">proven loser — re-test to unbench</span>');
+    /* Tier badge doubles as the manual-override control: click cycles
+       auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
+    const tv = itemTier(w.id, c);
+    flags.push('<button class="badge ' + (tv.t === 1 ? (tv.proven ? "b-tax" : "b-ok") : tv.t === 2 ? "b-seed" : "b-warn")
+      + '" data-tierov="' + w.id + '" title="' + esc(tv.why)
+      + (tv.t === 1 ? (tv.proven ? ' · PROVEN (2+ net-positive round trips) — full clamp' : ' · unproven — half-sized until 2 net-positive round trips') : '')
+      + (tv.t === 2 ? (tv.proven ? ' · graduated to full clamp' : ' · ramping at one-third until 2 clean trips') : '')
+      + ' — click to cycle the tier override: auto → T1 → T2 → untiered">'
+      + (tv.t === 0 ? "untiered" : "T" + tv.t + (tv.proven && tv.t === 1 ? " ✓" : "")) + (tv.manual ? " ·M" : "") + '</button>');
     /* mm state lives in the Item cell too — the Actions column sits behind a
        horizontal scroll on a 17-column table, so the one decision the log
        automates must be visible without scrolling. Buttons, not spans: the
@@ -2646,7 +2826,7 @@ function renderWatch(){
     + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire stack">over stack</span>' : '') + '</td>'
     + '<td class="num'+(over ? " neg" : "")+'">'+gp(totalPos)+'</td>'
     + '<td class="num sec '+sign(totalProfit)+'">'+gp(totalProfit)+'</td>'
-    + '<td colspan="6" class="dim">of '+gp(st)+' stack'
+    + '<td colspan="6" class="dim">of '+gp(st)+' working capital'
     + (st > 0 ? ' · ' + (totalPos/st*100).toFixed(0) + '% committed' : '') + '</td>'
     + '</tr>';
 
@@ -2676,6 +2856,61 @@ async function fillSparks(force){
     if (S.tab === "watch") renderWatch();
     if (S.tab === "shadow") renderHolds();
   } finally { sparkBusy = false; }
+}
+
+/* ═══════════ TIER COMPARISON ═══════════
+   The per-tier scoreboard for the question the guide (§6) defers to the log:
+   does the edge scale into the mid-tier band? Flips carry the tier stamped at
+   log time (manual-override aware); flips logged before stamping existed are
+   inferred from their logged buy price and labeled as such. */
+function flipTier(f){ return [0,1,2].includes(f.tier) ? f.tier : tierFromPrice(f.buy); }
+function tierStats(t){
+  const fl = DB.flips.filter(f => flipTier(f) === t);
+  const profit = fl.reduce((s,f) => s + flipProfit(f), 0);
+  const timed = fl.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh));
+  const gpDays = timed.reduce((s,f) => s + f.qty*f.buy*(f.bh+f.sh)/24, 0);
+  const timedProfit = timed.reduce((s,f) => s + flipProfit(f), 0);
+  const slotH = timed.reduce((s,f) => s + f.bh + f.sh, 0);
+  const vel = gpDays > 0 ? timedProfit / gpDays : null;   // gp per gp-day deployed
+  const qmf = fl.filter(f => Number.isFinite(f.qm));
+  let capPct = null;
+  if (qmf.length){
+    const capGp = qmf.reduce((s,f) => s + f.qm*f.qty, 0);
+    const driftGp = qmf.reduce((s,f) => s + flipProfit(f), 0) - capGp;
+    capPct = (Math.abs(capGp)+Math.abs(driftGp)) > 0 ? capGp/(Math.abs(capGp)+Math.abs(driftGp))*100 : null;
+  }
+  let mkSum = 0, mkN = 0;
+  for (const f of timed){
+    const r = flipMarkouts(f);
+    if (!r) continue;
+    for (const k of ["b30","s30"]) if (r[k] != null){ mkSum += r[k]; mkN++; }
+  }
+  return { t, n: fl.length, profit, gpDays, vel, capPct, mk: mkN ? mkSum/mkN : null, slotH,
+           inferred: fl.filter(f => ![0,1,2].includes(f.tier)).length };
+}
+function renderTierCompare(){
+  const t1 = tierStats(1), t2 = tierStats(2), un = tierStats(0);
+  const row = s => '<tr><td>' + (s.t ? "T"+s.t : "untiered")
+    + (s.inferred ? ' <span class="dim" title="'+s.inferred+' flip'+(s.inferred===1?"":"s")+' logged before tier stamping existed — tier inferred from the logged buy price">('+s.inferred+' inferred)</span>' : '') + '</td>'
+    + '<td class="num">' + (s.gpDays > 0 ? gp(Math.round(s.gpDays)) : '<span class="dim" title="Needs flips timed through the position lifecycle (placed → filled → listed → sold)">no data</span>') + '</td>'
+    + '<td class="num '+sign(s.profit)+'">' + gp(s.profit) + '</td>'
+    + '<td class="num">' + (s.vel != null ? '<span class="'+sign(s.vel)+'">'+(s.vel*100).toFixed(2)+'%</span><span class="dim"> /gp-day</span>' : '<span class="dim">no data</span>') + '</td>'
+    + '<td class="num sec">' + (s.capPct != null ? s.capPct.toFixed(0)+'%' : '<span class="dim">no data</span>') + '</td>'
+    + '<td class="num sec">' + (s.mk != null ? '<span class="'+sign(s.mk)+'">'+s.mk.toFixed(1)+'</span>' : '<span class="dim">no data</span>') + '</td>'
+    + '<td class="num sec">' + (s.slotH ? s.slotH.toFixed(1)+'h' : '—') + '</td>'
+    + '<td class="num">' + s.n + '</td></tr>';
+  $("#tierBody").innerHTML = row(t1) + row(t2) + (un.n ? row(un) : '');
+  let verdict = "", note = "";
+  if (t1.vel != null && t2.vel != null && t1.vel > 0){
+    const r = t2.vel / t1.vel;
+    verdict = "T2/T1 velocity " + r.toFixed(2) + " — "
+      + (r > 0.8 ? "scales cleanly" : r >= 0.5 ? "scales with friction" : "edge doesn't scale — recall capital to reserve");
+    note = r > 0.8 ? "Tier-2 capital earns close to tier-1's rate per gp-day deployed. The mid-tier band is earning its budget."
+         : r >= 0.5 ? "Tier-2 earns, but slower per gp-day. Keep its budget modest and let the ramp rules do the filtering."
+         : "Tier-2 gp-days earn under half of tier-1's rate. PROPOSAL (your call, per house convention): lower the T2 budget and/or raise the shadow reserve by the difference — the tool will not change either setting itself.";
+  } else verdict = "verdict needs timed flips in both tiers";
+  $("#tierVerdict").textContent = verdict;
+  $("#tierNote").textContent = note;
 }
 
 /* ═══════════ FLIP LOG ═══════════ */
@@ -2780,6 +3015,7 @@ function renderLog(){
       + '<td><button class="sm ghost" data-delflip="'+f.id+'">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="10" class="empty">No flips logged yet.</td></tr>';
 
+  renderTierCompare();
   renderEquity();
   renderNow();
 }
@@ -3332,6 +3568,10 @@ function renderShadow(){
   $("#shStats").innerHTML = [
     ["Live shadow price", price ? gp(price) : "—"],
     ["Bank (stamped)", gp(DB.bank||0)],
+    ['<span title="Named capital for the Shadow purchase — excluded from the allocator, the one-third rule, and all position math. Recall it by lowering the Shadow reserve setting in the plan\'s sizing row; the tool never does that for you.">Reserved — recallable</span>',
+      gp(Math.min(DB.shadowReserve||0, have))],
+    ['<span title="What the flip allocator actually sizes against: stack minus the shadow reserve. Tier budgets are carved from this.">Working capital</span>',
+      gp(Math.max(0, have - (DB.shadowReserve||0)))],
     ["Profit since stamp", '<span class="'+sign(profitSince)+'">'+gp(profitSince)+'</span>'],
     ['<span title="Non-flip bank changes (Game gp panel, Flip Log tab) since the stamp — counted into the fund total but never into flipping stats.">Game gp since stamp</span>',
       gSince ? '<span class="'+sign(gSince)+'">'+(gSince > 0 ? '+' : '')+gp(gSince)+'</span>' : '<span class="dim v sm">none</span>'],
@@ -3681,6 +3921,20 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const tov = t.closest("[data-tierov]");
+  if (tov){
+    const id = +tov.dataset.tierov, w = DB.watch.find(x => x.id === id);
+    if (!w) return;
+    /* Cycle: auto → T1 → T2 → untiered → auto. Overrides only reclassify —
+       sizing, gates and budgets still apply to whatever tier results. */
+    const next = w.tierOv == null ? 1 : w.tierOv === 1 ? 2 : w.tierOv === 2 ? 0 : null;
+    if (next == null) delete w.tierOv; else w.tierOv = next;
+    save(); renderWatch();
+    toast(itemName(id) + " tier: " + (next == null ? "auto (price band decides)"
+      : next === 0 ? "untiered — excluded from the allocator"
+      : "T" + next + " (manual override)") + ".");
+    return;
+  }
   const inv = t.closest("[data-inv]");
   if (inv){
     const id = +inv.dataset.inv, w = DB.watch.find(x => x.id === id);
@@ -4010,6 +4264,9 @@ $("#lAdd").onclick = () => {
     id: Date.now(), itemId: id, name: itemName(id),
     qty, buy, sell, date: $("#lDate").value || today(), note: $("#lNote").value.trim()
   };
+  /* Tier is stamped at log time from the item's current classification
+     (manual-override aware) — history stays honest if bands change later. */
+  rec.tier = itemTier(id, calc(id)).t;
   if (S.pendingFill && S.pendingFill.itemId === id){
     if (S.pendingFill.buyH  != null) rec.bh = S.pendingFill.buyH;
     if (S.pendingFill.sellH != null) rec.sh = S.pendingFill.sellH;
@@ -4117,6 +4374,7 @@ function validateImport(d){
     if (num(f.bh) != null && num(f.bh) >= 0) o.bh = num(f.bh);
     if (num(f.sh) != null && num(f.sh) >= 0) o.sh = num(f.sh);
     if (num(f.qm) != null) o.qm = num(f.qm);
+    if ([0,1,2].includes(num(f.tier))) o.tier = num(f.tier);   // tier stamped at log time
     return o;
   }).filter(Boolean);
   const positions = (Array.isArray(d.positions) ? d.positions : []).map(p => {
@@ -4140,6 +4398,8 @@ function validateImport(d){
     if (num(w.lastPass) > 0) o.lastPass = num(w.lastPass);
     if (num(w.tBuy) > 0 && num(w.tSell) > 0){ o.tBuy = num(w.tBuy); o.tSell = num(w.tSell); o.tAt = num(w.tAt) || Date.now(); }
     if (num(w.invTarget) > 0) o.invTarget = Math.floor(num(w.invTarget));
+    if ([0,1,2].includes(num(w.tierOv))) o.tierOv = num(w.tierOv);   // manual tier override
+    if (w.t2Grad) o.t2Grad = 1;                                      // tier-2 graduation toast fired
     return o;
   }).filter(Boolean);
   const targets = (Array.isArray(d.targets) ? d.targets : []).filter(t => typeof t === "string" && t.trim()).map(String);
@@ -4200,6 +4460,12 @@ function validateImport(d){
           slotsSRA1: d.slotsSRA1 ? 1 : 0,
           slotsSRA2: d.slotsSRA2 ? 1 : 0,
           minPx400: d.minPx400 ? 1 : 0,
+          capT2v1: d.capT2v1 ? 1 : 0,
+          bankAskV3: d.bankAskV3 ? 1 : 0,
+          shadowReserve: Math.max(0, num(d.shadowReserve) != null ? num(d.shadowReserve) : 300000000),
+          t1Budget: Math.max(0, num(d.t1Budget) != null ? num(d.t1Budget) : 100000000),
+          t2Budget: Math.max(0, num(d.t2Budget) != null ? num(d.t2Budget) : 50000000),
+          partCapPct: Math.min(100, Math.max(1, num(d.partCapPct) != null ? num(d.partCapPct) : 10)),
           fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
           tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
           quoteTicks: Math.min(20, Math.max(1, num(d.quoteTicks) || 3)),
@@ -4233,7 +4499,8 @@ $("#shBankNow").onclick = () => {
 };
 for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szFill","fillHorizonH",1,12],
                                  ["szTick","tickFloor",1,100],["szQuote","quoteTicks",1,20],["szMkX","markoutX",0.1,5],
-                                 ["szRes","reserve",0,2e9]]){
+                                 ["szRes","reserve",0,2e9],["szShadow","shadowReserve",0,10e9],
+                                 ["szT1","t1Budget",0,2e9],["szT2","t2Budget",0,2e9],["szPart","partCapPct",1,100]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -4261,11 +4528,12 @@ $("#planCopy").onclick = async () => {
     if (!lines.length){ toast("No open positions to copy."); return; }
     txt = ["Tonight's sells:", ""].concat(lines.map(sellLineText)).join("\n");
   } else {
-    const { picks, avail, deployed } = buildPlan();
+    const { picks, t1Budget, t2Budget, t1Spent, t2Spent, shadowReserve } = buildPlan();
     if (!picks.length){ toast("Nothing to copy — no picks today."); return; }
     txt = ["Today's plan — margin-test anything new first: instant-buy 1 unit (fill = sell side), instant-sell it back (fill = buy side), record both.", ""]
       .concat(picks.map(planLineText))
-      .concat(["", "Deploys " + gp(deployed) + " of " + gp(avail) + " free across " + picks.length + " slots."])
+      .concat(["", "T1 " + gp(t1Spent) + " of " + gp(t1Budget) + " budget · T2 " + gp(t2Spent) + " of " + gp(t2Budget)
+             + " budget · reserve untouched: " + gp(shadowReserve) + " · " + picks.length + " slots."])
       .join("\n");
   }
   try { await navigator.clipboard.writeText(txt); toast("Copied."); }
@@ -4298,8 +4566,26 @@ $("#szMinPx").addEventListener("change", e => {
   save(); paintFilters(); renderAll();
 });
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
+$("#szShadow").value = DB.shadowReserve != null ? DB.shadowReserve : 300000000;
+$("#szT1").value = DB.t1Budget != null ? DB.t1Budget : 100000000;
+$("#szT2").value = DB.t2Budget != null ? DB.t2Budget : 50000000;
+$("#szPart").value = Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10;
 S.mode = new Date().getHours() < 15 ? "morning" : "evening";
 S.planMode = S.mode === "evening" ? "sell" : "buy";
+
+/* One-time after the tranche update: ask for the real bank figure — tier
+   budgets and the shadow reserve size against it, and it is never assumed.
+   Asked exactly once; blank keeps the recorded number. */
+if (!DB.bankAskV3){
+  const a = prompt("Capital tranches update — enter your CURRENT bank gp so the shadow reserve ("
+    + gp(DB.shadowReserve || 0) + ") and tier budgets size correctly.\n\nBlank keeps the recorded "
+    + gp(DB.bank || 0) + "; the tool never assumes a bank figure.", "");
+  if (a !== null && String(a).trim() !== "" && clampNum(a, NaN) > 0){
+    DB.bank = Math.round(clampNum(a, 0));
+    DB.bankAsOf = Date.now();
+  }
+  DB.bankAskV3 = 1; save();
+}
 
 refresh().then(() => { renderAll(); fillSparks(); });
 
