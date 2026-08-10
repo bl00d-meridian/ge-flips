@@ -536,8 +536,10 @@
     DB.clusters = [{ id: 5, name: "probe-detail", members: [9001, 9002, 9004], capPct: null, story: "", src: "manual", confirmedAt: Date.now() }];
     DB.watch = [9001, 9002, 9003, 9004, 9005].map(id => ({ id, qty: null }));
     S.tab = "clusters"; renderClusters();
-    ok("cluster ledger offers the detail button", /data-cldetail="5"/.test(document.querySelector("#cluBody").innerHTML),
-       document.querySelector("#cluBody").innerHTML.slice(0, 300));
+    const ledger = document.querySelector("#cluBody").innerHTML;
+    ok("cluster ledger offers the detail button in the name cell", /data-cldetail="5"/.test(ledger), ledger.slice(0, 300));
+    ok("ledger members are wrapping chips with no inline removal", /memchip/.test(ledger) && !/data-clrm/.test(ledger)
+       && /white-space:normal/.test(ledger), ledger.slice(0, 500));
     await openClusterDetail(5);
     const det = document.querySelector("#cluDetail").innerHTML;
     ok("thesis detail renders all three views", /Pairwise excess correlation/.test(det)
@@ -547,6 +549,14 @@
        && /skipped, not guessed/.test(det), det.slice(Math.max(0, det.indexOf("Correlation over time")), det.indexOf("Correlation over time") + 500));
     ok("overlay draws normalized member polylines", (det.match(/<polyline/g) || []).length >= 2
        && /normalized to its own first day/.test(det), String((det.match(/<polyline/g) || []).length));
+    ok("member removal lives in the detail, deliberately", (det.match(/data-clrm="5:/g) || []).length === 3
+       && /can't take an accidental press/.test(det), det.slice(Math.max(0, det.indexOf("Members — manage"))));
+    // removal from the detail refreshes both views and is undoable
+    document.querySelector('#cluDetail [data-clrm="5:9004"]').click();
+    await new Promise(r => setTimeout(r, 1600));   // openClusterDetail re-fetch pacing (cached, ~250ms/id)
+    ok("detail removal updates membership and re-renders", DB.clusters[0].members.join() === "9001,9002"
+       && (document.querySelector("#cluDetail").innerHTML.match(/data-clrm="5:/g) || []).length === 2,
+       JSON.stringify({members: DB.clusters[0].members}));
     // restore for the import round-trip
     DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
     DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];

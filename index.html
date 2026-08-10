@@ -139,6 +139,10 @@ tr.worst td{background:#3a1b18}
 .dep-h{margin:12px 0 4px;font-weight:600;color:var(--gold)}
 .dep-h:first-child{margin-top:0}
 
+/* ---- cluster member chips ---- */
+.memchip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;font-size:12px}
+.memchip.off{color:var(--dim)}
+
 /* ---- checklist ---- */
 .ck{list-style:none;margin:0;padding:0}
 .ck li{
@@ -4375,15 +4379,18 @@ function renderClusters(){
   $("#cluBody").innerHTML = DB.clusters.length ? DB.clusters.map(cl => {
     const ex = clusterExposure(cl), cap = clusterCapGp(cl);
     const pl14 = clusterPnL(cl, Date.now() - 14 * 86400e3), plAll = clusterPnL(cl, 0);
+    /* Members render as wrapping chips with NO inline removal — a misaimed
+       tap must not be able to shrink a cluster from the ledger. Removal
+       lives in the thesis detail, a deliberate two-step. */
     const mems = cl.members.map(id =>
-      '<span class="' + (watchIds.has(id) ? '' : 'dim') + '"'
+      '<span class="memchip' + (watchIds.has(id) ? '' : ' off') + '"'
       + (watchIds.has(id) ? '' : ' title="not on the watchlist — the cap still counts it whenever it holds capital"') + '>'
-      + esc(itemName(id))
-      + '<button class="sm ghost" data-clrm="' + cl.id + ':' + id + '" title="remove from this cluster" style="padding:0 4px">✕</button></span>'
-    ).join(", ");
+      + esc(itemName(id)) + '</span>'
+    ).join("");
     return '<tr><td><b>⬡ ' + esc(cl.name) + '</b>'
-      + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px">' + esc(cl.story) + '</div>' : '') + '</td>'
-      + '<td>' + (mems || '<span class="dim">empty — tag watchlist rows with ⬡</span>') + '</td>'
+      + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px">' + esc(cl.story) + '</div>' : '')
+      + '<div style="margin-top:3px"><button class="sm" data-cldetail="' + cl.id + '" title="Is the thesis holding? Pairwise correlation, decay over time, overlaid charts — and member management.">detail…</button></div></td>'
+      + '<td style="white-space:normal;text-align:left;max-width:380px;min-width:180px">' + (mems || '<span class="dim">empty — tag watchlist rows with ⬡</span>') + '</td>'
       + '<td class="num' + (ex >= cap ? ' neg' : '') + '">' + gp(ex) + ' / ' + gp(cap)
       + (ex >= cap ? ' <span class="badge b-risk" title="Exposure meets the cap — the allocator funds no more of this cluster until something exits">at limit</span>'
          : ex >= cap * 0.8 ? ' <span class="badge b-warn">near cap</span>' : '') + '</td>'
@@ -4391,8 +4398,7 @@ function renderClusters(){
       + ' value="' + (cl.capPct != null ? cl.capPct : '') + '" placeholder="' + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + '"></td>'
       + '<td class="num ' + sign(pl14) + '">' + gp(pl14) + '</td>'
       + '<td class="num ' + sign(plAll) + '">' + gp(plAll) + '</td>'
-      + '<td style="white-space:nowrap"><button class="sm" data-cldetail="' + cl.id + '" title="Is the thesis holding? Pairwise correlation, decay over time, overlaid charts.">detail…</button>'
-      + '<button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
+      + '<td><button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="7" class="empty">No confirmed clusters — correlated positions are currently treated as independent bets. Confirm a candidate below, or press + new cluster and tag rows with ⬡.</td></tr>';
   const dismissedCands = DB.clusterCands.filter(c => c.status === "dismissed");
   const dismissed = dismissedCands.length;
@@ -4435,6 +4441,7 @@ async function openClusterDetail(clId){
     return;
   }
   cluDetailBusy = true;
+  S.cluDetailId = clId;
   try {
     $("#cluDetSub").textContent = "⬡ " + cl.name;
     box.innerHTML = '<span class="dim">Fetching daily history for ' + cl.members.length
@@ -4538,11 +4545,21 @@ function clusterDetailHTML(cl, excess){
       + '<div class="dim" style="font-size:12px">31-day daily midpoints, each normalized to its own first day — parallel shapes are the thesis, divergence is its decay.</div>';
   } else overlay = '<span class="dim">No cached daily series yet — run the co-movement scan, then reopen this detail.</span>';
 
+  /* Member removal lives here, not in the ledger — opening the detail is the
+     deliberate step that makes an ✕ press mean something. */
+  const manage = M.map(id =>
+    '<span class="memchip">' + esc(itemName(id))
+    + ' <button class="sm ghost" data-clrm="' + cl.id + ':' + id
+    + '" title="Remove ' + esc(itemName(id)) + ' from this cluster — the item stays on the watchlist; the cap stops counting it" style="padding:0 5px">✕</button></span>'
+  ).join("")
+  + '<div class="dim" style="font-size:12px;margin-top:2px">Removal is undoable from the toast. The ✕ lives only here — the ledger can\'t take an accidental press.</div>';
+
   return '<div class="dep-h">Pairwise excess correlation — full period</div>' + matrix
     + '<div class="dim" style="font-size:12px;margin-top:2px">Daily returns net of the all-watchlist average — the same market factor the detector uses; * = under the '
     + minDays + '-day overlap floor.</div>'
     + '<div class="dep-h">Correlation over time — watch the thesis decay</div>' + rollHTML
-    + '<div class="dep-h">Members, overlaid</div>' + overlay;
+    + '<div class="dep-h">Members, overlaid</div>' + overlay
+    + '<div class="dep-h">Members — manage</div>' + manage;
 }
 
 function tagClusterPrompt(id){
@@ -4672,9 +4689,12 @@ document.addEventListener("click", e => {
     const at = cl.members.indexOf(iid);
     if (at < 0) return;
     cl.members.splice(at, 1);
-    save(); renderWatch();
+    /* Refresh the ledger and, when this cluster's detail is open, the detail
+       too — its matrix/decay/manage sections all just changed membership. */
+    const refresh = () => { renderClusters(); if (S.cluDetailId === cid) openClusterDetail(cid); if (S.tab === "watch") renderWatch(); };
+    save(); refresh();
     toast(itemName(iid) + " removed from \"" + cl.name + "\".",
-          () => { cl.members.splice(at, 0, iid); save(); renderWatch(); });
+          () => { cl.members.splice(at, 0, iid); save(); refresh(); });
     return;
   }
 });
