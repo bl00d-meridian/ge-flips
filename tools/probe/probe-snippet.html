@@ -162,13 +162,25 @@
        && !(9010 in DB.seedAt) && DB.decisionLog.some(x => x.kind === "seed" && x.action === "retire"),
        JSON.stringify({watch: DB.watch.map(w => w.id), seedAt: DB.seedAt}));
 
-    // gate health: a bench row whose item later traded profitably reads "too tight"
+    // gate health: override bucket (flip dated a still-benched day) vs
+    // latency bucket (flip after the gate stopped benching) — never conflated
     const yd = new Date(nowMs - day).toLocaleDateString("en-CA");
-    DB.gateLog = [{ d: yd, id: 9002, g: "trend" }, { d: yd, id: 9003, g: "funded" }];
+    DB.flips = [
+      { id: nowMs - day,     itemId: 9002, name:"Probe beta",  qty: 10, buy: 4000, sell: 4400, date: yd,      note:"" },
+      { id: nowMs - 3600e3,  itemId: 9004, name:"Probe delta", qty: 10, buy: 4000, sell: 4400, date: today(), note:"" },
+      { id: nowMs - 1800e3,  itemId: 9003, name:"Probe gamma", qty: 10, buy: 4000, sell: 4400, date: today(), note:"" }
+    ];
+    DB.gateLog = [{ d: yd, id: 9002, g: "trend" }, { d: yd, id: 9004, g: "trend" }, { d: yd, id: 9003, g: "funded" }];
     const gh = gateHealthAudit();
     const tr = gh.rows.find(r => r.g === "trend");
-    ok("gate health tracks bench outcomes", !!tr && tr.benched === 1 && tr.traded === 1 && tr.net === 3120
+    ok("gate health: override vs latency buckets", !!tr && tr.benched === 2
+       && tr.ovrTraded === 1 && tr.ovrNet === 3120      // 9002 flip dated yd = a day trend was benching it
+       && tr.latTraded === 1 && tr.latNet === 3120      // 9004 flip dated today, no bench row today
        && gh.fundedCount === 1 && gh.fundedNet === 3120, JSON.stringify(gh));
+    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
+    const ghHTML = document.querySelector("#ckList").innerHTML;
+    ok("gate health copy labels both buckets", /traded while still benched/.test(ghHTML)
+       && /traded after unbenching/.test(ghHTML) && !/possibly too tight/.test(ghHTML));
 
     // buildPlan writes the gate ledger
     buildPlan();

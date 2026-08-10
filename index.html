@@ -4124,27 +4124,47 @@ function sibAudit(){
 }
 
 /* §4 — gate health: benches this week per gate, and the realized outcome of
-   anything that later traded — the one place a too-tight gate (its benched
-   items going on to win) or a too-loose one (its passers losing) shows up.
+   anything that later traded. Realized quantities ONLY — actual logged round
+   trips, tax netted; no counterfactual fills, no drift counted as missed
+   profit. Outcomes split into two buckets that must never be conflated
+   (user ruling, Aug 10 2026):
+   - "traded while still benched": a flip dated a day this gate was actively
+     benching the item — the user overruled the gate and the result is clean
+     evidence for or against it. Day-granular by construction (the ledger is
+     one row per item·gate·day), so an intraday re-admission can't be told
+     apart from an override.
+   - "traded after unbenching": the item cleared the gates before trading —
+     a re-admission-latency signal only, NOT evidence the bench-day call was
+     wrong. The gate eventually agreeing with itself is not the user being
+     right against it.
    Advisory only: constant changes follow the house convention. */
 function gateHealthAudit(){
   const wk = new Date(Date.now() - 7 * 86400e3).toLocaleDateString("en-CA");
-  const gates = new Map(), funded = new Map();
+  const gates = new Map(), funded = new Map(), benchDays = new Set();
   for (const e of (DB.gateLog || [])){
     if (e.d < wk) continue;
     if (e.g === "funded"){ if (!funded.has(e.id) || e.d < funded.get(e.id)) funded.set(e.id, e.d); continue; }
+    benchDays.add(e.d + "|" + e.id + "|" + e.g);
     if (!gates.has(e.g)) gates.set(e.g, new Map());
     const m = gates.get(e.g);
     if (!m.has(e.id) || e.d < m.get(e.id)) m.set(e.id, e.d);
   }
   const rows = [];
   for (const [g, m] of gates){
-    let traded = 0, net = 0;
+    let ovrTraded = 0, ovrNet = 0, latTraded = 0, latNet = 0;
     for (const [id, d0] of m){
-      const fl = DB.flips.filter(f => f.itemId === id && String(f.date || "") > d0);
-      if (fl.length){ traded++; net += fl.reduce((s, f) => s + flipProfit(f), 0); }
+      let ovrN = 0, latN = 0, ovr = 0, lat = 0;
+      for (const f of DB.flips){
+        if (f.itemId !== id) continue;
+        const fd = String(f.date || "");
+        if (fd < d0) continue;
+        if (benchDays.has(fd + "|" + id + "|" + g)){ ovr += flipProfit(f); ovrN++; }
+        else { lat += flipProfit(f); latN++; }
+      }
+      if (ovrN){ ovrTraded++; ovrNet += ovr; }
+      if (latN){ latTraded++; latNet += lat; }
     }
-    rows.push({ g, benched: m.size, traded, net });
+    rows.push({ g, benched: m.size, ovrTraded, ovrNet, latTraded, latNet });
   }
   rows.sort((a, b) => b.benched - a.benched);
   let fundedNet = 0, fundedTraded = 0;
@@ -4217,13 +4237,21 @@ function renderAuditInline(){
   }
   /* §4 gate health */
   const gh = gateHealthAudit();
-  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week and what the benched went on to do. Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
+  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week and the realized outcome of what later traded (actual logged round trips only, tax netted — never counterfactual fills or drift). Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
   if (!gh.rows.length) secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
   for (const r of gh.rows){
-    const verdict = r.traded === 0 ? "no outcome data — nothing it benched traded afterwards"
-      : r.net > 0 ? "⚠ possibly too tight — " + r.traded + " benched item" + (r.traded === 1 ? "" : "s") + " later booked " + gp(r.net)
-      : "holding — the " + r.traded + " that traded afterwards netted " + gp(r.net);
-    secs.push('<div><b>' + esc(r.g) + '</b> — benched ' + r.benched + ' item' + (r.benched === 1 ? '' : 's') + ' this week · <span class="dim">' + esc(verdict) + '</span></div>');
+    const bits = [];
+    if (r.ovrTraded)
+      bits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
+        + r.ovrTraded + ' item' + (r.ovrTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.ovrNet) + '">' + gp(r.ovrNet) + '</span> — '
+        + (r.ovrNet > 0 ? 'you overruled this gate and won; that is the one honest strike against it'
+                        : 'you overruled this gate and lost — the gate had it right'));
+    if (r.latTraded)
+      bits.push('<b title="Flips dated after the item had cleared the gates again — the market or the data changed and the gate re-admitted it.">traded after unbenching</b> (re-admission latency only): '
+        + r.latTraded + ' item' + (r.latTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.latNet) + '">' + gp(r.latNet) + '</span> — '
+        + 'the item cleared the gates before trading, so this measures how slowly the gate re-admits, not whether the bench-day call was wrong');
+    if (!bits.length) bits.push('<span class="dim">no outcome data — nothing it benched traded afterwards</span>');
+    secs.push('<div><b>' + esc(r.g) + '</b> — benched ' + r.benched + ' item' + (r.benched === 1 ? '' : 's') + ' this week · ' + bits.join(' · ') + '</div>');
   }
   if (gh.fundedCount)
     secs.push('<div><b>funded lines</b> — ' + gh.fundedCount + ' item' + (gh.fundedCount === 1 ? '' : 's') + ' this week · <span class="dim">'

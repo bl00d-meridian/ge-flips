@@ -21,6 +21,20 @@ faster than 60s.
 - Known repeated bug class: gates that re-punish what sizing already priced in
   (double-counting). Bench only on information the sizing/margin logic doesn't use.
 
+## Definitions protocol (metric honesty — user ruling, Aug 10 2026)
+
+When the user asks what a metric measures, the standing rule is **answer first, build
+later**: state exactly what the current code computes (not what it was meant to compute),
+show one concrete data row as proof, flag known biases unprompted, and propose
+corrections without applying anything until the user rules. The house standard for every
+metric: **realized quantities only** — actual logged round trips, tax netted; no
+counterfactual fills, no price drift counted as missed profit — and where a signal could
+flatter the machine's own case (e.g. a "gate too tight" verdict), the copy must claim
+exactly what is measured and no more. Gate health is the reference implementation:
+"traded while still benched" (the user overrode the gate — clean evidence for or against
+it) is never conflated with "traded after unbenching" (re-admission latency only — the
+gate eventually agreeing with itself is not the user being right against it).
+
 ## Verification
 
 No Node on the dev machines. All verification runs as headless-Edge probes against the
