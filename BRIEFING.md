@@ -6,6 +6,44 @@ records** that the tracker's ratification queue presents to the user. Nothing th
 briefing produces activates on its own: every record is ratified, edited, or dismissed
 by the user inside the tracker (house convention — the tool proposes, the user rules).
 
+## Source tiers (every record stamped with its best tier)
+
+| Tier | What | Standing treatment |
+|---|---|---|
+| **T0** | Official: Jagex newsposts, patch notes, dev blogs, polls | Primary evidence |
+| **T1** | OSRS wiki (update pages, upcoming content) | Primary evidence |
+| **T2** | r/2007scape general discussion | Context and leads — corroborate before claiming |
+| **T3** | Trading-focused communities: flipping subs, merch discords, price-call content | **ADVERSARIAL BY DEFAULT** |
+
+Each source in a record carries `"tier": 0-3` (and `"community"` naming the venue for
+T2/T3); the record's `sourceTier` is the best (lowest) tier present. Rules:
+
+- **T3 is evidence that someone WANTS a price to move, never evidence that it will.**
+  A T3 post may trigger investigation of primary sources; it can never be the sole
+  basis of a catalyst or thesis record.
+- **No catalyst record ships without a T0/T1 primary source in its citation list.**
+  The tracker enforces this again at import — catalyst records without a tier-0/1
+  source are rejected, not queued.
+
+## Incentive heuristic (promotion is not information)
+
+Any source content that names a specific item with a buy recommendation, a price
+target, or urgency framing ("get in before X") is classified **PROMOTION**, not
+information — the content's existence is the datum, not its claim. The briefing may
+emit it only as a **warning record**: `"type": "promotion-warning"`, title of the shape
+"item X being promoted in <community> — possible coordinated accumulation",
+`"direction": "caution"` — never `up`, never a buy. The tracker coerces the direction
+to `caution` on import regardless. Ratified promotion warnings feed the tracker's pump
+fingerprint cross-check (anomaly-scan overlap, thin-book check); the correct posture on
+a suspected pump is neither buying nor shorting the story, but absence.
+
+## Human-layer rule (permanent)
+
+**Never join, monitor, or fetch invite-gated trading discords or paid signal groups as
+sources.** Their entire content model is exit-liquidity recruitment; observing them
+"for information" is participating in their distribution. Public visibility is the
+minimum bar for a source — and it is a bar, not a guarantee of honesty.
+
 ## Standing rules (binding)
 
 1. **Never launder rumor into fact.** Every record carries a confidence tier —
@@ -57,13 +95,15 @@ by the user inside the tracker (house convention — the tool proposes, the user
   "records": [
     {
       "id": "2026-08-10-example-slug",
-      "type": "catalyst | catalyst-update | cluster-membership | demand-context | deflation-flag",
+      "type": "catalyst | catalyst-update | cluster-membership | demand-context | deflation-flag | promotion-warning",
       "confidence": "confirmed | polled | hinted | rumor",
       "title": "one line",
       "thesis": "neutral, factual statement of the mechanism",
-      "direction": "up | down | unclear",
+      "direction": "up | down | unclear | caution",
       "items": [{ "id": 123, "name": "Exact mapping name" }],
-      "sources": [{ "url": "https://…", "note": "what this supports" }],
+      "sources": [{ "url": "https://…", "note": "what this supports", "tier": 0, "community": "r/2007scape (T2/T3 only)" }],
+      "sourceTier": 0,
+      "community": "venue name when the leading source is T2/T3",
       "validUntil": "2026-09-15",
       "contrary": "evidence against, or null",
       "pricedIn": { "checked": true, "verdict": "no | partial | yes", "detail": "30d chart summary with numbers" }
@@ -86,6 +126,13 @@ Type-specific extras:
 - `demand-context` — display note for seeds/siblings; `items` carries the affected ids.
 - `deflation-flag` — new-content supply increase: the tracker attaches a standing
   "sell-on-drop, don't accumulate" tag and the sleeve refuses the item as a candidate.
+- `promotion-warning` — per the incentive heuristic above: someone is promoting the
+  item; `direction` is always `caution`; `community` names the venue. Feeds the pump
+  fingerprint cross-check and the T3 scorecard.
+
+The tracker's scorecard grades expired records by **source tier and named community**
+as well as confidence — over time it shows whether anything T3 has ever produced a
+correct, non-priced-in call. Write records accordingly: they will be graded.
 
 ## Output 2 — `briefings/BRIEF-<date>.md`
 

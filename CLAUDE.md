@@ -20,6 +20,11 @@ faster than 60s.
   inline where the user reads it.
 - Known repeated bug class: gates that re-punish what sizing already priced in
   (double-counting). Bench only on information the sizing/margin logic doesn't use.
+- **Disclosure-in-summary is not ratification** (user ruling, Aug 10 2026). Judgment
+  thresholds and verdict boundaries discovered mid-build are strategy parameters: propose
+  them and leave them unapplied until the user rules. Applying one and mentioning it in
+  the summary is a near miss, not compliance (the incident: entry-watch DISCOUNTED set to
+  ≤ −2% in-flight; ratified after the fact).
 
 ## Definitions protocol (metric honesty — user ruling, Aug 10 2026)
 
