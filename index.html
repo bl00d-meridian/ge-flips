@@ -477,6 +477,39 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         Type over it; anything above the cap is re-clamped on commit.
       </div>
     </div>
+
+    <div class="panel" id="clusterPanel">
+      <div class="ph"><h2>Thesis clusters</h2><span class="sub" id="cluSub"></span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="sm" id="cluNew" title="Create an empty named cluster, then tag members with the ⬡ button on watchlist rows.">+ new cluster</button>
+          <button class="sm" id="cluScan" title="Run the weekly co-movement scan now: daily returns net of the all-item average, pairs past the excess-correlation threshold, connected groups of 3+ become SUSPECTED candidates. Advisory only — nothing caps capital until you confirm.">↻ scan co-movement</button>
+        </span>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" title="Default exposure cap per confirmed cluster, as a share of working capital — enforced by the allocator across all members regardless of family. Override per cluster in its Cap % cell.">Cluster cap %<input type="number" id="clCap" min="1" max="100" style="width:56px"></label>
+        <label class="f" title="Pairwise correlation of daily returns, net of the all-item average, must exceed this before two items link up in the detector.">Excess corr<input type="number" id="clCorr" min="0.1" max="0.95" step="0.05" style="width:60px"></label>
+        <label class="f" title="Overlapping trading days a pair needs before it can be flagged at all — below this the verdict is 'insufficient data', never a guess.">Min days<input type="number" id="clDays" min="5" max="30" style="width:52px"></label>
+        <span class="note" style="align-self:center;max-width:560px">
+          One story, many tickers: correlated positions are one bet. The weekly detector, the wiki categories
+          and the seed list only <b>propose</b> into the review queue below — <b>nothing caps capital until you
+          confirm a cluster</b>. Confirmed clusters cap combined exposure, report per-cluster P&L in the review,
+          and get named in the Wednesday update-day advisory.
+        </span>
+      </div>
+      <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
+      <div class="tw"><table>
+        <thead><tr><th>Cluster</th><th>Members</th>
+          <th title="Capital committed to members right now (open positions + inventory lots at cost) against this cluster's cap. Today's Plan draws the remainder down line by line.">Exposure / cap</th>
+          <th title="Cap override for this cluster in % of working capital — blank uses the default from the row above">Cap %</th>
+          <th title="Realized profit across member flips, last 14 days">P&L 14d</th>
+          <th title="Realized profit across member flips, all time">P&L all</th><th></th></tr></thead>
+        <tbody id="cluBody"></tbody>
+      </table></div>
+      <details id="cluQueueBox" style="margin-top:8px">
+        <summary style="cursor:pointer" id="cluQueueSum"></summary>
+        <div id="cluQueueBody" style="margin-top:6px"></div>
+      </details>
+    </div>
   </section>
 
   <!-- ═══════════ FLIP LOG ═══════════ -->
@@ -684,6 +717,13 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         ensouled heads, nests) are the classic targets for price manipulation. They flip great — until the pump
         ends. The plan half-sizes them and allows one slot per category until your own log proves an item out
         (3 profitable flips in 14 days).</p>
+        <p><b>Thesis clusters.</b> Items that move on one story — wilderness gear, raid supplies, clue rewards —
+        are a single bet wearing several names, and the family rule can't see it (different production lines,
+        same patch note). Tag them yourself, or confirm what the weekly co-movement scan (daily returns net of
+        the all-item average), shared rare wiki categories, and the built-in seed list propose. A <em>confirmed</em>
+        cluster's combined exposure is capped at a share of working capital by the allocator, its P&L is reported
+        per cluster in the review, and the Wednesday update-day advisory names its members. Candidates — suspected,
+        dormant, or seeded — never cap anything until you ratify them.</p>
         <p><b>Undercut to exit.</b> A sell that won't fill: relist it 1 gp under the current low sell price and
         take the small loss. Hoping is how a 2% edge becomes a 10% hole.</p>
         <p><b>Capture rate & horizons.</b> Sizing assumes a standing offer captures ~15% of the item's flow —
@@ -831,6 +871,15 @@ let DB = {
   sibStats: { washed: 0, graduated: 0 },   // lifetime counters (scout log only keeps 72h)
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
   holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
+  clusters: [],       // RATIFIED thesis clusters [{id,name,members,capPct|null,story,src,confirmedAt}] — the only layer that caps capital
+  clusterCands: [],   // advisory queue [{id,sig,status,src,members,story,evidence,at}] — suspected/dormant/seeded until the user rules
+  clusterCapPct: 15,  // default exposure cap per confirmed cluster, % of working capital
+  clusterCorr: 0.5,   // excess-correlation threshold for the co-movement detector
+  clusterMinDays: 20, // overlapping trading days a pair needs before it may be flagged at all
+  lastCoScanAt: 0,    // weekly co-movement scan stamp
+  decisionLog: [],    // audit rulings [{t,d,kind,subject,action,reason}] — the audit of the audit, exportable
+  audRuled: {},       // "seed:311"/"sib:227" → {t, action} — a ruled card rests for 7 days
+  gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
   checks: { date:"", walkup:[], weekly:[] }
 };
 function load(){
@@ -838,10 +887,10 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
@@ -1087,6 +1136,9 @@ function applyMapping(items, at){
     }
     DB.holdsSeed1 = 1; save();
   }
+  /* One-time: seed the cluster review queue from build-time game knowledge —
+     candidates only ("seeded — unconfirmed"); nothing caps until ratified. */
+  seedClusterCands();
   /* A wiki rename silently un-exempts an item and quietly taxes it 2%. This
      already happened once with the "(tablet)" suffix — so assert the count. */
   if (exemptIds.size !== EXEMPT_NAMES.length){
@@ -1725,6 +1777,322 @@ function provenLoser(id, w){
    watchlist row button or the Blacklist box. */
 const isBlk = id => (DB.blacklist || []).includes(id);
 
+/* ═══════════ THESIS CLUSTERS ═══════════
+   One story, many tickers: a wilderness update moves every piece of pk gear
+   at once, so five "diversified" positions are one bet. A CONFIRMED cluster
+   gets an exposure cap (default 15% of working capital) enforced by the
+   allocator across ALL members regardless of family, per-cluster P&L in the
+   review, and the Wednesday update-day advisory by name.
+   CONSTITUTION — same law as strategy parameters: the co-movement detector,
+   the wiki-category enrichment and the build-time seed list only ever
+   PROPOSE candidates into a review queue. Nothing caps capital until the
+   user confirms a cluster by hand. */
+let cluSeq = 0;
+const cluId = () => Date.now() + (cluSeq++);
+const cluSig = ids => ids.slice().sort((a, b) => a - b).join(",");
+const clustersFor = id => (DB.clusters || []).filter(cl => cl.members.includes(id));
+const clusterCapPctOf = cl => cl.capPct != null ? cl.capPct : (DB.clusterCapPct != null ? DB.clusterCapPct : 15);
+const clusterCapGp = cl => Math.floor(workingStack() * clusterCapPctOf(cl) / 100);
+
+/* Exposure = capital already committed to members: open positions at cost
+   plus inventory lots at cost. Long-term holds are deliberately excluded —
+   they sit outside the flipping stack by design. */
+function clusterExposure(cl){
+  let gp = 0;
+  for (const p of DB.positions) if (cl.members.includes(p.itemId)) gp += p.qty * p.buy;
+  const seen = new Set();
+  for (const l of DB.invLots)
+    if (cl.members.includes(l.itemId) && !seen.has(l.itemId)){ seen.add(l.itemId); gp += invCostGp(l.itemId); }
+  return gp;
+}
+function clusterPnL(cl, sinceMs){
+  let p = 0;
+  for (const f of DB.flips) if (cl.members.includes(f.itemId) && f.id >= (sinceMs || 0)) p += flipProfit(f);
+  return p;
+}
+
+/* Wednesday is the weekly game-update day — the walk-up foot already warns
+   that updates reprice consumables. Clustered exposure concentrates exactly
+   that risk, so on Wednesdays the advisory calls the clusters out by name. */
+const isUpdateDay = () => new Date().getDay() === 3;
+function clustersInPlay(extraIds){
+  const live = new Set([ ...DB.positions.map(p => p.itemId), ...DB.invLots.map(l => l.itemId), ...(extraIds || []) ]);
+  return (DB.clusters || []).map(cl => {
+    const names = cl.members.filter(id => live.has(id)).map(id => itemName(id));
+    return names.length ? { cl, names } : null;
+  }).filter(Boolean);
+}
+function wedClusterAdvisoryText(extraIds){
+  if (!isUpdateDay()) return "";
+  const play = clustersInPlay(extraIds);
+  if (!play.length) return "";
+  return "Update Wednesday — hold lighter on clustered exposure: one patch note moves a whole cluster at once. In play: "
+    + play.map(x => x.cl.name + " (" + x.names.join(", ") + ")").join(" · ") + ".";
+}
+
+/* Candidate upsert. A sig (sorted member ids) identifies a candidate for
+   life: dismissed stays dismissed, confirmed/merged stays resolved — the
+   queue never nags twice about the same set. Fresh detections refresh the
+   evidence; a wiki story may fill in an honest "reason unknown". */
+function upsertCand(members, patch){
+  if (!Array.isArray(members) || members.length < 3) return null;
+  const sig = cluSig(members);
+  if ((DB.clusters || []).some(cl => members.every(m => cl.members.includes(m)))) return null;
+  let c = DB.clusterCands.find(x => x.sig === sig);
+  if (c){
+    c.evidence = Object.assign({}, c.evidence || {}, patch.evidence || {});
+    if (c.status === "suspected" || c.status === "dormant" || c.status === "seeded"){
+      c.at = Date.now();
+      if (patch.status === "suspected" && c.status !== "suspected") c.status = "suspected";  // smoke upgrades a story
+      if (patch.story && /^all: /.test(patch.story) && (!c.story || /reason unknown/.test(c.story)))
+        c.story = patch.story.replace(/ — story without smoke.*$/, "");
+    }
+    return c;
+  }
+  c = { id: cluId(), sig, members: members.slice(), at: Date.now(),
+        status: patch.status, src: patch.src, story: patch.story || "", evidence: patch.evidence || {} };
+  if (patch.name) c.name = patch.name;
+  DB.clusterCands.push(c);
+  return c;
+}
+
+/* ── seed clusters — build-time game knowledge, "seeded — unconfirmed" ──
+   Story without data: gear and supplies that share one consumption engine.
+   Names resolve against the mapping; a cluster that resolves fewer than 3
+   members is skipped rather than guessed at. Seeded once, then the queue
+   (and the user's ruling) owns them. */
+const SEED_CLUSTERS = [
+  { name: "wilderness-gear", story: "wilderness / PK loadout staples — a wildy content update or PK meta shift moves them together",
+    items: ["Black d'hide body","Black d'hide chaps","Rune crossbow","Dragon dagger","Ancient staff",
+            "Mystic robe top","Mystic robe bottom","Amulet of glory","Dark bow","Diamond bolts (e)"] },
+  { name: "clue-uniques", story: "Treasure Trails rewards — clue meta and leagues hype move the cosmetic-utility uniques together",
+    items: ["Ranger boots","Wizard boots","Holy sandals","Spiked manacles","Ham joint"] },
+  { name: "raid-supplies", story: "raid/PvM consumable burn — a new raid or boss rebalances brews, restores and staminas as one block",
+    items: ["Saradomin brew(4)","Super restore(4)","Stamina potion(4)","Super combat potion(4)",
+            "Bastion potion(4)","Anglerfish","Manta ray","Cooked karambwan"] },
+  { name: "prayer-training", story: "prayer XP burn — bone prices move with XP-rate changes and bonus-XP events, not with each other's books",
+    items: ["Dragon bones","Superior dragon bones","Wyrm bones","Dagannoth bones","Ensouled dragon head"] },
+  { name: "construction-planks", story: "construction training burn — plank demand moves with POH meta and mahogany-homes style updates",
+    items: ["Oak plank","Teak plank","Mahogany plank","Limestone brick"] },
+  { name: "herblore-secondaries", story: "herblore secondary ingredients — potion meta changes pull the whole ingredient list at once",
+    items: ["Vial of water","Limpwurt root","Red spiders' eggs","Snape grass","Crushed nest","White berries","Wine of zamorak","Potato cactus"] },
+  { name: "ancient-magicks-runes", story: "Ancient Magicks burn — the barrage/blood-spell meta consumes these as one basket",
+    items: ["Blood rune","Death rune","Soul rune","Water rune"] },
+  { name: "herb-run-inputs", story: "farming herb-run inputs — herb patch profitability moves seeds and compost together",
+    items: ["Ranarr seed","Snapdragon seed","Torstol seed","Toadflax seed","Ultracompost"] }
+];
+function seedClusterCands(){
+  if (DB.clSeedV1 || !S.items.length) return;
+  for (const s of SEED_CLUSTERS){
+    const members = s.items.map(n => { const it = S.items.find(x => x.n === n); return it ? it.i : null; }).filter(Boolean);
+    upsertCand(members, { status: "seeded", src: "seed", story: s.story, name: s.name, evidence: { seed: s.name } });
+  }
+  DB.clSeedV1 = 1; save();
+}
+
+/* ── co-movement detector ──────────────────────────────────────
+   Weekly: daily midpoints per watchlist item (/timeseries 24h, last 31
+   days), daily returns net of the all-item average so a market-wide tide
+   doesn't read as a cluster. Pairs whose EXCESS correlation clears the
+   threshold link up; connected groups of 3+ become SUSPECTED candidates,
+   labeled honestly: the detector knows they co-move, not why. Thin data
+   never flags — a pair needs clusterMinDays overlapping trading days, and
+   below that the verdict is "insufficient data", not a guess. */
+const DAILY_TTL = 20 * 3600e3;
+const dailyCache = new Map();
+async function dailyFor(id){
+  const c = dailyCache.get(id);
+  if (c && Date.now() - c.at < DAILY_TTL) return c;
+  const d = await getJSON("/timeseries?id=" + id + "&timestep=24h");
+  const days = (d.data || []).slice(-31).map(p => {
+    const hi = Number.isFinite(p.avgHighPrice) ? p.avgHighPrice : null;
+    const lo = Number.isFinite(p.avgLowPrice)  ? p.avgLowPrice  : null;
+    const mid = (hi != null && lo != null) ? (hi + lo) / 2 : (hi != null ? hi : lo);
+    return { d: new Date(p.timestamp * 1000).toISOString().slice(0, 10), mid };
+  }).filter(x => Number.isFinite(x.mid) && x.mid > 0);
+  const rec = { at: Date.now(), days };
+  dailyCache.set(id, rec);
+  return rec;
+}
+/* Returns only across CONSECUTIVE calendar days — a gap (no trades) must not
+   masquerade as one day's move. Gaps shrink overlap; the thin-data guard
+   then says so instead of correlating fiction. */
+function dailyRetMap(days){
+  const r = new Map();
+  for (let i = 1; i < days.length; i++){
+    const gap = (Date.parse(days[i].d) - Date.parse(days[i-1].d)) / 86400e3;
+    if (gap === 1) r.set(days[i].d, (days[i].mid - days[i-1].mid) / days[i-1].mid);
+  }
+  return r;
+}
+function pearson(xs, ys){
+  const n = xs.length;
+  if (n < 3) return null;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < n; i++){ sx += xs[i]; sy += ys[i]; }
+  const mx = sx / n, my = sy / n;
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i++){ const a = xs[i] - mx, b = ys[i] - my; num += a * b; dx += a * a; dy += b * b; }
+  if (dx <= 0 || dy <= 0) return null;
+  return num / Math.sqrt(dx * dy);
+}
+
+/* ── wiki-category enrichment ──────────────────────────────────
+   The candidate STORY: where a suspected cluster shares a rare category,
+   attach it ("all: Treasure Trails rewards"); where items share a rare
+   category but haven't co-moved, flag a DORMANT candidate — story without
+   smoke. Cached 7 days per item, batched 50 titles per request, 1s between
+   batches. The cache lives outside DB (re-fetchable, evictable). */
+const WIKI_API = "https://oldschool.runescape.wiki/api.php";
+const WCAT_KEY = "gef.wikicats.v1", WCAT_TTL = 7 * 86400e3;
+const CAT_STOP_RX = /^(Items|Members' items|Free-to-play items|Tradeable items|Untradeable items|Grand Exchange items)$/i;
+function wcatCache(){
+  try { const c = JSON.parse(localStorage.getItem(WCAT_KEY) || "null"); if (c && c.v === 1 && c.byName) return c; } catch(e){}
+  return { v: 1, byName: {} };
+}
+async function wikiCatsFor(names){
+  const cache = wcatCache();
+  const need = names.filter(n => { const e = cache.byName[n]; return !e || Date.now() - e.at > WCAT_TTL; });
+  for (let i = 0; i < need.length; i += 50){
+    const batch = need.slice(i, i + 50);
+    try {
+      const r = await fetch(WIKI_API + "?action=query&format=json&formatversion=2&origin=*&redirects=1"
+        + "&prop=categories&clshow=!hidden&cllimit=max&titles=" + batch.map(encodeURIComponent).join("%7C"));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      /* Walk titles back through redirect/normalization so results key on the
+         GE name we asked with, not the wiki's canonical page name. */
+      const redir = new Map((((d.query || {}).redirects)  || []).map(x => [x.to, x.from]));
+      const norm  = new Map((((d.query || {}).normalized) || []).map(x => [x.to, x.from]));
+      for (const pg of ((d.query || {}).pages) || []){
+        const cats = (pg.categories || []).map(x => String(x.title || "").replace(/^Category:/, ""))
+                     .filter(x => x && !CAT_STOP_RX.test(x));
+        let key = pg.title;
+        if (redir.has(key)) key = redir.get(key);
+        if (norm.has(key))  key = norm.get(key);
+        cache.byName[key] = { at: Date.now(), cats };
+      }
+      /* Titles the wiki couldn't resolve still get stamped empty so a bad
+         name isn't refetched every scan. */
+      for (const nm of batch) if (!cache.byName[nm] || Date.now() - cache.byName[nm].at > WCAT_TTL)
+        cache.byName[nm] = { at: Date.now(), cats: [] };
+    } catch(e){ /* polite: drop this batch, retry at the next weekly scan */ }
+    if (i + 50 < need.length) await new Promise(r => setTimeout(r, 1000));
+  }
+  try { localStorage.setItem(WCAT_KEY, JSON.stringify(cache)); } catch(e){}
+  const out = new Map();
+  for (const nm of names) out.set(nm, (cache.byName[nm] || {}).cats || []);
+  return out;
+}
+
+let cluScanBusy = false;
+async function runClusterScan(force){
+  if (cluScanBusy) return;
+  if (!force && Date.now() - (DB.lastCoScanAt || 0) < 7 * 86400e3) return;
+  const ids = DB.watch.map(w => w.id);
+  if (ids.length < 3){
+    if (force){ S.cluMsg = "Needs 3+ watchlist items — nothing to correlate."; if (S.tab === "watch") renderClusters(); }
+    return;
+  }
+  cluScanBusy = true;
+  try {
+    const minDays = Math.max(5, DB.clusterMinDays || 20);
+    const thr = Math.max(0.1, Math.min(0.95, DB.clusterCorr || 0.5));
+    S.cluMsg = "Fetching daily history for " + ids.length + " items…";
+    if (S.tab === "watch") renderClusters();
+    const rets = new Map();
+    for (const id of ids){
+      try { rets.set(id, dailyRetMap((await dailyFor(id)).days)); } catch(e){ rets.set(id, new Map()); }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    /* Market factor: the all-item average return per date. A date needs 3+
+       items reporting for the average to mean anything; thinner dates drop. */
+    const byDate = new Map();
+    for (const r of rets.values()) for (const [d, v] of r){
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d).push(v);
+    }
+    const mkt = new Map();
+    for (const [d, vs] of byDate) if (vs.length >= 3) mkt.set(d, vs.reduce((a, b) => a + b, 0) / vs.length);
+    const excess = new Map();
+    for (const [id, r] of rets){
+      const e = new Map();
+      for (const [d, v] of r) if (mkt.has(d)) e.set(d, v - mkt.get(d));
+      excess.set(id, e);
+    }
+    const thin = ids.filter(id => (excess.get(id) || new Map()).size < minDays);
+    S.cluThin = thin.map(id => itemName(id));
+    const idsOk = ids.filter(id => !thin.includes(id));
+    /* Pairwise excess correlation over overlapping days. */
+    const pairs = [];
+    for (let i = 0; i < idsOk.length; i++) for (let j = i + 1; j < idsOk.length; j++){
+      const ea = excess.get(idsOk[i]), eb = excess.get(idsOk[j]);
+      const xs = [], ys = [];
+      for (const [d, v] of ea) if (eb.has(d)){ xs.push(v); ys.push(eb.get(d)); }
+      if (xs.length < minDays) continue;
+      const c = pearson(xs, ys);
+      if (c != null && c > thr) pairs.push({ a: idsOk[i], b: idsOk[j], c, n: xs.length });
+    }
+    /* Connected groups of 3+ → suspected. Labeled honestly. */
+    const adj = new Map();
+    const link = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
+    for (const p of pairs){ link(p.a, p.b); link(p.b, p.a); }
+    const seen = new Set();
+    for (const id of adj.keys()){
+      if (seen.has(id)) continue;
+      const comp = [], q = [id];
+      seen.add(id);
+      while (q.length){
+        const cur = q.pop();
+        comp.push(cur);
+        for (const nb of adj.get(cur)) if (!seen.has(nb)){ seen.add(nb); q.push(nb); }
+      }
+      if (comp.length < 3) continue;
+      const inComp = pairs.filter(p => comp.includes(p.a) && comp.includes(p.b));
+      const avgC = inComp.reduce((s, p) => s + p.c, 0) / inComp.length;
+      const minN = Math.min(...inComp.map(p => p.n));
+      upsertCand(comp, { status: "suspected", src: "comove", story: "co-moves — reason unknown",
+                         evidence: { corr: Math.round(avgC * 100) / 100, days: minN } });
+    }
+    /* Enrichment: wiki categories for the whole watchlist, one batched pull. */
+    S.cluMsg = "Fetching wiki categories…";
+    if (S.tab === "watch") renderClusters();
+    const catsByName = await wikiCatsFor(ids.map(id => itemName(id)));
+    const catsById = new Map(ids.map(id => [id, catsByName.get(itemName(id)) || []]));
+    const catCount = new Map();
+    for (const cs of catsById.values()) for (const cat of new Set(cs)) catCount.set(cat, (catCount.get(cat) || 0) + 1);
+    /* "Rare" = held by at most half the watchlist — a category everything
+       shares is the market, not a story. */
+    const rareMax = Math.max(3, Math.floor(ids.length * 0.5));
+    for (const cand of DB.clusterCands){
+      if (cand.status !== "suspected" || (cand.story && !/reason unknown/.test(cand.story))) continue;
+      if (!cand.members.every(m => catsById.has(m))) continue;
+      const shared = [...new Set(catsById.get(cand.members[0]) || [])].filter(cat =>
+        cand.members.every(m => (catsById.get(m) || []).includes(cat)) && (catCount.get(cat) || 0) <= rareMax);
+      if (shared.length){
+        cand.story = "all: " + shared[0];
+        cand.evidence = Object.assign({}, cand.evidence, { cat: shared[0] });
+      }
+    }
+    /* Dormant: a shared rare category with no co-movement yet. */
+    for (const [cat, nHold] of catCount){
+      if (nHold < 3 || nHold > rareMax) continue;
+      const group = ids.filter(id => (catsById.get(id) || []).includes(cat));
+      if (group.length < 3) continue;
+      if (DB.clusterCands.some(x => x.sig === cluSig(group) && x.status === "suspected")) continue;
+      upsertCand(group, { status: "dormant", src: "wiki",
+                          story: "all: " + cat + " — story without smoke (no co-movement yet)",
+                          evidence: { cat } });
+    }
+    DB.lastCoScanAt = Date.now();
+    S.cluMsg = "";
+    save();
+  } finally {
+    cluScanBusy = false;
+    if (S.tab === "watch") renderClusters();
+  }
+}
+
 /* ── inventory-mode readiness: the log decides here too ──────────
    "Proven items only" used to be enforced by feel; this makes it computable.
    READY = enough recent completed flips, net-positive, clean markouts, fills
@@ -2105,6 +2473,14 @@ function buildPlan(){
   const minExpect = (DB.minExpectGp > 0) ? DB.minExpectGp : Math.max(1000, Math.round(effTotal * 0.001));
   const perSlot = Math.floor(effTotal / targetSlots);
 
+  /* Ratified-cluster headroom: cap minus what's already committed (open
+     positions + inventory lots at cost). Every funded line below draws its
+     clusters down; candidates in the review queue never reach this map —
+     nothing caps capital until the user confirms. */
+  const clRoom = new Map();
+  for (const cl of DB.clusters || [])
+    clRoom.set(cl.id, Math.max(0, clusterCapGp(cl) - clusterExposure(cl)));
+
   /* Sizing per line: liquidity horizon, participation cap, then tier ramp.
      Every clamp records its reason — automated decisions show their work. */
   const sizeLine = x => {
@@ -2150,12 +2526,27 @@ function buildPlan(){
        shrink lines, and punishing a line for its own ramp is the slow-fill
        double-count all over again. If even full size is de minimis, it goes. */
     const tooSmall = cap > 0 && preRamp * x.eMargin < minExpect;
-    const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, pool) / x.c.buy)));
+    let qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, pool) / x.c.buy)));
+    /* Cluster exposure cap: across ALL members regardless of family. The
+       tightest containing cluster binds; a partial clamp records its reason,
+       a full block benches to NEXT UP with the cluster named. */
+    const clus = clustersFor(x.id);
+    let clBind = null, clLim = Infinity;
+    for (const cl of clus){
+      const lim = Math.floor((clRoom.get(cl.id) || 0) / x.c.buy);
+      if (lim < clLim){ clLim = lim; clBind = cl; }
+    }
+    const blockedCluster = !!clBind && clLim <= 0;
+    if (clBind && !blockedCluster && qty > clLim){
+      qty = clLim;
+      notes.push("cluster cap: " + clBind.name + " — clamped to hold the cluster at "
+        + clusterCapPctOf(clBind) + "% of working capital");
+    }
     const ramped = cap < preRamp;
-    if (full_ || blockedSeed || blockedT2 || cap <= 0 || qty <= 0 || tooSmall){
+    if (full_ || blockedSeed || blockedT2 || blockedCluster || cap <= 0 || qty <= 0 || tooSmall){
       /* Predicted-slow-fill bench: when the fill horizon is what shrank this
          below worth-a-slot, the honest reason is the fill forecast. */
-      if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !full_ && !blockedSeed && !blockedT2){
+      if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !full_ && !blockedSeed && !blockedT2 && !blockedCluster){
         bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estFillH(x.qty, x.c)) + " for the planned "
           + full(x.qty) + " — only " + full(byLiquidity) + " fit the " + FILLH() + "h fill horizon"
           + (byLiquidity > 0 ? ", not worth a slot" : "") });
@@ -2163,7 +2554,10 @@ function buildPlan(){
       }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
         wouldExpect: Math.max(0, cap) * x.eMargin,
-        why: blockedT2 ? "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)"
+        why: blockedCluster ? "cluster cap: " + clBind.name + " at limit — "
+             + gp(clusterCapGp(clBind) - (clRoom.get(clBind.id) || 0)) + " of the " + gp(clusterCapGp(clBind))
+             + " cap (" + clusterCapPctOf(clBind) + "% of working capital) already committed across its members"
+           : blockedT2 ? "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)"
            : blockedSeed ? x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used"
            : full_ ? "plan is full at " + targetSlots + " offers"
            : tooSmall ? "expected only ~" + gp(Math.round(preRamp * x.eMargin)) + "/cycle even at full size — under your "
@@ -2172,6 +2566,7 @@ function buildPlan(){
       continue;
     }
     pools[x.tier.t] -= qty * x.c.buy;
+    for (const cl of clus) clRoom.set(cl.id, Math.max(0, (clRoom.get(cl.id) || 0) - qty * x.c.buy));
     if (rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
     if (x.tier.t === 2) t2Live++;
     picks.push({ ...x, capQty: cap, allocQty: qty, sizeNotes: notes });
@@ -2184,12 +2579,49 @@ function buildPlan(){
   for (const p of picks){
     const pool = pools[p.tier.t];
     if (pool <= 0) continue;
-    const extra = Math.min(p.capQty - p.allocQty, Math.floor(pool / p.c.buy));
-    if (extra > 0){ p.allocQty += extra; pools[p.tier.t] -= extra * p.c.buy; }
+    let extra = Math.min(p.capQty - p.allocQty, Math.floor(pool / p.c.buy));
+    /* The tier pour still respects cluster headroom — a top-up that busts
+       the cluster ceiling is the same over-concentration by another door. */
+    const pClus = clustersFor(p.id);
+    let clHit = null;
+    for (const cl of pClus){
+      const lim = Math.floor((clRoom.get(cl.id) || 0) / p.c.buy);
+      if (lim < extra){ extra = lim; clHit = cl; }
+    }
+    if (extra > 0){
+      p.allocQty += extra; pools[p.tier.t] -= extra * p.c.buy;
+      for (const cl of pClus) clRoom.set(cl.id, Math.max(0, (clRoom.get(cl.id) || 0) - extra * p.c.buy));
+    }
+    if (clHit && !p.sizeNotes.some(s => /^cluster cap/.test(s)))
+      p.sizeNotes = [...p.sizeNotes, "cluster cap: " + clHit.name + " — top-up stopped at the cluster ceiling"];
   }
 
   for (const p of picks){ p.cost = p.allocQty * p.c.buy; p.expect = p.allocQty * p.eMargin; }
   const t1Spent = pool0[1] - pools[1], t2Spent = pool0[2] - pools[2];
+
+  /* Gate-health ledger: one row per item·gate·day (plus one per funded line),
+     30-day retention. Written from the live plan so the weekly audit can
+     judge each gate by realized outcomes instead of vibes. */
+  try {
+    const dToday = today();
+    const have = new Set(DB.gateLog.map(e => e.d + "|" + e.id + "|" + e.g));
+    let logDirty = false;
+    for (const b of bench){
+      if (!(b.id > 0)) continue;
+      const g = gateName(b.failed) || "plan gate";
+      const k = dToday + "|" + b.id + "|" + g;
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g }); have.add(k); logDirty = true; }
+    }
+    for (const p of picks){
+      const k = dToday + "|" + p.id + "|funded";
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: p.id, g: "funded" }); have.add(k); logDirty = true; }
+    }
+    if (logDirty){
+      const cutoff = new Date(Date.now() - 30 * 86400e3).toLocaleDateString("en-CA");
+      if (DB.gateLog.length && DB.gateLog[0].d < cutoff) DB.gateLog = DB.gateLog.filter(e => e.d >= cutoff);
+      save();
+    }
+  } catch(e){}
 
   return { picks, nextUp, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
            reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
@@ -2725,6 +3157,10 @@ function renderPlan(){
   const emptyMsg = '<li><span class="dim">Nothing clears today\'s gates. Sitting out is a position — don\'t force a flip into a market that isn\'t offering one.</span></li>';
   list.innerHTML = (placedHTML + quotesHTML + mmCandHTML + pickHTML + nextHTML) || emptyMsg;
 
+  /* Update-day caution: on Wednesdays, clusters with committed or about-to-
+     be-armed members get the hold-lighter advisory called out by name. */
+  const wedNote = wedClusterAdvisoryText(picks.map(p => p.id));
+  const wedHTML = wedNote ? '<div class="plan-note" style="margin-top:6px">🔧 ' + esc(wedNote) + '</div>' : '';
   if (picks.length){
     const expect = picks.reduce((a,p) => a + p.expect, 0);
     foot.innerHTML = 'Deploys <span class="num">T1 ' + gp(t1Spent) + '</span> of ' + gp(t1Budget) + ' budget'
@@ -2741,8 +3177,9 @@ function renderPlan(){
          ? '<div class="plan-note" style="margin-top:6px">' + gp(remaining) + ' of tier budget found no home this rotation '
            + '(T1 ' + gp(t1Pool - t1Spent) + ' idle · T2 ' + gp(t2Pool - t2Spent) + ' idle) — the watchlist can\'t absorb the working capital. '
            + 'Margin-test more tier-1 candidates from the scanner, set mm buffers on anything flagged <b>mm-ready</b>, or raise the watch cap so the scout surfaces more of the band.</div>'
-         : '');
-  } else foot.textContent = "";
+         : '')
+      + wedHTML;
+  } else foot.innerHTML = wedHTML;
 
   $("#benchSummary").textContent = "Benched — " + bench.length + " item" + (bench.length === 1 ? "" : "s");
   $("#benchBody").innerHTML = bench.length
@@ -3147,6 +3584,7 @@ function renderWatch(){
   $("#scoutMsg").textContent = DB.scoutOn ? (S.scoutMsg || "") : "";
   renderScoutLog();
   renderBlacklist();
+  renderClusters();
   $("#stackNote").textContent = gp(st) + " ÷ 3 = " + gp(third);
   if (!DB.watch.length){
     body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
@@ -3188,6 +3626,8 @@ function renderWatch(){
     if (isBlk(w.id)) flags.push('<span class="badge b-risk" title="On your blacklist — never funded, never quoted, never scout-admitted. Only you can remove it (🚫 button or the Blacklist box).">blacklisted</span>');
     const pl = provenLoser(w.id, w);
     if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column). The unbench lasts only while the test is fresh (16h).">proven loser — re-test to unbench</span>');
+    for (const cl of clustersFor(w.id))
+      flags.push('<span class="badge b-seed" title="Member of ratified thesis cluster \''+esc(cl.name)+'\' — combined exposure across all its members is capped at '+clusterCapPctOf(cl)+'% of working capital by the allocator, regardless of family. Manage it in the Thesis clusters panel below.">⬡ '+esc(cl.name)+'</span>');
     /* Tier badge doubles as the manual-override control: click cycles
        auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
     const tv = itemTier(w.id, c);
@@ -3248,7 +3688,8 @@ function renderWatch(){
           : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button>'
       + '<button class="sm ghost" data-blk="'+w.id+'" title="'+(isBlk(w.id)
           ? 'Remove from YOUR blacklist — it becomes eligible for gates, scout and funding again.'
-          : 'Blacklist this item: never scout-admitted, never funded, never quoted, and no automated path (not even a margin test) can clear it. Yours alone to reverse.')+'">'+(isBlk(w.id) ? '🚫✕' : '🚫')+'</button></td>'
+          : 'Blacklist this item: never scout-admitted, never funded, never quoted, and no automated path (not even a margin test) can clear it. Yours alone to reverse.')+'">'+(isBlk(w.id) ? '🚫✕' : '🚫')+'</button>'
+      + '<button class="sm ghost" data-clu="'+w.id+'" title="Tag into a thesis cluster — correlated items are one bet wearing several names; a confirmed cluster\'s combined exposure is capped as one.">⬡</button></td>'
       + '<td style="white-space:nowrap">'+testCell+'</td>'
       + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
       + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
@@ -3386,6 +3827,491 @@ function renderTierCompare(){
     + 'sibling-originated profit <b class="' + sign(sibProfit) + '">' + gp(sibProfit) + '</b>'
     + (sibItems ? ' across ' + sibItems + ' item' + (sibItems === 1 ? '' : 's') : '')
     + ' <span class="dim">(adjacent-use ring skipped — /mapping has no activity tags, and the rule is skip, don\'t guess)</span>';
+}
+
+/* ═══════════ THESIS CLUSTERS — panel & ratification ═══════════
+   The review panel is where the constitution lives: confirm activates the
+   exposure cap and names it, merge folds members into an existing cluster,
+   dismiss silences the candidate for good. Until one of those presses,
+   everything below the confirmed table is advisory. */
+function renderClusters(){
+  if (!$("#clusterPanel")) return;
+  const pending = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded");
+  $("#cluSub").textContent = DB.clusters.length + " confirmed · " + pending.length + " awaiting your ruling"
+    + (DB.lastCoScanAt ? " · scanned " + ago(DB.lastCoScanAt) : " · never scanned");
+  $("#cluScanMsg").innerHTML = S.cluMsg ? esc(S.cluMsg)
+    : (S.cluThin && S.cluThin.length
+       ? 'Insufficient data — fewer than ' + Math.max(5, DB.clusterMinDays || 20)
+         + ' overlapping trading days, so not flagged and not guessed at: <span class="dim">' + esc(S.cluThin.join(", ")) + '</span>'
+       : '');
+  const watchIds = new Set(DB.watch.map(w => w.id));
+  $("#cluBody").innerHTML = DB.clusters.length ? DB.clusters.map(cl => {
+    const ex = clusterExposure(cl), cap = clusterCapGp(cl);
+    const pl14 = clusterPnL(cl, Date.now() - 14 * 86400e3), plAll = clusterPnL(cl, 0);
+    const mems = cl.members.map(id =>
+      '<span class="' + (watchIds.has(id) ? '' : 'dim') + '"'
+      + (watchIds.has(id) ? '' : ' title="not on the watchlist — the cap still counts it whenever it holds capital"') + '>'
+      + esc(itemName(id))
+      + '<button class="sm ghost" data-clrm="' + cl.id + ':' + id + '" title="remove from this cluster" style="padding:0 4px">✕</button></span>'
+    ).join(", ");
+    return '<tr><td><b>⬡ ' + esc(cl.name) + '</b>'
+      + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px">' + esc(cl.story) + '</div>' : '') + '</td>'
+      + '<td>' + (mems || '<span class="dim">empty — tag watchlist rows with ⬡</span>') + '</td>'
+      + '<td class="num' + (ex >= cap ? ' neg' : '') + '">' + gp(ex) + ' / ' + gp(cap)
+      + (ex >= cap ? ' <span class="badge b-risk" title="Exposure meets the cap — the allocator funds no more of this cluster until something exits">at limit</span>'
+         : ex >= cap * 0.8 ? ' <span class="badge b-warn">near cap</span>' : '') + '</td>'
+      + '<td><input type="number" class="num" style="width:56px" min="1" max="100" data-clcap="' + cl.id + '"'
+      + ' value="' + (cl.capPct != null ? cl.capPct : '') + '" placeholder="' + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + '"></td>'
+      + '<td class="num ' + sign(pl14) + '">' + gp(pl14) + '</td>'
+      + '<td class="num ' + sign(plAll) + '">' + gp(plAll) + '</td>'
+      + '<td><button class="sm ghost" data-cldis="' + cl.id + '" title="Dissolve the cluster — the cap disappears, the items stay">✕</button></td></tr>';
+  }).join("") : '<tr><td colspan="7" class="empty">No confirmed clusters — correlated positions are currently treated as independent bets. Confirm a candidate below, or press + new cluster and tag rows with ⬡.</td></tr>';
+  const dismissed = DB.clusterCands.filter(c => c.status === "dismissed").length;
+  $("#cluQueueSum").textContent = "Review queue — " + pending.length + " candidate" + (pending.length === 1 ? "" : "s")
+    + (dismissed ? " (" + dismissed + " dismissed)" : "");
+  const BADGES = {
+    suspected: '<span class="badge b-warn" title="Co-movement detected: excess correlation past your threshold across 3+ items. The detector knows they move together, not why — the label stays honest until a story earns its place.">suspected</span>',
+    dormant:   '<span class="badge b-seed" title="Story without smoke: these items share a rare wiki category but have not co-moved yet.">dormant</span>',
+    seeded:    '<span class="badge b-ok" title="Seeded from game knowledge at build time — unconfirmed until the market co-moves or you ratify it.">seeded — unconfirmed</span>'
+  };
+  $("#cluQueueBody").innerHTML = pending.length ? pending.map(c => {
+    const ev = [];
+    if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + " overlapping days");
+    if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
+    if (c.src === "seed") ev.push("seeded from game knowledge");
+    return '<div class="bench-row"><span>' + BADGES[c.status] + ' <b>' + esc(c.name || c.story || "unnamed") + '</b>'
+      + (c.name && c.story ? '<div class="dim" style="font-size:11px;max-width:420px">' + esc(c.story) + '</div>' : '')
+      + '<div>' + esc(c.members.map(id => itemName(id)).join(", ")) + '</div>'
+      + '<div class="dim">' + esc((ev.length ? ev.join(" · ") + " · " : "") + "flagged " + ago(c.at)) + '</div></span>'
+      + '<span class="r" style="white-space:nowrap"><button class="sm" data-clconfirm="' + c.id + '" title="Ratify: name the cluster and activate its exposure cap">confirm…</button>'
+      + '<button class="sm" data-clmerge="' + c.id + '" title="Fold these members into an existing confirmed cluster">merge…</button>'
+      + '<button class="sm ghost" data-cldismiss="' + c.id + '" title="Not a real cluster — silence this candidate for good">dismiss</button></span></div>';
+  }).join("") : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories and the seed list refill it as evidence appears.</span></div>';
+}
+
+function tagClusterPrompt(id){
+  const nm = itemName(id);
+  const mkCluster = name => {
+    DB.clusters.push({ id: cluId(), name, members: [id], capPct: null, story: "", src: "manual", confirmedAt: Date.now() });
+    save(); renderWatch();
+    toast("Cluster \"" + name + "\" created with " + nm + " — combined exposure caps at "
+      + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + "% of working capital.");
+  };
+  if (!DB.clusters.length){
+    const a = prompt("No clusters yet. Name a new thesis cluster to start with \"" + nm + "\" as its first member (e.g. wilderness-gear):", "");
+    if (a === null) return;
+    const name = String(a).trim();
+    if (!name){ toast("A cluster needs a name."); return; }
+    mkCluster(name);
+    return;
+  }
+  const lines = DB.clusters.map((cl, i) => (i + 1) + ". " + cl.name + (cl.members.includes(id) ? "   ← member (choose to remove)" : ""));
+  const a = prompt("Tag \"" + nm + "\" — type a number to toggle membership:\n\n" + lines.join("\n") + "\n0. new cluster…", "");
+  if (a === null) return;
+  const k = Math.floor(clampNum(a, NaN));
+  if (k === 0){
+    const b = prompt("Name the new cluster:", "");
+    if (b === null) return;
+    const name = String(b).trim();
+    if (!name){ toast("A cluster needs a name."); return; }
+    mkCluster(name);
+    return;
+  }
+  const cl = DB.clusters[k - 1];
+  if (!cl){ toast("No cluster #" + k + " — pick a number from the list."); return; }
+  const at = cl.members.indexOf(id);
+  if (at >= 0){ cl.members.splice(at, 1); toast(nm + " removed from \"" + cl.name + "\"."); }
+  else { cl.members.push(id); toast(nm + " tagged into \"" + cl.name + "\" — its exposure now counts against the cluster cap."); }
+  save(); renderWatch();
+}
+
+function confirmCand(candId){
+  const c = DB.clusterCands.find(x => x.id === candId);
+  if (!c) return;
+  const suggested = c.name
+    || (c.story && /^all: /.test(c.story) ? c.story.replace(/^all: /, "").replace(/ — .*$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "");
+  const a = prompt("Name this cluster — the name appears in every cap reason and the Wednesday advisory:", suggested);
+  if (a === null) return;
+  const name = String(a).trim();
+  if (!name){ toast("A cluster needs a name."); return; }
+  DB.clusters.push({ id: cluId(), name, members: c.members.slice(), capPct: null,
+                     story: c.story || "", src: c.src || "manual", confirmedAt: Date.now() });
+  c.status = "confirmed";
+  logDecision("cluster", name, "confirm", (c.story || c.status) + " · " + c.members.length + " members");
+  save(); renderWatch();
+  if (S.tab === "routine") renderRoutine();
+  toast("Cluster \"" + name + "\" confirmed — combined exposure now caps at "
+    + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + "% of working capital.");
+}
+
+function mergeCand(candId){
+  const c = DB.clusterCands.find(x => x.id === candId);
+  if (!c) return;
+  if (!DB.clusters.length){ toast("Nothing to merge into — confirm a cluster first."); return; }
+  const a = prompt("Fold these " + c.members.length + " items into which confirmed cluster?\n\n"
+    + DB.clusters.map((cl, i) => (i + 1) + ". " + cl.name).join("\n"), "");
+  if (a === null) return;
+  const cl = DB.clusters[Math.floor(clampNum(a, NaN)) - 1];
+  if (!cl){ toast("Pick a number from the list."); return; }
+  let added = 0;
+  for (const m of c.members) if (!cl.members.includes(m)){ cl.members.push(m); added++; }
+  c.status = "merged";
+  logDecision("cluster", cl.name, "merge", added + " members folded in from candidate \"" + (c.name || c.story || c.sig) + "\"");
+  save(); renderWatch();
+  if (S.tab === "routine") renderRoutine();
+  toast(added + " item" + (added === 1 ? "" : "s") + " merged into \"" + cl.name + "\" — the cluster cap now covers them.");
+}
+
+function dismissCand(candId){
+  const c = DB.clusterCands.find(x => x.id === candId);
+  if (!c) return;
+  const prev = c.status;
+  c.status = "dismissed"; c.dismissedAt = Date.now();
+  logDecision("cluster", c.name || c.story || c.sig, "dismiss", "was " + prev);
+  save(); renderClusters();
+  if (S.tab === "routine") renderRoutine();
+  toast("Candidate dismissed — the queue won't raise this set again.",
+        () => { c.status = prev; delete c.dismissedAt; save(); renderClusters(); if (S.tab === "routine") renderRoutine(); });
+}
+
+function dissolveCluster(clId){
+  const idx = DB.clusters.findIndex(x => x.id === clId);
+  if (idx < 0) return;
+  const [gone] = DB.clusters.splice(idx, 1);
+  logDecision("cluster", gone.name, "dissolve", gone.members.length + " members released from the cap");
+  save(); renderWatch();
+  toast("Cluster \"" + gone.name + "\" dissolved — its exposure cap is gone; the items stay.",
+        () => { DB.clusters.splice(idx, 0, gone); save(); renderWatch(); });
+}
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  const tg = t.closest("[data-clu]");
+  if (tg){ tagClusterPrompt(+tg.dataset.clu); return; }
+  const cf = t.closest("[data-clconfirm]");
+  if (cf){ confirmCand(+cf.dataset.clconfirm); return; }
+  const mg = t.closest("[data-clmerge]");
+  if (mg){ mergeCand(+mg.dataset.clmerge); return; }
+  const dm = t.closest("[data-cldismiss]");
+  if (dm){ dismissCand(+dm.dataset.cldismiss); return; }
+  const ds = t.closest("[data-cldis]");
+  if (ds){ dissolveCluster(+ds.dataset.cldis); return; }
+  const as = t.closest("[data-audseed]");
+  if (as){ const [id, act] = as.dataset.audseed.split(":"); auditSeedAction(+id, act); return; }
+  const ab = t.closest("[data-audsib]");
+  if (ab){ const [id, act] = ab.dataset.audsib.split(":"); auditSibAction(+id, act); return; }
+  const dc = t.closest("[data-declogcopy]");
+  if (dc){
+    const md = DB.decisionLog.map(x => "- " + x.d + " [" + x.kind + "] " + x.subject + " — " + x.action + (x.reason ? ": " + x.reason : "")).join("\n");
+    copyText(md || "- (no rulings logged)", "Copied " + DB.decisionLog.length + " ruling" + (DB.decisionLog.length === 1 ? "" : "s") + " as markdown.");
+    return;
+  }
+  const rm = t.closest("[data-clrm]");
+  if (rm){
+    const [cid, iid] = rm.dataset.clrm.split(":").map(Number);
+    const cl = DB.clusters.find(x => x.id === cid);
+    if (!cl) return;
+    const at = cl.members.indexOf(iid);
+    if (at < 0) return;
+    cl.members.splice(at, 1);
+    save(); renderWatch();
+    toast(itemName(iid) + " removed from \"" + cl.name + "\".",
+          () => { cl.members.splice(at, 0, iid); save(); renderWatch(); });
+    return;
+  }
+});
+document.addEventListener("change", e => {
+  const cc = e.target.closest("[data-clcap]");
+  if (!cc) return;
+  const cl = DB.clusters.find(x => x.id === +cc.dataset.clcap);
+  if (!cl) return;
+  cl.capPct = String(cc.value).trim() === "" ? null
+    : Math.min(100, Math.max(1, clampNum(cc.value, DB.clusterCapPct != null ? DB.clusterCapPct : 15)));
+  save(); renderWatch();
+});
+$("#cluNew").onclick = () => {
+  const a = prompt("Name the new thesis cluster (e.g. wilderness-gear). Tag members afterwards with the ⬡ button on watchlist rows.", "");
+  if (a === null) return;
+  const name = String(a).trim();
+  if (!name){ toast("A cluster needs a name."); return; }
+  DB.clusters.push({ id: cluId(), name, members: [], capPct: null, story: "", src: "manual", confirmedAt: Date.now() });
+  save(); renderWatch();
+  toast("Cluster \"" + name + "\" created — tag members with ⬡ on watchlist rows.");
+};
+$("#cluScan").onclick = () => runClusterScan(true);
+
+/* ═══════════ DISCOVERY AUDIT & DECISION QUEUE ═══════════
+   The weekly review's audit ends in explicit decisions, not stats: every
+   card carries a recommended action WITH its reason, and nothing applies
+   until the user confirms. Confirm applies exactly the stated action;
+   modify records the user's own ruling and applies nothing; dismiss rests
+   the card. Every ruling lands in the decision log — the audit of the
+   audit, exportable for the quarterly look-back. */
+const AUD_REST_MS = 7 * 86400e3;
+function audRuledInfo(key){
+  const r = (DB.audRuled || {})[key];
+  return r && Date.now() - r.t < AUD_REST_MS ? r : null;
+}
+function logDecision(kind, subject, action, reason){
+  DB.decisionLog.push({ t: Date.now(), d: today(), kind, subject, action, reason: String(reason || "") });
+  if (DB.decisionLog.length > 500) DB.decisionLog = DB.decisionLog.slice(-500);
+  save();
+}
+
+/* §1 — seed audit: the discovery pipeline's P&L statement, per lineage. */
+function seedAudit(){
+  const out = [], now = Date.now();
+  for (const sid of Object.keys(DB.seedAt || {})){
+    const id = +sid, at = DB.seedAt[sid];
+    if (!(at > 0)) continue;
+    const name = itemName(id);
+    const kids = [];
+    for (const [k, v] of Object.entries(DB.sibBorn || {})) if (v && v.seed === id) kids.push({ id: +k, t: v.t || at });
+    const flipsOf = (mid, since) => DB.flips.filter(f => f.itemId === mid && f.id >= since);
+    const members = [{ id, t: at }].concat(kids);
+    let lineagePnl = 0, lineage14 = 0, lastTrade = 0, trading = 0;
+    const lineageIds = [];
+    for (const m of members){
+      const fl = flipsOf(m.id, m.t);
+      lineagePnl += fl.reduce((s2, f) => s2 + flipProfit(f), 0);
+      lineage14  += fl.filter(f => f.id >= now - 14 * 86400e3).reduce((s2, f) => s2 + flipProfit(f), 0);
+      for (const f of fl) if (f.id > lastTrade) lastTrade = f.id;
+      if (fl.length){ trading++; lineageIds.push(m.id); }
+    }
+    if (lineageIds.indexOf(id) < 0) lineageIds.unshift(id);   // the seed anchors its own cluster suggestion
+    const seedFlips = flipsOf(id, at);
+    const watching = DB.watch.filter(w => w.sib === id);
+    const ungrad = watching.filter(w => !w.sibGrad);
+    const grads = kids.filter(k => DB.flips.some(f => f.itemId === k.id && f.id >= k.t));
+    const washed = Math.max(0, kids.length - grads.length - watching.length);
+    const cold = now - Math.max(at, lastTrade) > 14 * 86400e3;
+    let rec, why;
+    if (trading >= 3){
+      rec = "PROMOTE";
+      why = trading + " lineage members trading — that's one production story, not " + trading
+          + " independent bets; tag it as a thesis cluster so exposure caps as one";
+    } else if (cold && lineage14 <= 0){
+      rec = "RETIRE";
+      why = "seed cold 14d (last lineage trade " + (lastTrade ? ago(lastTrade) : "never") + ") and lineage flat over 14d ("
+          + gp(lineage14) + ") — prune the " + ungrad.length + " un-graduated sibling watcher" + (ungrad.length === 1 ? "" : "s");
+    } else {
+      rec = "KEEP";
+      why = lineagePnl > 0
+        ? "lineage " + gp(lineagePnl) + " realized across " + trading + " trading member" + (trading === 1 ? "" : "s") + " — earning its slots"
+        : "young lineage, nothing decisive yet — give the siblings their washout window";
+    }
+    out.push({ id, name, at, seedTrips: seedFlips.length,
+               seedPnl: seedFlips.reduce((s2, f) => s2 + flipProfit(f), 0),
+               spawned: kids.length, graduated: grads.length, washed, watching: watching.length, ungrad: ungrad.length,
+               lineagePnl, lineage14, trading, lineageIds, rec, why });
+  }
+  return out;
+}
+
+/* §2 — sibling audit: slots vs caps, and the zombie watchers the 5-day rule
+   misses because an occasional gate pass keeps resetting their clock. */
+function sibAudit(){
+  const now = Date.now();
+  const rows = DB.watch.filter(w => w.src === "scout" && w.sib != null).map(w => {
+    const days = (now - (w.sibAt || now)) / 86400e3;
+    const zombie = days > 7 && !w.sibGrad && (!w.lastPass || now - w.lastPass > 3 * 86400e3);
+    return { id: w.id, name: itemName(w.id), seed: itemName(w.sib), days,
+             lastPass: w.lastPass || 0, grad: !!w.sibGrad, zombie };
+  });
+  const bySeed = new Map();
+  for (const r of rows) bySeed.set(r.seed, (bySeed.get(r.seed) || 0) + 1);
+  return { rows, bySeed, total: rows.length };
+}
+
+/* §4 — gate health: benches this week per gate, and the realized outcome of
+   anything that later traded — the one place a too-tight gate (its benched
+   items going on to win) or a too-loose one (its passers losing) shows up.
+   Advisory only: constant changes follow the house convention. */
+function gateHealthAudit(){
+  const wk = new Date(Date.now() - 7 * 86400e3).toLocaleDateString("en-CA");
+  const gates = new Map(), funded = new Map();
+  for (const e of (DB.gateLog || [])){
+    if (e.d < wk) continue;
+    if (e.g === "funded"){ if (!funded.has(e.id) || e.d < funded.get(e.id)) funded.set(e.id, e.d); continue; }
+    if (!gates.has(e.g)) gates.set(e.g, new Map());
+    const m = gates.get(e.g);
+    if (!m.has(e.id) || e.d < m.get(e.id)) m.set(e.id, e.d);
+  }
+  const rows = [];
+  for (const [g, m] of gates){
+    let traded = 0, net = 0;
+    for (const [id, d0] of m){
+      const fl = DB.flips.filter(f => f.itemId === id && String(f.date || "") > d0);
+      if (fl.length){ traded++; net += fl.reduce((s, f) => s + flipProfit(f), 0); }
+    }
+    rows.push({ g, benched: m.size, traded, net });
+  }
+  rows.sort((a, b) => b.benched - a.benched);
+  let fundedNet = 0, fundedTraded = 0;
+  for (const [id, d0] of funded){
+    const fl = DB.flips.filter(f => f.itemId === id && String(f.date || "") >= d0);
+    if (fl.length){ fundedTraded++; fundedNet += fl.reduce((s, f) => s + flipProfit(f), 0); }
+  }
+  return { rows, fundedCount: funded.size, fundedTraded, fundedNet };
+}
+
+const audBtns = (attr, id) =>
+  '<span class="plan-actions" style="white-space:nowrap">'
+  + '<button class="sm" data-' + attr + '="' + id + ':confirm" title="Apply exactly the recommended action and log it">confirm</button>'
+  + '<button class="sm" data-' + attr + '="' + id + ':modify" title="Record your own ruling — logged, nothing auto-applies">modify…</button>'
+  + '<button class="sm ghost" data-' + attr + '="' + id + ':dismiss" title="Rest this card for a week — logged">dismiss</button></span>';
+const audRuledLine = (key, name) => {
+  const r = audRuledInfo(key);
+  return r ? '<div class="dim">✓ ' + esc(name) + ' — ruled <b>' + esc(r.action) + '</b> ' + ago(r.t) + '; card rests a week.</div>' : null;
+};
+
+function renderAuditInline(){
+  const secs = [];
+  /* §1 seeds */
+  const seeds = seedAudit();
+  secs.push('<div class="nexthead"><b>1 · Seed audit</b> — the discovery pipeline\'s P&L, per lineage.</div>');
+  if (!seeds.length) secs.push('<div class="dim">No active seeds — the pipeline seeds an item at ' + (DB.seedTrips != null ? DB.seedTrips : 3) + ' profitable trips in 14d.</div>');
+  for (const a of seeds){
+    const rl = audRuledLine("seed:" + a.id, a.name);
+    if (rl){ secs.push(rl); continue; }
+    secs.push('<div style="margin:4px 0"><b>' + esc(a.name) + '</b> — seeded ' + ago(a.at)
+      + ' · ' + a.seedTrips + ' seed trip' + (a.seedTrips === 1 ? '' : 's') + ' (<span class="' + sign(a.seedPnl) + '">' + gp(a.seedPnl) + '</span>)'
+      + ' · siblings ' + a.spawned + ' spawned / ' + a.graduated + ' graduated / ' + a.washed + ' washed / ' + a.watching + ' watching'
+      + ' · lineage <span class="' + sign(a.lineagePnl) + '">' + gp(a.lineagePnl) + '</span> all-time, <span class="' + sign(a.lineage14) + '">' + gp(a.lineage14) + '</span> 14d'
+      + '<div class="dim">→ <b>' + a.rec + '</b>: ' + esc(a.why) + '</div>' + audBtns("audseed", a.id) + '</div>');
+  }
+  /* §2 siblings */
+  const sa = sibAudit();
+  secs.push('<div class="nexthead"><b>2 · Sibling audit</b> — ' + sa.total + ' watcher' + (sa.total === 1 ? '' : 's')
+    + ' of ' + (DB.sibTotal != null ? DB.sibTotal : 20) + ' total slots'
+    + (sa.bySeed.size ? ' (' + [...sa.bySeed].map(x => x[0] + ' ' + x[1] + '/' + (DB.sibPerSeed != null ? DB.sibPerSeed : 10)).join(' · ') + ')' : '') + '.</div>');
+  const zombies = sa.rows.filter(r => r.zombie && !audRuledInfo("sib:" + r.id));
+  const rested = sa.rows.filter(r => r.zombie && audRuledInfo("sib:" + r.id));
+  if (!sa.total) secs.push('<div class="dim">No sibling watchers live.</div>');
+  else if (!zombies.length && !rested.length) secs.push('<div class="dim">No zombie watchers — everyone is either fresh, passing gates, or already pruned by the 5-day rule.</div>');
+  for (const r of zombies)
+    secs.push('<div style="margin:4px 0">🧟 <b>' + esc(r.name) + '</b> — sibling of ' + esc(r.seed) + ', watched ' + Math.floor(r.days)
+      + 'd, ' + (r.lastPass ? 'last gate pass ' + ago(r.lastPass) : 'never passed a gate')
+      + '<div class="dim">→ <b>PRUNE</b>: intermittent passes keep resetting its 5-day washout, but ' + Math.floor(r.days)
+      + ' days without graduating is the answer — the slot serves discovery better empty.</div>' + audBtns("audsib", r.id) + '</div>');
+  for (const r of rested) secs.push(audRuledLine("sib:" + r.id, r.name));
+  /* §3 cluster queue */
+  const cands = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded");
+  secs.push('<div class="nexthead"><b>3 · Cluster queue</b> — ' + cands.length + ' candidate' + (cands.length === 1 ? '' : 's')
+    + ' awaiting ratification. Nothing caps capital until you confirm.</div>');
+  if (!cands.length) secs.push('<div class="dim">Queue is empty.</div>');
+  for (const c of cands){
+    const stale = Date.now() - c.at > 14 * 86400e3;
+    const ev = [];
+    if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + "d");
+    if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
+    if (c.src === "seed") ev.push("seeded from game knowledge");
+    secs.push('<div style="margin:4px 0"><span class="badge ' + (c.status === "suspected" ? "b-warn" : c.status === "dormant" ? "b-seed" : "b-ok") + '">' + c.status + '</span> '
+      + '<b>' + esc(c.name || c.story || "unnamed") + '</b> — ' + esc(c.members.map(id => itemName(id)).join(", "))
+      + '<div class="dim">' + esc((ev.length ? ev.join(" · ") + " · " : "") + "flagged " + ago(c.at))
+      + (stale ? ' · <b>stale — unratified 14d; dismiss?</b>' : '') + '</div>'
+      + '<span class="plan-actions" style="white-space:nowrap">'
+      + '<button class="sm' + (stale ? ' ghost' : '') + '" data-clconfirm="' + c.id + '">confirm…</button>'
+      + '<button class="sm ghost" data-clmerge="' + c.id + '">merge…</button>'
+      + '<button class="sm' + (stale ? ' primary' : ' ghost') + '" data-cldismiss="' + c.id + '">dismiss</button></span></div>');
+  }
+  /* §4 gate health */
+  const gh = gateHealthAudit();
+  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week and what the benched went on to do. Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
+  if (!gh.rows.length) secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
+  for (const r of gh.rows){
+    const verdict = r.traded === 0 ? "no outcome data — nothing it benched traded afterwards"
+      : r.net > 0 ? "⚠ possibly too tight — " + r.traded + " benched item" + (r.traded === 1 ? "" : "s") + " later booked " + gp(r.net)
+      : "holding — the " + r.traded + " that traded afterwards netted " + gp(r.net);
+    secs.push('<div><b>' + esc(r.g) + '</b> — benched ' + r.benched + ' item' + (r.benched === 1 ? '' : 's') + ' this week · <span class="dim">' + esc(verdict) + '</span></div>');
+  }
+  if (gh.fundedCount)
+    secs.push('<div><b>funded lines</b> — ' + gh.fundedCount + ' item' + (gh.fundedCount === 1 ? '' : 's') + ' this week · <span class="dim">'
+      + (gh.fundedTraded ? (gh.fundedNet < 0 ? '⚠ passers losing — possibly too loose somewhere: ' : 'passers netted ')
+        + gp(gh.fundedNet) + ' across ' + gh.fundedTraded + ' traded' : 'no completed round trips yet') + '</span></div>');
+  /* §5 decision log */
+  const dl = DB.decisionLog.slice(-50).reverse();
+  secs.push('<div class="nexthead"><b>5 · Decision log</b> — every ruling from this queue, so next quarter you can audit your own audit.</div>');
+  secs.push(dl.length
+    ? '<details><summary style="cursor:pointer">' + DB.decisionLog.length + ' ruling' + (DB.decisionLog.length === 1 ? '' : 's') + ' logged — expand</summary>'
+      + dl.map(x => '<div class="dim">' + esc(x.d) + ' <span class="badge b-ok">' + esc(x.kind) + '</span> <b>' + esc(x.subject) + '</b> — '
+        + esc(x.action) + (x.reason ? ': ' + esc(x.reason) : '') + '</div>').join("")
+      + '</details><div style="margin-top:4px"><button class="sm" data-declogcopy="1">copy all as markdown</button></div>'
+    : '<div class="dim">No rulings yet — they accrue as you work this queue.</div>');
+  return '<div class="inline">' + secs.join("") + '</div>';
+}
+
+function auditSeedAction(id, act){
+  const name = itemName(id);
+  const a = seedAudit().find(x => x.id === id);
+  if (act === "dismiss"){
+    DB.audRuled["seed:" + id] = { t: Date.now(), action: "dismissed" };
+    logDecision("seed", name, "dismiss", a ? a.rec + " recommended — " + a.why : "");
+    renderRoutine(); toast("Dismissed — the " + name + " card rests a week.");
+    return;
+  }
+  if (act === "modify"){
+    const r = prompt("Your ruling for seed " + name + " (logged; nothing auto-applies — use the normal controls to act on it):", "");
+    if (r === null) return;
+    DB.audRuled["seed:" + id] = { t: Date.now(), action: "modified" };
+    logDecision("seed", name, "modify", r);
+    renderRoutine(); toast("Ruling logged.");
+    return;
+  }
+  if (!a) return;
+  if (a.rec === "KEEP"){
+    logDecision("seed", name, "keep", a.why);
+    toast(name + " lineage kept.");
+  } else if (a.rec === "RETIRE"){
+    const gone = DB.watch.filter(w => w.sib === id && !w.sibGrad);
+    DB.watch = DB.watch.filter(w => !(w.sib === id && !w.sibGrad));
+    const goneAt = DB.seedAt[id];
+    delete DB.seedAt[id];
+    logDecision("seed", name, "retire", a.why);
+    toast("Retired " + name + " — pruned " + gone.length + " sibling watcher" + (gone.length === 1 ? "" : "s") + ".",
+          () => { DB.watch.push(...gone); if (goneAt) DB.seedAt[id] = goneAt; save(); renderWatch(); renderRoutine(); });
+  } else if (a.rec === "PROMOTE"){
+    const suggested = familyKey(name).replace(/\s+/g, "-") || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const nm = prompt("Name the thesis cluster for the " + name + " lineage (" + a.lineageIds.map(x => itemName(x)).join(", ")
+      + ") — its combined exposure will cap at " + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + "% of working capital:", suggested);
+    if (nm === null) return;
+    const name2 = String(nm).trim();
+    if (!name2){ toast("A cluster needs a name."); return; }
+    DB.clusters.push({ id: cluId(), name: name2, members: a.lineageIds.slice(), capPct: null,
+                       story: "promoted from discovery seed " + name, src: "seed-promote", confirmedAt: Date.now() });
+    logDecision("seed", name, "promote-to-thesis", "cluster \"" + name2 + "\" with " + a.lineageIds.length
+      + " members, cap " + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + "%");
+    toast("Cluster \"" + name2 + "\" confirmed from the " + name + " lineage.");
+  }
+  DB.audRuled["seed:" + id] = { t: Date.now(), action: a.rec.toLowerCase() };
+  save(); renderRoutine();
+}
+
+function auditSibAction(id, act){
+  const name = itemName(id);
+  if (act === "dismiss"){
+    DB.audRuled["sib:" + id] = { t: Date.now(), action: "dismissed" };
+    logDecision("sibling", name, "dismiss", "zombie flag dismissed — keep watching");
+    renderRoutine(); toast("Dismissed — " + name + " keeps its slot; the card rests a week.");
+    return;
+  }
+  if (act === "modify"){
+    const r = prompt("Your ruling for sibling watcher " + name + " (logged; nothing auto-applies):", "");
+    if (r === null) return;
+    DB.audRuled["sib:" + id] = { t: Date.now(), action: "modified" };
+    logDecision("sibling", name, "modify", r);
+    renderRoutine(); toast("Ruling logged.");
+    return;
+  }
+  const idx = DB.watch.findIndex(w => w.id === id);
+  if (idx < 0) return;
+  const [gone] = DB.watch.splice(idx, 1);
+  DB.audRuled["sib:" + id] = { t: Date.now(), action: "pruned" };
+  logDecision("sibling", name, "prune", "zombie watcher — watched " + (gone.sibAt ? Math.floor((Date.now() - gone.sibAt) / 86400e3) + "d" : "long")
+    + " without graduating");
+  save(); renderWatch(); renderRoutine();
+  toast("Pruned " + name + " from the watchlist.",
+        () => { DB.watch.splice(idx, 0, gone); delete DB.audRuled["sib:" + id]; save(); renderWatch(); renderRoutine(); });
 }
 
 /* ═══════════ FLIP LOG ═══════════ */
@@ -3863,6 +4789,8 @@ const CHECKLISTS = {
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
     ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
+    ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "watch#clusterPanel", "clusters"],
+    ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
@@ -3894,7 +4822,9 @@ function renderRoutine(){
        : dataDays < REVIEW_MIN_DAYS ? " · collecting data — " + dataDays + "/" + REVIEW_MIN_DAYS + " days logged before the verdicts mean much"
        : DB.lastReviewAt ? " · last review " + ago(DB.lastReviewAt) : "");
   $("#ckTitle").textContent = list.title;
-  $("#ckFoot").textContent = list.foot;
+  /* Wednesday hold-lighter advisory, cluster members called out by name. */
+  const wed = m === "walkup" ? wedClusterAdvisoryText([]) : "";
+  $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   $("#ckList").innerHTML = list.steps.map((s,i) => {
     const isDone = done.includes(i);
@@ -3961,6 +4891,23 @@ function renderRoutine(){
       inline = '<div class="inline">' + (lines.length
         ? lines.join("")
         : '<div class="dim">No flips logged yet — verdicts appear with data.</div>') + '</div>';
+    } else if (s[3] === "clusters"){
+      const lines = DB.clusters.map(cl => {
+        const ex = clusterExposure(cl), cap = clusterCapGp(cl);
+        const pl14 = clusterPnL(cl, Date.now() - 14 * 86400e3), plAll = clusterPnL(cl, 0);
+        return '<div>⬡ <b>' + esc(cl.name) + '</b> — ' + cl.members.length + ' member' + (cl.members.length === 1 ? '' : 's')
+          + ' · exposure ' + gp(ex) + ' of ' + gp(cap) + ' cap (' + clusterCapPctOf(cl) + '% of working)'
+          + (ex >= cap ? ' <span class="badge b-risk">at limit</span>' : '')
+          + ' · P&L 14d <span class="' + sign(pl14) + '">' + gp(pl14) + '</span>'
+          + ' · all-time <span class="' + sign(plAll) + '">' + gp(plAll) + '</span></div>';
+      });
+      const pend = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded").length;
+      if (pend) lines.push('<div class="dim">' + pend + ' candidate' + (pend === 1 ? '' : 's')
+        + ' in the review queue await your ruling — advisory only until confirmed.</div>');
+      inline = '<div class="inline">' + (lines.length ? lines.join("")
+        : '<div class="dim">No confirmed clusters — correlated positions are currently treated as independent bets. The Thesis clusters panel (Watchlist tab) collects candidates.</div>') + '</div>';
+    } else if (s[3] === "audit"){
+      inline = renderAuditInline();
     } else if (s[3] === "fricin"){
       inline = '<div class="inline"><div><input data-fric placeholder="one line — Enter saves it" style="width:min(320px,90%)"></div></div>';
     } else if (s[3] === "friction"){
@@ -5037,6 +5984,44 @@ function validateImport(d){
           seedAt: (d.seedAt && typeof d.seedAt === "object" && !Array.isArray(d.seedAt)) ? d.seedAt : {},
           sibBorn: (d.sibBorn && typeof d.sibBorn === "object" && !Array.isArray(d.sibBorn)) ? d.sibBorn : {},
           sibStats: (d.sibStats && typeof d.sibStats === "object") ? { washed: Math.max(0, num(d.sibStats.washed) || 0), graduated: Math.max(0, num(d.sibStats.graduated) || 0) } : { washed: 0, graduated: 0 },
+          clusters: (Array.isArray(d.clusters) ? d.clusters : []).map(cl => {
+            const name = String((cl && cl.name) || "").trim();
+            const members = [...new Set((Array.isArray(cl && cl.members) ? cl.members : []).map(x => num(x)).filter(x => x > 0))];
+            if (!name){ rejected++; return null; }
+            const o = { id: num(cl.id) || uid(), name, members, capPct: null, story: String(cl.story || ""),
+                        src: String(cl.src || "manual"), confirmedAt: num(cl.confirmedAt) || Date.now() };
+            if (num(cl.capPct) >= 1 && num(cl.capPct) <= 100) o.capPct = num(cl.capPct);
+            return o;
+          }).filter(Boolean),
+          clusterCands: (Array.isArray(d.clusterCands) ? d.clusterCands : []).map(c => {
+            const members = [...new Set((Array.isArray(c && c.members) ? c.members : []).map(x => num(x)).filter(x => x > 0))];
+            const status = ["suspected","dormant","seeded","dismissed","confirmed","merged"].includes(c && c.status) ? c.status : null;
+            if (members.length < 2 || !status) return null;
+            const o = { id: num(c.id) || uid(), sig: cluSig(members), members, status,
+                        src: String(c.src || ""), story: String(c.story || ""),
+                        evidence: (c.evidence && typeof c.evidence === "object" && !Array.isArray(c.evidence)) ? c.evidence : {},
+                        at: num(c.at) || Date.now() };
+            if (c.name) o.name = String(c.name);
+            if (num(c.dismissedAt) > 0) o.dismissedAt = num(c.dismissedAt);
+            return o;
+          }).filter(Boolean).slice(-100),
+          clusterCapPct: Math.min(100, Math.max(1, num(d.clusterCapPct) != null ? num(d.clusterCapPct) : 15)),
+          clusterCorr: Math.min(0.95, Math.max(0.1, num(d.clusterCorr) != null ? num(d.clusterCorr) : 0.5)),
+          clusterMinDays: Math.min(30, Math.max(5, num(d.clusterMinDays) != null ? num(d.clusterMinDays) : 20)),
+          lastCoScanAt: Math.max(0, num(d.lastCoScanAt) || 0),
+          clSeedV1: d.clSeedV1 ? 1 : 0,
+          decisionLog: (Array.isArray(d.decisionLog) ? d.decisionLog : []).map(x => {
+            const t = num(x && x.t);
+            if (!(t > 0)) return null;
+            return { t, d: String(x.d || "").slice(0, 10), kind: String(x.kind || ""),
+                     subject: String(x.subject || ""), action: String(x.action || ""), reason: String(x.reason || "") };
+          }).filter(Boolean).slice(-500),
+          audRuled: (d.audRuled && typeof d.audRuled === "object" && !Array.isArray(d.audRuled)) ? d.audRuled : {},
+          gateLog: (Array.isArray(d.gateLog) ? d.gateLog : []).map(e => {
+            const id = num(e && e.id);
+            if (!(id > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || "")) || !e.g) return null;
+            return { d: String(e.d), id, g: String(e.g) };
+          }).filter(Boolean).slice(-4000),
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 
@@ -5059,7 +6044,8 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["szT1","t1Budget",0,2e9],["szT2","t2Budget",0,2e9],["szPart","partCapPct",1,100],
                                  ["scT1Cap","scoutT1Cap",0,20],["scT2Cap","scoutT2Cap",0,20],
                                  ["scSeedN","seedTrips",1,10],["scSibSeed","sibPerSeed",0,30],["scSibTot","sibTotal",0,60],
-                                 ["szMinExp","minExpectGp",0,1e8]]){
+                                 ["szMinExp","minExpectGp",0,1e8],
+                                 ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -5135,6 +6121,9 @@ $("#scSeedN").value = DB.seedTrips != null ? DB.seedTrips : 3;
 $("#scSibSeed").value = DB.sibPerSeed != null ? DB.sibPerSeed : 10;
 $("#scSibTot").value = DB.sibTotal != null ? DB.sibTotal : 20;
 $("#szMinExp").value = DB.minExpectGp || 0;
+$("#clCap").value = DB.clusterCapPct != null ? DB.clusterCapPct : 15;
+$("#clCorr").value = DB.clusterCorr != null ? DB.clusterCorr : 0.5;
+$("#clDays").value = DB.clusterMinDays != null ? DB.clusterMinDays : 20;
 /* Walk-up cadence: no schedule is assumed — the app opens on the same move
    list whenever you show up. */
 S.mode = "walkup";
@@ -5155,6 +6144,12 @@ if (!DB.bankAskV3){
 }
 
 refresh().then(() => { renderAll(); fillSparks(); });
+
+/* Weekly co-movement scan: advisory only, polite (300ms between series
+   requests, wiki batches 1s apart). The guard inside skips until 7 days
+   have passed; the interval keeps long-lived tabs honest. */
+setTimeout(() => runClusterScan(false), 15000);
+setInterval(() => runClusterScan(false), 6 * 3600e3);
 
 /* Poll on a self-scheduling timer so failures can back off instead of
    hammering a struggling API every 60s forever. */
