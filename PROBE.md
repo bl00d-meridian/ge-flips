@@ -99,7 +99,9 @@ PASS funded member cluster-clamped with note
 FAIL detector flags the co-moving trio :: ["9001,9002,9003:dormant", ...]
 ```
 
-- `PASS <name>` — assertion held.
+- `PASS <name>` — assertion held. Names may carry `[R#]` tags cross-referencing
+  REQUIREMENTS.md; the report ends with a `===REQS===` section (lines prefixed `REQ`)
+  giving per-requirement PASS/FAIL derived from those tags.
 - `FAIL <name> :: <extra>` — the extra is JSON evidence captured at the assertion site
   (the actual plan picks, bench reasons, candidate list, etc.) — usually enough to
   diagnose without rerunning.

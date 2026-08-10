@@ -5819,7 +5819,7 @@ function slvSeriesStats(days){
   return { priceVs, volVs, rise14p, rise14v, accum, gpVolDay, last7m };
 }
 const entryVerdict = st => !st ? null
-  : (st.priceVs != null && st.priceVs <= 0) ? "DISCOUNTED"
+  : (st.priceVs != null && st.priceVs <= -2) ? "DISCOUNTED"
   : (st.accum || (st.priceVs != null && st.priceVs >= 5)) ? "RAMPING" : "neutral";
 /* Ranking: discount depth × catalyst proximity × exit liquidity. Zero past
    the window — a catalyst that already happened has no entry to rank. */

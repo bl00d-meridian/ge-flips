@@ -614,8 +614,462 @@
        && v.db.gateLog.length === DB.gateLog.length && Object.keys(v.db.audRuled).length > 0
        && v.db.nudgeSnooze.export === "2026-08-09",
        JSON.stringify({dl: v.db.decisionLog.length, gl: v.db.gateLog.length, ns: v.db.nudgeSnooze}));
+    // ═════════════════════════════════════════════════════════════════
+    // THESIS SLEEVE + ANALYST INTELLIGENCE (Aug 10 2026 build)
+    // Assertion names carry [R#] tags cross-referencing REQUIREMENTS.md;
+    // the report's ===REQS=== section is derived from them.
+    // ═════════════════════════════════════════════════════════════════
+    const inDays = n => new Date(Date.now() + n * 86400e3).toLocaleDateString("en-CA");
+
+    // ─── R0.1 + R1.1a/b: recalibration migration + legacy-hold migration ───
+    DB.recalV1 = 0; DB.sleeveMigV1 = 0;
+    DB.sleeve = []; DB.sleeveExits = []; DB.decisionLog = [];
+    DB.holds = [{ itemId: 9060, name: "Crimson kisten", qty: 2, paid: 5e6, addedAt: Date.now() - 30 * 86400e3 },
+                { itemId: 9061, name: "Probe keeper", qty: 1, paid: 1e6, addedAt: Date.now() }];
+    DB.t1Budget = 999; DB.t2Budget = 999; DB.sleeveBudget = 0;
+    flush(); load();
+    ok("[R0.1] recalibration sets 60/30/60 and logs 'resized to evidence'",
+       DB.t1Budget === 60e6 && DB.t2Budget === 30e6 && DB.sleeveBudget === 60e6 && DB.recalV1 === 1
+       && DB.decisionLog.some(x => x.kind === "settings" && /resized to evidence/.test(x.reason)),
+       JSON.stringify({ t1: DB.t1Budget, t2: DB.t2Budget, s: DB.sleeveBudget, log: DB.decisionLog.slice(-3) }));
+    const mig = DB.sleeve.find(p => /kisten/i.test(p.name));
+    ok("[R1.1a] legacy hold migrates with cost basis, excluded from budget",
+       !!mig && mig.legacy === 1 && mig.basis === 5e6 && mig.qty === 2
+       && !DB.holds.some(h => /kisten/i.test(h.name)) && DB.holds.some(h => h.itemId === 9061)
+       && sleeveCommitted() === 0 && sleeveNewOpenCount() === 0,
+       JSON.stringify({ sleeve: DB.sleeve, holds: DB.holds, committed: sleeveCommitted() }));
+
+    // ─── R1.2: mandatory-field enforcement (validator + save path) ───
+    mkItem(9050, "Probe sleeve item"); mkItem(9051, "Probe sleeve second"); mkItem(9052, "Probe rungs"); mkItem(9053, "Probe deflated");
+    DB.sleeve = []; DB.sleeveExits = []; DB.sleeveBudget = 60e6; DB.sleeveMaxPos = 3; DB.sleeveRungPct = 5;
+    DB.intel = []; DB.catalysts = []; DB.watch = [{ id: 9001, qty: null }];
+    const emptyMissing = sleeveMissingFields({ rungs: [] });
+    ok("[R1.2] empty draft misses every mandatory field",
+       ["item", "quantity", "entry / cost basis"].every(k => emptyMissing.some(m => m.indexOf(k) === 0))
+       && emptyMissing.some(m => /catalyst \(named event\)/.test(m)) && emptyMissing.some(m => /thesis/.test(m))
+       && emptyMissing.some(m => /invalidation/.test(m)) && emptyMissing.some(m => /exit ladder/.test(m)),
+       JSON.stringify(emptyMissing));
+    const fillSlvForm = (id, name) => {
+      slvEditId = null;
+      acSleeve.itemId = id; acSleeve.input.value = name;
+      document.querySelector("#slvQty").value = "10";
+      document.querySelector("#slvBasis").value = "1000000";
+      document.querySelector("#slvCat").value = "Probe Event";
+      document.querySelector("#slvWinA").value = inDays(10);
+      document.querySelector("#slvWinB").value = inDays(20);
+      document.querySelector("#slvThesis").value = "goes up on the event";
+      document.querySelector("#slvInval").value = "event cancelled";
+      slvRungs = [{ kind: "price", trigger: 1500000, frac: 50 }, { kind: "date", trigger: inDays(25), frac: 50 }];
+    };
+    fillSlvForm(9050, "Probe sleeve item");
+    document.querySelector("#slvThesis").value = "";
+    saveSleeveFromForm();
+    ok("[R1.2] save refuses without the thesis and names the miss",
+       DB.sleeve.length === 0 && /missing/i.test(document.querySelector("#slvFormMsg").textContent)
+       && /thesis/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+    fillSlvForm(9050, "Probe sleeve item");
+    saveSleeveFromForm();
+    ok("[R1.2] complete draft saves and commits the budget",
+       DB.sleeve.length === 1 && DB.sleeve[0].itemId === 9050 && sleeveCommitted() === 10e6
+       && DB.decisionLog.some(x => x.kind === "sleeve" && x.action === "enter"),
+       JSON.stringify({ sleeve: DB.sleeve, committed: sleeveCommitted() }));
+
+    // ─── R1.6: one item one mandate + budget/concurrency refusals ───
+    fillSlvForm(9001, "Probe alpha");
+    saveSleeveFromForm();
+    ok("[R1.6] flipping-inventory item refused — one item, one mandate",
+       DB.sleeve.length === 1 && /one item, one mandate/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+    DB.sleeveBudget = 5e6;
+    fillSlvForm(9051, "Probe sleeve second");
+    saveSleeveFromForm();
+    ok("[R1.6] entry over the free budget refused — closing, never raiding",
+       DB.sleeve.length === 1 && /sleeve budget/.test(document.querySelector("#slvFormMsg").textContent)
+       && /never raiding/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+    DB.sleeveBudget = 60e6; DB.sleeveMaxPos = 1;
+    fillSlvForm(9051, "Probe sleeve second");
+    saveSleeveFromForm();
+    ok("[R1.1c] concurrency cap blocks entry beyond max new positions",
+       DB.sleeve.length === 1 && /concurrent new positions/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+    DB.sleeveMaxPos = 3;
+
+    // ─── R1.1: allocator disjointness — sleeve state never moves the plan ───
+    DB.flips = []; DB.positions = []; DB.invLots = [];
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    DB.clusters = []; DB.clusterCands = []; DB.planPriority = []; DB.planDemoted = [];
+    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
+    S.vol5Low = new Map();
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
+    S.qualStamp = S.latestAt + "|" + S.hourAt;
+    const planNoSleeve = buildPlan();
+    DB.sleeve.push({ id: 778, itemId: 9051, name: "Probe sleeve second", qty: 30, basis: 1e6,
+      enteredAt: Date.now(), catalyst: { name: "E", windowStart: inDays(5), windowEnd: inDays(15) },
+      thesis: "t", invalidation: "i", ladder: [{ kind: "price", trigger: 2e6, frac: 100 }],
+      phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null });
+    const planWithSleeve = buildPlan();
+    ok("[R1.1] sleeve commitments never touch tier pools or picks",
+       JSON.stringify(planNoSleeve.picks.map(p => [p.id, p.allocQty])) === JSON.stringify(planWithSleeve.picks.map(p => [p.id, p.allocQty]))
+       && planNoSleeve.t1Pool === planWithSleeve.t1Pool && planNoSleeve.t2Pool === planWithSleeve.t2Pool,
+       JSON.stringify({ a: planNoSleeve.picks.map(p => p.allocQty), b: planWithSleeve.picks.map(p => p.allocQty) }));
+
+    // ─── R1.4: rung trigger math ───
+    S.latest[9052] = { high: 990, low: 951, highTime: nowS - 60, lowTime: nowS - 120 };
+    const posR = { id: 777, itemId: 9052, name: "Probe rungs", qty: 100, basis: 1000,
+      enteredAt: Date.now() - 5 * 86400e3, catalyst: { name: "E", windowStart: inDays(2), windowEnd: inDays(9) },
+      thesis: "t", invalidation: "i", phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null,
+      ladder: [{ kind: "price", trigger: 1000, frac: 50 }, { kind: "date", trigger: inDays(9), frac: 25 },
+               { kind: "phase", trigger: "announced", frac: 25 }] };
+    ok("[R1.4] price rung arms within 5% of trigger, not below",
+       rungState(posR, 0, 951).armed === true && rungState(posR, 0, 949).armed === false
+       && rungState(posR, 0, null).armed === false,
+       JSON.stringify([rungState(posR, 0, 951), rungState(posR, 0, 949)]));
+    const dateFar = rungState(posR, 1, 951);
+    posR.ladder[1].trigger = inDays(6);
+    const dateNear = rungState(posR, 1, 951);
+    posR.ladder[1].trigger = inDays(9);
+    ok("[R1.4] date rung arms inside 7 days only", dateFar.armed === false && dateNear.armed === true,
+       JSON.stringify([dateFar, dateNear]));
+    const phOff = rungState(posR, 2, 951);
+    posR.phase = "launch";
+    const phOn = rungState(posR, 2, 951);
+    posR.phase = null;
+    ok("[R1.4] phase rung arms only on user flag; launch implies announced",
+       phOff.armed === false && phOn.armed === true, JSON.stringify([phOff, phOn]));
+    ok("[R1.4] rung qty = fraction of original, clamped to remainder",
+       rungQty(posR, posR.ladder[0]) === 50
+       && rungQty({ ...posR, soldQty: 80 }, posR.ladder[0]) === 20,
+       JSON.stringify([rungQty(posR, posR.ladder[0])]));
+    posR.ladder[0].filledAt = Date.now();
+    ok("[R1.4] a filled rung never re-arms", rungState(posR, 0, 951).done === true && rungState(posR, 0, 951).armed === false);
+    delete posR.ladder[0].filledAt;
+
+    // ─── R1.4b + R1.5: exit recording — net of tax, own ledger, budget freed ───
+    const pos778 = DB.sleeve.find(p => p.id === 778);
+    DB.sleeve = [posR, pos778]; DB.sleeveExits = [];
+    const flipsJSON = JSON.stringify(DB.flips), realizedBefore = realized();
+    promptQ.length = 0; promptQ.push("50", "1200");
+    window.prompt = () => promptQ.shift();
+    recordSleeveExit(777, 0);
+    const ex1 = DB.sleeveExits[0];
+    ok("[R1.4b] rung exit records qty/price and nets tax vs cost",
+       !!ex1 && ex1.qty === 50 && ex1.price === 1200 && ex1.net === 50 * (1200 - geTax(1200, 9052) - 1000)
+       && ex1.rung === 0 && posR.ladder[0].filledAt > 0 && posR.soldQty === 50 && !posR.closedAt,
+       JSON.stringify(DB.sleeveExits));
+    promptQ.push("50", "1200");
+    recordSleeveExit(777, null);
+    ok("[R1.4b] full exit closes the position and frees its budget",
+       posR.closedAt > 0 && sleeveRemQty(posR) === 0 && sleeveCommitted() === 30e6 /* only pos 778 remains */,
+       JSON.stringify({ closed: posR.closedAt, committed: sleeveCommitted(), sleeve: DB.sleeve.map(p => p.id) }));
+    ok("[R1.5] sleeve exits never touch the flip log or realized metrics",
+       JSON.stringify(DB.flips) === flipsJSON && realized() === realizedBefore,
+       JSON.stringify({ flips: DB.flips.length, realized: realized() }));
+
+    // ─── R1.2b: ladder edits demand a decision-logged reason ───
+    fillSlvForm(9051, "Probe sleeve second");
+    slvEditId = 778;
+    document.querySelector("#slvQty").value = "30";
+    slvRungs = [{ kind: "price", trigger: 2.5e6, frac: 50 }, { kind: "price", trigger: 3e6, frac: 50 }];
+    window.prompt = () => "";
+    saveSleeveFromForm();
+    const p778 = DB.sleeve.find(p => p.id === 778);
+    ok("[R1.2b] empty reason aborts the ladder edit",
+       p778.ladder.length === 1 && p778.ladder[0].trigger === 2e6, JSON.stringify(p778.ladder));
+    fillSlvForm(9051, "Probe sleeve second");
+    slvEditId = 778;
+    document.querySelector("#slvQty").value = "30";
+    slvRungs = [{ kind: "price", trigger: 2.5e6, frac: 50 }, { kind: "price", trigger: 3e6, frac: 50 }];
+    window.prompt = () => "better exit shape";
+    saveSleeveFromForm();
+    ok("[R1.2b] reasoned ladder edit applies and is decision-logged",
+       DB.sleeve.find(p => p.id === 778).ladder.length === 2
+       && DB.decisionLog.some(x => x.kind === "sleeve" && x.action === "ladder-edit" && /better exit shape/.test(x.reason)),
+       JSON.stringify(DB.decisionLog.slice(-3)));
+
+    // ─── R2.1: 90d baseline stats + DISCOUNTED / RAMPING verdicts ───
+    const mkSlvDays = (n, fn, vn) => Array.from({ length: n }, (_, i) => ({
+      d: new Date(Date.parse("2026-06-01T00:00:00Z") + i * 86400e3).toISOString().slice(0, 10),
+      mid: fn(i), vol: vn ? vn(i) : 100 }));
+    ok("[R2.1] under 21 days of series → null, never a guess", slvSeriesStats(mkSlvDays(15, () => 1000)) === null);
+    const stFlat = slvSeriesStats(mkSlvDays(40, () => 1000));
+    ok("[R2.1] flat series: ~0% vs baseline, no accumulation, neutral verdict",
+       !!stFlat && Math.abs(stFlat.priceVs) < 0.01 && stFlat.accum === false && entryVerdict(stFlat) === "neutral",
+       JSON.stringify(stFlat));
+    const stDisc = slvSeriesStats(mkSlvDays(40, i => i < 26 ? 1000 : 900));
+    ok("[R2.1] below-baseline series reads DISCOUNTED",
+       !!stDisc && stDisc.priceVs < -5 && entryVerdict(stDisc) === "DISCOUNTED", JSON.stringify(stDisc));
+    const stRamp = slvSeriesStats(mkSlvDays(40, i => i < 26 ? 1000 : 1100, i => i < 26 ? 100 : 220));
+    ok("[R2.1] price+volume rising together = accumulation signature, RAMPING",
+       !!stRamp && stRamp.accum === true && entryVerdict(stRamp) === "RAMPING"
+       && stRamp.rise14p >= 4 && stRamp.rise14v >= 25, JSON.stringify(stRamp));
+
+    // ─── R2.4: ranking + exit-liquidity warning ───
+    ok("[R2.4] rank = discount × proximity × liquidity; zero past the window",
+       slvRankScore(stDisc, -1) === 0
+       && slvRankScore(stDisc, 0) > slvRankScore(stDisc, 30)
+       && slvRankScore(slvSeriesStats(mkSlvDays(40, i => i < 26 ? 1000 : 800)), 10) > slvRankScore(stDisc, 10),
+       JSON.stringify([slvRankScore(stDisc, 0), slvRankScore(stDisc, 30)]));
+    DB.sleeveExitLiqPct = 15;
+    ok("[R2.4] exit-liq warns above 15% of daily gp volume, not below",
+       exitLiqWarn(16, 100) === true && exitLiqWarn(14, 100) === false && exitLiqWarn(16, 0) === false);
+
+    // ─── R2.3: crossover laggard flag ───
+    DB.catalysts = [{ id: 1, name: "Probe XO", windowStart: inDays(5), windowEnd: inDays(15),
+      items: [9001, 9002], clusters: [], notes: "", src: "manual", createdAt: Date.now() }];
+    slvDailyCache.set(9001, { at: Date.now(), days: mkSlvDays(30, i => i < 26 ? 1000 : 1180) });
+    slvDailyCache.set(9002, { at: Date.now(), days: mkSlvDays(30, () => 1000) });
+    const xo = crossoverFlags();
+    ok("[R2.3] moving set with a flat member flags the laggard",
+       xo.length === 1 && xo[0].lead.id === 9001 && xo[0].lag.id === 9002 && xo[0].lead.mv > 10,
+       JSON.stringify(xo.map(x => [x.lead, x.lag])));
+
+    // ─── R4.1: import validation — no source no record, inert until ratified ───
+    DB.intel = []; DB.catalysts = [];
+    const mkRec = over => Object.assign({ id: "r-base", type: "demand-context", confidence: "hinted",
+      title: "Probe intel", thesis: "th", direction: "up", items: [{ id: 9001, name: "Probe alpha" }],
+      sources: [{ url: "https://example.test/a", note: "n" }], validUntil: inDays(30) }, over);
+    const imp1 = importIntelligence({ records: [ mkRec({ id: "r-1" }), mkRec({ id: "r-2", sources: [] }),
+      mkRec({ id: "r-3", type: "bogus" }), mkRec({ id: "r-4", validUntil: "" }) ] });
+    ok("[R4.1] import: valid added; no-source and malformed rejected",
+       imp1.added === 1 && imp1.noSource === 1 && imp1.malformed === 2 && DB.intel.length === 1,
+       JSON.stringify(imp1));
+    ok("[R4.1] pending intel is inert — no tags, no haircut, no calendar entry",
+       intelTagText(9001).length === 0 && intelHaircut(9001) === false && DB.catalysts.length === 0,
+       JSON.stringify(DB.intel));
+    ok("[R4.1b] flipping-inventory items annotated at import",
+       DB.intel[0].conflict === "Probe alpha", JSON.stringify(DB.intel[0].conflict));
+
+    // ─── R4.1c: dismissal memory — absorption and material-change resurface ───
+    DB.intel[0].status = "dismissed"; DB.intel[0].items = [9001, 9002, 9003]; DB.intel[0].ruledAt = Date.now();
+    const imp2 = importIntelligence({ records: [ mkRec({ id: "r-var", items: [{id:9001},{id:9002},{id:9003},{id:9004}] }) ] });
+    ok("[R4.1c] Jaccard ≥0.6 same-type variant absorbed into the dismissal",
+       imp2.absorbed === 1 && DB.intel.length === 1 && DB.intel[0].variants === 1,
+       JSON.stringify({ imp2, intel: DB.intel }));
+    const imp3 = importIntelligence({ records: [ mkRec({ id: "r-1", confidence: "confirmed" }) ] });
+    ok("[R4.1c] confidence upgrade is material change — dismissed record resurfaces pending",
+       imp3.resurfaced === 1 && DB.intel.length === 1 && DB.intel[0].status === "pending"
+       && /material change/.test(DB.intel[0].resurfaced || ""),
+       JSON.stringify(DB.intel));
+
+    // ─── R4.3: boundaries — ratification touches nothing sacred; history wins ───
+    DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4400, sell: 4000, date: today(), note: "" }];
+    const sacred = JSON.stringify({ blk: DB.blacklist, res: DB.reserve, shadow: DB.shadowReserve,
+      roi: GATE.roi, tick: DB.tickFloor, gates: GATE_CHAIN_ORDER });
+    DB.intel[0].status = "ratified"; DB.intel[0].ruledAt = Date.now();
+    activateIntel(DB.intel[0]);
+    ok("[R4.3] intel cannot touch blacklist / reserve / gate constants",
+       sacred === JSON.stringify({ blk: DB.blacklist, res: DB.reserve, shadow: DB.shadowReserve,
+         roi: GATE.roi, tick: DB.tickFloor, gates: GATE_CHAIN_ORDER }));
+    ok("[R4.3] bullish intel vs negative realized history says history wins",
+       intelTagText(9001).some(t => /history wins/.test(t) && /update-sensitive|demand context/.test(t)),
+       JSON.stringify(intelTagText(9001)));
+    DB.flips = [];
+
+    // ─── R4.2a: catalyst records create then update — never duplicate ───
+    DB.catalysts = [];
+    const catRec = mkRec({ id: "r-cat", type: "catalyst", items: [{ id: 9002 }],
+      catalyst: { name: "Probe Event X", windowStart: inDays(10), windowEnd: inDays(20) } });
+    const impC = importIntelligence({ records: [catRec] });
+    const rCat = DB.intel.find(x => x.id === "r-cat");
+    rCat.status = "ratified";
+    activateIntel(rCat);
+    ok("[R4.2a] ratified catalyst record lands on the calendar",
+       DB.catalysts.length === 1 && DB.catalysts[0].name === "Probe Event X" && DB.catalysts[0].src === "intel"
+       && DB.catalysts[0].items.includes(9002), JSON.stringify(DB.catalysts));
+    const updRec = { ...mkRec({ id: "r-cat-upd", type: "catalyst-update", items: [{ id: 9003 }] }),
+      updatesCatalyst: "Probe Event X", catalyst: { name: "Probe Event X", windowStart: inDays(12), windowEnd: inDays(22) } };
+    importIntelligence({ records: [updRec] });
+    const rUpd = DB.intel.find(x => x.id === "r-cat-upd");
+    rUpd.status = "ratified";
+    activateIntel(rUpd);
+    ok("[R4.2a] catalyst-update edits the entry in place — never duplicates",
+       DB.catalysts.length === 1 && DB.catalysts[0].windowStart === inDays(12)
+       && DB.catalysts[0].items.includes(9003) && /updated from briefing/.test(DB.catalysts[0].notes),
+       JSON.stringify(DB.catalysts));
+
+    // ─── R4.2b: membership proposals queue — never recompose silently ───
+    DB.clusterCands = [];
+    const memRec = { ...mkRec({ id: "r-mem", type: "cluster-membership", items: [] }),
+      cluster: { name: "probe-int", addMembers: [9001, 9002], story: "shared engine" } };
+    importIntelligence({ records: [memRec] });
+    const rMem = DB.intel.find(x => x.id === "r-mem");
+    const clustersJSON = JSON.stringify(DB.clusters);
+    rMem.status = "ratified";
+    activateIntel(rMem);
+    ok("[R4.2b] membership proposal queues for cluster ratification, clusters untouched",
+       DB.clusterCands.length === 1 && DB.clusterCands[0].src === "intel" && DB.clusterCands[0].status === "suspected"
+       && /analyst-sourced/.test(DB.clusterCands[0].story) && JSON.stringify(DB.clusters) === clustersJSON,
+       JSON.stringify(DB.clusterCands));
+
+    // ─── R4.2c: teeth — user-toggled 0.5× haircut, reason inline ───
+    DB.intel = []; DB.flips = []; DB.positions = []; DB.invLots = [];
+    DB.watch = [{ id: 9001, qty: null }];
+    DB.clusters = []; DB.clusterCands = []; DB.planPriority = []; DB.planDemoted = [];
+    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
+    S.vol5Low = new Map();
+    DB.qual = { 9001: qualified() }; S.qualStamp = S.latestAt + "|" + S.hourAt;
+    const q0 = buildPlan().picks.find(p => p.id === 9001).allocQty;
+    importIntelligence({ records: [ mkRec({ id: "r-teeth", items: [{ id: 9001 }] }) ] });
+    const rT = DB.intel.find(x => x.id === "r-teeth");
+    rT.status = "ratified";
+    let pT = buildPlan().picks.find(p => p.id === 9001);
+    ok("[R4.2c] ratified intel without teeth never resizes",
+       pT.allocQty === q0 && !(pT.sizeNotes || []).some(s => /news risk/.test(s)), JSON.stringify({ q0, q: pT.allocQty }));
+    rT.teeth = 1;
+    pT = buildPlan().picks.find(p => p.id === 9001);
+    ok("[R4.2c] teeth toggle halves the final size with the ruling stated inline",
+       pT.allocQty === Math.max(1, Math.floor(q0 / 2))
+       && (pT.sizeNotes || []).some(s => s === "sized down 0.5×: news risk (my ruling)"),
+       JSON.stringify({ q0, q: pT.allocQty, notes: pT.sizeNotes }));
+    rT.teeth = 0;
+
+    // ─── R4.2d: deflation flag — sell-on-drop tag + sleeve refusal ───
+    importIntelligence({ records: [ mkRec({ id: "r-defl", type: "deflation-flag", direction: "down",
+      title: "Probe supply flood", items: [{ id: 9053 }] }) ] });
+    const rD = DB.intel.find(x => x.id === "r-defl");
+    rD.status = "ratified";
+    ok("[R4.2d] deflation flag carries the standing sell-on-drop tag",
+       intelTagText(9053).some(t => /^sell-on-drop, don't accumulate/.test(t)), JSON.stringify(intelTagText(9053)));
+    DB.sleeve = [];
+    fillSlvForm(9053, "Probe deflated");
+    saveSleeveFromForm();
+    ok("[R4.2d] sleeve refuses a deflation-flagged candidate with that reason",
+       DB.sleeve.length === 0 && /deflation/.test(document.querySelector("#slvFormMsg").textContent)
+       && /sell-on-drop/.test(document.querySelector("#slvFormMsg").textContent),
+       document.querySelector("#slvFormMsg").textContent);
+
+    // ─── R4.4: expiry archive + scorecard grading ───
+    const yd2 = new Date(Date.now() - 86400e3).toLocaleDateString("en-CA");
+    DB.intel.push({ id: "r-exp-pending", type: "demand-context", confidence: "rumor", title: "Expired pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/e" }],
+      validUntil: yd2, importedAt: Date.now() - 5 * 86400e3, status: "pending", teeth: 0, outcome: null });
+    DB.intel.push({ id: "r-exp-rat", type: "demand-context", confidence: "hinted", title: "Expired ratified",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/f" }],
+      validUntil: yd2, importedAt: Date.now() - 5 * 86400e3, status: "ratified", teeth: 0, outcome: null });
+    intelSweep();
+    const expPnd = DB.intel.find(x => x.id === "r-exp-pending");
+    ok("[R4.4] expired pending auto-archives as expired-unruled, logged",
+       expPnd.status === "dismissed" && expPnd.expiredUnruled === 1
+       && DB.decisionLog.some(x => x.kind === "intel" && /expired unruled/.test(x.reason)),
+       JSON.stringify(expPnd));
+    ok("[R4.4] expired ratified awaits grading; scorecard offers the verdicts",
+       intelToGrade().some(r => r.id === "r-exp-rat")
+       && /window passed — call was/.test(intelScorecardInline()), intelScorecardInline().slice(0, 300));
+    DB.intel.find(x => x.id === "r-exp-rat").outcome = "right";
+    ok("[R4.4] graded calls accrue a per-tier hit rate",
+       /hinted 1\/1 right/.test(intelScorecardInline()), intelScorecardInline());
+
+    // ─── R5.1–R5.4: rulings-pending block, cap, priority, staleness, badge ───
+    DB.intel = []; DB.clusterCands = []; DB.sleeve = []; DB.sleeveExits = [];
+    DB.rulingSnooze = {}; DB.rulingsCap = 5; DB.audRuled = {}; DB.seedAt = {}; DB.sibBorn = {};
+    DB.flips = []; S.depProposalCount = 0;
+    for (let i = 0; i < 3; i++)
+      DB.intel.push({ id: "r-p" + i, type: "demand-context", confidence: "hinted", title: "Pending " + i,
+        thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/p" + i }],
+        validUntil: inDays(10 + i), importedAt: Date.now() - (i === 2 ? 15 : 1) * 86400e3, status: "pending", teeth: 0, outcome: null });
+    DB.clusterCands.push({ id: 71, sig: "9001,9002,9004", members: [9001, 9002, 9004], at: Date.now() - 2 * 86400e3,
+      status: "suspected", src: "comove", story: "co-moves", evidence: {} });
+    S.latest[9052] = { high: 990, low: 951, highTime: nowS - 60, lowTime: nowS - 120 };
+    DB.sleeve.push({ id: 900, itemId: 9052, name: "Probe rungs", qty: 100, basis: 1000, enteredAt: Date.now(),
+      catalyst: { name: "E", windowStart: inDays(2), windowEnd: inDays(9) }, thesis: "t", invalidation: "i",
+      ladder: [{ kind: "price", trigger: 1000, frac: 50 }], phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null });
+    const items5 = pendingRulingItems().filter(x => !x.snoozed);
+    items5.sort((a, b) => a.pri - b.pri || a.sort - b.sort);
+    ok("[R5.1] every queue contributes a line with its inline actions",
+       items5.some(x => /data-intelrat/.test(x.html)) && items5.some(x => /data-slvexit/.test(x.html))
+       && items5.some(x => /data-clconfirm/.test(x.html)),
+       JSON.stringify(items5.map(x => x.key)));
+    ok("[R5.2] priority: expiring intel → sleeve rung → cluster",
+       items5.findIndex(x => /^intel:/.test(x.key)) < items5.findIndex(x => /^rung:/.test(x.key))
+       && items5.findIndex(x => /^rung:/.test(x.key)) < items5.findIndex(x => /^clu:/.test(x.key)),
+       JSON.stringify(items5.map(x => x.key)));
+    DB.rulingsCap = 2;
+    const inl = rulingsInline();
+    ok("[R5.2] cap shows N lines and counts the overflow out loud",
+       (inl.match(/data-rulesnooze/g) || []).length === 2 && /\+\d+ more in the queues/.test(inl), inl.slice(0, 400));
+    DB.rulingsCap = 5;
+    ok("[R5.3] >14d pending carries a default-action suggestion",
+       pendingRulingItems().some(x => /pending 15d — suggested: dismiss/.test(x.html)),
+       JSON.stringify(pendingRulingItems().map(x => x.html.slice(0, 90))));
+    DB.intel.push({ id: "r-old", type: "demand-context", confidence: "rumor", title: "Ancient pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/o" }],
+      validUntil: inDays(40), importedAt: Date.now() - 31 * 86400e3, status: "pending", teeth: 0, outcome: null });
+    pendingRulingItems();
+    ok("[R5.3] >30d pending auto-dismisses with the standing log line",
+       DB.intel.find(x => x.id === "r-old").status === "dismissed"
+       && DB.decisionLog.some(x => /expired unruled \(30d\)/.test(x.reason)),
+       JSON.stringify(DB.intel.find(x => x.id === "r-old")));
+    updatePendBadge();
+    const badge = document.querySelector("#pendBadge");
+    ok("[R5.4] header badge shows the pending count",
+       badge.style.display !== "none" && /⚖ \d+ pending/.test(badge.textContent), badge.textContent);
+    DB.rulingSnooze["clu:71"] = Date.now() + 86400e3;
+    ok("[R5.1] snoozed lines rest and return later",
+       !pendingRulingItems().filter(x => !x.snoozed).some(x => x.key === "clu:71"));
+
+    // ─── R5.5: briefing reminder triggers, dismiss-per-occurrence ───
+    DB.lastBriefImportAt = Date.now() - 9 * 86400e3;
+    DB.briefRemindDismissKey = "";
+    const bi = briefReminderInfo();
+    ok("[R5.5] stale analyst (or passed Wednesday) raises the handoff cue",
+       !!bi && /run the briefing at the desk/.test(bi.msg) && /^(wed-|stale-)/.test(bi.key), JSON.stringify(bi));
+    DB.briefRemindDismissKey = bi.key;
+    ok("[R5.5] dismiss hides this occurrence only", briefReminderInfo() === null);
+    DB.lastBriefImportAt = Date.now();
+    DB.briefRemindDismissKey = "";
+    ok("[R5.5] fresh import silences the reminder", briefReminderInfo() === null);
+
+    // ─── R5.1 render: the walk-up carries the block and the reminder slot ───
+    S.tab = "routine"; S.mode = "walkup"; renderRoutine();
+    ok("[R5.1] walk-up renders the rulings step after execution items",
+       /Rule on what's pending/.test(document.querySelector("#ckList").innerHTML),
+       "");
+    DB.lastBriefImportAt = Date.now() - 9 * 86400e3;
+    renderRoutine();
+    ok("[R5.5] walk-up shows the elevated reminder line when stale",
+       /run the briefing at the desk/.test(document.querySelector("#briefRemind").innerHTML),
+       document.querySelector("#briefRemind").innerHTML);
+    DB.lastBriefImportAt = Date.now();
+
+    // ─── R1.5: everything rides Export JSON ───
+    const vSlv = validateImport(JSON.parse(JSON.stringify({
+      sleeve: DB.sleeve, sleeveExits: [{ t: 1, d: today(), posId: 900, itemId: 9052, name: "Probe rungs",
+        qty: 50, price: 1200, basis: 1000, net: 8800, rung: 0 }],
+      catalysts: DB.catalysts, anomalyFlags: [{ id: 1, itemId: 9001, name: "Probe alpha", at: Date.now(), d: today(), strength: 9, rise14p: 5, rise14v: 40 }],
+      intel: [{ id: "r-keep", type: "catalyst", confidence: "polled", title: "K", thesis: "t", direction: "up",
+        items: [9001], sources: [{ url: "https://example.test/k" }], validUntil: inDays(5), status: "ratified", teeth: 1 }],
+      sleeveBudget: 60e6, sleeveMaxPos: 3, sleeveRungPct: 5, sleeveExitLiqPct: 15, rulingsCap: 4,
+      lastBriefImportAt: 123, briefRemindDismissKey: "wed-2026-08-05", recalV1: 1, sleeveMigV1: 1 })));
+    ok("[R1.5] import keeps sleeve, exits, catalysts, intel, and the flags",
+       vSlv.db.sleeve.length === DB.sleeve.length && vSlv.db.sleeveExits.length === 1
+       && vSlv.db.sleeveExits[0].net === 8800 && vSlv.db.catalysts.length === DB.catalysts.length
+       && vSlv.db.intel.length === 1 && vSlv.db.intel[0].teeth === 1 && vSlv.db.intel[0].status === "ratified"
+       && vSlv.db.anomalyFlags.length === 1 && vSlv.db.rulingsCap === 4
+       && vSlv.db.recalV1 === 1 && vSlv.db.sleeveMigV1 === 1,
+       JSON.stringify({ s: vSlv.db.sleeve.length, x: vSlv.db.sleeveExits, i: vSlv.db.intel }));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
+  }
+  /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
+     Derived from [R#] tags in assertion names; a requirement is FAIL if any
+     tagged assertion failed. Lines are prefixed REQ so the fail counter
+     never double-counts them. */
+  const reqStatus = new Map();
+  for (const line of out){
+    const st = line.indexOf("PASS ") === 0 ? "PASS" : line.indexOf("FAIL ") === 0 ? "FAIL" : null;
+    if (!st) continue;
+    for (const rq of (line.match(/R\d+\.\d+[a-z]?/g) || []))
+      reqStatus.set(rq, reqStatus.get(rq) === "FAIL" ? "FAIL" : st);
+  }
+  if (reqStatus.size){
+    out.push("===REQS=== (cross-reference REQUIREMENTS.md)");
+    for (const [rq, st] of [...reqStatus.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })))
+      out.push("REQ " + st + " " + rq);
+    out.push("REQ coverage: " + reqStatus.size + " requirement ids asserted");
   }
   const fails = out.filter(l => l.indexOf("FAIL") === 0);
   document.title = fails.length ? "PROBE-FAIL " + fails.length : "PROBE-PASS";
