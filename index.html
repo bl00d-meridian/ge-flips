@@ -140,7 +140,7 @@ tr.worst td{background:#3a1b18}
 .dep-h:first-child{margin-top:0}
 
 /* ---- cluster member chips ---- */
-.memchip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;font-size:12px}
+.memchip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;font-size:12px;white-space:nowrap}
 .memchip.off{color:var(--dim)}
 
 /* ---- checklist ---- */
@@ -911,6 +911,7 @@ let DB = {
   audRuled: {},       // "seed:311"/"sib:227" → {t, action} — a ruled card rests for 7 days
   gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
   qual: {},           // sustained qualification: id → {n, firstAt, lastAt} counted full-gate passes (spec: 3 spanning ≥2h)
+  deployLog: [],      // funnel headline snapshots [{h,pass,funded,dep}] — hourly buckets (last refresh of the hour wins), 7d retention
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
   checks: { date:"", walkup:[], weekly:[] }
 };
@@ -919,7 +920,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -3597,6 +3598,26 @@ function renderDeploy(plan){
   const P = plan || buildPlan();
   const all = P.all || [];
   const N = all.length;
+  const pool = P.t1Pool + P.t2Pool;
+
+  /* ── headline snapshot ledger: one bucket per hour, last refresh of the
+     hour wins, 7-day retention. Guarded on live data having arrived at least
+     once — an offline boot reads funded 0 and must not pollute the series. */
+  try {
+    if (S.latestAt){
+      const hb = Math.floor(Date.now() / 3600e3);
+      const entry = { h: hb, pass: P.pass.length, funded: P.picks.length,
+                      dep: pool > 0 ? Math.round(P.deployed / pool * 100) : 0 };
+      const last = DB.deployLog[DB.deployLog.length - 1];
+      if (!last || last.h !== hb){
+        DB.deployLog.push(entry);
+        if (DB.deployLog[0] && DB.deployLog[0].h <= hb - 168) DB.deployLog = DB.deployLog.filter(e => e.h > hb - 168);
+        save();
+      } else if (last.pass !== entry.pass || last.funded !== entry.funded || last.dep !== entry.dep){
+        Object.assign(last, entry); save();
+      }
+    }
+  } catch(e){}
 
   /* ── funnel: first-fail attribution, in the order the chain applies ── */
   const firstGate = x => x.fails && x.fails.length ? x.fails[0].g : (gateName(x.failed) || "plan gate");
@@ -3708,10 +3729,43 @@ function renderDeploy(plan){
     + (props.length ? props.map(p => '<div class="plan-note" style="margin-top:4px">' + p + '</div>').join("")
                     : '<div class="bench-row"><span class="dim">No gate accumulates 3+ single-gate near-misses this refresh — no tuning case to make from today\'s data.</span></div>');
 
-  const pool = P.t1Pool + P.t2Pool;
   $("#depSub").textContent = P.pass.length + " of " + N + " pass · " + P.picks.length + " funded · "
     + gp(P.deployed) + " of " + gp(pool) + " tier pool deployed" + (pool > 0 ? " (" + Math.round(P.deployed / pool * 100) + "%)" : "");
-  box.innerHTML = '<div class="dep-h">Gate funnel — cumulative, in the order applied</div>' + funnel + attrib + pipeHTML + propHTML;
+  box.innerHTML = deploySparkHTML() + '<div class="dep-h">Gate funnel — cumulative, in the order applied</div>'
+    + funnel + attrib + pipeHTML + propHTML;
+}
+
+/* 7-day funded-count sparkline from the snapshot ledger. Runs split where
+   buckets are more than 3h apart — gaps are hours the app was closed and
+   must read as gaps, never as zeros. */
+function deploySparkHTML(){
+  const hb = Math.floor(Date.now() / 3600e3);
+  const rows = (DB.deployLog || []).filter(e => e.h > hb - 168);
+  const head = '<div class="dep-h">Funded slots — last 7 days</div>';
+  if (rows.length < 2)
+    return head + '<div class="dim" style="font-size:12px;margin-bottom:6px">Snapshot ledger warming up — the headline (pass / funded / deployed %) is stamped once per hour while the app is open; the sparkline appears at 2+ hourly buckets.</div>';
+  const w = 240, h = 34;
+  const ys = rows.map(r => r.funded);
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const span = Math.max(1, hi - lo);
+  const x = e => ((e.h - (hb - 168)) / 168) * (w - 6) + 3;
+  const y = v => h - 5 - ((v - lo) / span) * (h - 12);
+  const runs = [];
+  let cur = [rows[0]];
+  for (let i = 1; i < rows.length; i++){
+    if (rows[i].h - rows[i - 1].h <= 3) cur.push(rows[i]);
+    else { runs.push(cur); cur = [rows[i]]; }
+  }
+  runs.push(cur);
+  const els = runs.map(run => run.length === 1
+    ? '<circle cx="' + x(run[0]).toFixed(1) + '" cy="' + y(run[0].funded).toFixed(1) + '" r="1.6" fill="var(--gold)"/>'
+    : '<polyline fill="none" stroke="var(--gold)" stroke-width="1.4" points="'
+      + run.map(e => x(e).toFixed(1) + ',' + y(e.funded).toFixed(1)).join(" ") + '"/>').join("");
+  const now = rows[rows.length - 1];
+  return head + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
+    + '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:' + w + 'px;height:' + h + 'px;background:#141109;border:1px solid var(--line);border-radius:3px">' + els + '</svg>'
+    + '<span class="dim" style="font-size:12px">hourly snapshots (last refresh of each hour wins) — now <b class="num">' + now.funded
+    + '</b> funded, 7d range ' + lo + '–' + hi + ', deployed ' + now.dep + '%. Breaks in the line are hours the app was closed, not zeros.</span></div>';
 }
 
 /* ═══════════ AUTO-SCOUT ═══════════
@@ -5120,7 +5174,7 @@ function renderLog(){
       + '<td class="num">'+full(f.qty)+'</td><td class="num">'+full(f.buy)+'</td><td class="num">'+full(f.sell)+'</td>'
       + '<td class="num dim sec">'+gp(tax)+'</td><td class="num '+sign(p)+'">'+gp(p)+'</td>'
       + '<td class="num sec '+sign(p)+'">'+(roi != null ? roi.toFixed(2) : "—")+'</td>'
-      + '<td class="dim sec">'+esc(f.note||"")+'</td>'
+      + '<td class="dim sec" style="white-space:normal;text-align:left;max-width:260px">'+esc(f.note||"")+'</td>'
       + '<td><button class="sm ghost" data-delflip="'+f.id+'">✕</button></td></tr>';
   }).join("") : '<tr><td colspan="10" class="empty">No flips logged yet.</td></tr>';
 
@@ -5290,7 +5344,7 @@ function renderGame(){
   $("#gameBody").innerHTML = rows.length ? rows.map(g =>
       '<tr><td class="dim">' + esc(g.d) + '</td>'
     + '<td class="num ' + sign(g.v) + '">' + (g.v > 0 ? '+' : '') + full(g.v) + '</td>'
-    + '<td class="dim sec">' + esc(g.note || '') + '</td>'
+    + '<td class="dim sec" style="white-space:normal;text-align:left;max-width:260px">' + esc(g.note || '') + '</td>'
     + '<td><button class="sm ghost" data-delgame="' + g.id + '">✕</button></td></tr>').join("")
     : '<tr><td colspan="4" class="empty">Bought supplies or sold a drop? One line here keeps it out of your flipping stats.</td></tr>';
   $("#gSum").innerHTML = rows.length
@@ -6758,6 +6812,12 @@ function validateImport(d){
             if (!(id > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || "")) || !e.g) return null;
             return { d: String(e.d), id, g: String(e.g) };
           }).filter(Boolean).slice(-4000),
+          deployLog: (Array.isArray(d.deployLog) ? d.deployLog : []).map(e => {
+            const h = num(e && e.h);
+            if (!(h > 0)) return null;
+            return { h, pass: Math.max(0, num(e.pass) || 0), funded: Math.max(0, num(e.funded) || 0),
+                     dep: Math.max(0, Math.min(100, num(e.dep) || 0)) };
+          }).filter(Boolean).slice(-200),
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 

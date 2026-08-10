@@ -561,6 +561,44 @@
     DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
     DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
 
+    // ═══ FUNNEL SNAPSHOT LEDGER + 7-DAY FUNDED SPARKLINE ═══
+    DB.flips = []; DB.positions = []; DB.watch = [{id:9001,qty:null},{id:9003,qty:null}];
+    DB.clusters = []; DB.planPriority = []; DB.planDemoted = []; DB.deployLog = [];
+    DB.qual = { 9001: qualified(), 9003: qualified() };
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    S.vol5Low = new Map(); S.qualStamp = S.latestAt + "|" + S.hourAt;
+    const hadLatest = S.latestAt;
+    S.latestAt = 0;               // never-fetched guard: no snapshot without live data
+    S.tab = "watch"; renderWatch();
+    ok("no snapshot before live data ever arrived", DB.deployLog.length === 0, JSON.stringify(DB.deployLog));
+    S.latestAt = Date.now();
+    renderWatch();
+    const hbNow = Math.floor(Date.now() / 3600e3);
+    ok("refresh stamps the funnel headline into an hourly bucket", DB.deployLog.length === 1
+       && DB.deployLog[0].h === hbNow && DB.deployLog[0].funded === 2 && DB.deployLog[0].pass === 2
+       && Number.isFinite(DB.deployLog[0].dep), JSON.stringify(DB.deployLog));
+    renderWatch();
+    ok("same-hour refreshes coalesce into one bucket", DB.deployLog.length === 1, JSON.stringify(DB.deployLog));
+    // seed history: a run 30-20h ago, a gap, and the current bucket → sparkline with a break
+    DB.deployLog = [];
+    for (let hh = hbNow - 30; hh <= hbNow - 20; hh++) DB.deployLog.push({ h: hh, pass: 3, funded: 3, dep: 40 });
+    DB.deployLog.push({ h: hbNow - 200, pass: 9, funded: 9, dep: 90 });   // stale — must be trimmed, not drawn
+    DB.deployLog.sort((a, b) => a.h - b.h);
+    renderWatch();
+    const depSpark = document.querySelector("#depBody").innerHTML;
+    // the 11-bucket run draws a polyline; the isolated current bucket after the
+    // 20h gap draws a lone dot — the break itself is the honesty feature
+    ok("sparkline draws runs and breaks at gaps", /Funded slots — last 7 days/.test(depSpark)
+       && (depSpark.match(/<polyline[^>]*var\(--gold\)/g) || []).length >= 1
+       && /<circle/.test(depSpark) && /not zeros/.test(depSpark), depSpark.slice(0, 700));
+    ok("stale buckets trimmed at 7 days", !DB.deployLog.some(e => e.h <= hbNow - 168), JSON.stringify(DB.deployLog.map(e => e.h)));
+    const vDep = validateImport(JSON.parse(JSON.stringify({ deployLog: DB.deployLog })));
+    ok("import keeps the snapshot ledger", vDep.db.deployLog.length === DB.deployLog.length
+       && vDep.db.deployLog[0].funded === 3, JSON.stringify(vDep.db.deployLog.slice(0, 2)));
+    S.latestAt = hadLatest; DB.deployLog = [];
+    DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,
