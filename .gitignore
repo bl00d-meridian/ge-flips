@@ -2,6 +2,8 @@
 ge-flipping-guide.md
 # one-shot local utility from an old cleanup task
 cleanup.html
-.claude/
+# local Claude Code settings stay private; skills are part of the repo
+.claude/*
+!.claude/skills/
 # disposable probe-run artifacts (see PROBE.md)
 tools/probe/out/

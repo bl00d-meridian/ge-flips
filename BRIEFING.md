@@ -1,0 +1,107 @@
+# BRIEFING.md — analyst briefing: standing rules and output contract
+
+The `/briefing` skill turns Claude Code into the desk analyst for the GE tracker's
+intelligence layer. It reads public OSRS sources and emits **typed, sourced, expiring
+records** that the tracker's ratification queue presents to the user. Nothing the
+briefing produces activates on its own: every record is ratified, edited, or dismissed
+by the user inside the tracker (house convention — the tool proposes, the user rules).
+
+## Standing rules (binding)
+
+1. **Never launder rumor into fact.** Every record carries a confidence tier —
+   `confirmed` (official news post / patch notes), `polled` (passed or scheduled poll),
+   `hinted` (dev statement, blog aside, beta datamine), `rumor` (community speculation)
+   — and the record's copy must claim exactly what the tier supports. A rumor phrased
+   as certainty is a defect, not enthusiasm.
+2. **No source, no record.** Every record cites at least one URL. A claim that cannot
+   be cited is dropped, not softened.
+3. **No proposals for flipping-inventory items.** The briefing must not propose sleeve
+   positions or catalysts whose named play is an item the user actively flips. The
+   analyst cannot see the user's browser state, so this is enforced twice: the analyst
+   avoids obviously watchlist-shaped staples (high-volume consumables in the T1/T2
+   bands), and the tracker's import re-checks every record against the live watchlist,
+   open positions, and inventory lots — conflicts arrive annotated and cannot become
+   sleeve entries.
+4. **Nothing requiring reserve or budget raids.** Position templates must be executable
+   within the sleeve budget (60m as of Aug 2026). Never propose anything sized beyond
+   it, and never suggest recalling the shadow reserve or resizing tier budgets.
+5. **Priced-in check is mandatory** for any record with affected items: read the item's
+   30-day chart (timeseries API below) and state whether the move already happened.
+   "Announced 3 weeks ago, item +40% since" is a RAMPING warning, not an entry thesis.
+6. **Contrary evidence rides along.** If the sweep surfaced evidence against the
+   thesis, it goes in the record's `contrary` field. Omitting it is laundering.
+7. **Expiry is mandatory.** Every record gets `validUntil`. Expired intel archives into
+   the tracker's scorecard ("call was right / wrong / unclear") — write records you are
+   willing to be graded on.
+8. **Politeness.** Fetch with the same etiquette the tracker uses: sequential requests,
+   no hammering, prefer single bulk endpoints. Cite the exact URLs fetched.
+
+## Sources to sweep (in order)
+
+| Source | How |
+|---|---|
+| Official OSRS news | `https://secure.runescape.com/m=news/archive?oldschool=1` and article pages |
+| OSRS wiki news/upcoming | `https://oldschool.runescape.wiki/w/Upcoming_updates` (and linked update pages) |
+| r/2007scape, past week | `https://www.reddit.com/r/2007scape/top.json?t=week&limit=50` (and `hot.json`) |
+| Dev blogs | whatever the above link to — read the primary, cite the primary |
+| Item mapping (name → id) | `https://prices.runescape.wiki/api/v1/osrs/mapping` |
+| 30-day charts (priced-in check) | `https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=<id>` |
+
+## Output 1 — `intelligence.json` (repo root, overwritten per run)
+
+```json
+{
+  "generatedAt": "2026-08-10T17:00:00Z",
+  "coversFrom": "2026-08-03",
+  "coversTo": "2026-08-10",
+  "records": [
+    {
+      "id": "2026-08-10-example-slug",
+      "type": "catalyst | catalyst-update | cluster-membership | demand-context | deflation-flag",
+      "confidence": "confirmed | polled | hinted | rumor",
+      "title": "one line",
+      "thesis": "neutral, factual statement of the mechanism",
+      "direction": "up | down | unclear",
+      "items": [{ "id": 123, "name": "Exact mapping name" }],
+      "sources": [{ "url": "https://…", "note": "what this supports" }],
+      "validUntil": "2026-09-15",
+      "contrary": "evidence against, or null",
+      "pricedIn": { "checked": true, "verdict": "no | partial | yes", "detail": "30d chart summary with numbers" }
+    }
+  ]
+}
+```
+
+Type-specific extras:
+
+- `catalyst` — full five-field position template **in neutral terms** (the user writes
+  their own thesis sentence at entry): add
+  `"catalyst": { "name": "...", "windowStart": "YYYY-MM-DD", "windowEnd": "YYYY-MM-DD" }`
+  plus optional `"template": { "exitShape": "...", "invalidation": "..." }`.
+- `catalyst-update` — add `"updatesCatalyst": "<calendar entry name>"`. **Never emit a
+  new catalyst for an event already on the calendar** — check `intelligence.json`
+  history / the previous BRIEF for names and update instead.
+- `cluster-membership` — add `"cluster": { "name": "...", "addMembers": [ids], "story": "sourced story" }`.
+  Membership proposals queue for ratification; membership never recomposes silently.
+- `demand-context` — display note for seeds/siblings; `items` carries the affected ids.
+- `deflation-flag` — new-content supply increase: the tracker attaches a standing
+  "sell-on-drop, don't accumulate" tag and the sleeve refuses the item as a candidate.
+
+## Output 2 — `briefings/BRIEF-<date>.md`
+
+Human-readable brief, dated filename, header stating the date range covered
+(`Covers YYYY-MM-DD → YYYY-MM-DD`). Sections: what shipped, what's scheduled, what the
+community is loud about, records emitted (one line each with confidence + expiry), and
+what was checked but NOT emitted (with the reason — usually "no source" or "priced in").
+
+## Run procedure
+
+1. Sweep the sources above for the window since the last brief (check `briefings/` for
+   the previous date; default 7 days).
+2. Draft candidate records; kill anything without a source; run the priced-in check on
+   every record with items; resolve item ids via the mapping endpoint (exact names).
+3. Reconcile against the existing calendar/intel history: updates, not duplicates.
+4. Write `intelligence.json` and `briefings/BRIEF-<date>.md`.
+5. Tell the user: records by type and confidence, and that the tracker's
+   **Import briefing** button (Sleeve tab) reads `intelligence.json` into the
+   ratification queue — nothing activates until they rule there.
