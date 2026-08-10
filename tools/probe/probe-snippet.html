@@ -283,6 +283,51 @@
        && !DB.clusterCands.some(x => x.members.indexOf(9006) >= 0), JSON.stringify(S.cluThin));
     ok("scan stamps lastCoScanAt", DB.lastCoScanAt > 0);
 
+    // ═══ VOL5 BINDING RULE (ruled Aug 10 2026: ≥5 units AND 2 consecutive below-floor refreshes) ═══
+    // Fixture floor at buy 4000 is volFloorFor(4000) = 500/h. Reset log state so
+    // the 2-wins waiver can't mask the gate, and keep the walk-up stamp fresh.
+    DB.flips = []; DB.positions = []; DB.watch = [{id:9001, qty:null}];
+    DB.clusters = []; DB.planPriority = []; DB.planDemoted = [];
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    S.vol5Low = new Map();
+    ok("vol5 floor fixture", volFloorFor(4000) === 500, String(volFloorFor(4000)));
+
+    // /5m missing → 1h rules, labeled pending, never silent
+    delete S.min5[9001];
+    let cV = candidateFor({id:9001, qty:null});
+    ok("5m pending: 1h rules + labeled", !cV.failed && cV.volGate === 50000 && cV.volSrc === "1h only — 5m pending",
+       JSON.stringify({f: cV.failed, v: cV.volGate, s: cV.volSrc}));
+
+    // 1 unit in the window (the '12/h' signature) → noise, never binds, labeled
+    S.min5[9001] = { highPriceVolume: 0, lowPriceVolume: 1 };
+    updateVol5Streaks(); updateVol5Streaks();   // even repeated arrivals of noise never arm the streak
+    cV = candidateFor({id:9001, qty:null});
+    ok("sub-5-unit window is labeled noise and never binds", !cV.failed && cV.volGate === 50000
+       && /noise, not measurement/.test(cV.volSrc) && (S.vol5Low.get(9001) || 0) === 0,
+       JSON.stringify({f: cV.failed, v: cV.volGate, s: cV.volSrc, n: S.vol5Low.get(9001)}));
+
+    // real (≥5-unit) below-floor sample: first refresh does NOT bind
+    S.min5[9001] = { highPriceVolume: 2, lowPriceVolume: 4 };   // 6 units → 72/h, under the 500/h floor
+    updateVol5Streaks();
+    cV = candidateFor({id:9001, qty:null});
+    ok("first below-floor refresh: not binding yet, labeled n/2", !cV.failed && cV.volGate === 50000
+       && /1\/2 consecutive refreshes — not binding yet/.test(cV.volSrc),
+       JSON.stringify({f: cV.failed, v: cV.volGate, s: cV.volSrc}));
+
+    // second consecutive refresh → binds, benches, copy names the 5m component and the 1h number
+    updateVol5Streaks();
+    cV = candidateFor({id:9001, qty:null});
+    ok("second below-floor refresh binds and benches with 5m-named reason", !!cV.failed
+       && /by the 5m sample/.test(cV.failed) && /1h thin side says/.test(cV.failed) && cV.volGate === 72,
+       JSON.stringify({f: cV.failed, v: cV.volGate}));
+
+    // recovery resets the streak and the gate reopens
+    S.min5[9001] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    updateVol5Streaks();
+    cV = candidateFor({id:9001, qty:null});
+    ok("healthy 5m window resets streak and reopens gate", !cV.failed && (S.vol5Low.get(9001) || 0) === 0
+       && cV.volGate === 50000, JSON.stringify({f: cV.failed, n: S.vol5Low.get(9001), v: cV.volGate}));
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,

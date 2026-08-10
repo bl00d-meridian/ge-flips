@@ -966,6 +966,7 @@ addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
 const S = {
   items: [], byId: new Map(),
   latest: {}, hour: {}, min5: {}, volumes: {}, volRank: new Map(),
+  vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
   loading: false, err: null, tab: "watch",
@@ -1153,6 +1154,7 @@ async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.da
 async function loadHour(){
   const [h, m, v] = await Promise.all([getJSON("/1h"), getJSON("/5m"), getJSON("/volumes")]);
   S.hour = h.data || {}; S.min5 = m.data || {}; S.hourAt = Date.now();
+  updateVol5Streaks();   // vol5 binding rule: streaks count data arrivals, not renders
   /* 24h volume ranking = the crowding census. The most-flipped items are where
      every tool sends every flipper — expect spreads compressed to the tax floor. */
   S.volumes = v.data || {};
@@ -1344,7 +1346,8 @@ function calc(id){
   const vol = volHigh + volLow;
   /* A round trip needs both sides, so the binding constraint is the thinner one. */
   const volSide = Math.min(volHigh, volLow);
-  const vol5 = M ? ((M.highPriceVolume || 0) + (M.lowPriceVolume || 0)) * 12 : null;  // hourly-equivalent
+  const vol5units = M ? (M.highPriceVolume || 0) + (M.lowPriceVolume || 0) : null;   // raw units in the window
+  const vol5 = vol5units != null ? vol5units * 12 : null;  // hourly-equivalent extrapolation
   const imbalance = vol > 0 ? volLow / vol : null;
 
   /* A spread that survives an hour of averaging is real; one visible only in
@@ -1363,7 +1366,7 @@ function calc(id){
     id, name: meta.n, limit: meta.l, members: !!meta.m, exempt: exemptIds.has(id),
     highalch: meta.a || 0,
     buy, sell, tax, margin, roi, tested,
-    vol, volHigh, volLow, volSide, vol5, imbalance, margin1h, roi1h,
+    vol, volHigh, volLow, volSide, vol5, vol5units, imbalance, margin1h, roi1h,
     perLimit: (margin != null && meta.l) ? margin * meta.l : null,
     downside: (buy > 0 && meta.a) ? buy / meta.a : null,
     tHigh, tLow, skewMin,
@@ -1642,6 +1645,44 @@ const tickFloorFor = id => exemptIds.has(id) ? Math.max(1, Math.ceil(TICKF() / 2
    down with price — never below 4/h, where even a full fill horizon can't
    move a handful of units. */
 const volFloorFor = px => Math.max(4, Math.round(((DB.filtersT1 && DB.filtersT1.vol) || 1000) * Math.min(1, 2000 / Math.max(1, px || 1))));
+
+/* ── vol5 binding rule (user ruling, Aug 10 2026) ──────────────
+   The /5m extrapolation is ×12 on a five-minute sample: one lone fill in a
+   quiet window reads "12/h" and flapped the volume gate on thin items (the
+   divine-battlemage discrepancy). The ruling: the 5m number BINDS the gate
+   only when the window holds ≥5 units (below that it's noise, labeled so)
+   AND it has sat under the floor for 2 consecutive /5m refreshes. Otherwise
+   the 1h thin side rules, and the 5m status is labeled — never silent. */
+const VOL5_MIN_UNITS = 5, VOL5_BIND_REFRESHES = 2;
+function volGateFor(c){
+  if (c.vol5 == null)
+    return { v: c.volSide, bound: "1h", label: "1h only — 5m pending" };
+  if (c.vol5units < VOL5_MIN_UNITS)
+    return { v: c.volSide, bound: "1h",
+             label: "1h (5m window holds " + c.vol5units + " unit" + (c.vol5units === 1 ? "" : "s")
+                  + " — noise, not measurement)" };
+  if (c.vol5 < volFloorFor(c.buy)){
+    const n = S.vol5Low.get(c.id) || 0;
+    if (n >= VOL5_BIND_REFRESHES)
+      return { v: Math.min(c.volSide, c.vol5), bound: "5m",
+               label: "5m-bound — " + full(Math.round(c.vol5)) + "/h under the floor for "
+                    + n + " consecutive refreshes" };
+    return { v: c.volSide, bound: "1h",
+             label: "1h (5m " + full(Math.round(c.vol5)) + "/h under floor, " + n + "/"
+                  + VOL5_BIND_REFRESHES + " consecutive refreshes — not binding yet)" };
+  }
+  return { v: c.volSide, bound: "1h", label: "1h" };
+}
+/* Streaks advance once per /5m data arrival (loadHour), never per render —
+   counting renders would let a single quiet window "confirm" itself. */
+function updateVol5Streaks(){
+  for (const w of DB.watch){
+    const c = calc(w.id);
+    if (!c || c.buy == null){ S.vol5Low.delete(w.id); continue; }
+    const below = c.vol5 != null && c.vol5units >= VOL5_MIN_UNITS && c.vol5 < volFloorFor(c.buy);
+    S.vol5Low.set(w.id, below ? (S.vol5Low.get(w.id) || 0) + 1 : 0);
+  }
+}
 const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
 const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
 
@@ -2274,7 +2315,8 @@ function candidateFor(w){
     const sp = S.spark.get(w.id);
     const tr = sp ? trendPct(sp.pts) : null;
     const vt = sp ? volTrendPct(sp.vols) : null;
-    const volGate = c.vol5 != null ? Math.min(c.volSide, c.vol5) : c.volSide;
+    const vg = volGateFor(c);   // vol5 binds only on the ruled conditions; status always labeled
+    const volGate = vg.v;
     /* NB: no slow-fill hard gate here. "Buy limit exceeds 4h volume" only means
        profit-per-limit is unreachable — a display caveat, not untradability.
        Allocation already sizes qty to volume÷4, so the fill constraint is
@@ -2333,8 +2375,15 @@ function candidateFor(w){
        sizing and the participation cap still follow the real book, so the
        waiver admits the item without inflating it. */
     else if (volGate < volFloorFor(c.buy) && itemWins(w.id) < 2)
-      failed = "volume " + gp(volGate) + "/h on the thin side — under the " + full(volFloorFor(c.buy)) + "/h floor (price-scaled)."
-             + " Waived automatically once the log shows 2 profitable round trips in 14d — measurement beats prediction";
+      /* The copy names the component that tripped the floor — a confirmed 5m
+         die-off and a thin 1h book are different diseases (metric honesty). */
+      failed = (vg.bound === "5m"
+          ? "volume " + gp(volGate) + "/h by the 5m sample — under the " + full(volFloorFor(c.buy))
+            + "/h floor (price-scaled) for " + (S.vol5Low.get(c.id) || 0) + " consecutive refreshes; the 1h thin side says "
+            + gp(c.volSide) + "/h"
+          : "volume " + gp(volGate) + "/h on the thin side (" + vg.label + ") — under the "
+            + full(volFloorFor(c.buy)) + "/h floor (price-scaled)")
+        + ". Waived automatically once the log shows 2 profitable round trips in 14d — measurement beats prediction";
     else if ((mo = momentum(c, sp)).state === "knife")
       failed = "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
              + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid";
@@ -2374,7 +2423,8 @@ function candidateFor(w){
        the allocator read the same verdict. Same gates for both tiers: no
        mercy on fill horizon or momentum at tier 2. */
     const tier = itemTier(w.id, c);
-    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins, mo, tier,
+    return { id:w.id, name:c.name, c, qty, tr, vt, volGate, volSrc: vg.label, volBound: vg.bound,
+             failed, eMargin, eRoi, wins, mo, tier,
              hw, stw, rel,
              estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
@@ -2639,6 +2689,8 @@ function whyTag(x){
   if (x.mo && x.mo.state === "chasing")
     bits.push("chasing flag — instasell is in the top quartile of the last 4h and rising; a bid below market is unlikely to fill until the run stalls. Bid closer to the print or let it cool");
   bits.push(x.volGate >= 100000 ? "deep volume" : x.volGate >= 25000 ? "good volume" : "adequate volume");
+  /* vol5 status labeled wherever the gate number is shown (user ruling). */
+  if (x.volSrc && x.volSrc !== "1h") bits.push("volume basis: " + x.volSrc);
   if (x.tr != null){
     if (x.tr <= GATE.trendWarn) bits.push("drifting " + x.tr.toFixed(1) + "% — watch it");
     else bits.push(Math.abs(x.tr) < 3 ? "flat chart" : "rising chart");
@@ -3274,7 +3326,7 @@ function scanScreenTier(t){
     if (eR == null || eR < GATE.roi) continue;
     /* Admission rank = the allocator's own currency: post-tax sustained
        margin × the units a fill horizon can move. */
-    const volGate = c.vol5 != null ? Math.min(c.volSide, c.vol5) : c.volSide;
+    const volGate = volGateFor(c).v;   // same binding rule as the plan — one quiet 5m window ranks nothing down
     const hu = Math.max(1, Math.floor(volGate * GATE.capture * FILLH()));
     out.push({ id: it.i, score: eM * hu, eR, vol: c.volSide, px: c.buy });
   }
