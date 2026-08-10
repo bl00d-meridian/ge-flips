@@ -254,6 +254,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="hstat">
       <span class="dot load" id="dot"></span>
       <span id="status">starting…</span>
+      <button class="sm ghost" id="pendBadge" style="display:none" title="Rulings pending across all queues — briefing proposals, cluster candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from the walk-up list."></button>
       <button class="sm" id="refresh">↻ Refresh</button>
     </div>
   </div>
@@ -757,6 +758,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <span id="modeExtras" style="margin-left:auto;display:flex;align-items:center"></span>
       </div>
       <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
+      <div id="briefRemind"></div>
       <h3 id="ckTitle" style="margin-bottom:8px"></h3>
       <ul class="ck" id="ckList"></ul>
       <div class="note" id="ckFoot" style="margin-top:10px"></div>
@@ -1025,6 +1027,9 @@ let DB = {
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
   lastBriefImportAt: 0,   // when intelligence.json was last imported (the analyst-freshness clock)
+  rulingSnooze: {},   // walk-up RULINGS PENDING line key → snoozed-until ms (3d per press)
+  rulingsCap: 5,      // max rulings-pending lines per walk-up — overflow counted, never silently hidden
+  briefRemindDismissKey: "",  // which briefing-reminder occurrence was dismissed — returns on the next trigger
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
   checks: { date:"", walkup:[], weekly:[] }
 };
@@ -1036,7 +1041,7 @@ function load(){
     for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time (sustained qualification, Aug 10 2026): items already on the
        watchlist earned tenure through past evaluations — the seasoning gate
@@ -3904,6 +3909,7 @@ function renderDeploy(plan){
   if (P.qualifying.length >= 3) props.push('Seasoning holds ' + P.qualifying.length + ' passing items ('
     + gp(P.qualifying.reduce((s, x) => s + x.qty * x.c.buy, 0)) + ' of would-buys) — they fund themselves at their ETAs, and a fresh margin test'
     + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.');
+  S.depProposalCount = props.length;   // the walk-up's RULINGS PENDING block counts these
   const propHTML = '<div class="dep-h">Proposals — house convention: nothing changes without your per-gate ruling</div>'
     + (props.length ? props.map(p => '<div class="plan-note" style="margin-top:4px">' + p + '</div>').join("")
                     : '<div class="bench-row"><span class="dim">No gate accumulates 3+ single-gate near-misses this refresh — no tuning case to make from today\'s data.</span></div>');
@@ -6463,6 +6469,173 @@ document.addEventListener("click", e => {
   }
 });
 
+/* ═══════════ RULINGS PENDING — the walk-up's decision inbox ═══════════
+   One line per pending item across every queue, after the execution items
+   (money first). Capped, prioritized (expiring intel → sleeve-actionable →
+   cluster/membership → audits), overflow counted out loud. Staleness
+   ladder: >14d pending shows a default-action suggestion; >30d
+   auto-dismisses with the standing log line. No modals, nothing blocks. */
+function rulingSnoozed(key){
+  const u = (DB.rulingSnooze || {})[key];
+  return !!(u && u > Date.now());
+}
+function rulingsSweep(){
+  const now = Date.now(), cut = 30 * 86400e3;
+  let changed = false;
+  for (const r of DB.intel || [])
+    if (r.status === "pending" && now - (r.importedAt || now) > cut){
+      r.status = "dismissed"; r.expiredUnruled = 1; r.ruledAt = now;
+      logDecision("intel", r.title, "auto-dismiss", "expired unruled (30d) — resurface only on material change");
+      changed = true;
+    }
+  for (const c of DB.clusterCands || [])
+    if (["suspected", "dormant", "seeded"].includes(c.status) && now - (c.at || now) > cut){
+      c.status = "dismissed"; c.dismissedAt = now;
+      logDecision("cluster", c.name || c.story || c.sig, "auto-dismiss", "expired unruled (30d) — resurface only on material change");
+      changed = true;
+    }
+  if (changed) save();
+}
+function pendingRulingItems(){
+  rulingsSweep();
+  intelSweep();
+  const now = Date.now(), day = 86400e3, items = [];
+  const stale = (ageD, dflt) => ageD > 14
+    ? ' · <span class="neg">pending ' + ageD + 'd — suggested: ' + dflt + '</span>' : '';
+  for (const r of intelPending()){
+    const key = "intel:" + r.id;
+    const ageD = Math.floor((now - (r.importedAt || now)) / day);
+    const expD = Math.ceil((Date.parse(r.validUntil + "T23:59:59") - now) / day);
+    items.push({ key, pri: 0, sort: expD, snoozed: rulingSnoozed(key),
+      html: '⚡ briefing: <b>' + esc(r.title) + '</b> [' + r.confidence + '] — expires in ' + expD + 'd'
+        + stale(ageD, "dismiss")
+        + ' <button class="sm" data-intelrat="' + esc(r.id) + '">ratify</button>'
+        + ' <button class="sm" data-inteledit="' + esc(r.id) + '">edit…</button>'
+        + ' <button class="sm ghost" data-inteldis="' + esc(r.id) + '">dismiss</button>' });
+  }
+  for (const c of sleeveRungCards()){
+    const key = "rung:" + c.pos.id + ":" + c.i;
+    items.push({ key, pri: 1, sort: 0, snoozed: rulingSnoozed(key),
+      html: '⚑ sleeve rung armed: <b>' + full(c.qty) + ' ' + esc(itemName(c.pos.itemId, c.pos.name)) + '</b> — '
+        + esc(c.st.why) + ' <button class="sm" data-slvexit="' + c.pos.id + ':' + c.i + '">sold…</button>' });
+  }
+  for (const c of (DB.clusterCands || []).filter(x => ["suspected", "dormant", "seeded"].includes(x.status))){
+    const key = "clu:" + c.id;
+    const ageD = Math.floor((now - (c.at || now)) / day);
+    items.push({ key, pri: 2, sort: -ageD, snoozed: rulingSnoozed(key),
+      html: '⬡ cluster candidate: <b>' + esc(c.name || c.story || "unnamed") + '</b> (' + c.members.length + ' members, ' + esc(c.status) + ')'
+        + stale(ageD, "dismiss")
+        + ' <button class="sm" data-clconfirm="' + c.id + '">confirm…</button>'
+        + ' <button class="sm" data-clmerge="' + c.id + '">merge…</button>'
+        + ' <button class="sm ghost" data-cldismiss="' + c.id + '">dismiss</button>' });
+  }
+  /* Audits are advisory and recomputed live — a compute hiccup must never
+     break the walk-up list itself. */
+  try {
+    for (const a of seedAudit()){
+      if (audRuledInfo("seed:" + a.id)) continue;
+      const key = "aud:seed:" + a.id;
+      items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
+        html: '🔍 seed audit: <b>' + esc(itemName(a.id)) + '</b> recommends ' + esc(a.rec)
+          + ' — <a href="#" data-goto="routine">rule it in the review\'s audit</a>' });
+    }
+    const zz = sibAudit();
+    for (const r of (zz.rows || []).filter(x => x.zombie && !audRuledInfo("sib:" + x.id))){
+      const key = "aud:sib:" + r.id;
+      items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
+        html: '🔍 sibling audit: <b>' + esc(itemName(r.id)) + '</b> flagged zombie watcher'
+          + ' — <a href="#" data-goto="routine">rule it in the review\'s audit</a>' });
+    }
+  } catch(e){ /* advisory only */ }
+  if (S.depProposalCount > 0){
+    const key = "funnel";
+    items.push({ key, pri: 3, sort: 1, snoozed: rulingSnoozed(key),
+      html: '⚖ ' + S.depProposalCount + ' deployment-gate proposal' + (S.depProposalCount === 1 ? '' : 's')
+        + ' await your per-gate ruling — <a href="#" data-goto="watch#deployPanel">read the evidence</a>' });
+  }
+  return items;
+}
+function rulingsInline(){
+  const all = pendingRulingItems().filter(x => !x.snoozed);
+  all.sort((a, b) => a.pri - b.pri || a.sort - b.sort);
+  const cap = Math.min(10, Math.max(1, DB.rulingsCap || 5));
+  const show = all.slice(0, cap);
+  const over = all.length - show.length;
+  const lines = show.map(x => '<div>' + x.html
+    + ' <button class="sm ghost" data-rulesnooze="' + esc(x.key) + '" title="Snooze this line for 3 days — it returns unless ruled in its own queue first.">💤 3d</button></div>');
+  if (over > 0) lines.push('<div class="dim">+' + over + ' more in the queues — the cap keeps this under two minutes; the full queues live on their own panels.</div>');
+  return '<div class="inline">' + (lines.length ? lines.join("")
+    : '<div class="dim">Nothing pending — every queue is ruled up to date.</div>') + '</div>';
+}
+function updatePendBadge(){
+  const el = $("#pendBadge");
+  if (!el) return;
+  let n = 0;
+  try { n = pendingRulingItems().filter(x => !x.snoozed).length; } catch(e){ n = 0; }
+  el.style.display = n ? "" : "none";
+  el.textContent = "⚖ " + n + " pending";
+}
+
+/* ── briefing reminder — the tracker→desk handoff cue ──
+   The tracker cannot run the briefing itself. It reminds when (a) the last
+   import is >7d old (or never), or (b) a game-update Wednesday has passed
+   since it. No cheap in-tracker endpoint carries the wiki's actual latest-
+   update date (the prices API is prices only), so Wednesdays are assumed —
+   per the standing weekly-update convention already used by the walk-up
+   foot. Dismissible per occurrence; returns on the next trigger. */
+function lastGameUpdateWednesday(){
+  const d = new Date();
+  const back = (d.getDay() + 7 - 3) % 7;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - back);
+}
+function briefReminderInfo(){
+  const now = Date.now();
+  const last = DB.lastBriefImportAt || 0;
+  const staleD = last ? Math.floor((now - last) / 86400e3) : null;
+  const wed = lastGameUpdateWednesday();
+  const wedMs = wed.getTime() + 12 * 3600e3;   // updates ship midday
+  const wedTrig = now >= wedMs && last < wedMs;
+  const staleTrig = staleD == null || staleD > 7;
+  if (!wedTrig && !staleTrig) return null;
+  const key = wedTrig ? "wed-" + wed.toLocaleDateString("en-CA")
+                      : "stale-" + Math.floor((staleD || 999) / 7);
+  if (DB.briefRemindDismissKey === key) return null;
+  const bits = [];
+  if (wedTrig) bits.push("update shipped Wed " + wed.toLocaleDateString("en-CA").slice(5));
+  bits.push(staleD == null ? "analyst never briefed" : "analyst " + staleD + "d stale");
+  return { key, msg: "⚡ " + bits.join(" / ") + " — run the briefing at the desk (/briefing in Claude Code), then Import briefing on the Sleeve tab. The tracker can't run it for you; this is the handoff cue." };
+}
+
+document.addEventListener("click", e => {
+  const sn = e.target.closest("[data-rulesnooze]");
+  if (sn){
+    if (!DB.rulingSnooze) DB.rulingSnooze = {};
+    DB.rulingSnooze[sn.dataset.rulesnooze] = Date.now() + 3 * 86400e3;
+    save();
+    if (S.tab === "routine") renderRoutine();
+    updatePendBadge();
+    toast("Snoozed 3 days — it returns unless ruled in its own queue first.");
+    return;
+  }
+  const bd = e.target.closest("[data-briefdismiss]");
+  if (bd){
+    DB.briefRemindDismissKey = bd.dataset.briefdismiss;
+    save();
+    if (S.tab === "routine") renderRoutine();
+    toast("Dismissed for this occurrence — the reminder returns on the next trigger (next update Wednesday, or another week of staleness).");
+    return;
+  }
+});
+document.addEventListener("change", e => {
+  const rc = e.target.closest("[data-rulecap]");
+  if (rc){
+    DB.rulingsCap = Math.min(10, Math.max(1, clampNum(rc.value, 5)));
+    rc.value = DB.rulingsCap;
+    save();
+    if (S.tab === "routine") renderRoutine();
+  }
+});
+
 /* ═══════════ FLIP LOG ═══════════ */
 function renderLog(){
   const flips = DB.flips.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"") || b.id - a.id);
@@ -6929,6 +7102,7 @@ const CHECKLISTS = {
     ["Quote inventory items", "Both legs per market-maker item — heed any CANCEL-FIRST warning.", "watch", "quotes"],
     ["Place the plan's buys", "Sized for an unattended sit: sit-safe picks rank up, drifty ones rank down or bench when your gaps run long.", "watch", "plan"],
     ["Mark them placed", "So the next walk-up knows what's standing and won't double-commit the gp.", "watch"],
+    ["Rule on what's pending", "One line per pending item across every queue — briefing proposals, cluster membership, sleeve rungs, funnel proposals, audits. Money first, so this sits after execution. Priority: expiring intel → sleeve-actionable → cluster → audits; ratify, dismiss, or snooze 3d inline. Nothing here blocks execution.", null, "rulings"],
     ["Snapshot the bank", "One number off the bank interface — one dot per day on the equity curve; gaps are fine. Game gp (supplies bought, drops sold) goes in its box first so the dot stays clean.", null, "snap"],
     ["Note any friction", "One line about anything annoying — it feeds the review.", null, "fricin"]
   ]},
@@ -6980,6 +7154,12 @@ function renderRoutine(){
     ? [wedClusterAdvisoryText(sleeveOpenPositions().map(p => p.itemId)), wedIntelAdvisoryText()].filter(Boolean).join(" ")
     : "";
   $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
+  /* Briefing reminder — elevated, dismissible per occurrence (§ handoff cue). */
+  const br = m === "walkup" ? briefReminderInfo() : null;
+  $("#briefRemind").innerHTML = br
+    ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
+      + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
+    : "";
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   $("#ckList").innerHTML = list.steps.map((s,i) => {
     const isDone = done.includes(i);
@@ -7062,6 +7242,8 @@ function renderRoutine(){
         + ' in the review queue await your ruling — advisory only until confirmed.</div>');
       inline = '<div class="inline">' + (lines.length ? lines.join("")
         : '<div class="dim">No confirmed clusters — correlated positions are currently treated as independent bets. The Thesis clusters panel (Watchlist tab) collects candidates.</div>') + '</div>';
+    } else if (s[3] === "rulings"){
+      inline = rulingsInline();
     } else if (s[3] === "sleeve"){
       inline = sleeveWeeklyInline();
     } else if (s[3] === "intelscore"){
@@ -7095,6 +7277,8 @@ function renderRoutine(){
   $("#modeExtras").innerHTML = (m === "walkup")
     ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on the Flip Log tab — keep it honest rather than flattering.">Min / touch'
       + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
+      + '<label class="f" style="margin-left:8px" title="Max rulings-pending lines shown per walk-up — overflow is counted out loud, never hidden silently. Target: under two added minutes.">Rulings cap'
+      + '<input type="number" data-rulecap min="1" max="10" value="' + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + '" style="width:52px"></label>'
     : "";
   renderNow();
 }
@@ -7333,6 +7517,7 @@ function nextMove(){
   return { msg: "Nothing needs you. Offers work while the app is closed — that's the whole design.", tab: null, idle: true };
 }
 function renderNow(){
+  updatePendBadge();   // header badge with the pending-rulings count, every tab
   const n = nextMove();
   $("#nowBar").className = "nowbar" + (n.idle ? " idle" : "");
   $("#nowBar").innerHTML = '<span class="k">' + (n.idle ? "done" : "now") + '</span><span class="m">' + esc(n.msg) + '</span>'
@@ -7424,6 +7609,7 @@ $("#nowBar").addEventListener("click", e => {
 });
 setInterval(renderNow, 60e3);   // time-of-day transitions flip the suggestion without a reload
 $("#refresh").onclick = () => { failCount = 0; refresh(); };
+$("#pendBadge").onclick = () => { S.mode = "walkup"; setTab("routine"); };
 $("#planMode").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   S.planMode = b.dataset.pm; renderPlan();
@@ -8163,6 +8349,9 @@ function validateImport(d){
           sleeveExitLiqPct: Math.min(100, Math.max(1, num(d.sleeveExitLiqPct) != null ? num(d.sleeveExitLiqPct) : 15)),
           lastAnomalyScanAt: Math.max(0, num(d.lastAnomalyScanAt) || 0),
           lastBriefImportAt: Math.max(0, num(d.lastBriefImportAt) || 0),
+          rulingsCap: Math.min(10, Math.max(1, num(d.rulingsCap) != null ? num(d.rulingsCap) : 5)),
+          briefRemindDismissKey: String(d.briefRemindDismissKey || ""),
+          rulingSnooze: (d.rulingSnooze && typeof d.rulingSnooze === "object" && !Array.isArray(d.rulingSnooze)) ? d.rulingSnooze : {},
           intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
             const id = String((r && r.id) || "").trim();
             const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag"].includes(r && r.type) ? r.type : null;
