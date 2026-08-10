@@ -1021,6 +1021,7 @@ let DB = {
   decisionLog: [],    // audit rulings [{t,d,kind,subject,action,reason}] — the audit of the audit, exportable
   audRuled: {},       // "seed:311"/"sib:227" → {t, action} — a ruled card rests for 7 days
   gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
+  dieOffLog: [],      // die-off episodes [{d,id,t,rec}] (ruled Aug 10 2026): 5m-confirmed die-off against a passing 1h book; rec = recovery stamp ms (confirmed healthy 5m sample) or null; 30d retention
   qual: {},           // sustained qualification: id → {n, firstAt, lastAt} counted full-gate passes (spec: 3 spanning ≥2h)
   deployLog: [],      // funnel headline snapshots [{h,pass,funded,dep}] — hourly buckets (last refresh of the hour wins), 7d retention
   sleeve: [],         // thesis-sleeve positions [{id,itemId,name,qty,basis,enteredAt,catalyst:{name,windowStart,windowEnd},thesis,ladder:[{kind,trigger,frac,filledAt?}],invalidation,phase,legacy,health,soldQty,closedAt}]
@@ -1045,7 +1046,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -1887,7 +1888,26 @@ function updateVol5Streaks(){
     const below = c.vol5 != null && c.vol5units >= VOL5_MIN_UNITS && c.vol5 < volFloorFor(c.buy);
     S.vol5Low.set(w.id, below ? (S.vol5Low.get(w.id) || 0) + 1 : 0);
   }
+  /* Die-off recovery watch (ruled Aug 10 2026): an open episode closes only
+     on a CONFIRMED healthy 5m sample — ≥5 units at/above the floor. A window
+     gone quiet is not recovery, it's a smaller corpse (metric honesty). */
+  let recDirty = false;
+  for (const e of DB.dieOffLog || []){
+    if (e.rec != null) continue;
+    const c = calc(e.id);
+    if (!c || c.buy == null || c.vol5 == null || c.vol5units < VOL5_MIN_UNITS) continue;
+    if (c.vol5 >= volFloorFor(c.buy)){ e.rec = Date.now(); recDirty = true; }
+  }
+  if (recDirty) save();
 }
+/* Die-off tag predicate (ruled Aug 10 2026): a volume-floor bench whose
+   binding side is the confirmed 5m sample while the 1h book still PASSES the
+   floor — the average remembers a book that no longer exists. Tag condition,
+   ledger row, and review copy all use this one predicate so they can never
+   drift apart. */
+const dieOffTagged = x => x.volBound === "5m" && x.c
+  && (x.fails || []).some(f => f.g === "volume floor")
+  && x.c.volSide >= volFloorFor(x.c.buy);
 const QUOTEW = () => Math.max(1, DB.quoteTicks || 3);     // minimum bid/ask distance when quoting both sides
 const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h.toFixed(1) + "h";
 
@@ -2633,6 +2653,7 @@ function candidateFor(w){
           ? "volume " + gp(volGate) + "/h by the 5m sample — under the " + full(volFloorFor(c.buy))
             + "/h floor (price-scaled) for " + (S.vol5Low.get(c.id) || 0) + " consecutive refreshes; the 1h thin side says "
             + gp(c.volSide) + "/h"
+            + (c.volSide >= volFloorFor(c.buy) ? " — tagged die-off detected; its next 24h grades the tag in the weekly audit" : "")
           : "volume " + gp(volGate) + "/h on the thin side (" + vg.label + ") — under the "
             + full(volFloorFor(c.buy)) + "/h floor (price-scaled)")
         + ". Waived automatically once the log shows 2 profitable round trips in 14d — measurement beats prediction",
@@ -3005,9 +3026,22 @@ function buildPlan(){
       const k = dToday + "|" + x.id + "|seasoning";
       if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: x.id, g: "seasoning" }); have.add(k); logDirty = true; }
     }
+    /* Die-off tag (ruled Aug 10 2026): an extra ledger row when the volume
+       floor benched on a confirmed 5m die-off against a passing 1h book, so
+       the tag builds its own track record like any gate. The first tag of an
+       episode also opens a 24h watch; a new episode starts only after the
+       previous one recovered — days of continued fade are one episode. */
+    for (const b of bench){
+      if (!(b.id > 0) || !dieOffTagged(b)) continue;
+      const k = dToday + "|" + b.id + "|die-off detected";
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g: "die-off detected" }); have.add(k); logDirty = true; }
+      const last = DB.dieOffLog.filter(e => e.id === b.id).pop();
+      if (!last || last.rec != null){ DB.dieOffLog.push({ d: dToday, id: b.id, t: Date.now(), rec: null }); logDirty = true; }
+    }
     if (logDirty){
       const cutoff = new Date(Date.now() - 30 * 86400e3).toLocaleDateString("en-CA");
       if (DB.gateLog.length && DB.gateLog[0].d < cutoff) DB.gateLog = DB.gateLog.filter(e => e.d >= cutoff);
+      if (DB.dieOffLog.length && DB.dieOffLog[0].d < cutoff) DB.dieOffLog = DB.dieOffLog.filter(e => e.d >= cutoff);
       save();
     }
   } catch(e){}
@@ -3319,12 +3353,29 @@ function invQuote(w){
   const sellFlow = (c.vol || 0) * (rough ? 0.5 : 1 - c.imbalance) * GATE.capture;
   const sellQty = Math.max(0, Math.min(held, Math.floor(sellFlow * FILLH())));
   const thirdCap = Math.max(0, Math.floor((workingStack() / 3 - invCostGp(w.id)) / bid));
-  const buyQty = Math.max(0, Math.min(
-    (w.invTarget - held) + sellQty,
-    Math.floor(buyFlow * FILLH()),
-    c.limit ? c.limit * limitWindows() : Infinity,
-    thirdCap));
-  return { w, name: c.name, c, held, bid, ask, sellQty, buyQty, rough,
+  const need = Math.max(0, (w.invTarget - held) + sellQty);   // full walk-back: the gap plus replacing what this touch's sell leg moves out
+  const capFlow  = Math.floor(buyFlow * FILLH());
+  const capLimit = c.limit ? c.limit * limitWindows() : Infinity;
+  const buyQty = Math.max(0, Math.min(need, capFlow, capLimit, thirdCap));
+  /* Sizing transparency (ruled Aug 10 2026): when a leg covers less than the
+     walk-back / the holding, the line names the cap that bound it — the same
+     reason-string convention as plan lines — and says how many touches the
+     gap needs at current flow. */
+  let buyNote = null, touches = null;
+  if (buyQty > 0 && buyQty < need){
+    buyNote = "BUY covers " + full(buyQty) + " of the " + full(need) + "-unit walk-back: "
+      + (buyQty === capFlow ? "participation cap — " + Math.round(GATE.capture * 100) + "% of "
+           + (rough ? "a rough 50/50 split of " : "") + "1h buy-side flow over the " + FILLH() + "h horizon"
+       : buyQty === thirdCap ? "one-third rule — buffer cost caps at a third of working capital"
+       : "buy limit — " + full(c.limit) + " per 4h window");
+    touches = Math.ceil(need / buyQty);
+  }
+  const sellNote = sellQty > 0 && sellQty < held
+    ? "SELL covers " + full(sellQty) + " of " + full(held) + " held: participation cap — "
+      + Math.round(GATE.capture * 100) + "% of " + (rough ? "a rough 50/50 split of " : "")
+      + "1h sell-side flow over the " + FILLH() + "h horizon"
+    : null;
+  return { w, name: c.name, c, held, bid, ask, sellQty, buyQty, rough, need, buyNote, sellNote, touches,
            crossSell: crossWarn(w.id, "sell", ask), crossBuy: crossWarn(w.id, "buy", bid) };
 }
 const invQuoteText = q => q.err
@@ -3335,7 +3386,75 @@ const invQuoteText = q => q.err
     + (q.crossBuy ? "⚠ " + q.crossBuy + ", then " : "")
     + (q.buyQty > 0 ? "BUY " + full(q.buyQty) + " at " + full(q.bid) : "no buy leg (buffer full or capped)")
     + " — buffer " + full(q.held) + "/" + full(q.w.invTarget)
+    + (q.sellNote ? " · " + q.sellNote : "")
+    + (q.buyNote ? " · " + q.buyNote + (q.touches > 1 ? "; buffer fills over ~" + q.touches + " touches at current flow" : "") : "")
     + (q.rough ? " · rough estimate (no flow data, assuming 50/50)" : "");
+
+/* ── placed quote state (ruled Aug 10 2026) ──
+   "placed" marks the quoted legs as standing offers on the watch entry:
+   timestamped, persisted, elapsed time and fill state shown at every
+   walk-up until the cycle completes. The buttons only record what the user
+   already did in-game — the tool never places, cancels, or logs on its own.
+   Stale-buy and sell-aging rules apply to placed quote legs on the same
+   clocks as position legs (staleBuyInfo / sellAgeInfo). */
+function quoteLegAge(qp){
+  const ageH = (Date.now() - qp.t) / 3600e3;
+  const slot = ts => { const d = new Date(ts); return d.toLocaleDateString("en-CA") + (d.getHours() >= 15 ? "pm" : "am"); };
+  const crossed = slot(qp.t) !== slot(Date.now());
+  return { ageH, crossed,
+           buyStale: (qp.buyQty > qp.buyFilled) && (ageH > FILLH() || crossed),
+           sellRung: (qp.sellQty > qp.sellFilled) ? (ageH >= 2 * FILLH() ? 2 : ageH >= FILLH() ? 1 : 0) : 0 };
+}
+function placeQuote(id){
+  const w = DB.watch.find(x => x.id === id);
+  if (!w || !(w.invTarget > 0)) return null;
+  const q = invQuote(w);
+  if (q.err || (!(q.sellQty > 0) && !(q.buyQty > 0))) return null;
+  w.quotePlaced = { t: Date.now(), bid: q.bid, ask: q.ask,
+                    sellQty: q.sellQty, buyQty: q.buyQty, sellFilled: 0, buyFilled: 0 };
+  markTouch(); save();
+  return w.quotePlaced;
+}
+function clearQuote(id){
+  const w = DB.watch.find(x => x.id === id);
+  if (!w || !w.quotePlaced) return;
+  delete w.quotePlaced;
+  save();
+}
+/* Credit a recorded fill against the standing leg; when both legs are done
+   the cycle closes (bookkeeping of fills the user just recorded — not an
+   action). Returns the credit applied. */
+function creditQuoteFill(id, side, qty){
+  const w = DB.watch.find(x => x.id === id);
+  const qp = w && w.quotePlaced;
+  if (!qp) return 0;
+  const k = side === "buy" ? "buyFilled" : "sellFilled";
+  const cap = side === "buy" ? qp.buyQty : qp.sellQty;
+  const credit = Math.max(0, Math.min(qty, cap - qp[k]));
+  qp[k] += credit;
+  if (qp.buyFilled >= qp.buyQty && qp.sellFilled >= qp.sellQty){
+    delete w.quotePlaced;
+    toast(itemName(id) + " quote cycle complete — both legs filled; the next touch proposes fresh legs.");
+  }
+  save();
+  return credit;
+}
+/* Partial fills (ruled Aug 10 2026): a buy fill adds to the buffer at its
+   fill price (a FIFO lot); a sell fill FIFO-consumes at true cost. Either
+   walks the standing leg down and the line shows "filled · standing". */
+function recordInvBuyFill(id, qty, px){
+  const lot = { id: Date.now(), itemId: id, qty, cost: px, t: Date.now() };
+  DB.invLots.push(lot);
+  creditQuoteFill(id, "buy", qty);
+  markTouch(); save();
+  return lot;
+}
+function recordInvSellFill(id, qty){
+  const out = invConsume(id, qty);
+  if (out) creditQuoteFill(id, "sell", out.qty);
+  markTouch(); save();
+  return out;
+}
 
 /* ═══════════ SELL AGING LADDER ═══════════ */
 /* A sell is stale on the same clock a buy is: at 1× the fill horizon it gets
@@ -3549,6 +3668,33 @@ function renderPlan(){
      legs are the first thing to place at each touch. Proposal only — the
      sold…/buy filled… buttons record what actually happened in-game. */
   const quotesHTML = invItems().map(q0 => {
+    /* A standing placed quote shows fill state, elapsed time, and aging
+       advice — fresh legs are not re-proposed while the commitment stands. */
+    const qp = q0.quotePlaced;
+    if (qp){
+      const nm = itemName(q0.id);
+      const la = quoteLegAge(qp);
+      const sRem = Math.max(0, qp.sellQty - qp.sellFilled), bRem = Math.max(0, qp.buyQty - qp.buyFilled);
+      const leg = (label, tot, f, rem, px) => tot > 0
+        ? label + ' <span class="num">' + full(f) + '/' + full(tot) + '</span> filled · <span class="num">' + full(rem) + '</span> standing at <span class="num">' + full(px) + '</span>'
+        : label + ' — no leg this cycle';
+      return '<li class="placed"><div class="body"><b class="sell">QUOTE</b> <span title="'+nameTitle(nm)+'">' + esc(nm) + '</span>'
+        + ' <span class="badge b-tax" title="You marked these legs as placed in-game — the record persists until both legs fill or you press cleared">standing</span>'
+        + ' — buffer <span class="num">' + full(invHeld(q0.id)) + '/' + full(q0.invTarget) + '</span>'
+        + ' · placed ' + ago(qp.t)
+        + '<div class="why">' + leg('SELL', qp.sellQty, qp.sellFilled, sRem, qp.ask)
+        + ' · ' + leg('BUY', qp.buyQty, qp.buyFilled, bRem, qp.bid)
+        + (la.sellRung === 2 ? ' · <span class="neg">sell leg 2× past the fill horizon — undercut &amp; exit: cancel in-game, relist 1 tick under the instabuy (aging-ladder rung 2)</span>'
+         : la.sellRung === 1 ? ' · <span class="neg">sell leg past the fill horizon — reprice to the current instabuy (aging-ladder rung 1)</span>' : '')
+        + (la.buyStale ? ' · <span class="neg">buy leg stale — ' + (la.crossed ? 'hanging into the next touch' : 'past the ' + FILLH() + 'h fill horizon')
+            + '; a late fill means the price came down through the bid. Cancel and re-quote (stale-buy rule)</span>' : '')
+        + '</div></div>'
+        + '<span class="plan-actions">'
+        + (sRem > 0 ? '<button class="sm" data-invsell="' + q0.id + '" data-q="' + sRem + '" data-p="' + qp.ask + '">sell filled…</button>' : '')
+        + (bRem > 0 ? '<button class="sm" data-invlot="' + q0.id + '" data-q="' + bRem + '" data-p="' + qp.bid + '">buy filled…</button>' : '')
+        + '<button class="sm ghost" data-qclear="' + q0.id + '" title="Offers canceled or otherwise done in-game — clears the standing record; nothing is logged">cleared</button>'
+        + '</span></li>';
+    }
     const q = invQuote(q0);
     if (q.err) return '<li><div class="body"><b>QUOTE</b> ' + esc(q.name) + ' <span class="dim">— ' + esc(q.err) + '</span></div></li>';
     return '<li><div class="body"><b class="sell">QUOTE</b> <span title="'+nameTitle(q.name)+'">' + esc(q.name) + '</span>'
@@ -3560,8 +3706,13 @@ function renderPlan(){
       + ' · '
       + (q.crossBuy ? '<b class="neg">⚠ ' + esc(q.crossBuy) + '</b>, then ' : '')
       + (q.buyQty > 0 ? 'BUY <span class="num">' + full(q.buyQty) + '</span> at <span class="num">' + full(q.bid) + '</span>' : 'no buy leg — buffer full or capped')
-      + ' · spread ' + full(q.ask - q.bid) + ' ticks</div></div>'
+      + ' · spread ' + full(q.ask - q.bid) + ' ticks'
+      /* Sizing transparency: a leg smaller than the walk-back names its cap. */
+      + (q.sellNote ? ' · ' + esc(q.sellNote) : '')
+      + (q.buyNote ? ' · ' + esc(q.buyNote) + (q.touches > 1 ? '; buffer fills over ~' + q.touches + ' touches at current flow' : '') : '')
+      + '</div></div>'
       + '<span class="plan-actions">'
+      + ((q.sellQty > 0 || q.buyQty > 0) ? '<button class="sm" data-qplace="' + q.w.id + '" title="Mark both legs as standing offers you have placed in-game — timestamped and persisted; every walk-up shows elapsed time and fill state until the cycle completes">placed</button>' : '')
       + (q.sellQty > 0 ? '<button class="sm" data-invsell="' + q.w.id + '" data-q="' + q.sellQty + '" data-p="' + q.ask + '">sold…</button>' : '')
       + (q.buyQty > 0 ? '<button class="sm" data-invlot="' + q.w.id + '" data-q="' + q.buyQty + '" data-p="' + q.bid + '">buy filled…</button>' : '')
       + '</span></li>';
@@ -3757,6 +3908,25 @@ const medianOf = a => {
 };
 /* One concrete, numbered proposal per indicted gate — claiming exactly what
    the snapshot measures and nothing more. */
+/* Next-stage trace (prop-1 rejection, ruled Aug 10 2026): every change
+   proposal must state what the NEXT stage in sequence would do to each item
+   it admits. Near-misses pass every other gate, so the next stage is the
+   allocator's fill forecast — an admitted item whose planned qty can't fit
+   the horizon relocates to the predicted-slow-fill bench. A proposal that
+   admits items into a different bench is advocacy, not analysis. */
+function relocNote(adm){
+  if (!adm.length) return "Admits nothing at this refresh — no items to trace.";
+  const bits = adm.slice(0, 3).map(x => {
+    const u = Math.floor((x.volGate || 0) * GATE.capture * FILLH());
+    return x.name + ": " + (u < 1
+      ? "relocates to the predicted-slow-fill bench (0 of " + full(x.qty) + " fit the " + FILLH() + "h horizon) — no capacity created"
+      : u < x.qty
+      ? "funds at reduced size (" + full(u) + " of the planned " + full(x.qty) + " fit the " + FILLH() + "h horizon)"
+      : "funds at planned size (" + full(x.qty) + " fits the horizon)");
+  });
+  return "Next stage per admitted item: " + bits.join("; ")
+       + (adm.length > 3 ? "; +" + (adm.length - 3) + " more" : "") + ".";
+}
 function depProposalFor(g, arr){
   const haves = arr.map(x => x.fails[0].have).filter(Number.isFinite);
   const needs = arr.map(x => x.fails[0].need).filter(Number.isFinite);
@@ -3765,26 +3935,26 @@ function depProposalFor(g, arr){
   const m = medianOf(haves);
   if (g === "ROI floor"){
     const p = Math.max(0.5, Math.floor(m * 20 + 1e-9) / 20);
-    const k = arr.filter(x => x.fails[0].have >= p - 1e-9).length;
-    return "Propose: sustained-ROI floor " + GATE.roi + "% → " + p + "% — admits " + k + " of the " + arr.length
-         + " at this refresh. Snapshot margins, not realized trips; your ruling.";
+    const adm = arr.filter(x => x.fails[0].have >= p - 1e-9);
+    return "Propose: sustained-ROI floor " + GATE.roi + "% → " + p + "% — admits " + adm.length + " of the " + arr.length
+         + " at this refresh. Snapshot margins, not realized trips. " + relocNote(adm) + " Your ruling.";
   }
   if (g === "volume floor"){
     const base = (DB.filtersT1 && DB.filtersT1.vol) || 1000;
     const ratio = medianOf(arr.map(x => x.fails[0].have / Math.max(1, x.fails[0].need)));
     const nb = Math.max(50, Math.floor(base * ratio / 50) * 50);
-    const k = arr.filter(x => x.fails[0].have >= x.fails[0].need * (nb / base)).length;
+    const adm = arr.filter(x => x.fails[0].have >= x.fails[0].need * (nb / base));
     return "Propose: unit-volume floor base " + full(base) + " → " + full(nb) + "/h (price-scaled as today) — admits "
-         + k + " of " + arr.length + ". The trade is fill speed; your ruling.";
+         + adm.length + " of " + arr.length + ". The trade is fill speed. " + relocNote(adm) + " Your ruling.";
   }
   if (g === "trend"){
     const p = Math.max(GATE.falling + 1, Math.floor(m));
-    const k = arr.filter(x => x.fails[0].have > p).length;
-    return "Propose: downtrend floor " + GATE.trendSoft + "% → " + p + "% — admits " + k + " of " + arr.length
-         + ". The " + GATE.falling + "% knife line stays; your ruling.";
+    const adm = arr.filter(x => x.fails[0].have > p);
+    return "Propose: downtrend floor " + GATE.trendSoft + "% → " + p + "% — admits " + adm.length + " of " + arr.length
+         + ". The " + GATE.falling + "% knife line stays. " + relocNote(adm) + " Your ruling.";
   }
   return "Propose: shift this constant toward the median miss (" + (Math.round(m * 100) / 100) + " vs "
-       + (Math.round(medianOf(needs) * 100) / 100) + " today). Your ruling.";
+       + (Math.round(medianOf(needs) * 100) / 100) + " today). " + relocNote(arr) + " Your ruling.";
 }
 function renderDeploy(plan){
   const box = $("#depBody"); if (!box) return;
@@ -3906,27 +4076,48 @@ function renderDeploy(plan){
     + (pipe.length ? pipe.map(p => '<div class="bench-row"><span>' + esc(p.nm) + '</span><span class="r">' + esc(p.txt) + '</span></div>').join("")
                    : '<div class="bench-row"><span class="dim">Nothing mid-pipeline — no item is one timer or one action away from funding.</span></div>');
 
-  /* ── proposals (5d): evidence first, then the specific change, never applied ── */
-  const props = [];
+  /* ── proposals (5d): evidence first, then the specific change, never applied.
+     Two lanes (ruled Aug 10 2026): change-proposals want a constant moved and
+     wait on a per-gate ruling; concur-recommended entries argue FOR the
+     standing rule against softer data — the correct default posture — so they
+     batch under their own header and never join the rulings-pending count. */
+  const props = [];   // { html, concur }
   for (const [g, arr] of nmByGate){
     if (arr.length < 3) continue;
-    const persist = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4).length;
+    /* Proposal-engine discipline (prop-1 rejection, ruled Aug 10 2026):
+       gate constants change on gate-health LEDGER evidence — multi-day
+       persistence, realized outcomes — never on a single refresh's
+       near-miss pile. Without persistence the pile renders as a
+       concur-recommended observation, not a proposal. */
+    const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4);
     const shorts = arr.slice(0, 3).map(x => x.name + ": " + (x.fails[0].short || "miss"));
-    props.push('<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh'
-      + (persist ? ' (' + persist + ' of them benched by it on 4+ of the last 7 days)' : '')
-      + ' — ' + esc(shorts.join("; ")) + '. ' + esc(depProposalFor(g, arr)));
+    if (!persistItems.length){
+      props.push({ concur: true, html: '<b>' + esc(g) + '</b> blocks ' + arr.length + ' items this refresh ('
+        + esc(shorts.join("; ")) + ') — but none carry multi-day ledger persistence, and gate constants change on'
+        + ' gate-health ledger evidence, never snapshot advocacy (your ruling). No change proposed — the ledger will make the case if it holds.' });
+      continue;
+    }
+    props.push({ concur: false, html: '<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
+      + persistItems.length + ' with ledger persistence — benched by it on 4+ of the last 7 days: '
+      + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7) + "/7d)").join("; "))
+      + ' — ' + esc(shorts.join("; ")) + '. ' + esc(depProposalFor(g, arr)) });
   }
-  const v5 = gated.filter(x => x.fails.some(f => f.g === "volume floor") && x.volBound === "5m");
-  if (v5.length) props.push('On ' + v5.length + ' volume-floor bench' + (v5.length === 1 ? "" : "es")
+  const v5 = gated.filter(dieOffTagged);
+  if (v5.length) props.push({ concur: true, html: 'On ' + v5.length + ' volume-floor bench' + (v5.length === 1 ? "" : "es")
     + ' the binding side is the confirmed 5m sample, not the 1h book: ' + esc(v5.map(x => x.name).join(", "))
-    + '. The ruled binding conditions (≥5 units, 2 consecutive refreshes) are already applied — this reads as a real die-off, not sampling noise.');
-  if (P.qualifying.length >= 3) props.push('Seasoning holds ' + P.qualifying.length + ' passing items ('
+    + '. The ruled binding conditions (≥5 units, 2 consecutive refreshes) are already applied — this reads as a real die-off, not sampling noise.'
+    + ' Tagged "die-off detected" in the gate-health ledger; each episode\'s next 24h grades the confirmation in the weekly audit.' });
+  if (P.qualifying.length >= 3) props.push({ concur: true, html: 'Seasoning holds ' + P.qualifying.length + ' passing items ('
     + gp(P.qualifying.reduce((s, x) => s + x.qty * x.c.buy, 0)) + ' of would-buys) — they fund themselves at their ETAs, and a fresh margin test'
-    + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.');
-  S.depProposalCount = props.length;   // the walk-up's RULINGS PENDING block counts these
+    + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.' });
+  const ruleProps = props.filter(p => !p.concur), concurProps = props.filter(p => p.concur);
+  S.depProposalCount = ruleProps.length;   // the walk-up's RULINGS PENDING block counts change-proposals ONLY — concur-recommended needs no ruling ceremony (ruled Aug 10 2026)
+  const propRow = p => '<div class="plan-note" style="margin-top:4px">' + p.html + '</div>';
   const propHTML = '<div class="dep-h">Proposals — house convention: nothing changes without your per-gate ruling</div>'
-    + (props.length ? props.map(p => '<div class="plan-note" style="margin-top:4px">' + p + '</div>').join("")
-                    : '<div class="bench-row"><span class="dim">No gate accumulates 3+ single-gate near-misses this refresh — no tuning case to make from today\'s data.</span></div>');
+    + (ruleProps.length ? ruleProps.map(propRow).join("")
+                    : '<div class="bench-row"><span class="dim">No gate accumulates 3+ single-gate near-misses this refresh — no tuning case to make from today\'s data.</span></div>')
+    + (concurProps.length ? '<div class="dep-h">Concur-recommended — the panel defends its standing rules against softer data; batched, no ruling needed (your Aug 10 2026 ruling)</div>'
+        + concurProps.map(propRow).join("") : '');
 
   $("#depSub").textContent = P.pass.length + " of " + N + " pass · " + P.picks.length + " funded · "
     + gp(P.deployed) + " of " + gp(pool) + " tier pool deployed" + (pool > 0 ? " (" + Math.round(P.deployed / pool * 100) + "%)" : "");
@@ -5114,7 +5305,19 @@ function gateHealthAudit(){
     const fl = DB.flips.filter(f => f.itemId === id && String(f.date || "") >= d0);
     if (fl.length){ fundedTraded++; fundedNet += fl.reduce((s, f) => s + flipProfit(f), 0); }
   }
-  return { rows, fundedCount: funded.size, fundedTraded, fundedNet };
+  /* Die-off tag scorecard (ruled Aug 10 2026): each tagged episode's next 24h
+     grades the 2-refresh confirmation itself. Numbers only — routine
+     within-hours recoveries argue the confirmation is too twitchy, persistent
+     fades earn it trust; that verdict is the user's, never this card's. */
+  const dNow = Date.now(), H24 = 24 * 3600e3;
+  const dieOff = { episodes: 0, rec24: 0, faded: 0, watching: 0, recHs: [] };
+  for (const e of DB.dieOffLog || []){
+    dieOff.episodes++;
+    if (e.rec != null && e.rec - e.t <= H24){ dieOff.rec24++; dieOff.recHs.push((e.rec - e.t) / 3600e3); }
+    else if (e.rec == null && dNow - e.t < H24) dieOff.watching++;
+    else dieOff.faded++;   // still under the floor at +24h (a later recovery still grades the 24h window as a fade)
+  }
+  return { rows, fundedCount: funded.size, fundedTraded, fundedNet, dieOff };
 }
 
 const audBtns = (attr, id) =>
@@ -5194,6 +5397,14 @@ function renderAuditInline(){
         + 'the item cleared the gates before trading, so this measures how slowly the gate re-admits, not whether the bench-day call was wrong');
     if (!bits.length) bits.push('<span class="dim">no outcome data — nothing it benched traded afterwards</span>');
     secs.push('<div><b>' + esc(r.g) + '</b> — benched ' + r.benched + ' item' + (r.benched === 1 ? '' : 's') + ' this week · ' + bits.join(' · ') + '</div>');
+  }
+  if (gh.dieOff && gh.dieOff.episodes){
+    const d0 = gh.dieOff, med = medianOf(d0.recHs);
+    secs.push('<div><b>die-off detected</b> — 5m-confirmed die-off against a passing 1h book; ' + d0.episodes
+      + ' episode' + (d0.episodes === 1 ? '' : 's') + ' in 30d: ' + d0.rec24 + ' recovered within 24h'
+      + (med != null ? ' (median ' + fmtHrs(med) + ')' : '') + ' · ' + d0.faded + ' still under the floor at +24h · '
+      + d0.watching + ' inside the window now'
+      + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. The tag builds its own track record — nothing changes from here.</div></div>');
   }
   if (gh.fundedCount)
     secs.push('<div><b>funded lines</b> — ' + gh.fundedCount + ' item' + (gh.fundedCount === 1 ? '' : 's') + ' this week · <span class="dim">'
@@ -7591,18 +7802,25 @@ function makeAC(sel, onPick, placeholderKeep){
 function nextMove(){
   if (S.pendingFill)
     return { msg: "Finish logging the " + itemName(S.pendingFill.itemId) + " round trip — the form is prefilled, press + Log flip.", tab: "log" };
+  /* Placed quote legs age on the same clocks as position legs (ruled
+     Aug 10 2026) — the NOW bar names them alongside. */
+  const qAged = invItems().filter(w => w.quotePlaced).map(w => ({ w, la: quoteLegAge(w.quotePlaced) }));
   const stale = DB.positions.filter(staleBuyInfo);
-  if (stale.length)
-    return { msg: stale.length + " buy" + (stale.length === 1 ? " has" : "s have") + " sat past the fill horizon — cancel, the market moved: "
-           + stale.map(p => itemName(p.itemId, p.name)).join(", ") + ".", tab: "watch" };
+  const staleQ = qAged.filter(x => x.la.buyStale);
+  if (stale.length || staleQ.length)
+    return { msg: (stale.length + staleQ.length) + " buy" + (stale.length + staleQ.length === 1 ? " has" : "s have") + " sat past the fill horizon — cancel, the market moved: "
+           + stale.map(p => itemName(p.itemId, p.name)).concat(staleQ.map(x => itemName(x.w.id) + " (quote leg)")).join(", ") + ".", tab: "watch" };
   const rung2 = DB.positions.filter(p => { const sa = sellAgeInfo(p); return sa && sa.rung >= 2; });
-  if (rung2.length)
-    return { msg: "Undercut & exit: " + rung2.map(p => full(p.qty) + " " + itemName(p.itemId, p.name)).join(", ")
+  const rung2Q = qAged.filter(x => x.la.sellRung >= 2);
+  if (rung2.length || rung2Q.length)
+    return { msg: "Undercut & exit: " + rung2.map(p => full(p.qty) + " " + itemName(p.itemId, p.name))
+           .concat(rung2Q.map(x => itemName(x.w.id) + " (quote sell leg)")).join(", ")
            + " — stuck past 2× the fill horizon. Small loss beats a dead slot.", tab: "watch" };
   const rung1 = DB.positions.filter(p => { const sa = sellAgeInfo(p); return sa && sa.rung === 1; });
-  if (rung1.length)
-    return { msg: "Reprice " + rung1.length + " aging sell" + (rung1.length === 1 ? "" : "s") + " to the current instabuy: "
-           + rung1.map(p => itemName(p.itemId, p.name)).join(", ") + ".", tab: "watch" };
+  const rung1Q = qAged.filter(x => x.la.sellRung === 1);
+  if (rung1.length || rung1Q.length)
+    return { msg: "Reprice " + (rung1.length + rung1Q.length) + " aging sell" + (rung1.length + rung1Q.length === 1 ? "" : "s") + " to the current instabuy: "
+           + rung1.map(p => itemName(p.itemId, p.name)).concat(rung1Q.map(x => itemName(x.w.id) + " (quote leg)")).join(", ") + ".", tab: "watch" };
   const unlisted = DB.positions.filter(p => posStage(p) === "bought");
   if (unlisted.length)
     return { msg: "List the sell for " + unlisted.map(p => full(p.qty) + " " + itemName(p.itemId, p.name)).join(", ")
@@ -7906,7 +8124,14 @@ document.addEventListener("click", e => {
   const il = t.closest("[data-invlot]");
   if (il){
     const id = +il.dataset.invlot, c = calc(id);
-    const q = prompt("Replenishment buy filled for " + itemName(id) + " — how many units?", il.dataset.q || "");
+    const wq = DB.watch.find(x => x.id === id);
+    const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
+    /* Fill dialog (ruled Aug 10 2026): qty prefilled with the proposed leg —
+       or the remaining standing qty on a placed quote — and editable, so a
+       partial fill is recorded as exactly what filled. */
+    const q = prompt("Buy fill for " + itemName(id) + " — how many units filled (so far)?"
+      + (qpSnap && qpSnap.buyQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.buyQty - qpSnap.buyFilled)) + " of " + full(qpSnap.buyQty) + " still open." : ""),
+      il.dataset.q || "");
     if (q === null) return;
     const qty = Math.floor(clampNum(q, NaN));
     if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
@@ -7914,18 +8139,25 @@ document.addEventListener("click", e => {
     if (pr === null) return;
     const px = Math.round(clampNum(pr, NaN));
     if (!(px > 0)){ toast("Price must be a positive number."); return; }
-    const lot = { id: Date.now(), itemId: id, qty, cost: px, t: Date.now() };
-    DB.invLots.push(lot);
-    markTouch(); save(); renderWatch();
-    toast("Lot recorded: " + full(qty) + " at " + full(px) + " — FIFO basis " + gp(invCostGp(id)) + " across " + full(invHeld(id)) + " held.",
-          () => { DB.invLots = DB.invLots.filter(l => l.id !== lot.id); save(); renderWatch(); });
+    const lot = recordInvBuyFill(id, qty, px);
+    renderWatch();
+    const qpNow = wq && wq.quotePlaced;
+    toast("Lot recorded: " + full(qty) + " at " + full(px) + " — FIFO basis " + gp(invCostGp(id)) + " across " + full(invHeld(id)) + " held"
+        + (qpNow && qpNow.buyQty > 0 ? " · buy leg " + full(qpNow.buyFilled) + "/" + full(qpNow.buyQty) + " filled, " + full(Math.max(0, qpNow.buyQty - qpNow.buyFilled)) + " standing" : "") + ".",
+          () => { DB.invLots = DB.invLots.filter(l => l.id !== lot.id);
+                  if (wq){ if (qpSnap) wq.quotePlaced = { ...qpSnap }; else delete wq.quotePlaced; }
+                  save(); renderWatch(); });
     return;
   }
   const iv = t.closest("[data-invsell]");
   if (iv){
     const id = +iv.dataset.invsell, c = calc(id), held = invHeld(id);
     if (!(held > 0)){ toast("No units in the buffer — record the buy lots first."); return; }
-    const q = prompt("Sell from the " + itemName(id) + " buffer — how many sold? (held: " + full(held) + ")", iv.dataset.q || "");
+    const wq = DB.watch.find(x => x.id === id);
+    const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
+    const q = prompt("Sell fill from the " + itemName(id) + " buffer — how many units filled (so far)? (held: " + full(held) + ")"
+      + (qpSnap && qpSnap.sellQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.sellQty - qpSnap.sellFilled)) + " of " + full(qpSnap.sellQty) + " still open." : ""),
+      iv.dataset.q || "");
     if (q === null) return;
     let qty = Math.floor(clampNum(q, NaN));
     if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
@@ -7934,11 +8166,36 @@ document.addEventListener("click", e => {
     if (pr === null) return;
     const px = Math.round(clampNum(pr, NaN));
     if (!(px > 0)){ toast("Price must be a positive number."); return; }
-    const out = invConsume(id, qty);
-    markTouch(); save(); renderWatch();
+    const out = recordInvSellFill(id, qty);
+    renderWatch();
     logFromWatch(id, out.qty, Math.round(out.avgCost), px);
+    const qpNow = wq && wq.quotePlaced;
     toast("FIFO: " + full(out.qty) + " consumed at true cost " + full(Math.round(out.avgCost))
-        + " each — the log form is prefilled, press + Log flip to record the P/L.");
+        + " each — the log form is prefilled, press + Log flip to record the P/L"
+        + (qpNow && qpNow.sellQty > 0 ? " · sell leg " + full(qpNow.sellFilled) + "/" + full(qpNow.sellQty) + " filled, " + full(Math.max(0, qpNow.sellQty - qpNow.sellFilled)) + " standing" : "") + ".");
+    return;
+  }
+  const qpl = t.closest("[data-qplace]");
+  if (qpl){
+    const id = +qpl.dataset.qplace;
+    const qp = placeQuote(id);
+    if (!qp){ toast("Nothing to place — no live legs this touch."); return; }
+    renderWatch();
+    toast(itemName(id) + " quote marked standing — "
+        + (qp.sellQty > 0 ? "SELL " + full(qp.sellQty) + " at " + full(qp.ask) : "no sell leg") + " · "
+        + (qp.buyQty > 0 ? "BUY " + full(qp.buyQty) + " at " + full(qp.bid) : "no buy leg")
+        + ". The walk-up tracks elapsed time and fills until the cycle completes.");
+    return;
+  }
+  const qcl = t.closest("[data-qclear]");
+  if (qcl){
+    const id = +qcl.dataset.qclear;
+    const wq = DB.watch.find(x => x.id === id);
+    const snap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
+    clearQuote(id);
+    renderWatch();
+    toast(itemName(id) + " standing quote cleared — nothing logged.",
+          snap ? () => { const w2 = DB.watch.find(x => x.id === id); if (w2){ w2.quotePlaced = snap; save(); renderWatch(); } } : undefined);
     return;
   }
   const fc = t.closest("[data-fricopy]");
@@ -8350,6 +8607,13 @@ function validateImport(d){
     if (num(w.lastPass) > 0) o.lastPass = num(w.lastPass);
     if (num(w.tBuy) > 0 && num(w.tSell) > 0){ o.tBuy = num(w.tBuy); o.tSell = num(w.tSell); o.tAt = num(w.tAt) || Date.now(); }
     if (num(w.invTarget) > 0) o.invTarget = Math.floor(num(w.invTarget));
+    if (w.quotePlaced && typeof w.quotePlaced === "object" && num(w.quotePlaced.t) > 0
+        && num(w.quotePlaced.bid) > 0 && num(w.quotePlaced.ask) > 0){
+      const qp = w.quotePlaced;
+      o.quotePlaced = { t: num(qp.t), bid: num(qp.bid), ask: num(qp.ask),
+                        sellQty: Math.max(0, Math.floor(num(qp.sellQty) || 0)), buyQty: Math.max(0, Math.floor(num(qp.buyQty) || 0)),
+                        sellFilled: Math.max(0, Math.floor(num(qp.sellFilled) || 0)), buyFilled: Math.max(0, Math.floor(num(qp.buyFilled) || 0)) };
+    }
     if ([0,1,2].includes(num(w.tierOv))) o.tierOv = num(w.tierOv);   // manual tier override
     if ([1,2].includes(num(w.scoutTier))) o.scoutTier = num(w.scoutTier);   // admitting scanner's stamp
     if (w.t2Grad) o.t2Grad = 1;                                      // tier-2 graduation toast fired
@@ -8614,6 +8878,12 @@ function validateImport(d){
             if (!(id > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || "")) || !e.g) return null;
             return { d: String(e.d), id, g: String(e.g) };
           }).filter(Boolean).slice(-4000),
+          dieOffLog: (Array.isArray(d.dieOffLog) ? d.dieOffLog : []).map(e => {
+            const id = num(e && e.id), t = num(e && e.t);
+            if (!(id > 0) || !(t > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || ""))) return null;
+            const rec = num(e.rec);
+            return { d: String(e.d), id, t, rec: rec > 0 ? rec : null };
+          }).filter(Boolean).slice(-500),
           deployLog: (Array.isArray(d.deployLog) ? d.deployLog : []).map(e => {
             const h = num(e && e.h);
             if (!(h > 0)) return null;

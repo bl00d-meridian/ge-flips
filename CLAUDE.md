@@ -34,6 +34,11 @@ faster than 60s.
   them and leave them unapplied until the user rules. Applying one and mentioning it in
   the summary is a near miss, not compliance (the incident: entry-watch DISCOUNTED set to
   ≤ −2% in-flight; ratified after the fact).
+- **Concur-recommended proposals skip the ruling ceremony** (user ruling, Aug 10 2026).
+  A proposal that argues FOR keeping an existing rule against softer data is the correct
+  default posture, not a decision point: flag it "concur-recommended", batch such entries
+  under their own header in review copy, and keep them out of the rulings-pending count.
+  The full ruling flow is reserved for proposals that want to change something.
 
 ## Definitions protocol (metric honesty — user ruling, Aug 10 2026)
 
