@@ -345,6 +345,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <label class="f" title="Allocation ceiling for tier-1 (400–5k consumables), carved from working capital.">T1 budget<input type="number" id="szT1" step="5000000" min="0" style="width:110px"></label>
         <label class="f" title="Allocation ceiling for tier-2 (5k–100k mid-tier). Max 3 concurrent T2 items; new ones ramp at one-third size until 2 clean logged trips.">T2 budget<input type="number" id="szT2" step="5000000" min="0" style="width:110px"></label>
         <label class="f" title="No plan line may exceed this share of an item's 1h unit volume — bigger than this and the offer IS the market. Bench reason: would move the market.">Part. cap %<input type="number" id="szPart" min="1" max="100" style="width:56px"></label>
+        <label class="f" title="A line's expected gp per full cycle (judged at full, unramped size) must clear this or it isn't worth a slot. 0 = automatic: 0.1% of the tier pools.">Min gp/cycle<input type="number" id="szMinExp" min="0" step="10000" style="width:90px"></label>
         <span class="note" style="align-self:center;max-width:520px">
           Buy legs are sized to fill inside the <b>fill horizon</b> (flow × 15% capture × hours);
           buy limits still roll every 4h across the day horizon while offers stand.
@@ -433,10 +434,21 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <summary style="cursor:pointer" id="scoutLogSum"></summary>
         <div id="scoutLogBody" style="margin-top:6px"></div>
       </details>
+      <details class="note" id="blkBox" style="margin-bottom:8px">
+        <summary style="cursor:pointer" id="blkSum"></summary>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="ac" id="acBlk" style="max-width:260px"><input placeholder="Blacklist an item by name…"></div>
+          <span class="dim">Yours alone. Nothing automated — not the scout, not the allocator, not a margin test — can clear or bypass an entry.</span>
+        </div>
+        <div id="blkBody" style="margin-top:6px"></div>
+      </details>
       <div class="row" style="margin-bottom:10px">
         <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
         <label class="f" title="How many scout·T1 candidates the pipeline maintains on the watchlist">T1 cand<input type="number" id="scT1Cap" min="0" max="20" style="width:52px"></label>
         <label class="f" title="How many scout·T2 candidates the pipeline maintains on the watchlist">T2 cand<input type="number" id="scT2Cap" min="0" max="20" style="width:52px"></label>
+        <label class="f" title="Profitable trips in 14 days that make an item a discovery SEED — deliberately below the 4-trip reliability floor: discovery may act on hints, funding may not">Seed trips<input type="number" id="scSeedN" min="1" max="10" style="width:48px"></label>
+        <label class="f" title="Sibling watch slots per seed">Sib/seed<input type="number" id="scSibSeed" min="0" max="30" style="width:48px"></label>
+        <label class="f" title="Sibling watch slots overall — beyond the normal watch cap, pruned hardest-first when full">Sib total<input type="number" id="scSibTot" min="0" max="60" style="width:48px"></label>
       </div>
       <div class="tw"><table>
         <thead><tr>
@@ -502,7 +514,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h3>Equity curve</h3>
         <span class="sub" id="eqSub" style="margin-left:auto"></span>
       </div>
-      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. Divides realized profit by touch sessions — one sit-down at the GE services every offer at once, so flips don't each get charged their own touches. Sessions count from routine checkmarks and logging activity (pre-tracking days count as two); minutes-per-touch is editable in the log header and in Morning/Evening mode. Compare it against just playing content you enjoy."></div>
+      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. Divides realized profit by walk-up sessions — one visit services every offer at once, so flips don't each get charged their own touches. Sessions are stamped from real activity (a 2h quiet gap starts a new one; pre-tracking days count as two); minutes-per-visit is a simple default you can edit in the log header and on the Walk-up list. Compare it against just playing content you enjoy."></div>
       <div id="eqChart"></div>
       <div id="eqBars"></div>
       <div class="stats" id="eqStats" style="margin-top:10px"></div>
@@ -541,6 +553,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <tbody id="tierBody"></tbody>
       </table></div>
       <div class="note" id="tierNote" style="margin-top:8px"></div>
+      <div class="note" id="discLine" style="margin-top:6px"></div>
     </div>
 
     <div class="panel" id="byItemPanel">
@@ -572,13 +585,12 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <!-- ═══════════ ROUTINE ═══════════ -->
   <section class="tab" id="tab-routine">
     <div class="panel">
-      <div class="ph"><h2>Two-touch routine</h2><span class="sub" id="ckDate"></span>
+      <div class="ph"><h2>Walk-up routine</h2><span class="sub" id="ckDate"></span>
         <span style="margin-left:auto"><button class="sm" id="ckReset">Reset today</button></span>
       </div>
       <div class="row" style="margin-bottom:12px">
-        <button class="primary" id="mMorning">☀ Morning mode</button>
-        <button class="primary" id="mEvening">☾ Evening mode</button>
-        <button id="mWeekly">📓 Weekly review</button>
+        <button class="primary" id="mWalk">🚶 Walk-up</button>
+        <button id="mWeekly">📓 Review</button>
         <span id="modeExtras" style="margin-left:auto;display:flex;align-items:center"></span>
       </div>
       <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
@@ -809,17 +821,28 @@ let DB = {
   t1Budget: 100_000_000,      // tier-1 (400–5k consumables) allocation ceiling, carved from working capital
   t2Budget: 50_000_000,       // tier-2 (5k–100k mid-tier) allocation ceiling
   partCapPct: 10,             // participation cap: max share of 1h unit volume any plan line may take
+  minExpectGp: 0,             // worth-a-slot floor in gp/cycle; 0 = auto (0.1% of the tier pools)
+  blacklist: [],      // item ids the user has banned — no automated path may admit, fund, or clear them
+  seedTrips: 3,       // profitable trips in 14d that make an item a discovery SEED (below the 4-trip funding floor on purpose)
+  sibPerSeed: 10,     // sibling watch slots per seed
+  sibTotal: 20,       // sibling watch slots overall
+  seedAt: {},         // seedId → first-detected ms (announced once; cleared on 14d decay)
+  sibBorn: {},        // itemId → {seed, t} — permanent provenance for the discovery scoreboard
+  sibStats: { washed: 0, graduated: 0 },   // lifetime counters (scout log only keeps 72h)
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
   holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
-  checks: { date:"", morning:[], evening:[], weekly:[] }
+  checks: { date:"", walkup:[], weekly:[] }
 };
 function load(){
   try {
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist"])
       if (!Array.isArray(DB[k])) DB[k] = [];
+    if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
+    for (const k of ["seedAt","sibBorn"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
     if (!DB.slotCapV2){ if (DB.slots === 8) DB.slots = 7; DB.slotCapV2 = 1; }
@@ -850,6 +873,10 @@ function load(){
        split-scanner migration had carried the old single-scanner state into
        T1 verbatim (max 100k, margin 1), which the user asked to reset. */
     if (!DB.t1ResetV1){ DB.filtersT1 = {...SCAN_T1_DEFAULTS}; DB.t1ResetV1 = 1; }
+    /* One-time (user-directed): seed the blacklist with Tarromin (253) — the
+       recurring margin≈tax bleeder that kept walking back through the
+       test-unbench hole. */
+    if (!DB.blkSeed1){ if (!DB.blacklist.includes(253)) DB.blacklist.push(253); DB.blkSeed1 = 1; }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
@@ -892,7 +919,7 @@ const S = {
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
   loading: false, err: null, tab: "watch",
-  mode: "morning", planMode: "buy", promoteFor: null
+  mode: "walkup", planMode: "buy", promoteFor: null
 };
 
 /* ── helpers ─────────────────────────────────────────────────── */
@@ -1319,16 +1346,32 @@ const gameUpTo  = d  => DB.gameLedger.reduce((a,g) => a + (g.d <= d ? g.v : 0), 
 const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0) + gameSince(DB.bankAsOf || 0);
 const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0);
 
-/* A touch session = one real sit-down at the GE (morning or evening), however
-   many flips it services. Dividing attention by flips × touches overstated the
-   cost ~5×: an 18-flip fortnight is ~15 sittings, not 36 touches. Sessions are
-   stamped by routine checkmarks and by logging activity in that half-day. */
-function markTouch(m){
-  const mode = m || (new Date().getHours() < 15 ? "morning" : "evening");
-  if (mode !== "morning" && mode !== "evening") return;
-  const day = today();
-  if (!DB.touchLog.some(t => t.d === day && t.m === mode))
-    DB.touchLog.push({ d: day, m: mode });
+/* A walk-up session = one physical visit to the GE, whenever it happens —
+   no schedule is assumed. Stamped on real interaction; a 2h quiet gap starts
+   a new session (and clears the walk-up checklist for the fresh visit).
+   Historical {d, m:"morning"/"evening"} entries still count as sessions. */
+function markTouch(){
+  const now = Date.now();
+  const last = S.lastTouchAt || lastWalkupAt();
+  S.lastTouchAt = now;
+  if (now - last < 2 * 3600e3) return;   // same sitting
+  DB.touchLog.push({ d: today(), m: "walkup", t: now });
+  if (DB.checks) DB.checks.walkup = [];
+}
+/* Most recent walk-up timestamp — feeds the drift-risk bench (a long gap
+   before this visit predicts a long gap after it). Old date-only entries and
+   flip timestamps stand in where no stamped session exists. */
+function lastWalkupAt(){
+  let best = 0;
+  for (const t of DB.touchLog) if (t.t && t.t > best) best = t.t;
+  if (!best){
+    for (const f of DB.flips) if (f.id > best) best = f.id;
+    for (const t of DB.touchLog){
+      const ms = Date.parse(t.d + "T12:00:00");
+      if (Number.isFinite(ms) && ms > best) best = ms;
+    }
+  }
+  return best;
 }
 /* Days flipped before session-tracking existed count as two sessions each —
    the schedule was always two-touch, so that's the honest historical guess. */
@@ -1455,12 +1498,14 @@ function renderScan(){
   $("#scanBody").innerHTML = shown.map(c => {
     const flags = [];
     flags.push(tierBadge(itemTier(c.id, c)));   // computed tier, override-aware
+    if (isBlk(c.id))
+      flags.push('<span class="badge b-risk" title="On your blacklist — never admitted by the scout, never funded by the allocator. Only you can remove it (Blacklist box on the Watchlist tab).">blacklisted</span>');
     /* Gate-mismatch badge: passes this scanner's filters but would fail the
        full plan gate chain — so the pipeline won't admit it and the plan
        would bench it. Suppressed while the verdict is only "chart still
-       loading": unknown is not failing. */
-    const cand = candidateFor(DB.watch.find(x => x.id === c.id) || { id: c.id, qty: null });
-    if (cand.failed && !/no chart yet/.test(cand.failed))
+       loading": unknown is not failing. Blacklist shows its own badge. */
+    const cand = isBlk(c.id) ? null : candidateFor(DB.watch.find(x => x.id === c.id) || { id: c.id, qty: null });
+    if (cand && cand.failed && !/no chart yet/.test(cand.failed))
       flags.push('<span class="badge b-warn" title="Passes this scanner but would FAIL Today\'s Plan gates — '
         + esc(gateName(cand.failed)) + ': ' + esc(cand.failed) + ' The scout pipeline won\'t admit it either.">✗ gates</span>');
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
@@ -1664,9 +1709,21 @@ function recentNet(id, n){
 function provenLoser(id, w){
   const r = recentNet(id, 3);
   if (!r || r.net >= 0) return null;
-  if (w && (w.tAt || 0) > r.lastAt) return null;   // fresh re-test unbenches
+  /* HARDENED (Tarromin forensics, Aug 9 2026): a re-test unbenches only while
+     it is FRESH — the same 16h TTL that governs it as price truth. The old
+     rule ("any test recorded after the loss") unbenched forever, so one test
+     weeks ago let a proven loser resurface whenever live spreads looked good.
+     Once the test expires, the bench returns unless the log shows recovery. */
+  if (w && (w.tAt || 0) > r.lastAt && Date.now() - (w.tAt || 0) < TESTED_TTL_MS) return null;
   return r;
 }
+
+/* ═══════════ BLACKLIST ═══════════
+   Manual, the user's alone. Blacklisted items are never admitted by the
+   scout, never funded by the allocator, never auto-anything. No automated
+   path can clear an entry — not even a margin test. Add/remove only via the
+   watchlist row button or the Blacklist box. */
+const isBlk = id => (DB.blacklist || []).includes(id);
 
 /* ── inventory-mode readiness: the log decides here too ──────────
    "Proven items only" used to be enforced by feel; this makes it computable.
@@ -1681,6 +1738,7 @@ function mmVerdict(id){
   const fl = DB.flips.filter(f => f.itemId === id && f.id >= Date.now() - MM_WINDOW_MS);
   const net = fl.reduce((s, f) => s + flipProfit(f), 0);
   const lacks = [];
+  if (isBlk(id)) lacks.push("blacklisted by you");
   if (fl.length < MM_MIN_FLIPS)
     lacks.push(fl.length + " of the " + MM_MIN_FLIPS + " completed flips needed in 30d");
   if (fl.length && net <= 0) lacks.push("net " + gp(net) + " across those flips");
@@ -1778,6 +1836,63 @@ function ensurePlanDate(){
   if (DB.planDate !== today()) resetPlanOverrides();
 }
 
+/* ── absence-tolerant score weights ─────────────────────────────
+   Each is a clamped multiplier on the allocator/admission score with a
+   human-readable reason. None of them is a gate (except the drift bench
+   below, which is) — they re-rank, sizing still prices the rest. */
+const HOUR_WINDOW_H = 12;   // rolling standing window — a shrug, not a schedule
+function hourWeight(sp){
+  if (!sp || !sp.byHour || !sp.byHour.some(v => v > 0)) return { w: 1, why: null };
+  const mean = sp.byHour.reduce((a,b) => a+b, 0) / 24;
+  if (!mean) return { w: 1, why: null };
+  const h0 = new Date().getHours();
+  let s = 0;
+  for (let i = 0; i < HOUR_WINDOW_H; i++) s += sp.byHour[(h0 + i) % 24];
+  const w = Math.max(0.7, Math.min(1.3, (s / HOUR_WINDOW_H) / mean));
+  return { w, why: Math.abs(w - 1) < 0.05 ? null
+    : "hour-weighted ×" + w.toFixed(2) + " (its volume over the next " + HOUR_WINDOW_H + "h vs its daily average)" };
+}
+/* Sit-safety: typical daily wander of the mid vs the margin — can this pick
+   sit unattended for a day without drifting through its own edge? */
+function sitRisk(sp, margin){
+  const pts = ((sp && sp.pts) || []).filter(Number.isFinite);
+  if (pts.length < 24 || !(margin > 0)) return null;
+  const dif = [];
+  for (let i = 1; i < pts.length; i++) dif.push(Math.abs(pts[i] - pts[i-1]));
+  dif.sort((a,b) => a - b);
+  const daily = (dif[Math.floor(dif.length / 2)] || 0) * 24;   // median hourly step × 24
+  return { daily, ratio: daily / margin };
+}
+function stabilityWeight(sp, margin){
+  const r = sitRisk(sp, margin);
+  if (!r) return { w: 1, r: null, drifty: false, why: null };
+  if (r.ratio <= 0.5) return { w: 1.15, r, drifty: false,
+    why: "sit-safe (typical daily wander " + full(Math.round(r.daily)) + " gp vs " + full(Math.round(margin)) + " margin)" };
+  if (r.ratio <= 1) return { w: 1, r, drifty: false, why: null };
+  return { w: r.ratio <= 2 ? 0.85 : 0.7, r, drifty: true,
+    why: "drifty — needs tending (daily wander ≈ " + Math.round(r.ratio * 100) + "% of the margin)" };
+}
+/* Reliability: the consistency of the item's RECENT record — completion
+   without ladder rescue, share profitable, and cycle speed. Recent only:
+   history older than the window decays out so last month's market doesn't
+   govern this month's item. */
+const REL_WINDOW_MS = 30 * 86400e3, REL_MIN_TRIPS = 4;
+function reliability(id){
+  const fl = DB.flips.filter(f => f.itemId === id && f.id >= Date.now() - REL_WINDOW_MS);
+  if (fl.length < REL_MIN_TRIPS)
+    return { w: 1, n: fl.length, why: fl.length ? "thin history (" + fl.length + "/" + REL_MIN_TRIPS + " trips in 30d) — reliability weight off" : null };
+  const clean = fl.filter(f => !f.lad).length;
+  const wins = fl.filter(f => flipProfit(f) > 0).length;
+  const cyc = fl.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh)).map(f => f.bh + f.sh).sort((a,b) => a-b);
+  const medCyc = cyc.length ? (cyc.length % 2 ? cyc[(cyc.length-1)/2] : (cyc[cyc.length/2-1] + cyc[cyc.length/2]) / 2) : null;
+  const speed = medCyc == null ? 0.5 : Math.max(0, Math.min(1, (2 * FILLH()) / medCyc));
+  const base = (clean / fl.length + wins / fl.length + speed) / 3;
+  const w = Math.max(0.7, Math.min(1.3, 0.7 + 0.6 * base));
+  return { w, n: fl.length, clean, wins, medCyc,
+    why: "reliable: " + clean + "/" + fl.length + " clean, " + wins + "/" + fl.length + " profitable"
+       + (medCyc != null ? ", median " + fmtHrs(medCyc) : "") + " → ×" + w.toFixed(2) };
+}
+
 /* The full gate chain for one entry. Shared by the plan (watch entries) and
    the scout pipeline, which runs it on pseudo-entries {id, qty:null} so
    admission means passing the SAME gates the allocator will apply. */
@@ -1805,9 +1920,11 @@ function candidateFor(w){
 
     const loser = provenLoser(w.id, w);
     let failed = null, mo = { state: "flat" }, sh = null;
-    if (loser)
+    if (isBlk(w.id))
+      failed = "blacklisted by you — nothing automated can clear this, not even a margin test; remove it in the Blacklist box if you want it back";
+    else if (loser)
       failed = "proven loser — net " + gp(loser.net) + " over your last " + loser.n
-             + " completed flips; re-test to unbench (a fresh one-unit margin test recorded after that loss)";
+             + " completed flips; re-test to unbench (a fresh one-unit margin test recorded after that loss — the unbench lasts only while the test is fresh)";
     else if (eRoi == null || eRoi < GATE.roi)
       failed = "sustained ROI " + (eRoi == null ? "unknown" : eRoi.toFixed(2) + "%") + " — under the " + GATE.roi + "% floor"
              + (c.roi != null && eRoi != null && c.roi - eRoi > 1 ? " (live " + c.roi.toFixed(2) + "% doesn't hold over 1h)" : "");
@@ -1841,8 +1958,14 @@ function candidateFor(w){
         : c.limit
         ? "plan qty clamps to 0 — one unit exceeds a third of working capital"
         : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its watch row to include it";
-    else if (volGate < volFloorFor(c.buy))
-      failed = "volume " + gp(volGate) + "/h on the thin side — under the " + full(volFloorFor(c.buy)) + "/h floor (price-scaled)";
+    /* Volume floor is a PREDICTION of slow fills; repeated realized wins are
+       MEASUREMENT. 2+ profitable completed round trips in 14d waive the floor
+       (the mixed-hide-cape case: 84/h vs an 88/h floor, with proven wins) —
+       sizing and the participation cap still follow the real book, so the
+       waiver admits the item without inflating it. */
+    else if (volGate < volFloorFor(c.buy) && itemWins(w.id) < 2)
+      failed = "volume " + gp(volGate) + "/h on the thin side — under the " + full(volFloorFor(c.buy)) + "/h floor (price-scaled)."
+             + " Waived automatically once the log shows 2 profitable round trips in 14d — measurement beats prediction";
     else if ((mo = momentum(c, sp)).state === "knife")
       failed = "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
              + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid";
@@ -1852,6 +1975,21 @@ function candidateFor(w){
     /* NB: moderate imbalance and 30–60 min book-skew only TAG (see whyTag) —
        volSide sizing already prices asymmetric flow; benching it twice was
        the same double-count as the old slow-fill gate. */
+
+    /* Absence-tolerant weights (computed even when benched, for display). */
+    const hw = hourWeight(sp);
+    const stw = stabilityWeight(sp, eMargin != null ? eMargin : 0);
+    const rel = reliability(w.id);
+    /* Drift bench: when the LAST walk-up gap ran past a day — the best
+       predictor of the next gap — drifty picks are benched outright: their
+       typical daily wander would walk through the margin unattended. */
+    if (!failed && stw.drifty){
+      const gapH = (Date.now() - lastWalkupAt()) / 3600e3;
+      if (gapH > 24)
+        failed = "drifty pick benched — your last walk-up was " + (Number.isFinite(gapH) ? Math.round(gapH) + "h" : "a long time")
+               + " ago (that predicts the next gap), and its typical daily wander (" + full(Math.round(stw.r.daily))
+               + " gp) would eat the " + full(Math.round(eMargin)) + " gp margin unattended";
+    }
 
     const cat = cautionCat(c.name);
     /* Realized alpha ranks up: every profitable round trip in the last 14 days
@@ -1868,9 +2006,13 @@ function candidateFor(w){
        mercy on fill horizon or momentum at tier 2. */
     const tier = itemTier(w.id, c);
     return { id:w.id, name:c.name, c, qty, tr, vt, volGate, failed, eMargin, eRoi, wins, mo, tier,
+             hw, stw, rel,
              estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name), caution: cat, cautionProven: !!cat && wins >= 3,
-             score: failed ? 0 : eMargin * Math.max(1, horizonUnits) * (1 + Math.min(wins, 5) * 0.1) };
+             /* lifetime-net boost (wins) × hour × stability × reliability —
+                each clamped, each explained in the reason string. */
+             score: failed ? 0 : eMargin * Math.max(1, horizonUnits)
+                    * (1 + Math.min(wins, 5) * 0.1) * hw.w * stw.w * rel.w };
 }
 function planCandidates(){ return DB.watch.map(candidateFor); }
 
@@ -1878,6 +2020,8 @@ function planCandidates(){ return DB.watch.map(candidateFor); }
    copy itself so the scanner and the plan can never disagree on the reason. */
 function gateName(failed){
   if (!failed) return null;
+  if (/blacklisted/.test(failed)) return "blacklist";
+  if (/drifty pick benched/.test(failed)) return "drift bench";
   if (/proven loser/.test(failed)) return "proven-loser bench";
   if (/sustained ROI/.test(failed)) return "ROI floor";
   if (/margin ≈ tax|ticks of margin|tick floor/.test(failed)) return "margin floor (ticks / 3× tax)";
@@ -1949,13 +2093,16 @@ function buildPlan(){
   const pool0 = { 1: pools[1], 2: pools[2] };
   const effTotal = pools[1] + pools[2];
   const catSlots = {};    // one funded slot per caution category (unproven items only)
-  const smalls = [];      // below the worth-a-slot floor — fund only into idle slots
   const picks = [], nextUp = [];
   const held = new Set(DB.positions.map(p => p.itemId));
   /* Tier-2 concurrency: live tier-2 positions count against the cap before
      any new line is funded. */
   let t2Live = new Set(DB.positions.filter(p => itemTier(p.itemId, calc(p.itemId)).t === 2).map(p => p.itemId)).size;
-  const minExpect = Math.max(1000, Math.round(effTotal * 0.0002));
+  /* Worth-a-slot floor (user-directed, Aug 2026): no de-minimis lines at a
+     nine-figure stack — a slot's expected gp/cycle must clear this or the
+     line isn't worth the attention. Setting overrides; auto = 0.1% of the
+     tier pools (~150k on 150m working capital). */
+  const minExpect = (DB.minExpectGp > 0) ? DB.minExpectGp : Math.max(1000, Math.round(effTotal * 0.001));
   const perSlot = Math.floor(effTotal / targetSlots);
 
   /* Sizing per line: liquidity horizon, participation cap, then tier ramp.
@@ -1963,7 +2110,8 @@ function buildPlan(){
   const sizeLine = x => {
     const byLiquidity = Math.floor(x.volGate * FILLH() * GATE.capture);
     const byPart = Math.floor((x.c.vol || 0) * partCap());
-    let cap = Math.min(x.qty, byLiquidity, Math.max(0, byPart));
+    const preRamp = Math.min(x.qty, byLiquidity, Math.max(0, byPart));
+    let cap = preRamp;
     const notes = [];
     if (byPart > 0 && byPart < Math.min(x.qty, byLiquidity))
       notes.push("participation-capped at " + (DB.partCapPct != null ? DB.partCapPct : 10) + "% of 1h volume (" + full(byPart) + ")");
@@ -1971,13 +2119,13 @@ function buildPlan(){
     if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
     if (x.tier.t === 1 && !x.tier.proven){ cap = Math.floor(cap * 0.5); notes.push("unproven T1 — half size until 2 net-positive round trips"); }
     if (x.tier.t === 2 && !x.tier.proven){ cap = Math.max(0, Math.floor(cap / 3)); notes.push("T2 ramp — one-third size until 2 clean logged trips, then auto-graduates"); }
-    return { cap, byLiquidity, byPart, rawCaution, notes };
+    return { cap, preRamp, byLiquidity, byPart, rawCaution, notes };
   };
 
   /* Pass 1: fund up to targetSlots picks at an even per-slot budget, so all
      offers exist before anything gets greedy. */
   for (const x of pass){
-    const { cap, byLiquidity, byPart, rawCaution, notes } = sizeLine(x);
+    const { cap, preRamp, byLiquidity, byPart, rawCaution, notes } = sizeLine(x);
     /* Participation cap benches outright when 10% of an hour's volume is not
        even one unit — any offer at all IS the market there. */
     if (byPart < 1){
@@ -1985,39 +2133,41 @@ function buildPlan(){
         + "% of its 1h volume (" + full(Math.round(x.c.vol || 0)) + "/h) is under one unit" });
       continue;
     }
-    const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
-    const blockedT2 = x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT;
-    const full_ = picks.length >= targetSlots;
-
     /* Held items are represented by their placed-position line, not duplicated
        into NEXT UP — the capital is committed, so it's not a substitute. */
     if (held.has(x.id)) continue;
+    /* Ignored by the user: hidden on the bench, not paraded in NEXT UP.
+       Resets with the daily plan — the blacklist is the permanent version. */
+    if (demoted.has(x.id)){
+      bench.push({ ...x, failed: "ignored by you — resets with tomorrow's plan (blacklist it for permanence)" });
+      continue;
+    }
+    const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
+    const blockedT2 = x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT;
+    const full_ = picks.length >= targetSlots;
     const pool = pools[x.tier.t];
-    const tooSmall = cap > 0 && cap * x.eMargin < minExpect;
+    /* The worth-a-slot floor judges UNRAMPED potential — ramps deliberately
+       shrink lines, and punishing a line for its own ramp is the slow-fill
+       double-count all over again. If even full size is de minimis, it goes. */
+    const tooSmall = cap > 0 && preRamp * x.eMargin < minExpect;
     const qty = Math.max(0, Math.min(cap, Math.floor(Math.min(perSlot, pool) / x.c.buy)));
-    /* Ramp factors (unproven half, T2 third, seed caution) are deliberate
-       shrinkage — an item they push below worth-a-slot is a filler candidate,
-       not a slow fill; blaming the fill horizon would mislabel the reason. */
-    const ramped = cap < Math.min(x.qty, byLiquidity, Math.max(0, byPart));
-    if (demoted.has(x.id) || full_ || blockedSeed || blockedT2 || cap <= 0 || qty <= 0 || tooSmall){
+    const ramped = cap < preRamp;
+    if (full_ || blockedSeed || blockedT2 || cap <= 0 || qty <= 0 || tooSmall){
       /* Predicted-slow-fill bench: when the fill horizon is what shrank this
          below worth-a-slot, the honest reason is the fill forecast. */
-      if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !demoted.has(x.id) && !full_ && !blockedSeed && !blockedT2){
+      if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !full_ && !blockedSeed && !blockedT2){
         bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estFillH(x.qty, x.c)) + " for the planned "
           + full(x.qty) + " — only " + full(byLiquidity) + " fit the " + FILLH() + "h fill horizon"
           + (byLiquidity > 0 ? ", not worth a slot" : "") });
         continue;
       }
-      if (tooSmall && !demoted.has(x.id) && !full_ && !blockedSeed && !blockedT2 && qty > 0){
-        smalls.push({ ...x, capQty: cap, rawCaution, sizeNotes: notes });   // filler candidate
-        continue;
-      }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
         wouldExpect: Math.max(0, cap) * x.eMargin,
-        why: demoted.has(x.id) ? "demoted by you"
-           : blockedT2 ? "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)"
+        why: blockedT2 ? "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)"
            : blockedSeed ? x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used"
            : full_ ? "plan is full at " + targetSlots + " offers"
+           : tooSmall ? "expected only ~" + gp(Math.round(preRamp * x.eMargin)) + "/cycle even at full size — under your "
+             + gp(minExpect) + " worth-a-slot floor (Min gp/cycle in the sizing row)"
            : "tier-" + x.tier.t + " budget exhausted this rotation" });
       continue;
     }
@@ -2026,34 +2176,8 @@ function buildPlan(){
     if (x.tier.t === 2) t2Live++;
     picks.push({ ...x, capQty: cap, allocQty: qty, sizeNotes: notes });
   }
-
-  /* Pass 2 — fillers claim idle slots BEFORE the top-up; an idle GE slot
-     earns exactly zero. Each filler draws from its own tier pool. */
-  for (const x of smalls){
-    const pool = pools[x.tier.t];
-    if (picks.length >= targetSlots || pool <= 0){
-      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy,
-                    wouldExpect: x.capQty * x.eMargin,
-                    why: picks.length >= targetSlots ? "small — every slot went to a full-size pick" : "tier-" + x.tier.t + " budget exhausted this rotation" });
-      continue;
-    }
-    if (x.rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots){
-      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy, wouldExpect: x.capQty * x.eMargin,
-                    why: x.caution.label + " category: only " + GATE.seedSlots + " slot until proven, already used" });
-      continue;
-    }
-    if (x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT){
-      nextUp.push({ ...x, wouldQty: x.capQty, wouldCost: x.capQty * x.c.buy, wouldExpect: x.capQty * x.eMargin,
-                    why: "tier-2 concurrency cap — " + T2_MAX_CONCURRENT + " live T2 items already (ramp rule)" });
-      continue;
-    }
-    const qty = Math.min(x.capQty, Math.floor(pool / x.c.buy));
-    if (qty <= 0) continue;
-    pools[x.tier.t] -= qty * x.c.buy;
-    if (x.rawCaution) catSlots[x.caution.key] = (catSlots[x.caution.key] || 0) + 1;
-    if (x.tier.t === 2) t2Live++;
-    picks.push({ ...x, allocQty: qty, filler: true });
-  }
+  /* (The old "filler" pass is gone by user direction: at a nine-figure stack,
+     a de-minimis line costs more attention than an idle slot costs gp.) */
 
   /* Pass 3 — pour each tier's leftover into its funded picks by rank, up to
      each item's own caps. A tier's budget never spills into the other tier. */
@@ -2087,6 +2211,13 @@ function whyTag(x){
     else bits.push(Math.abs(x.tr) < 3 ? "flat chart" : "rising chart");
   }
   if (x.c.tested) bits.push("margin-tested");
+  if (x.volGate != null && x.c && x.volGate < volFloorFor(x.c.buy) && x.wins >= 2)
+    bits.push("volume floor waived — the log outranks the estimate: " + x.wins
+      + " profitable trips in 14d; sizing still follows the real book");
+  /* Absence-tolerant weights, in the open — every re-rank explains itself. */
+  if (x.stw && x.stw.why) bits.push(x.stw.why);
+  if (x.hw && x.hw.why) bits.push(x.hw.why);
+  if (x.rel && x.rel.why) bits.push(x.rel.why);
   /* The scanner's warning flags, restated honestly when the plan buys anyway:
      say the flag, then say why the buy survives it. */
   if (x.c.limit && x.c.volSide && x.c.limit > x.c.volSide * 4){
@@ -2273,6 +2404,8 @@ function crossWarn(itemId, side, price){
    replenishment at the bid, sized to walk the buffer back toward its target.
    Missing flow data falls back to a 50/50 split, labeled rough. */
 function invQuote(w){
+  if (isBlk(w.id))
+    return { w, name: itemName(w.id), err: "blacklisted by you — quotes suppressed until you remove it from the Blacklist box" };
   const c = calc(w.id);
   if (!c || c.buy == null || c.sell == null)
     return { w, name: itemName(w.id), err: "no live price in /latest" };
@@ -2332,6 +2465,7 @@ function repriceSell(pid, undercut){
   const ask = Math.round(clampNum(a, NaN));
   if (!(ask > 0)){ toast("Ask must be a positive number."); return; }
   p.ask = ask; p.stageAt = Date.now();
+  p.lad = 1;   // ladder intervention — this trip won't count as "clean" for reliability
   markTouch(); save(); renderWatch();
   toast("Ask updated to " + full(ask) + " — the aging clock on this sell restarts.");
 }
@@ -2397,8 +2531,8 @@ function renderPlan(){
   renderFamilyDebug();
 
   if (S.planMode === "sell"){
-    $("#planTitle").textContent = "Tonight's sells";
-    hint.textContent = "Relist at your tested margin, not this morning's number. A sell that won't move: drop it below instabuy and take the small loss.";
+    $("#planTitle").textContent = "Sells — walk-up";
+    hint.textContent = "Relist at your tested margin, not a number from a previous visit. A sell that won't move: drop it below instabuy and take the small loss.";
     const lines = sellLines();
     list.innerHTML = lines.length ? lines.map(s => {
         const st = STAGES[s.stage], nm = itemName(s.p.itemId, s.p.name);
@@ -2557,6 +2691,7 @@ function renderPlan(){
       + '<span class="plan-actions">'
       + '<button class="sm" data-place="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">placed</button>'
       + '<button class="sm" data-logline="'+p.id+'" data-q="'+p.allocQty+'" data-b="'+p.c.buy+'">log round trip</button>'
+      + '<button class="sm ghost" data-ignore="'+p.id+'" title="Not worth your time — drops to the bench for the rest of today. Blacklist it for permanence.">ignore</button>'
       + '</span></li>';
   }).join("");
 
@@ -2582,6 +2717,7 @@ function renderPlan(){
             + '<span class="plan-actions">'
             + '<button class="sm" data-promote="'+x.id+'">promote</button>'
             + '<button class="sm" data-place="'+x.id+'" data-q="'+x.wouldQty+'" data-b="'+x.c.buy+'" title="You executed this substitute in-game — track it as a position">placed</button>'
+            + '<button class="sm ghost" data-ignore="'+x.id+'" title="Not worth your time — drops to the bench for the rest of today. Blacklist it for permanence.">ignore</button>'
             + '</span></li>';
         }).join("");
   }
@@ -2627,6 +2763,7 @@ function scanScreenTier(t){
   const out = [];
   for (const it of S.items){
     if (!it.l) continue;
+    if (isBlk(it.i)) continue;   // blacklisted — the scout may never admit it
     if (f.mem === "p2p" && !it.m) continue;
     if (f.mem === "f2p" &&  it.m) continue;
     if (f.cons && !CONSUMABLE_RX.test(it.n)) continue;
@@ -2673,6 +2810,7 @@ async function runScout(force){
     const removed = [];
     DB.watch = DB.watch.filter(w => {
       if (w.src !== "scout") return true;                       // yours — never touched
+      if (w.sib != null) return true;                           // siblings live on their own washout clock
       if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
       if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
       if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){
@@ -2692,10 +2830,11 @@ async function runScout(force){
     const added = [];
     for (const t of [1, 2]){
       const cap = t === 2 ? (DB.scoutT2Cap != null ? DB.scoutT2Cap : 6) : (DB.scoutT1Cap != null ? DB.scoutT1Cap : 8);
-      let haveT = DB.watch.filter(w => w.src === "scout" && (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy)) === t).length;
+      let haveT = DB.watch.filter(w => w.src === "scout" && w.sib == null && (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy)) === t).length;
       let evaluated = 0;
+      const nonSib = () => DB.watch.filter(w => w.sib == null).length;   // siblings have their own slot budget
       for (const x of scanScreenTier(t)){
-        if (haveT >= cap || DB.watch.length >= (DB.watchCap || 25) || evaluated >= SCOUT_EVAL_PER_TIER) break;
+        if (haveT >= cap || nonSib() >= (DB.watchCap || 25) || evaluated >= SCOUT_EVAL_PER_TIER) break;
         if (have.has(x.id)) continue;
         const fam = familyKey(itemName(x.id));
         if (fam && famTaken.has(fam)) continue;   // family duplicate of an existing entry
@@ -2713,6 +2852,11 @@ async function runScout(force){
              + x.eR.toFixed(1) + "%, " + full(Math.round(x.vol)) + "/h thin side, rank score " + gp(Math.round(x.score)) });
       }
     }
+    /* 4) Sibling expansion — aggressive discovery triggered by realized wins.
+       Runs AFTER the normal top-up so pipeline admissions keep their tier
+       stamps; siblings only claim what's left un-watched. */
+    runSiblings(now);
+
     /* Journal retention: three days is enough to review a weekend away. */
     DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
 
@@ -2726,6 +2870,176 @@ async function runScout(force){
     }
   } catch(e){ console.warn("scout pipeline", e); }
   finally { S.scoutBusy = false; }
+}
+
+/* ═══════════ SIBLING EXPANSION ═══════════
+   Realized wins trigger aggressive DISCOVERY: an item with seedTrips
+   profitable round trips in 14 days becomes a SEED, and the market is hunted
+   for its siblings — watched immediately, funded never-differently. Rings:
+   (a) FAMILY — name-stem and significant-token relatives from /mapping;
+   (b) MICROSTRUCTURE — same shape regardless of category: price 0.3–3× the
+       seed, thin-side gp-flow 0.2–5× the seed's, raw spread ≥10% pre-gate,
+       calm 7-day chart where one is already cached (variance is re-checked
+       at gate time for the rest — the chart isn't fetched pre-admission);
+   (c) ADJACENT-USE — skipped: /mapping carries no activity/category tags,
+       and the house rule is skip, don't guess.
+   The bargain: watching is free and instant; money still earns its way
+   through every hard gate, ramp, cap and the blacklist. */
+const SIB_WASHOUT_MS = 5 * 86400e3, SEED_WINDOW_MS = 14 * 86400e3;
+const STOPW = new Set(["the","of","and"]);
+const sigTokens = name => String(name).toLowerCase().replace(/[^a-z ]/g," ").split(/\s+/)
+  .filter(t => t.length >= 4 && !STOPW.has(t));
+function seedCounts(now){
+  const counted = new Map();
+  for (const f of DB.flips){
+    if (f.id < now - SEED_WINDOW_MS || flipProfit(f) <= 0) continue;
+    counted.set(f.itemId, (counted.get(f.itemId) || 0) + 1);
+  }
+  return counted;
+}
+function runSiblings(now){
+  const need = Math.max(1, DB.seedTrips != null ? DB.seedTrips : 3);
+  const counted = seedCounts(now);
+  const seedIds = new Set([...counted.entries()].filter(([id, n]) => n >= need && !isBlk(id)).map(([id]) => id));
+
+  /* Announce new seeds once. */
+  for (const id of seedIds){
+    if (!DB.seedAt[id]){
+      DB.seedAt[id] = now;
+      DB.scoutLog.push({ t: now, act: "seed", id, name: itemName(id),
+        why: "seed: " + itemName(id) + " — hunting siblings (" + counted.get(id) + " profitable trips in 14d)" });
+    }
+  }
+
+  const held = new Set(DB.positions.map(p => p.itemId));
+  const recentFlip = new Set(DB.flips.filter(f => now - f.id < 7 * 86400e3).map(f => f.itemId));
+  const protectedW = w => held.has(w.id) || recentFlip.has(w.id) || Number.isFinite(w.tBuy);
+
+  /* Seed decay: a seed 14d without a profitable trip takes its un-graduated
+     siblings with it. */
+  for (const idStr of Object.keys(DB.seedAt)){
+    const id = +idStr;
+    if (seedIds.has(id)) continue;
+    DB.watch = DB.watch.filter(w => {
+      if (w.sib !== id || protectedW(w)) return true;
+      DB.sibStats.washed++;
+      DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
+        why: "sibling pruned — seed " + itemName(id) + " went 14d without a profitable trip" });
+      return false;
+    });
+    delete DB.seedAt[id];
+  }
+
+  /* Washout: a sibling that never passed the full gates within 5 days. */
+  DB.watch = DB.watch.filter(w => {
+    if (w.sib == null || protectedW(w)) return true;
+    if (now - (w.sibAt || w.addedAt || 0) > SIB_WASHOUT_MS && !((w.lastPass || 0) > (w.sibAt || 0))){
+      DB.sibStats.washed++;
+      DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
+        why: "sibling washout — never passed the gates in 5 days" });
+      return false;
+    }
+    return true;
+  });
+
+  /* Graduation: a completed trip after admission promotes to regular status
+     — provenance kept for the discovery scoreboard. */
+  for (const w of DB.watch){
+    if (w.sib == null) continue;
+    if (DB.flips.some(f => f.itemId === w.id && f.id > (w.sibAt || 0))){
+      DB.sibStats.graduated++;
+      DB.scoutLog.push({ t: now, act: "add", id: w.id, name: itemName(w.id),
+        why: "sibling graduated — completed a funded trip, now a regular watchlist item" });
+      w.sibGrad = 1; delete w.sib; w.lastPass = now;
+    }
+  }
+
+  /* Hunt for each active seed. */
+  for (const id of seedIds) huntSiblings(id, now);
+}
+function huntSiblings(seedId, now){
+  const sc = calc(seedId);
+  if (!sc || sc.buy == null) return;
+  const perSeed = Math.max(0, DB.sibPerSeed != null ? DB.sibPerSeed : 10);
+  const total = Math.max(0, DB.sibTotal != null ? DB.sibTotal : 20);
+  const seedFam = familyKey(itemName(seedId));
+  const seedToks = sigTokens(itemName(seedId));
+  const seedFlow = (sc.volSide || 0) * sc.buy;
+  let mine = DB.watch.filter(w => w.sib === seedId).length;
+  let all = DB.watch.filter(w => w.sib != null).length;
+  const have = new Set(DB.watch.map(w => w.id));
+  const cands = [];
+  for (const it of S.items){
+    if (!it.l || it.i === seedId || have.has(it.i) || isBlk(it.i)) continue;
+    if (DB.sibBorn[it.i]) continue;   // one sibling life per item — washed-out siblings don't bounce back
+    const c = calc(it.i);
+    if (!c || c.buy == null || c.sell == null) continue;
+    /* Scanner-level sanity only: any real margin, two-sided, above dust. */
+    if (!(c.margin > 0) || !(c.volLow > 0 && c.volHigh > 0) || c.volSide < 2) continue;
+    const famHit = familyKey(c.name) === seedFam || sigTokens(c.name).some(t => seedToks.includes(t));
+    const flow = c.volSide * c.buy;
+    const sp = S.spark.get(it.i);
+    const calm = !sp ? true : (() => { const r = sitRisk(sp, Math.max(1, c.margin)); return !r || r.ratio <= 2; })();
+    const microHit = c.buy >= sc.buy * 0.3 && c.buy <= sc.buy * 3
+      && seedFlow > 0 && flow >= seedFlow * 0.2 && flow <= seedFlow * 5
+      && (c.sell - c.buy) / c.buy >= 0.10 && calm;
+    if (!famHit && !microHit) continue;
+    cands.push({ id: it.i, ring: famHit ? 0 : 1, close: Math.abs(Math.log(c.buy / sc.buy)) });
+  }
+  cands.sort((a, b) => (a.ring - b.ring) || (a.close - b.close));
+  for (const x of cands){
+    if (mine >= perSeed) break;
+    if (all >= total){
+      /* Pruned hardest-first when full: the weakest un-graduated sibling
+         (worst ring, then farthest price) yields — only to a stronger one. */
+      let weakest = null;
+      for (const w of DB.watch){
+        if (w.sib == null) continue;
+        const k = (w.sibRing || 0) * 10 + Math.min(9, w.sibClose || 0);
+        if (!weakest || k > (weakest.sibRing || 0) * 10 + Math.min(9, weakest.sibClose || 0)) weakest = w;
+      }
+      const xk = x.ring * 10 + Math.min(9, x.close);
+      if (!weakest || xk >= (weakest.sibRing || 0) * 10 + Math.min(9, weakest.sibClose || 0)) break;
+      DB.watch = DB.watch.filter(w => w !== weakest);
+      DB.sibStats.washed++;
+      DB.scoutLog.push({ t: now, act: "evict", id: weakest.id, name: itemName(weakest.id),
+        why: "sibling pruned hardest-first — slots full and a closer sibling arrived" });
+      all--;
+    }
+    DB.watch.push({ id: x.id, qty: null, src: "scout", sib: seedId, sibAt: now,
+                    sibRing: x.ring, sibClose: x.close, addedAt: now });
+    if (!DB.sibBorn[x.id]) DB.sibBorn[x.id] = { seed: seedId, t: now };
+    have.add(x.id);
+    DB.scoutLog.push({ t: now, act: "add", id: x.id, name: itemName(x.id),
+      why: "scout·sib(" + itemName(seedId) + ") — " + (x.ring === 0 ? "family ring" : "microstructure ring")
+         + "; watching only, funding still passes every gate" });
+    mine++; all++;
+  }
+}
+
+/* Blacklist box — the manual ban list, rendered with remove buttons. */
+function renderBlacklist(){
+  const ids = DB.blacklist || [];
+  $("#blkSum").textContent = "🚫 Blacklist — " + ids.length + " item" + (ids.length === 1 ? "" : "s") + " · only you edit this";
+  $("#blkBody").innerHTML = ids.length
+    ? ids.map(id => '<div class="bench-row"><span>' + esc(itemName(id)) + '</span>'
+        + '<span class="r"><button class="sm ghost" data-blkdel="' + id + '" title="Remove from the blacklist — your press, no one else\'s">remove</button></span></div>').join("")
+    : '<div class="bench-row"><span class="dim">Empty. Blacklist an item with the 🚫 button on its watch row, or by name above.</span></div>';
+}
+function blkAdd(id){
+  DB.blacklist = DB.blacklist || [];
+  if (!DB.blacklist.includes(id)){
+    DB.blacklist.push(id); save();
+    toast(itemName(id) + " blacklisted — never scout-admitted, never funded, never quoted. Remove it yourself when you change your mind.");
+  }
+  renderWatch(); renderBlacklist(); if (S.tab === "scan") renderScan();
+}
+function blkRemove(id){
+  DB.blacklist = (DB.blacklist || []).filter(x => x !== id);
+  save();
+  toast(itemName(id) + " removed from the blacklist — eligible for gates, scout and funding again.",
+        () => { DB.blacklist.push(id); save(); renderWatch(); renderBlacklist(); });
+  renderWatch(); renderBlacklist(); if (S.tab === "scan") renderScan();
 }
 
 /* Scout journal — the "what changed while I wasn't looking" answer. Entries
@@ -2832,6 +3146,7 @@ function renderWatch(){
   $("#scoutTog").classList.toggle("primary", !!DB.scoutOn);
   $("#scoutMsg").textContent = DB.scoutOn ? (S.scoutMsg || "") : "";
   renderScoutLog();
+  renderBlacklist();
   $("#stackNote").textContent = gp(st) + " ÷ 3 = " + gp(third);
   if (!DB.watch.length){
     body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
@@ -2859,7 +3174,9 @@ function renderWatch(){
     const tr = sp ? trendPct(sp.pts) : null;
     const hv = sp ? hourVerdict(sp.byHour) : null;
     const flags = [];
-    if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by the scout pipeline '+ago(w.addedAt)+' after passing its tier scanner AND every plan gate — it removes itself if it fails the gates for 48h straight. Margin-test it to claim it as yours.">scout·T'+(w.scoutTier || tierFromPrice(c.buy) || "?")+'</span>');
+    if (w.src === "scout" && w.sib != null)
+      flags.push('<span class="badge b-seed" title="Sibling of '+esc(itemName(w.sib))+' ('+(w.sibRing === 0 ? "family ring" : "microstructure ring")+'), admitted '+ago(w.sibAt)+' on scanner-level sanity only — WATCHING is free, funding still passes every gate. Washes out after 5 days without a gate pass; graduates on a completed trip.">scout·sib('+esc(itemName(w.sib))+')</span>');
+    else if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by the scout pipeline '+ago(w.addedAt)+' after passing its tier scanner AND every plan gate — it removes itself if it fails the gates for 48h straight. Margin-test it to claim it as yours.">scout·T'+(w.scoutTier || tierFromPrice(c.buy) || "?")+(w.sibGrad ? ' ·grad' : '')+'</span>');
     else if (w.lastPass && Date.now() - w.lastPass > SCOUT_EVICT_MS)
       flags.push('<span class="badge b-warn" title="Hasn\'t passed the scout screen in '+ago(w.lastPass).replace(" ago","")+'. Yours, so it stays — but §5 says consider cutting it.">cold</span>');
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
@@ -2868,8 +3185,9 @@ function renderWatch(){
     if (c.volSide < volFloorFor(c.buy)) flags.push('<span class="badge b-warn" title="Thin side of the book is below the volume floor (price-scaled: '+full(volFloorFor(c.buy))+'/h at this price) — fills will be slow">thin</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
     if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
+    if (isBlk(w.id)) flags.push('<span class="badge b-risk" title="On your blacklist — never funded, never quoted, never scout-admitted. Only you can remove it (🚫 button or the Blacklist box).">blacklisted</span>');
     const pl = provenLoser(w.id, w);
-    if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column)">proven loser — re-test to unbench</span>');
+    if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column). The unbench lasts only while the test is fresh (16h).">proven loser — re-test to unbench</span>');
     /* Tier badge doubles as the manual-override control: click cycles
        auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
     const tv = itemTier(w.id, c);
@@ -2927,7 +3245,10 @@ function renderWatch(){
           ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
           : mv.ready
           ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv.target)+' units.'
-          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button></td>'
+          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button>'
+      + '<button class="sm ghost" data-blk="'+w.id+'" title="'+(isBlk(w.id)
+          ? 'Remove from YOUR blacklist — it becomes eligible for gates, scout and funding again.'
+          : 'Blacklist this item: never scout-admitted, never funded, never quoted, and no automated path (not even a margin test) can clear it. Yours alone to reverse.')+'">'+(isBlk(w.id) ? '🚫✕' : '🚫')+'</button></td>'
       + '<td style="white-space:nowrap">'+testCell+'</td>'
       + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
       + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
@@ -3047,6 +3368,24 @@ function renderTierCompare(){
   } else verdict = "verdict needs timed flips in both tiers (stamped since tier-tagging)";
   $("#tierVerdict").textContent = verdict;
   $("#tierNote").textContent = note;
+
+  /* Discovery scoreboard — does the sibling-expansion engine actually pay? */
+  const seeds = Object.keys(DB.seedAt || {}).length;
+  const sibsW = DB.watch.filter(w => w.sib != null).length;
+  let sibProfit = 0, sibItems = 0;
+  for (const [idStr, b] of Object.entries(DB.sibBorn || {})){
+    const id = +idStr;
+    const p = DB.flips.filter(f => f.itemId === id && f.id > (b.t || 0)).reduce((s, f) => s + flipProfit(f), 0);
+    if (p !== 0) sibItems++;
+    sibProfit += p;
+  }
+  $("#discLine").innerHTML = 'Discovery: <b>' + seeds + '</b> seed' + (seeds === 1 ? '' : 's') + ' active · '
+    + '<b>' + sibsW + '</b> sibling' + (sibsW === 1 ? '' : 's') + ' watched · '
+    + '<b>' + ((DB.sibStats || {}).graduated || 0) + '</b> graduated · '
+    + '<b>' + ((DB.sibStats || {}).washed || 0) + '</b> washed · '
+    + 'sibling-originated profit <b class="' + sign(sibProfit) + '">' + gp(sibProfit) + '</b>'
+    + (sibItems ? ' across ' + sibItems + ' item' + (sibItems === 1 ? '' : 's') : '')
+    + ' <span class="dim">(adjacent-use ring skipped — /mapping has no activity tags, and the rule is skip, don\'t guess)</span>';
 }
 
 /* ═══════════ FLIP LOG ═══════════ */
@@ -3068,7 +3407,7 @@ function renderLog(){
     ["Realized profit", '<span class="'+sign(total)+'">'+gp(total)+'</span>'],
     ["Flips logged", DB.flips.length],
     ["Avg / flip", DB.flips.length ? gp(Math.round(total/DB.flips.length)) : "—"],
-    ['<span title="A touch session = one sit-down at the GE (morning or evening), however many flips it services. Counted from routine checkmarks and logging activity; days flipped before tracking existed count as two.">gp / touch session</span>',
+    ['<span title="A session = one walk-up to the GE, whenever it happens, however many flips it services. Stamped from real activity (2h quiet gap = new session); days flipped before tracking existed count as two.">gp / walk-up</span>',
       sessions ? gp(Math.round(total/sessions)) : "—"],
     ["gp / slot-hour (measured)", (() => { const s = fillStats(null);
         return s && s.gpPerSlotH != null
@@ -3261,7 +3600,7 @@ function renderEquity(){
         return '<span class="pos">' + (b.r * 100).toFixed(1) + '%</span> <span class="v sm dim">' + b.d + '</span>'; })() : '—'],
     ["Worst day", rets.length ? (() => { const w = rets.reduce((a, x) => x.r < a.r ? x : a);
         return '<span class="' + sign(w.r) + '">' + (w.r * 100).toFixed(1) + '%</span> <span class="v sm dim">' + w.d + '</span>'; })() : '—'],
-    ['<span title="One number, straight off the bank interface, once a day — Evening mode asks. Gaps are fine; the chart never invents points you didn\'t enter.">Bank snapshot</span>',
+    ['<span title="One number, straight off the bank interface, once a day — the walk-up list asks. Gaps are fine; the chart never invents points you didn\'t enter.">Bank snapshot</span>',
       sn ? '<span class="pos">' + gp(sn.v) + '</span> <span class="v sm dim">today ✓</span>'
          : (lastSnap ? '<span class="v sm">' + gp(lastSnap.v) + ' <span class="dim">' + lastSnap.d + ' — none today</span></span>'
                      : '<span class="dim v sm">none yet — Evening mode asks</span>')],
@@ -3502,43 +3841,44 @@ function logPreview(){
 }
 
 /* ═══════════ ROUTINE ═══════════ */
+/* One WALK-UP list, generated from live state — it does not know or care how
+   long you were gone. Order = what you physically do at the GE. */
 const CHECKLISTS = {
-  morning: { title: "☀ Morning — 5–10 min, coffee", foot: "Then close the app. Offers fill while you bill hours.", steps: [
-    ["Refresh and glance at the menu", "Hit ↻. The scout has already refreshed the watchlist overnight — check its status line for what it added or evicted, then scan for anything it missed.", "watch"],
-    ["Check the charts before you trust a margin", "Flat-ish is what you want. A wide margin on a plunging chart isn't a flip, it's catching a knife.", "watch"],
-    ["Margin-test anything new", "One unit, instantly, both ways: buy it ~5% over the shown sell price (that fill = your true sell), sell it back ~5% under the shown buy price (that fill = your true buy). The unit loses the spread + tax — expected, it buys you real numbers. Over ~5 min without a fill = cancel and bench. Record both fills in the Tested column.", "watch"],
-    ["Place these buys", "Every planned slot working — the 8th stays free so buying gear or supplies never means cancelling a flip. Idle planned slots are idle capital.", "watch", "plan"],
-    ["Quote your inventory items", "Both legs per market-maker item: sell from the buffer at the ask, replenish at the bid. The plan card has the exact lines — heed any CANCEL-FIRST warning, it stops you trading against your own standing offer.", "watch", "quotes"],
-    ["Mark them placed", "So tonight's sell plan knows what you're holding and the next plan won't double-commit the same gp.", "watch"],
-    ["Note any friction", "One line about anything that was annoying or slow just now — it feeds the Sunday review.", null, "fricin"],
-    ["Close the app", "Nothing more to do until evening. Don't babysit."]
+  walkup: { title: "🚶 Walk-up — whenever you're here", foot: "Then close the app. Offers work unattended; nothing here assumes when you'll be back. (Wednesday game updates still reprice consumables — read patch notes before re-arming.)", steps: [
+    ["Collect fills", "Everything in the collection box, however long it sat."],
+    ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills.", "watch"],
+    ["Relist as sells", "At your tested margin — not a number from a previous visit.", "watch", "sell"],
+    ["Work the sell aging ladder", "Staleness is measured per offer from placement: past 1× the fill horizon reprice to instabuy, past 2× undercut a tick and exit. Capital stuck in a hopeful ask earns zero.", "watch", "ladder"],
+    ["Cancel stale buys", "A bid past the fill horizon is stale by construction — never chase. The NOW bar and position badges name them.", "watch"],
+    ["Margin-test anything new", "One unit, instantly, both ways: buy ~5% over the shown sell (that fill = your true sell), sell it back ~5% under the shown buy (that fill = your true buy). Over ~5 min without a fill = cancel and bench. Record both fills in Tested.", "watch"],
+    ["Quote inventory items", "Both legs per market-maker item — heed any CANCEL-FIRST warning.", "watch", "quotes"],
+    ["Place the plan's buys", "Sized for an unattended sit: sit-safe picks rank up, drifty ones rank down or bench when your gaps run long.", "watch", "plan"],
+    ["Mark them placed", "So the next walk-up knows what's standing and won't double-commit the gp.", "watch"],
+    ["Snapshot the bank", "One number off the bank interface — one dot per day on the equity curve; gaps are fine. Game gp (supplies bought, drops sold) goes in its box first so the dot stays clean.", null, "snap"],
+    ["Note any friction", "One line about anything annoying — it feeds the review.", null, "fricin"]
   ]},
-  evening: { title: "☾ Evening — 5–10 min", foot: "Wednesday note: game updates reprice consumables violently. Hold lighter into update day and read patch notes before re-arming.", steps: [
-    ["Collect fills", "Everything that filled, out of the collection box."],
-    ["Relist these as sells", "At your tested margin — not at the number the tracker showed this morning.", "watch", "sell"],
-    ["Re-arm buys on proven items", "The 4-hour limit window has reset several times since morning.", "watch"],
-    ["Re-quote inventory items", "Same two legs as this morning, at tonight's prices — the buffer walks back toward target every touch.", "watch", "quotes"],
-    ["Cancel anything that never filled", "Never chase a fill. Anything past the fill horizon is flagged cancel — market moved.", "watch"],
-    ["Work the sell aging ladder", "Sells past 1× the fill horizon reprice to the current instabuy; past 2× they undercut a tick and exit. The buttons on each position prefill it — capital stuck in a hopeful ask earns zero.", "watch", "ladder"],
-    ["Advance every position to where it really is", "Buy filled →, listed sell →, sold →, or partial… with the filled quantity. Sold prefills the log — every round trip goes in, including the duds. This is also what times your fills for gp/slot-hour.", "watch"],
-    ["Snapshot your bank", "One number, straight off the bank interface — it becomes a dot on the equity curve, the reality check against what the log claims you've made. Bought supplies or sold drops today? Put those in the Game gp box (Flip Log tab) first so the dot stays clean. Gaps are fine; the chart never invents points.", null, "snap"],
-    ["Note any friction", "One line about anything that was annoying or slow tonight — it feeds the Sunday review.", null, "fricin"]
-  ]},
-  weekly: { title: "📓 Weekly review — 5 min, Sunday", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
+  weekly: { title: "📓 Review — every few days, whenever you open it", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log#byItemPanel"],
     ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log#byItemPanel"],
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
-    ["Compute gp per minute of attention", "Compare against just playing content you enjoy.", "log#eqPanel"],
+    ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
-    ["Read the week's friction notes", "Everything that annoyed you this week, one place — copy as markdown for the Sunday tooling session.", null, "friction"],
+    ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
   ]}
 };
 
+/* Review cadence: unlocked at 3 days of data, re-surfaced whenever the last
+   look is 3+ days old — faster than weekly, still not a schedule. */
+const REVIEW_MIN_DAYS = 3, REVIEW_GAP_MS = 3 * 86400e3;
+
+/* Date roll keeps the review checkmarks honest; walk-up checkmarks reset per
+   VISIT (markTouch clears them when a new session starts) — no daily streak,
+   no missed-touch concept. */
 function rollChecklistDate(){
   if (DB.checks.date !== today()){
-    DB.checks = { date: today(), morning:[], evening:[], weekly:[] };
+    DB.checks = { date: today(), walkup: DB.checks.walkup || [], weekly: [] };
     save();
     if (S.tab === "routine") renderRoutine();
   }
@@ -3546,9 +3886,13 @@ function rollChecklistDate(){
 
 function renderRoutine(){
   rollChecklistDate();
+  if (!CHECKLISTS[S.mode]) S.mode = "walkup";   // legacy morning/evening values
   const m = S.mode, list = CHECKLISTS[m], done = DB.checks[m] || [];
+  const dataDays = new Set(DB.flips.map(f => String(f.date||"").slice(0,10)).filter(Boolean)).size;
   $("#ckDate").textContent = new Date().toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"})
-    + " · progress resets daily";
+    + (m === "walkup" ? " · checkmarks reset each walk-up"
+       : dataDays < REVIEW_MIN_DAYS ? " · collecting data — " + dataDays + "/" + REVIEW_MIN_DAYS + " days logged before the verdicts mean much"
+       : DB.lastReviewAt ? " · last review " + ago(DB.lastReviewAt) : "");
   $("#ckTitle").textContent = list.title;
   $("#ckFoot").textContent = list.foot;
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
@@ -3640,8 +3984,8 @@ function renderRoutine(){
       + (s[2] ? ' <a href="#" data-goto="'+s[2]+'">→ open</a>' : '') + '</span>' + inline + '</span></li>';
   }).join("");
   $$("#tab-routine .row button").forEach(b => b.classList.toggle("primary",
-    (b.id === "mMorning" && m === "morning") || (b.id === "mEvening" && m === "evening") || (b.id === "mWeekly" && m === "weekly")));
-  $("#modeExtras").innerHTML = (m === "morning" || m === "evening")
+    (b.id === "mWalk" && m === "walkup") || (b.id === "mWeekly" && m === "weekly")));
+  $("#modeExtras").innerHTML = (m === "walkup")
     ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on the Flip Log tab — keep it honest rather than flattering.">Min / touch'
       + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
     : "";
@@ -3841,7 +4185,7 @@ function makeAC(sel, onPick, placeholderKeep){
    never has to be guessed. Priority: capital stuck in a wrong state beats the
    checklist; the checklist beats hygiene; hygiene beats nothing — and nothing
    is a legitimate state this bar says out loud. */
-function nextMove(h = new Date().getHours(), dow = new Date().getDay()){
+function nextMove(){
   if (S.pendingFill)
     return { msg: "Finish logging the " + itemName(S.pendingFill.itemId) + " round trip — the form is prefilled, press + Log flip.", tab: "log" };
   const stale = DB.positions.filter(staleBuyInfo);
@@ -3861,12 +4205,16 @@ function nextMove(h = new Date().getHours(), dow = new Date().getDay()){
     return { msg: "List the sell for " + unlisted.map(p => full(p.qty) + " " + itemName(p.itemId, p.name)).join(", ")
            + " — bought items earn nothing sitting in the bank.", tab: "watch" };
   rollChecklistDate();
-  const m = dow === 0 ? "weekly" : (h < 15 ? "morning" : "evening");
-  const list = CHECKLISTS[m], done = DB.checks[m] || [];
+  /* No clock, no calendar: the walk-up list is the suggestion whenever you
+     are here. The review surfaces on data volume and time-since-last-look,
+     not on Sundays. */
+  const list = CHECKLISTS.walkup, done = DB.checks.walkup || [];
   const idx = list.steps.findIndex((s, i) => !done.includes(i));
   if (idx >= 0)
-    return { msg: (m === "weekly" ? "Sunday review" : m === "morning" ? "Morning touch" : "Evening touch")
-           + " · step " + (idx + 1) + " of " + list.steps.length + ": " + list.steps[idx][0] + ".", tab: "routine", mode: m };
+    return { msg: "Walk-up · step " + (idx + 1) + " of " + list.steps.length + ": " + list.steps[idx][0] + ".", tab: "routine", mode: "walkup" };
+  const dataDays = new Set(DB.flips.map(f => String(f.date||"").slice(0,10)).filter(Boolean)).size;
+  if (dataDays >= REVIEW_MIN_DAYS && Date.now() - (DB.lastReviewAt || 0) > REVIEW_GAP_MS)
+    return { msg: "Review time — " + dataDays + " days of data" + (DB.lastReviewAt ? ", last look " + ago(DB.lastReviewAt) : ", never reviewed") + ". Five minutes.", tab: "routine", mode: "weekly" };
   const unex = flipsSince(DB.lastExportAt || 0);
   if (unex >= 5 || (DB.flips.length && Date.now() - (DB.lastExportAt || 0) > 7 * 86400e3))
     return { msg: "Export the log — " + (unex || DB.flips.length) + " flip" + (unex === 1 ? "" : "s")
@@ -4079,6 +4427,24 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const ign = t.closest("[data-ignore]");
+  if (ign){
+    const id = +ign.dataset.ignore;
+    DB.planDemoted = DB.planDemoted || [];
+    if (!DB.planDemoted.includes(id)) DB.planDemoted.push(id);
+    save(); renderWatch();
+    toast(itemName(id) + " ignored for today — benched, resets with tomorrow's plan.",
+          () => { DB.planDemoted = DB.planDemoted.filter(x => x !== id); save(); renderWatch(); });
+    return;
+  }
+  const blk = t.closest("[data-blk]");
+  if (blk){
+    const id = +blk.dataset.blk;
+    if (isBlk(id)) blkRemove(id); else blkAdd(id);
+    return;
+  }
+  const bd = t.closest("[data-blkdel]");
+  if (bd){ blkRemove(+bd.dataset.blkdel); return; }
   const tov = t.closest("[data-tierov]");
   if (tov){
     const id = +tov.dataset.tierov, w = DB.watch.find(x => x.id === id);
@@ -4187,6 +4553,7 @@ document.addEventListener("click", e => {
   }
   const step = t.closest("[data-step]");
   if (step && !t.closest("[data-goto], input, label")){
+    if (S.mode === "weekly") DB.lastReviewAt = Date.now();   // any review interaction counts as a look
     const i = +step.dataset.step, arr = DB.checks[S.mode];
     const at = arr.indexOf(i);
     if (at >= 0) arr.splice(at,1); else { arr.push(i); markTouch(S.mode); }
@@ -4328,7 +4695,8 @@ function closePosition(pid){
     qm: Number.isFinite(p.qm) ? p.qm : null,
     buyH: Number.isFinite(p.buyH) ? p.buyH : null,
     sellH: posStage(p) === "selling" && p.stageAt
-      ? Math.round((Date.now() - p.stageAt) / 36e3) / 100 : null
+      ? Math.round((Date.now() - p.stageAt) / 36e3) / 100 : null,
+    lad: p.lad ? 1 : null
   };
   const idx = DB.positions.findIndex(x => x.id === pid);
   const [gone] = DB.positions.splice(idx, 1);
@@ -4345,6 +4713,7 @@ function addWatch(id){
 }
 
 const acWatch  = makeAC("#acWatch",  it => addWatch(it.i));
+const acBlk    = makeAC("#acBlk",    it => blkAdd(it.i));
 const acLog    = makeAC("#acLog", () => {
   const q = $("#lQty"); q.focus(); q.select();
   prefillFresh(true).then(() => { q.focus(); q.select(); });
@@ -4429,6 +4798,7 @@ $("#lAdd").onclick = () => {
     if (S.pendingFill.buyH  != null) rec.bh = S.pendingFill.buyH;
     if (S.pendingFill.sellH != null) rec.sh = S.pendingFill.sellH;
     if (S.pendingFill.qm    != null) rec.qm = S.pendingFill.qm;
+    if (S.pendingFill.lad) rec.lad = 1;   // ladder-rescued trip — reliability counts it
   }
   S.pendingFill = null;
   DB.flips.push(rec);
@@ -4533,6 +4903,7 @@ function validateImport(d){
     if (num(f.sh) != null && num(f.sh) >= 0) o.sh = num(f.sh);
     if (num(f.qm) != null) o.qm = num(f.qm);
     if ([0,1,2].includes(num(f.tier))) o.tier = num(f.tier);   // tier stamped at log time
+    if (f.lad) o.lad = 1;                                      // ladder-rescued trip
     return o;
   }).filter(Boolean);
   const positions = (Array.isArray(d.positions) ? d.positions : []).map(p => {
@@ -4545,6 +4916,7 @@ function validateImport(d){
     if (num(p.stageAt) > 0) o.stageAt = num(p.stageAt);
     if (num(p.buyH) != null && num(p.buyH) >= 0) o.buyH = num(p.buyH);
     if (num(p.qm) != null) o.qm = num(p.qm);
+    if (p.lad) o.lad = 1;
     return o;
   }).filter(Boolean);
   const watch = (Array.isArray(d.watch) ? d.watch : []).map(w => {
@@ -4559,11 +4931,15 @@ function validateImport(d){
     if ([0,1,2].includes(num(w.tierOv))) o.tierOv = num(w.tierOv);   // manual tier override
     if ([1,2].includes(num(w.scoutTier))) o.scoutTier = num(w.scoutTier);   // admitting scanner's stamp
     if (w.t2Grad) o.t2Grad = 1;                                      // tier-2 graduation toast fired
+    if (num(w.sib) > 0){ o.sib = num(w.sib); o.sibAt = num(w.sibAt) > 0 ? num(w.sibAt) : Date.now();
+      if ([0,1].includes(num(w.sibRing))) o.sibRing = num(w.sibRing);
+      if (num(w.sibClose) != null) o.sibClose = num(w.sibClose); }
+    if (w.sibGrad) o.sibGrad = 1;                                    // sibling graduated — provenance
     return o;
   }).filter(Boolean);
   const targets = (Array.isArray(d.targets) ? d.targets : []).filter(t => typeof t === "string" && t.trim()).map(String);
-  const checks = (d.checks && typeof d.checks === "object") ? d.checks : { date:"", morning:[], evening:[], weekly:[] };
-  for (const k of ["morning","evening","weekly"]) if (!Array.isArray(checks[k])) checks[k] = [];
+  const checks = (d.checks && typeof d.checks === "object") ? d.checks : { date:"", walkup:[], weekly:[] };
+  for (const k of ["walkup","weekly"]) if (!Array.isArray(checks[k])) checks[k] = [];
   const holds = (Array.isArray(d.holds) ? d.holds : []).map(h => {
     const itemId = num(h && h.itemId);
     if (!(itemId > 0)){ rejected++; return null; }
@@ -4606,11 +4982,13 @@ function validateImport(d){
   const tlSeen = new Set();
   const touchLog = (Array.isArray(d.touchLog) ? d.touchLog : []).map(t => {
     const dd = String((t && t.d) || "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dd) || (t.m !== "morning" && t.m !== "evening")) return null;
-    const k = dd + t.m;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dd) || (t.m !== "morning" && t.m !== "evening" && t.m !== "walkup")) return null;
+    const k = dd + t.m + (t.m === "walkup" ? String(num(t.t) || "") : "");
     if (tlSeen.has(k)) return null;
     tlSeen.add(k);
-    return { d: dd, m: t.m };
+    const o = { d: dd, m: t.m };
+    if (t.m === "walkup" && num(t.t) > 0) o.t = num(t.t);
+    return o;
   }).filter(Boolean);
   return { flips, positions, watch, targets, rejected,
     db: { flips, positions, watch, targets, checks, holds, scoutLog, bankSnaps, gameLedger, touchLog, invLots, frictionLog,
@@ -4649,12 +5027,21 @@ function validateImport(d){
           t1ResetV1: d.t1ResetV1 ? 1 : 0,
           scoutT1Cap: Math.min(20, Math.max(0, num(d.scoutT1Cap) != null ? num(d.scoutT1Cap) : 8)),
           scoutT2Cap: Math.min(20, Math.max(0, num(d.scoutT2Cap) != null ? num(d.scoutT2Cap) : 6)),
+          blacklist: [...new Set((Array.isArray(d.blacklist) ? d.blacklist : []).map(x => num(x)).filter(x => x > 0))],
+          blkSeed1: d.blkSeed1 ? 1 : 0,
+          lastReviewAt: Math.max(0, num(d.lastReviewAt) || 0),
+          minExpectGp: Math.min(1e8, Math.max(0, num(d.minExpectGp) || 0)),
+          seedTrips: Math.min(10, Math.max(1, num(d.seedTrips) != null ? num(d.seedTrips) : 3)),
+          sibPerSeed: Math.min(30, Math.max(0, num(d.sibPerSeed) != null ? num(d.sibPerSeed) : 10)),
+          sibTotal: Math.min(60, Math.max(0, num(d.sibTotal) != null ? num(d.sibTotal) : 20)),
+          seedAt: (d.seedAt && typeof d.seedAt === "object" && !Array.isArray(d.seedAt)) ? d.seedAt : {},
+          sibBorn: (d.sibBorn && typeof d.sibBorn === "object" && !Array.isArray(d.sibBorn)) ? d.sibBorn : {},
+          sibStats: (d.sibStats && typeof d.sibStats === "object") ? { washed: Math.max(0, num(d.sibStats.washed) || 0), graduated: Math.max(0, num(d.sibStats.graduated) || 0) } : { washed: 0, graduated: 0 },
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 
-$("#mMorning").onclick = () => { S.mode = "morning"; renderRoutine(); };
-$("#mEvening").onclick = () => { S.mode = "evening"; renderRoutine(); };
-$("#mWeekly").onclick  = () => { S.mode = "weekly";  renderRoutine(); };
+$("#mWalk").onclick   = () => { S.mode = "walkup"; renderRoutine(); };
+$("#mWeekly").onclick = () => { S.mode = "weekly"; renderRoutine(); };
 $("#ckReset").onclick  = () => { DB.checks[S.mode] = []; save(); renderRoutine(); };
 
 $("#shBank").addEventListener("change", e => {
@@ -4670,7 +5057,9 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["szTick","tickFloor",1,100],["szQuote","quoteTicks",1,20],["szMkX","markoutX",0.1,5],
                                  ["szRes","reserve",0,2e9],["szShadow","shadowReserve",0,10e9],
                                  ["szT1","t1Budget",0,2e9],["szT2","t2Budget",0,2e9],["szPart","partCapPct",1,100],
-                                 ["scT1Cap","scoutT1Cap",0,20],["scT2Cap","scoutT2Cap",0,20]]){
+                                 ["scT1Cap","scoutT1Cap",0,20],["scT2Cap","scoutT2Cap",0,20],
+                                 ["scSeedN","seedTrips",1,10],["scSibSeed","sibPerSeed",0,30],["scSibTot","sibTotal",0,60],
+                                 ["szMinExp","minExpectGp",0,1e8]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -4696,7 +5085,7 @@ $("#planCopy").onclick = async () => {
   if (S.planMode === "sell"){
     const lines = sellLines();
     if (!lines.length){ toast("No open positions to copy."); return; }
-    txt = ["Tonight's sells:", ""].concat(lines.map(sellLineText)).join("\n");
+    txt = ["Sells this walk-up:", ""].concat(lines.map(sellLineText)).join("\n");
   } else {
     const { picks, t1Budget, t2Budget, t1Spent, t2Spent, shadowReserve } = buildPlan();
     if (!picks.length){ toast("Nothing to copy — no picks today."); return; }
@@ -4742,8 +5131,14 @@ $("#szT2").value = DB.t2Budget != null ? DB.t2Budget : 50000000;
 $("#szPart").value = Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10;
 $("#scT1Cap").value = DB.scoutT1Cap != null ? DB.scoutT1Cap : 8;
 $("#scT2Cap").value = DB.scoutT2Cap != null ? DB.scoutT2Cap : 6;
-S.mode = new Date().getHours() < 15 ? "morning" : "evening";
-S.planMode = S.mode === "evening" ? "sell" : "buy";
+$("#scSeedN").value = DB.seedTrips != null ? DB.seedTrips : 3;
+$("#scSibSeed").value = DB.sibPerSeed != null ? DB.sibPerSeed : 10;
+$("#scSibTot").value = DB.sibTotal != null ? DB.sibTotal : 20;
+$("#szMinExp").value = DB.minExpectGp || 0;
+/* Walk-up cadence: no schedule is assumed — the app opens on the same move
+   list whenever you show up. */
+S.mode = "walkup";
+S.planMode = "buy";
 
 /* One-time after the tranche update: ask for the real bank figure — tier
    budgets and the shadow reserve size against it, and it is never assumed.
