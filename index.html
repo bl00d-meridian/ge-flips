@@ -888,8 +888,12 @@ let DB = {
   fillHorizonH: 4,    // hours a buy leg is allowed to take — sizing and the slow-fill gates use this
   reserve: 3_000_000, // gp held back for incidentals, never allocated
   shadowReserve: 300_000_000, // named capital for the Shadow purchase — outside ALL allocator math, recallable by hand
-  t1Budget: 100_000_000,      // tier-1 (400–5k consumables) allocation ceiling, carved from working capital
-  t2Budget: 50_000_000,       // tier-2 (5k–100k mid-tier) allocation ceiling
+  t1Budget: 60_000_000,       // tier-1 (400–5k consumables) allocation ceiling, carved from working capital
+  t2Budget: 30_000_000,       // tier-2 (5k–100k mid-tier) allocation ceiling
+  sleeveBudget: 60_000_000,   // THESIS SLEEVE — catalyst position trades. Carved from working capital,
+                              // disjoint from the tier pools and the flip allocator; governs NEW entries only
+                              // (migrated legacy holds are already funded and never count against it)
+  sleeveMaxPos: 3,            // max concurrent NEW sleeve positions (legacy migrations excluded)
   partCapPct: 10,             // participation cap: max share of 1h unit volume any plan line may take
   minExpectGp: 0,             // worth-a-slot floor in gp/cycle; 0 = auto (0.1% of the tier pools)
   blacklist: [],      // item ids the user has banned — no automated path may admit, fund, or clear them
@@ -968,6 +972,21 @@ function load(){
        recurring margin≈tax bleeder that kept walking back through the
        test-unbench hole. */
     if (!DB.blkSeed1){ if (!DB.blacklist.includes(253)) DB.blacklist.push(253); DB.blkSeed1 = 1; }
+    /* One-time (recalibration, user ruling Aug 10 2026): T1 100m→60m,
+       T2 50m→30m, and a new 60m THESIS SLEEVE budget carved from working
+       capital — disjoint from the tier pools and the allocator. The shadow
+       reserve is untouched. Ruled, so applied; the ruling itself goes in the
+       decision log like any other. */
+    if (!DB.recalV1){
+      DB.t1Budget = 60_000_000;
+      DB.t2Budget = 30_000_000;
+      if (!(DB.sleeveBudget > 0)) DB.sleeveBudget = 60_000_000;
+      if (!(DB.sleeveMaxPos > 0)) DB.sleeveMaxPos = 3;
+      DB.decisionLog.push({ t: Date.now(), d: today(), kind: "settings",
+        subject: "tier budgets + thesis sleeve", action: "recalibrate (T1 100m→60m, T2 50m→30m, sleeve +60m)",
+        reason: "resized to evidence — funnel showed flipping capacity below prior budgets; surplus reallocated to thesis sleeve" });
+      DB.recalV1 = 1;
+    }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
@@ -2638,8 +2657,8 @@ function buildPlan(){
   /* Deployable = free WORKING capital minus the incidentals reserve. The
      shadow reserve never entered `st`, so it cannot be invaded from here. */
   const deployable = Math.max(0, avail - (DB.reserve || 0));
-  const t1Budget = Math.max(0, DB.t1Budget != null ? DB.t1Budget : 100e6);
-  const t2Budget = Math.max(0, DB.t2Budget != null ? DB.t2Budget : 50e6);
+  const t1Budget = Math.max(0, DB.t1Budget != null ? DB.t1Budget : 60e6);
+  const t2Budget = Math.max(0, DB.t2Budget != null ? DB.t2Budget : 30e6);
   /* Per-tier pools: each capped by its budget, jointly capped by deployable.
      T1 (the proven core) claims deployable first; T2 ramps in what's left. */
   const pools = { 1: Math.min(t1Budget, deployable) };
@@ -6725,8 +6744,11 @@ function validateImport(d){
           capT2v1: d.capT2v1 ? 1 : 0,
           bankAskV3: d.bankAskV3 ? 1 : 0,
           shadowReserve: Math.max(0, num(d.shadowReserve) != null ? num(d.shadowReserve) : 300000000),
-          t1Budget: Math.max(0, num(d.t1Budget) != null ? num(d.t1Budget) : 100000000),
-          t2Budget: Math.max(0, num(d.t2Budget) != null ? num(d.t2Budget) : 50000000),
+          t1Budget: Math.max(0, num(d.t1Budget) != null ? num(d.t1Budget) : 60000000),
+          t2Budget: Math.max(0, num(d.t2Budget) != null ? num(d.t2Budget) : 30000000),
+          sleeveBudget: Math.max(0, num(d.sleeveBudget) != null ? num(d.sleeveBudget) : 60000000),
+          sleeveMaxPos: Math.min(10, Math.max(1, num(d.sleeveMaxPos) != null ? num(d.sleeveMaxPos) : 3)),
+          recalV1: d.recalV1 ? 1 : 0,
           partCapPct: Math.min(100, Math.max(1, num(d.partCapPct) != null ? num(d.partCapPct) : 10)),
           fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
           tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
@@ -6908,8 +6930,8 @@ $("#szMinPx").addEventListener("change", e => {
 });
 $("#szRes").value = DB.reserve != null ? DB.reserve : 3000000;
 $("#szShadow").value = DB.shadowReserve != null ? DB.shadowReserve : 300000000;
-$("#szT1").value = DB.t1Budget != null ? DB.t1Budget : 100000000;
-$("#szT2").value = DB.t2Budget != null ? DB.t2Budget : 50000000;
+$("#szT1").value = DB.t1Budget != null ? DB.t1Budget : 60000000;
+$("#szT2").value = DB.t2Budget != null ? DB.t2Budget : 30000000;
 $("#szPart").value = Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10;
 $("#scT1Cap").value = DB.scoutT1Cap != null ? DB.scoutT1Cap : 8;
 $("#scT2Cap").value = DB.scoutT2Cap != null ? DB.scoutT2Cap : 6;
