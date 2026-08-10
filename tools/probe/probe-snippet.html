@@ -328,6 +328,63 @@
     ok("healthy 5m window resets streak and reopens gate", !cV.failed && (S.vol5Low.get(9001) || 0) === 0
        && cV.volGate === 50000, JSON.stringify({f: cV.failed, n: S.vol5Low.get(9001), v: cV.volGate}));
 
+    // ═══ PROMOTE FLOW (friction Aug 10 2026: fund first, reason-aware picker) ═══
+    DB.flips = []; DB.positions = []; DB.invLots = [];
+    DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
+    DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
+    DB.clusterCands = []; DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
+    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    S.vol5Low = new Map(); S.promoteFor = null;
+    const plP = buildPlan();
+    const nuP = plP.nextUp.find(n => n.id === 9001 || n.id === 9002);
+    ok("nextUp carries machine-readable whyKey", !!nuP && nuP.whyKey === "cluster" && nuP.whyClusterId === 1,
+       JSON.stringify(plP.nextUp.map(n => n.id + ":" + n.whyKey)));
+
+    // promoting the cluster-blocked member would evict its partner → picker, priority reverted
+    promoteFromNextUp(nuP.id);
+    ok("evicting promote opens the picker instead of silently swapping",
+       S.promoteFor === nuP.id && DB.planPriority.length === 0,
+       JSON.stringify({prom: S.promoteFor, prio: DB.planPriority}));
+    S.tab = "watch"; renderWatch();
+    const pkHTML = document.querySelector("#planList").innerHTML;
+    const partnerId = nuP.id === 9001 ? 9002 : 9001;
+    ok("picker offers only demotions that free the cluster cap",
+       new RegExp('data-demote="' + partnerId + '"').test(pkHTML)
+       && !/data-demote="9003"/.test(pkHTML) && /free its exposure cap/.test(pkHTML),
+       pkHTML.slice(Math.max(0, pkHTML.indexOf('class="picker"')), pkHTML.indexOf('class="picker"') + 400));
+
+    // end-to-end: pressing the offered demotion funds the promoted member
+    document.querySelector('#planList [data-demote="' + partnerId + '"]').click();
+    const plQ = buildPlan();
+    ok("demote press funds the promoted member",
+       S.promoteFor === null && plQ.picks.some(p => p.id === nuP.id) && !plQ.picks.some(p => p.id === partnerId),
+       JSON.stringify({picks: plQ.picks.map(p => p.id), prom: S.promoteFor}));
+
+    // honest dead-end: T2 item behind an exhausted T2 budget — no demotion helps and the picker says so
+    mkItem(9020, "Probe theta");
+    S.latest[9020] = { high: 8800, low: 8000, highTime: nowS-60, lowTime: nowS-120 };
+    S.hour[9020]   = { avgHighPrice: 8800, avgLowPrice: 8000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.planPriority = []; DB.planDemoted = [];
+    DB.watch = [{id:9003,qty:null},{id:9020,qty:null}];
+    DB.clusters = []; DB.t2Budget = 0;
+    const plR = buildPlan();
+    const nuR = plR.nextUp.find(n => n.id === 9020);
+    ok("T2 item behind zero T2 budget lands nextUp with whyKey budget", !!nuR && nuR.whyKey === "budget",
+       JSON.stringify({next: plR.nextUp.map(n => n.id + ":" + n.whyKey), bench: plR.bench.map(b => b.name + ": " + b.failed)}));
+    promoteFromNextUp(9020);
+    S.tab = "watch"; renderWatch();
+    const pkHTML2 = document.querySelector("#planList").innerHTML;
+    const pk2 = pkHTML2.slice(Math.max(0, pkHTML2.indexOf('class="picker"')));
+    ok("picker states no demotion frees the exhausted tier budget",
+       S.promoteFor === 9020 && /budget is exhausted and no funded pick draws on it/.test(pk2)
+       && !/data-demote=/.test(pk2), pk2.slice(0, 400));
+    S.promoteFor = null; DB.t2Budget = 50e6;
+    // restore cluster state for the import round-trip below
+    DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
+    DB.clusterCands = [{ id: 71, sig: cluSig([9001,9002,9003]), members: [9001,9002,9003], status: "suspected",
+                         src: "comove", story: "co-moves — reason unknown", evidence: { corr: 0.7, days: 25 }, at: Date.now() }];
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,

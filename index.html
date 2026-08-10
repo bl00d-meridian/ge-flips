@@ -2605,6 +2605,11 @@ function buildPlan(){
       }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
         wouldExpect: Math.max(0, cap) * x.eMargin,
+        /* Machine-readable unfunded reason: the promote flow filters demotion
+           candidates to the ones that actually free this binding resource. */
+        whyKey: blockedCluster ? "cluster" : blockedT2 ? "t2cap" : blockedSeed ? "seed"
+              : full_ ? "full" : tooSmall ? "toosmall" : "budget",
+        whyClusterId: blockedCluster ? clBind.id : null,
         why: blockedCluster ? "cluster cap: " + clBind.name + " at limit — "
              + gp(clusterCapGp(clBind) - (clRoom.get(clBind.id) || 0)) + " of the " + gp(clusterCapGp(clBind))
              + " cap (" + clusterCapPctOf(clBind) + "% of working capital) already committed across its members"
@@ -2678,6 +2683,35 @@ function buildPlan(){
            reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
            t1Budget, t2Budget, t1Spent, t2Spent, t1Pool: pool0[1], t2Pool: pool0[2],
            shadowReserve: Math.min(DB.shadowReserve || 0, stack()) };
+}
+
+/* Promote (friction, Aug 10 2026): with room in the plan, promoting should
+   never demand a sacrifice. Try funding first — head of the priority queue,
+   rebuild, done if it funds (the allocator may re-rank on its own rules).
+   Only a genuine resource conflict opens the picker, and the picker then
+   offers only demotions that actually free the binding resource. */
+function promoteFromNextUp(id){
+  ensurePlanDate();
+  const before = buildPlan();
+  const beforeIds = new Set(before.picks.map(p => p.id));
+  const prevPrio = DB.planPriority.slice();
+  DB.planPriority = [id].concat(DB.planPriority.filter(x => x !== id));
+  const after = buildPlan();
+  const funded = after.picks.some(p => p.id === id);
+  const dropped = [...beforeIds].filter(x => x !== id && !after.picks.some(p => p.id === x));
+  if (funded && !dropped.length){
+    S.promoteFor = null;
+    save(); renderWatch();
+    toast(itemName(id) + " promoted and funded — no demotion needed (sizes re-clamp within the tier pools).",
+          () => { DB.planPriority = prevPrio; save(); renderWatch(); });
+    return;
+  }
+  /* It can't fund without evicting someone (or can't fund at all). That
+     sacrifice is the user's call, never a side effect — revert the priority
+     (the demote path re-applies it) and open the reason-aware picker. */
+  DB.planPriority = prevPrio;
+  S.promoteFor = id;
+  renderPlan();
 }
 
 function whyTag(x){
@@ -3244,12 +3278,42 @@ function renderPlan(){
       + 'These are substitutes for failed margin-tests or dead offers, not additional buys — total deployed never exceeds the stack.</div>'
       + nextUp.map(x => {
           n++;
-          const picker = S.promoteFor === x.id
-            ? '<div class="picker"><div class="h">Promote ' + esc(x.name) + ' — which funded pick gives up its capital?</div>'
-              + (picks.length ? picks.map(p => '<button class="sm" data-demote="'+p.id+'" data-prom="'+x.id+'">demote '+esc(p.name)+'</button>').join("")
-                              : '<span class="dim">Nothing is funded to demote.</span>')
-              + ' <button class="sm ghost" data-cancelprom="1">cancel</button></div>'
-            : '';
+          /* Reason-aware picker: only demotions that free the binding resource
+             are offered, and the binding resource is named. A demotion that
+             can't help is stated as such, not offered as a fake remedy. */
+          let picker = '';
+          if (S.promoteFor === x.id){
+            let cands = picks, blame = "plan is full — any funded pick can give up its slot";
+            if (x.whyKey === "toosmall"){
+              cands = []; blame = "no demotion can fix this: expected gp/cycle is under your worth-a-slot floor even at full size";
+            } else if (x.whyKey === "cluster"){
+              cands = picks.filter(p => clustersFor(p.id).some(cl => cl.id === x.whyClusterId));
+              const cl = (DB.clusters || []).find(c => c.id === x.whyClusterId);
+              blame = cands.length
+                ? "only picks inside " + (cl ? cl.name : "the cluster") + " free its exposure cap"
+                : "the " + (cl ? cl.name : "cluster") + " cap is held by open positions or inventory — no funded pick frees it";
+            } else if (x.whyKey === "budget"){
+              cands = picks.filter(p => p.tier && x.tier && p.tier.t === x.tier.t);
+              blame = cands.length
+                ? "only tier-" + (x.tier ? x.tier.t : "?") + " picks free tier-" + (x.tier ? x.tier.t : "?") + " budget (the pools never mix)"
+                : "tier-" + (x.tier ? x.tier.t : "?") + " budget is exhausted and no funded pick draws on it — raise the budget or wait";
+            } else if (x.whyKey === "t2cap"){
+              cands = picks.filter(p => p.tier && p.tier.t === 2);
+              blame = cands.length
+                ? "only funded T2 picks reduce the T2 concurrency count"
+                : "the T2 concurrency cap is held by open positions — demotion can't free it";
+            } else if (x.whyKey === "seed"){
+              cands = picks.filter(p => p.caution && !p.cautionProven && x.caution && p.caution.key === x.caution.key);
+              blame = cands.length
+                ? "only the pick holding the " + (x.caution ? x.caution.label : "caution") + " slot frees it"
+                : "the " + (x.caution ? x.caution.label : "caution") + " slot is held elsewhere — nothing funded to demote";
+            }
+            picker = '<div class="picker"><div class="h">Promote ' + esc(x.name) + ' — it didn\'t fund on its own ('
+              + esc(x.why) + '). ' + esc(blame) + '.</div>'
+              + (cands.length ? cands.map(p => '<button class="sm" data-demote="'+p.id+'" data-prom="'+x.id+'">demote '+esc(p.name)+'</button>').join("")
+                              : '')
+              + ' <button class="sm ghost" data-cancelprom="1">cancel</button></div>';
+          }
           return '<li class="next"><div class="body"><b>' + n + '. BUY</b> <span class="num">' + full(x.wouldQty) + '</span> '
             + '<span title="'+nameTitle(x.name)+'">' + esc(x.name) + '</span>' + (x.tier ? tierBadge(x.tier) : '')
             + ' at <span class="num">' + full(x.c.buy) + '</span> each '
@@ -5440,7 +5504,7 @@ document.addEventListener("click", e => {
   if (ll){ logFromWatch(+ll.dataset.logline, +ll.dataset.q, +ll.dataset.b); return; }
 
   const prom = t.closest("[data-promote]");
-  if (prom){ S.promoteFor = +prom.dataset.promote; renderPlan(); return; }
+  if (prom){ promoteFromNextUp(+prom.dataset.promote); return; }
   const cancelProm = t.closest("[data-cancelprom]");
   if (cancelProm){ S.promoteFor = null; renderPlan(); return; }
   const dem = t.closest("[data-demote]");
