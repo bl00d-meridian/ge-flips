@@ -46,7 +46,11 @@ bash tools/probe/run.sh   # exit 0 = PROBE-PASS
 ```
 
 Run the suite after any nontrivial change to `index.html`, and extend
-`tools/probe/probe-snippet.html` alongside new features.
+`tools/probe/probe-snippet.html` alongside new features. Ruled requirements live in
+[REQUIREMENTS.md](REQUIREMENTS.md) with stable IDs; probe assertions carry `[R#]` tags
+and the report's `===REQS===` section cross-references them — when adding a gated
+feature, add its requirement row and a tagged assertion together, never one without
+the other.
 
 ## Repo hygiene
 
