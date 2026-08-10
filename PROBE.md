@@ -178,6 +178,12 @@ Things the headless suite can't see — walk these by hand when they change:
   rules against BRIEFING.md's run procedure and confirm neither path carries a rule the
   other lacks — a guard living in only one path (the caught drift: the do-not-commit
   guard existed only in the skill) is the failure mode.
+- **flags-pending.json download flow.** The probe asserts the export's content
+  (`analystFlagsPending()`) and that the tape-question reminder line carries the
+  export button, but not the actual browser download. When touched: press
+  **⭳ flags for analyst** on a live tape-question reminder, confirm the file downloads
+  as `flags-pending.json`, and that saving it into `briefings/` gets it read (by name)
+  on the next `/briefing` run.
 
 ## Kit inventory
 

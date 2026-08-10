@@ -574,6 +574,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <span style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
           <label class="f" title="Pump fingerprint window: a promotion warning and an accumulation-anomaly flag on the same item inside this many days escalate to SUSPECTED PUMP.">Pump window (d)<input type="number" id="pumpWin" min="1" max="60" style="width:56px"></label>
           <label class="f" title="Thin-book floor: a promoted item whose daily gp flow sits below this is the structural pump vehicle regardless of anomaly timing — same escalation.">Thin-book floor (gp/day)<input type="number" id="pumpThin" step="1000000" min="0" style="width:120px"></label>
+          <label class="f" title="Briefing cadence: while any calendar catalyst window is live or starts within this many days, the analyst-staleness reminder tightens from weekly to the tightened threshold. Reverts to weekly on its own when no window qualifies.">Window lookahead (d)<input type="number" id="catTight" min="1" max="60" style="width:56px"></label>
+          <label class="f" title="Tightened analyst-staleness threshold (days) while a catalyst window qualifies. The weekly 7d threshold applies otherwise. A new tape flag overrides both — it elevates the reminder immediately.">Tight stale (d)<input type="number" id="briefTight" min="1" max="7" style="width:56px"></label>
           <span class="note" style="max-width:520px">SUSPECTED PUMP benches sleeve candidacy, applies a seed-style caution cap in the plan (half-size, one slot, never wins-graduated while flagged), and states its reason on every surface. The posture is absence. Dismissing the warning record lifts it.</span>
         </span>
         Typed records from the analyst briefing — each with its thesis, sources, confidence tier, and expiry.
@@ -1028,13 +1030,15 @@ let DB = {
   sleeveExits: [],    // realized sleeve exits [{t,d,posId,itemId,name,qty,price,basis,net,rung}] — never mixed into DB.flips or any flipping stat
   sleeveRungPct: 5,   // a price rung arms when the exit-guidance price is within this % of its trigger
   catalysts: [],      // catalyst calendar [{id,name,windowStart,windowEnd,items:[ids],clusters:[ids],notes,src,createdAt}] — the user's (or ratified briefings')
-  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v}] — "reason unknown; find the catalyst"; 30d retention
+  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v,dismissed?}] — "reason unknown; find the catalyst"; 30d retention; dismissed (ms stamp) silences the tape-question reminder only, never the pump fingerprint
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
   lastBriefImportAt: 0,   // when intelligence.json was last imported (the analyst-freshness clock)
   pumpWindowD: 14,    // pump fingerprint: promotion + anomaly (or flag freshness) must overlap inside this many days
   pumpThinGp: 10_000_000, // thin-book floor (gp/day): promoted + below this = structural pump vehicle regardless of anomaly timing
+  catWinTightenD: 14, // briefing cadence: a catalyst window live or starting within this many days tightens analyst staleness
+  briefTightStaleD: 3, // tightened staleness threshold (d) while a catalyst window qualifies; weekly (7d) otherwise
   rulingSnooze: {},   // walk-up RULINGS PENDING line key → snoozed-until ms (3d per press)
   rulingsCap: 5,      // max rulings-pending lines per walk-up — overflow counted, never silently hidden
   briefRemindDismissKey: "",  // which briefing-reminder occurrence was dismissed — returns on the next trigger
@@ -6250,11 +6254,14 @@ function renderSleeveEngine(){
     + (S.anomScanned != null ? " · screened top " + S.anomScanned + " of " + S.anomPool + " >1m items by gp flow" : "");
   $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f => {
     const pf = suspectedPump(f.itemId);
-    return '<div class="bench-row"><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
+    return '<div class="bench-row"' + (f.dismissed ? ' style="opacity:.55"' : '') + '><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
     + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
+    + (f.dismissed ? ' <span class="badge b-warn" title="Dismissed by you — this silences the tape-question briefing reminder for this flag only. It never lifts a pump defense; only dismissing the warning record does that.">dismissed</span>' : '')
     + '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position</div>'
     + (pf ? '<div class="neg">⚠ ' + esc(pf.why) + '</div>' : '') + '</span>'
-    + '<span class="r">' + esc(f.d) + '</span></div>'; }).join("")
+    + '<span class="r">' + esc(f.d)
+    + (f.dismissed ? '' : ' <button class="sm ghost" data-anomdismiss="' + f.id + '" title="Silences the tape-question briefing reminder for this flag. Does NOT lift any pump defense — that takes dismissing the warning record itself.">dismiss</button>')
+    + '</span></div>'; }).join("")
     : '<div class="bench-row"><span class="dim">No anomaly flags in the last 30 days.</span></div>';
 }
 
@@ -6339,6 +6346,17 @@ document.addEventListener("click", e => {
     if (!cat) return;
     cat.clusters = (cat.clusters || []).filter(x => x !== clid);
     save(); renderSleeve();
+    return;
+  }
+  const ad = t.closest("[data-anomdismiss]");
+  if (ad){
+    const f = (DB.anomalyFlags || []).find(x => x.id === +ad.dataset.anomdismiss);
+    if (!f) return;
+    f.dismissed = Date.now();
+    logDecision("anomaly", f.name, "dismiss flag", "tape-question reminder silenced for this flag — pump defenses unaffected");
+    save(); renderSleeve();
+    if (S.tab === "routine") renderRoutine();
+    toast("Flag dismissed — the tape-question reminder drops it. Any pump defense on " + f.name + " stands until its warning record is dismissed.");
     return;
   }
 });
@@ -6522,15 +6540,21 @@ function suspectedPump(id){
   if (!warns.length) return null;
   const src = warns[0].community || "a trading community";
   const win = (DB.pumpWindowD != null ? DB.pumpWindowD : 14) * 86400e3;
+  /* Dismissed anomaly flags still count here — flag dismissal silences the
+     tape-question reminder only. The pump defense lifts on one path alone:
+     the user dismissing the WARNING record (ruled Aug 10 2026). */
   const anom = (DB.anomalyFlags || []).find(f => f.itemId === id && Date.now() - f.at <= win);
+  const wFirst = Math.min(...warns.map(w => w.importedAt || Date.now()));
   const lift = " Posture: absence — neither buying nor shorting the story. Lifts when the warning record is dismissed or expires.";
   if (anom)
-    return { why: "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
+    return { firstSeen: Math.max(wFirst, anom.at),
+      why: "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
       + "%, volume +" + anom.rise14v + "% vs 2–3wk ago)." + lift };
   const flow = dailyGpFlow(id);
   const thin = DB.pumpThinGp != null ? DB.pumpThinGp : 10e6;
   if (flow != null && flow < thin)
-    return { why: "SUSPECTED PUMP: promoted in " + src + " with thin books (" + gp(flow) + "/day vs the "
+    return { firstSeen: wFirst,
+      why: "SUSPECTED PUMP: promoted in " + src + " with thin books (" + gp(flow) + "/day vs the "
       + gp(thin) + " floor) — the structural pump vehicle regardless of anomaly timing." + lift };
   return null;
 }
@@ -6900,33 +6924,116 @@ function updatePendBadge(){
 }
 
 /* ── briefing reminder — the tracker→desk handoff cue ──
-   The tracker cannot run the briefing itself. It reminds when (a) the last
-   import is >7d old (or never), or (b) a game-update Wednesday has passed
-   since it. No cheap in-tracker endpoint carries the wiki's actual latest-
-   update date (the prices API is prices only), so Wednesdays are assumed —
-   per the standing weekly-update convention already used by the walk-up
-   foot. Dismissible per occurrence; returns on the next trigger. */
+   The tracker cannot run the briefing itself; the reminder is a function of
+   what's happening, not just elapsed days. Triggers, one line, highest wins
+   (never stacked): tape-question > catalyst-window > update-Wednesday >
+   weekly staleness. Dismissible per occurrence; returns on the next trigger,
+   and a dismissed high-priority occurrence falls through to the next
+   qualifying trigger rather than silencing the line outright. */
 function lastGameUpdateWednesday(){
   const d = new Date();
   const back = (d.getDay() + 7 - 3) % 7;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - back);
 }
+/* TAPE-QUESTION collector: NEW anomaly flags and SUSPECTED PUMP escalations
+   whose first-seen postdates the last briefing import. Clears when a briefing
+   runs after the flag's stamp, or when every triggering flag is dismissed
+   (anomaly) / lifted by warning-record dismissal or expiry (pump). A flag
+   arriving mid-window re-arms a dismissed occurrence via the key. */
+function tapeQuestionFlags(){
+  const now = Date.now(), last = DB.lastBriefImportAt || 0;
+  const out = [];
+  for (const f of (DB.anomalyFlags || [])){
+    if (f.dismissed || now - f.at >= 30 * 86400e3 || f.at <= last) continue;
+    out.push({ kind: "anomaly", itemId: f.itemId, name: f.name, firstSeen: f.at,
+      detail: "being accumulated: price +" + f.rise14p + "% / volume +" + f.rise14v + "% vs 2–3wk ago — reason unknown" });
+  }
+  const promoted = new Set();
+  for (const r of (DB.intel || []))
+    if (r.type === "promotion-warning" && r.status !== "dismissed") (r.items || []).forEach(i => promoted.add(i));
+  for (const id of promoted){
+    const pf = suspectedPump(id);
+    if (!pf || !(pf.firstSeen > last)) continue;
+    const i = out.findIndex(x => x.itemId === id);   // pump subsumes the item's anomaly line
+    if (i >= 0) out.splice(i, 1);
+    out.push({ kind: "suspected-pump", itemId: id, name: itemName(id), firstSeen: pf.firstSeen, detail: pf.why });
+  }
+  return out.sort((a, b) => b.firstSeen - a.firstSeen);
+}
+/* Handshake export: EVERY active flag (not just new-since-brief), so the
+   analyst answers each by name — a sourced story or an explicit
+   "no public story found". Saved by the user into briefings/. */
+function analystFlagsPending(){
+  const now = Date.now(), last = DB.lastBriefImportAt || 0;
+  const flags = [];
+  for (const f of (DB.anomalyFlags || [])){
+    if (f.dismissed || now - f.at >= 30 * 86400e3) continue;
+    flags.push({ kind: "anomaly", itemId: f.itemId, name: f.name,
+      firstSeen: new Date(f.at).toISOString(), newSinceBrief: f.at > last,
+      detail: "price +" + f.rise14p + "% / volume +" + f.rise14v + "% vs 2–3wk ago · strength " + f.strength });
+  }
+  const promoted = new Set();
+  for (const r of (DB.intel || []))
+    if (r.type === "promotion-warning" && r.status !== "dismissed") (r.items || []).forEach(i => promoted.add(i));
+  for (const id of promoted){
+    const pf = suspectedPump(id);
+    if (pf) flags.push({ kind: "suspected-pump", itemId: id, name: itemName(id),
+      firstSeen: new Date(pf.firstSeen).toISOString(), newSinceBrief: pf.firstSeen > last, detail: pf.why });
+  }
+  return { exportedAt: new Date().toISOString(),
+    lastBriefImportAt: last ? new Date(last).toISOString() : null, flags };
+}
+/* CATALYST-WINDOW check: any calendar window live, or starting within
+   catWinTightenD days. Picks the most pressing (live with soonest end, else
+   soonest start); reverts to weekly automatically when none qualifies. */
+function activeCatalystWindow(){
+  const lookD = DB.catWinTightenD != null ? DB.catWinTightenD : 14;
+  const t = today();
+  const horizon = new Date(Date.now() + lookD * 86400e3).toLocaleDateString("en-CA");
+  const q = (DB.catalysts || []).filter(c => c.windowStart && c.windowEnd
+    && c.windowEnd >= t && c.windowStart <= horizon);
+  if (!q.length) return null;
+  const live = q.filter(c => c.windowStart <= t).sort((a, b) => a.windowEnd.localeCompare(b.windowEnd));
+  if (live.length) return { cat: live[0], live: true, inD: 0 };
+  const next = q.sort((a, b) => a.windowStart.localeCompare(b.windowStart))[0];
+  return { cat: next, live: false,
+    inD: Math.max(1, Math.ceil((new Date(next.windowStart) - Date.now()) / 86400e3)) };
+}
 function briefReminderInfo(){
   const now = Date.now();
   const last = DB.lastBriefImportAt || 0;
   const staleD = last ? Math.floor((now - last) / 86400e3) : null;
+  const staleTxt = staleD == null ? "analyst never briefed" : "analyst " + staleD + "d stale";
+  const cands = [];
+  /* 1 — tape-question: elevates immediately, regardless of staleness. */
+  const tq = tapeQuestionFlags();
+  if (tq.length){
+    const n = tq.length, lead = tq[0].name;
+    cands.push({ kind: "tape", key: "tape-" + tq[0].firstSeen, export: true,
+      msg: "⚡ the tape has questions the analyst hasn't answered — " + n + " unexplained flag" + (n > 1 ? "s" : "")
+        + " since the last sweep (" + lead + (n > 1 ? ", +" + (n - 1) + " more" : "") + "). Run the briefing." });
+  }
+  /* 2 — catalyst-window tightening: 7d staleness threshold tightens. */
+  const cw = activeCatalystWindow();
+  const tightD = DB.briefTightStaleD != null ? DB.briefTightStaleD : 3;
+  if (cw && (staleD == null || staleD > tightD))
+    cands.push({ kind: "catwin", key: "catwin-" + cw.cat.id + "-" + Math.floor((staleD == null ? 999 : staleD) / tightD),
+      msg: "⚡ catalyst window " + (cw.live ? "live" : "opens in " + cw.inD + "d") + " (" + cw.cat.name + ") — "
+        + staleTxt + ", run the briefing." });
+  /* 3/4 — the standing weekly/update-Wednesday logic, unchanged. */
   const wed = lastGameUpdateWednesday();
   const wedMs = wed.getTime() + 12 * 3600e3;   // updates ship midday
   const wedTrig = now >= wedMs && last < wedMs;
   const staleTrig = staleD == null || staleD > 7;
-  if (!wedTrig && !staleTrig) return null;
-  const key = wedTrig ? "wed-" + wed.toLocaleDateString("en-CA")
-                      : "stale-" + Math.floor((staleD || 999) / 7);
-  if (DB.briefRemindDismissKey === key) return null;
-  const bits = [];
-  if (wedTrig) bits.push("update shipped Wed " + wed.toLocaleDateString("en-CA").slice(5));
-  bits.push(staleD == null ? "analyst never briefed" : "analyst " + staleD + "d stale");
-  return { key, msg: "⚡ " + bits.join(" / ") + " — run the briefing at the desk (/briefing in Claude Code), then Import briefing on the Sleeve tab. The tracker can't run it for you; this is the handoff cue." };
+  if (wedTrig || staleTrig){
+    const bits = [];
+    if (wedTrig) bits.push("update shipped Wed " + wed.toLocaleDateString("en-CA").slice(5));
+    bits.push(staleTxt);
+    cands.push({ kind: wedTrig ? "wed" : "stale",
+      key: wedTrig ? "wed-" + wed.toLocaleDateString("en-CA") : "stale-" + Math.floor((staleD || 999) / 7),
+      msg: "⚡ " + bits.join(" / ") + " — run the briefing at the desk (/briefing in Claude Code), then Import briefing on the Sleeve tab. The tracker can't run it for you; this is the handoff cue." });
+  }
+  return cands.find(c => c.key !== DB.briefRemindDismissKey) || null;
 }
 
 document.addEventListener("click", e => {
@@ -6945,7 +7052,18 @@ document.addEventListener("click", e => {
     DB.briefRemindDismissKey = bd.dataset.briefdismiss;
     save();
     if (S.tab === "routine") renderRoutine();
-    toast("Dismissed for this occurrence — the reminder returns on the next trigger (next update Wednesday, or another week of staleness).");
+    toast("Dismissed for this occurrence — the reminder returns on the next trigger (a new flag on the tape, a catalyst window, next update Wednesday, or staleness).");
+    return;
+  }
+  const fx = e.target.closest("[data-flagsexport]");
+  if (fx){
+    const blob = new Blob([JSON.stringify(analystFlagsPending(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "flags-pending.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("flags-pending.json downloaded — save it into briefings/. The analyst answers each flag by name on the next sweep.");
     return;
   }
 });
@@ -7481,6 +7599,7 @@ function renderRoutine(){
   const br = m === "walkup" ? briefReminderInfo() : null;
   $("#briefRemind").innerHTML = br
     ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
+      + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
     : "";
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
@@ -8730,6 +8849,8 @@ function validateImport(d){
           rulingSnooze: (d.rulingSnooze && typeof d.rulingSnooze === "object" && !Array.isArray(d.rulingSnooze)) ? d.rulingSnooze : {},
           pumpWindowD: Math.min(60, Math.max(1, num(d.pumpWindowD) != null ? num(d.pumpWindowD) : 14)),
           pumpThinGp: Math.min(1e10, Math.max(0, num(d.pumpThinGp) != null ? num(d.pumpThinGp) : 10000000)),
+          catWinTightenD: Math.min(60, Math.max(1, num(d.catWinTightenD) != null ? num(d.catWinTightenD) : 14)),
+          briefTightStaleD: Math.min(7, Math.max(1, num(d.briefTightStaleD) != null ? num(d.briefTightStaleD) : 3)),
           intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
             const id = String((r && r.id) || "").trim();
             const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag","promotion-warning"].includes(r && r.type) ? r.type : null;
@@ -8783,7 +8904,8 @@ function validateImport(d){
             if (!(itemId > 0) || !(at > 0)) return null;
             return { id: num(f.id) || uid(), itemId, name: String(f.name || itemName(itemId)),
               at, d: String(f.d || "").slice(0, 10), strength: num(f.strength) || 0,
-              rise14p: num(f.rise14p) || 0, rise14v: num(f.rise14v) || 0 };
+              rise14p: num(f.rise14p) || 0, rise14v: num(f.rise14v) || 0,
+              ...(num(f.dismissed) > 0 ? { dismissed: num(f.dismissed) } : {}) };
           }).filter(Boolean).slice(-40),
           sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
             const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
@@ -8916,7 +9038,8 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30],
                                  ["slvBudget","sleeveBudget",0,2e9],["slvMax","sleeveMaxPos",1,10],["slvRung","sleeveRungPct",1,25],
                                  ["slvLiq","sleeveExitLiqPct",1,100],
-                                 ["pumpWin","pumpWindowD",1,60],["pumpThin","pumpThinGp",0,1e10]]){
+                                 ["pumpWin","pumpWindowD",1,60],["pumpThin","pumpThinGp",0,1e10],
+                                 ["catTight","catWinTightenD",1,60],["briefTight","briefTightStaleD",1,7]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -9002,6 +9125,8 @@ $("#slvRung").value = DB.sleeveRungPct != null ? DB.sleeveRungPct : 5;
 $("#slvLiq").value = DB.sleeveExitLiqPct != null ? DB.sleeveExitLiqPct : 15;
 $("#pumpWin").value = DB.pumpWindowD != null ? DB.pumpWindowD : 14;
 $("#pumpThin").value = DB.pumpThinGp != null ? DB.pumpThinGp : 10000000;
+$("#catTight").value = DB.catWinTightenD != null ? DB.catWinTightenD : 14;
+$("#briefTight").value = DB.briefTightStaleD != null ? DB.briefTightStaleD : 3;
 /* Walk-up cadence: no schedule is assumed — the app opens on the same move
    list whenever you show up. */
 S.mode = "walkup";

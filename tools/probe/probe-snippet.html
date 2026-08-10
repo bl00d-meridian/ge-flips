@@ -1189,6 +1189,10 @@
        !pendingRulingItems().filter(x => !x.snoozed).some(x => x.key === "clu:71"));
 
     // ─── R5.5: briefing reminder triggers, dismiss-per-occurrence ───
+    /* Isolate the standing weekly/Wednesday logic from the higher-priority
+       triggers (tape-question, catalyst-window) — those get their own R10
+       section below; earlier sections left catalysts/intel behind. */
+    DB.intel = []; DB.anomalyFlags = []; DB.catalysts = [];
     DB.lastBriefImportAt = Date.now() - 9 * 86400e3;
     DB.briefRemindDismissKey = "";
     const bi = briefReminderInfo();
@@ -1211,6 +1215,135 @@
        /run the briefing at the desk/.test(document.querySelector("#briefRemind").innerHTML),
        document.querySelector("#briefRemind").innerHTML);
     DB.lastBriefImportAt = Date.now();
+
+    // ─── R10: DEMAND-DRIVEN BRIEFING CADENCE — tape-question, catalyst-window, priority, handshake ───
+    const now10 = Date.now();
+    DB.intel = []; DB.anomalyFlags = []; DB.catalysts = [];
+    DB.catWinTightenD = 14; DB.briefTightStaleD = 3;
+    DB.briefRemindDismissKey = "";
+
+    // R10.1 — catalyst-window tightening
+    DB.catalysts = [{ id: 7101, name: "Raids 4", windowStart: inDays(-1), windowEnd: inDays(5),
+      items: [], clusters: [], notes: "", src: "manual", createdAt: now10 }];
+    DB.lastBriefImportAt = now10 - 4 * 86400e3;
+    let b10 = briefReminderInfo();
+    ok("[R10.1] live catalyst window tightens staleness 7d→3d, copy names catalyst and staleness",
+       !!b10 && b10.kind === "catwin" && /catalyst window live \(Raids 4\)/.test(b10.msg) && /analyst 4d stale/.test(b10.msg),
+       JSON.stringify(b10));
+    DB.lastBriefImportAt = now10 - 2 * 86400e3;
+    b10 = briefReminderInfo();
+    ok("[R10.1] under the tightened threshold the window alone does not fire",
+       !b10 || b10.kind !== "catwin", JSON.stringify(b10));
+    DB.catalysts[0].windowStart = inDays(5); DB.catalysts[0].windowEnd = inDays(15);
+    DB.lastBriefImportAt = now10 - 4 * 86400e3;
+    b10 = briefReminderInfo();
+    ok("[R10.1] window starting inside the lookahead arms with opens-in copy",
+       !!b10 && b10.kind === "catwin" && /catalyst window opens in \d+d \(Raids 4\)/.test(b10.msg), JSON.stringify(b10));
+    DB.catalysts[0].windowStart = inDays(20); DB.catalysts[0].windowEnd = inDays(30);
+    b10 = briefReminderInfo();
+    ok("[R10.1] no qualifying window reverts to the weekly cadence automatically",
+       !b10 || b10.kind === "wed", JSON.stringify(b10));
+
+    // R10.2 — tape-question trigger: arming, count copy, dismissal, re-arm, clearing
+    DB.catalysts = [];
+    DB.lastBriefImportAt = now10 - 3600e3;   // fresh by every staleness clock
+    DB.anomalyFlags = [{ id: 7201, itemId: 9002, name: "Probe beta", at: now10 - 120e3, d: today(),
+      strength: 8, rise14p: 22, rise14v: 180 }];
+    b10 = briefReminderInfo();
+    ok("[R10.2] a new anomaly flag elevates the reminder regardless of staleness",
+       !!b10 && b10.kind === "tape" && /1 unexplained flag since the last sweep \(Probe beta\)/.test(b10.msg)
+       && b10.export === true, JSON.stringify(b10));
+    DB.anomalyFlags.push({ id: 7202, itemId: 9003, name: "Probe gamma", at: now10 - 60e3, d: today(),
+      strength: 6, rise14p: 15, rise14v: 90 });
+    b10 = briefReminderInfo();
+    ok("[R10.2] counts flags and leads with the newest, +N more",
+       !!b10 && /2 unexplained flags since the last sweep \(Probe gamma, \+1 more\)/.test(b10.msg), JSON.stringify(b10));
+    const tapeKey10 = b10.key;
+    DB.briefRemindDismissKey = tapeKey10;
+    b10 = briefReminderInfo();
+    ok("[R10.2] dismissing the occurrence silences it", !b10 || b10.kind !== "tape", JSON.stringify(b10));
+    DB.anomalyFlags.push({ id: 7203, itemId: 9001, name: "Probe alpha", at: now10 - 30e3, d: today(),
+      strength: 5, rise14p: 12, rise14v: 70 });
+    b10 = briefReminderInfo();
+    ok("[R10.2] a flag arriving mid-window re-arms the dismissed reminder with a new key",
+       !!b10 && b10.kind === "tape" && b10.key !== tapeKey10 && /3 unexplained flags/.test(b10.msg), JSON.stringify(b10));
+    DB.lastBriefImportAt = Date.now();
+    ok("[R10.2] a briefing import after the flags' timestamps clears the trigger", briefReminderInfo() === null);
+    DB.lastBriefImportAt = now10 - 3600e3;
+    DB.briefRemindDismissKey = "";
+    DB.anomalyFlags.forEach(f => f.dismissed = Date.now());
+    b10 = briefReminderInfo();
+    ok("[R10.2] dismissing every triggering flag clears it",
+       tapeQuestionFlags().length === 0 && (!b10 || b10.kind !== "tape"), JSON.stringify(b10));
+
+    // R10.2/R10.4 — suspected-pump escalations on the tape; flag dismissal never lifts the defense
+    DB.anomalyFlags = [{ id: 7204, itemId: 9001, name: "Probe alpha", at: now10 - 120e3, d: today(),
+      strength: 9, rise14p: 30, rise14v: 200 }];
+    DB.intel = [{ id: "r-tape-promo", type: "promotion-warning", confidence: "rumor", title: "alpha promoted",
+      thesis: "t", direction: "caution", items: [9001], sources: [{ url: "https://example.test/tape", tier: 3, community: "merch-discord-x" }],
+      sourceTier: 3, community: "merch-discord-x", validUntil: inDays(10), status: "pending", importedAt: now10 - 60e3 }];
+    let tq10 = tapeQuestionFlags();
+    ok("[R10.2] pump escalation rides the tape and subsumes the item's anomaly line",
+       tq10.length === 1 && tq10[0].kind === "suspected-pump" && tq10[0].itemId === 9001
+       && /SUSPECTED PUMP/.test(tq10[0].detail), JSON.stringify(tq10));
+    DB.anomalyFlags[0].dismissed = Date.now();
+    const pf10 = suspectedPump(9001);
+    tq10 = tapeQuestionFlags();
+    ok("[R10.4] anomaly-flag dismissal silences its tape line only — the pump defense stands",
+       !!pf10 && /SUSPECTED PUMP/.test(pf10.why) && tq10.length === 1 && tq10[0].kind === "suspected-pump",
+       JSON.stringify({ pf: pf10, tq: tq10 }));
+    DB.intel[0].status = "dismissed";
+    ok("[R10.2] warning-record dismissal lifts the pump and clears its tape question",
+       suspectedPump(9001) === null && tapeQuestionFlags().length === 0, JSON.stringify(tapeQuestionFlags()));
+
+    // R10.3 — priority resolution and the single line
+    DB.intel = [];
+    DB.anomalyFlags = [{ id: 7205, itemId: 9002, name: "Probe beta", at: Date.now() - 60e3, d: today(),
+      strength: 7, rise14p: 20, rise14v: 150 }];
+    DB.catalysts = [{ id: 7102, name: "Raids 4", windowStart: inDays(-1), windowEnd: inDays(5),
+      items: [], clusters: [], notes: "", src: "manual", createdAt: Date.now() }];
+    DB.lastBriefImportAt = Date.now() - 9 * 86400e3;
+    DB.briefRemindDismissKey = "";
+    b10 = briefReminderInfo();
+    ok("[R10.3] tape-question outranks catalyst-window and staleness", !!b10 && b10.kind === "tape", JSON.stringify(b10));
+    S.tab = "routine"; S.mode = "walkup"; renderRoutine();
+    const rem10 = document.querySelector("#briefRemind").innerHTML;
+    ok("[R10.3] one reminder line, never stacked", (rem10.match(/⚡/g) || []).length === 1, rem10);
+    ok("[R10.4] the tape line carries the flags-pending.json export control",
+       /data-flagsexport/.test(rem10) && /flags for analyst/.test(rem10), rem10);
+    DB.briefRemindDismissKey = b10.key;
+    b10 = briefReminderInfo();
+    ok("[R10.3] a dismissed occurrence falls through to the next trigger (catalyst-window)",
+       !!b10 && b10.kind === "catwin", JSON.stringify(b10));
+    DB.anomalyFlags = []; DB.catalysts = []; DB.briefRemindDismissKey = "";
+    b10 = briefReminderInfo();
+    ok("[R10.3] with no tape or window the standing weekly/Wednesday logic remains",
+       !!b10 && (b10.kind === "wed" || b10.kind === "stale") && /^(wed-|stale-)/.test(b10.key), JSON.stringify(b10));
+
+    // R10.4 — the handshake file: every active flag, by name, newSinceBrief marked
+    DB.lastBriefImportAt = Date.now() - 3600e3;
+    DB.anomalyFlags = [
+      { id: 7206, itemId: 9002, name: "Probe beta", at: Date.now() - 60e3, d: today(), strength: 8, rise14p: 22, rise14v: 180 },
+      { id: 7207, itemId: 9003, name: "Probe gamma", at: Date.now() - 2 * 3600e3, d: today(), strength: 6, rise14p: 15, rise14v: 90 },
+      { id: 7208, itemId: 9001, name: "Probe alpha", at: Date.now() - 50e3, d: today(), strength: 5, rise14p: 12, rise14v: 60, dismissed: Date.now() }
+    ];
+    const hs10 = analystFlagsPending();
+    const hsB10 = hs10.flags.find(f => f.itemId === 9002), hsG10 = hs10.flags.find(f => f.itemId === 9003);
+    ok("[R10.4] handshake exports every ACTIVE flag — dismissed excluded, pre-brief flags included with newSinceBrief=false",
+       hs10.flags.length === 2 && !!hsB10 && hsB10.newSinceBrief === true && !!hsG10 && hsG10.newSinceBrief === false
+       && !hs10.flags.some(f => f.itemId === 9001)
+       && !isNaN(Date.parse(hs10.exportedAt)) && !isNaN(Date.parse(hsB10.firstSeen)) && !isNaN(Date.parse(hs10.lastBriefImportAt)),
+       JSON.stringify(hs10));
+    ok("[R10.2] an active flag predating the last brief is exported but asks no tape question",
+       !tapeQuestionFlags().some(f => f.itemId === 9003), JSON.stringify(tapeQuestionFlags()));
+    const vCad10 = validateImport({ anomalyFlags: [{ id: 1, itemId: 9001, name: "Probe alpha", at: Date.now(),
+      d: today(), strength: 5, rise14p: 5, rise14v: 40, dismissed: 123 }],
+      catWinTightenD: 21, briefTightStaleD: 2 });
+    ok("[R10.4][R10.1] dismissed state and both cadence settings survive export→import",
+       vCad10.db.anomalyFlags[0].dismissed === 123 && vCad10.db.catWinTightenD === 21 && vCad10.db.briefTightStaleD === 2,
+       JSON.stringify({ f: vCad10.db.anomalyFlags, c: vCad10.db.catWinTightenD, b: vCad10.db.briefTightStaleD }));
+    DB.anomalyFlags = []; DB.intel = []; DB.catalysts = [];
+    DB.lastBriefImportAt = Date.now(); DB.briefRemindDismissKey = "";
 
     // ─── R7: MANIPULATION DEFENSES — tiers, promotion coercion, pump fingerprint ───
     DB.intel = []; DB.anomalyFlags = []; DB.catalysts = [];

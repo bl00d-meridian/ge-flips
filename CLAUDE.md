@@ -34,6 +34,10 @@ faster than 60s.
   them and leave them unapplied until the user rules. Applying one and mentioning it in
   the summary is a near miss, not compliance (the incident: entry-watch DISCOUNTED set to
   ≤ −2% in-flight; ratified after the fact).
+- **The human carries the file** (handshake pattern — user ruling, Aug 10 2026). Where
+  the browser and repo can't reach each other (`intelligence.json` in,
+  `flags-pending.json` out), the human carries the file. This is architecture, not a
+  workaround — do not propose sync infrastructure to replace deliberate human handoffs.
 - **Concur-recommended proposals skip the ruling ceremony** (user ruling, Aug 10 2026).
   A proposal that argues FOR keeping an existing rule against softer data is the correct
   default posture, not a decision point: flag it "concur-recommended", batch such entries

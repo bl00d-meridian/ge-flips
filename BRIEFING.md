@@ -73,6 +73,15 @@ minimum bar for a source — and it is a bar, not a guarantee of honesty.
    willing to be graded on.
 8. **Politeness.** Fetch with the same etiquette the tracker uses: sequential requests,
    no hammering, prefer single bulk endpoints. Cite the exact URLs fetched.
+9. **Tape-question handshake.** If `briefings/flags-pending.json` exists, read it FIRST —
+   it is the tracker's export of every active unexplained flag (accumulation anomalies
+   and SUSPECTED PUMP escalations, `newSinceBrief` marked, with `exportedAt`). Address
+   each flag **by name** in the sweep: either a typed, sourced story record per the
+   schema, or an explicit line in BRIEF.md — "no public story found — flag remains
+   unexplained." Note the export's age if it is stale; a stale export still gets
+   answered. An analyst that ignores the question it was summoned for hasn't answered
+   it. (For suspected pumps the incentive heuristic governs: the answer is a
+   promotion-warning or a caution record, never a buy story.)
 
 ## Sources to sweep (in order)
 
@@ -80,9 +89,19 @@ minimum bar for a source — and it is a bar, not a guarantee of honesty.
 |---|---|
 | Official OSRS news | `https://secure.runescape.com/m=news/archive?oldschool=1` and article pages |
 | OSRS wiki news/upcoming | `https://oldschool.runescape.wiki/w/Upcoming_updates` (and linked update pages) |
-| r/2007scape, past week | `https://www.reddit.com/r/2007scape/top.json?t=week&limit=50` (and `hot.json`) |
+| r/2007scape, past week | JSON endpoints only — see method below |
 | Dev blogs | whatever the above link to — read the primary, cite the primary |
 | Item mapping (name → id) | `https://prices.runescape.wiki/api/v1/osrs/mapping` |
+
+**Reddit method (standing):** standard page fetches are blocked — use the public JSON
+endpoints `https://www.reddit.com/r/2007scape/top.json?t=week&limit=50` and
+`.../hot.json?limit=50` via curl with a descriptive User-Agent, single pass, no
+pagination hammering. Parse titles, scores, flair, selftext; fetch a post's comments
+(`.json` appended to the post URL) ONLY for the top handful of catalyst-relevant posts,
+never wholesale. If the JSON endpoints are also blocked from the current network
+(datacenter IPs get 403 regardless of UA), degrade gracefully: state
+"T2 source unavailable this sweep" in the BRIEF header and proceed on T0/T1 — an honest
+partial brief beats a stalled one.
 | 30-day charts (priced-in check) | `https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=<id>` |
 
 ## Output 1 — `intelligence.json` (repo root, overwritten per run)
@@ -140,16 +159,21 @@ Human-readable brief, dated filename, header stating the date range covered
 (`Covers YYYY-MM-DD → YYYY-MM-DD`). Sections: what shipped, what's scheduled, what the
 community is loud about, records emitted (one line each with confidence + expiry), and
 what was checked but NOT emitted (with the reason — usually "no source" or "priced in").
+When `flags-pending.json` was present, a **Flags addressed** section is mandatory: one
+line per flag, by name — the record that answers it, or "no public story found — flag
+remains unexplained."
 
 ## Run procedure
 
-1. Sweep the sources above for the window since the last brief (check `briefings/` for
+1. Read `briefings/flags-pending.json` if it exists (standing rule 9) — the flags it
+   names are questions this run must answer, by name, before anything else is drafted.
+2. Sweep the sources above for the window since the last brief (check `briefings/` for
    the previous date; default 7 days).
-2. Draft candidate records; kill anything without a source; run the priced-in check on
+3. Draft candidate records; kill anything without a source; run the priced-in check on
    every record with items; resolve item ids via the mapping endpoint (exact names).
-3. Reconcile against the existing calendar/intel history: updates, not duplicates.
-4. Write `intelligence.json` and `briefings/BRIEF-<date>.md`.
-5. Tell the user: records by type and confidence, and that the tracker's
+4. Reconcile against the existing calendar/intel history: updates, not duplicates.
+5. Write `intelligence.json` and `briefings/BRIEF-<date>.md`.
+6. Tell the user: records by type and confidence, and that the tracker's
    **Import briefing** button (Sleeve tab) reads `intelligence.json` into the
    ratification queue — nothing activates until they rule there.
-6. Do not commit or push unless the user asks.
+7. Do not commit or push unless the user asks.
