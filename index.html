@@ -261,11 +261,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <!-- ═══════════ SCANNER ═══════════ -->
   <section class="tab" id="tab-scan">
     <div class="panel">
-      <div class="ph"><h2>Filters</h2><span class="sub">Guide defaults: vol ≥1,000/hr · max buy 2M · sorted by post-tax ROI</span>
-        <span style="margin-left:auto"><button class="sm" id="fReset">Reset to guide</button></span>
+      <div class="ph"><h2>Filters</h2><span class="sub" id="fPresetState"></span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button class="sm" id="pT1" title="One click: min unit 400, max 5,000, consumables on, thin-side volume ≥1,000/hr — the tier-1 consumable screen">T1 scan</button>
+          <button class="sm" id="pT2" title="One click: min unit 5,000, max 100,000, consumables off — volume gates on thin-side GP-FLOW (≥ the gp-flow floor) instead of unit count">T2 scan</button>
+          <button class="sm" id="fReset">Reset to guide</button>
+        </span>
       </div>
       <div class="row">
-        <label class="f">Min 1h volume<input type="number" id="fVol" step="100" style="width:92px"></label>
+        <label class="f" title="Unit floor — applies to items under 5,000 gp">Min 1h volume<input type="number" id="fVol" step="100" style="width:92px"></label>
+        <label class="f" title="gp-flow floor — items at 5,000 gp and up gate on thin-side units × price per hour instead of unit count, because 100 units of a 50k item is real liquidity a unit floor would reject">Min gp-flow (5k+)<input type="number" id="fGpVol" step="500000" style="width:100px"></label>
         <label class="f">Min unit price<input type="number" id="fMin" step="50" style="width:96px"></label>
         <label class="f">Max buy price<input type="number" id="fMax" step="100000" style="width:110px"></label>
         <label class="f">Min ROI %<input type="number" id="fRoi" step="0.1" style="width:76px"></label>
@@ -278,10 +283,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </div>
       <div class="note" style="margin-top:9px">
         Buy at <em>instasell</em> (low), sell at <em>instabuy</em> (high). Margin is net of GE tax.
-        <b>Min volume now gates on the thinner side of the book</b> — a round trip needs sellers to buy from
+        <b>The volume filter gates on the thinner side of the book</b> — a round trip needs sellers to buy from
         <em>and</em> buyers to sell to, so the sum of both sides overstated liquidity roughly 2×.
-        <br><strong>Min unit price</strong> ships at 0 to match the guide exactly, but ROI-sorting is dominated by 20–50 gp items whose
-        "spread" is a 1 gp rounding artifact. Set it to ~150–300 to see items your capital can actually deploy into.
+        <b>Under 5k gp it's a unit floor; at 5k+ it's a gp-flow floor</b> (thin-side units × price per hour) —
+        unit counts understate mid-tier liquidity, gp-flow doesn't.
       </div>
     </div>
 
@@ -751,7 +756,10 @@ const CONSUMABLE_RX = /(potion|brew|restore|rune$|rune\(|arrow|bolt|dart|knife|j
 const K = "gef.v1";
 /* min unit price 400: below it, a healthy-looking ROI is only a handful of
    ticks of absolute margin — the cheap-item trap the first 18 flips paid for. */
-const DEFAULT_FILTERS = { vol:1000, min:400, max:2_000_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
+/* vol = unit floor for sub-5k items; gpvol = gp-flow floor (thin-side gp/hr)
+   for items at 5k+, where unit counts understate real liquidity. max ships at
+   the tier-2 ceiling per the tranche design (user-set). */
+const DEFAULT_FILTERS = { vol:1000, gpvol:2_000_000, min:400, max:100_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
 let DB = {
   filters: {...DEFAULT_FILTERS},
   sort: {k:"roi", dir:-1},
@@ -1382,7 +1390,10 @@ function scanRows(){
     const c = calc(it.i);
     if (!c || c.buy == null || c.sell == null) continue;
     if (c.buy > f.max || c.buy < f.min) continue;
-    if (c.volSide < f.vol) continue;
+    /* Volume gate is gp-flow-aware: unit floor under 5k, thin-side gp/hr
+       floor at 5k+ — 100 units of a 50k item is 5m/hr of real liquidity a
+       unit floor would wrongly reject. */
+    if (c.buy < TIER1_MAX ? c.volSide < f.vol : c.volSide * c.buy < (f.gpvol || 2e6)) continue;
     if (c.margin < f.margin) continue;
     if (c.roi == null || c.roi < f.roi) continue;
     if (c.age == null || c.age > f.age) continue;
@@ -3760,13 +3771,38 @@ function setTab(t){
   if (t === "watch" || t === "shadow") fillSparks();
 }
 
-const FMAP = { fVol:"vol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
+const FMAP = { fVol:"vol", fGpVol:"gpvol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
+
+/* One-click scanner presets. A preset is "active" while every field it sets
+   still matches — touch any of them and the state reads custom. T1 gates on
+   the unit floor (its whole band is sub-5k); T2's band is 5k+ so the gp-flow
+   floor governs and the unit floor is irrelevant by construction. */
+const SCAN_PRESETS = {
+  t1: { btn:"pT1", label:"T1 scan", f:{ min:400,  max:5000,   cons:true,  vol:1000 } },
+  t2: { btn:"pT2", label:"T2 scan", f:{ min:5000, max:100000, cons:false } }
+};
+function activePreset(){
+  outer: for (const [k, p] of Object.entries(SCAN_PRESETS)){
+    for (const [fk, fv] of Object.entries(p.f)) if (DB.filters[fk] !== fv) continue outer;
+    return k;
+  }
+  return null;
+}
+function paintPresetState(){
+  const a = activePreset();
+  $("#fPresetState").textContent = a
+    ? "preset: " + SCAN_PRESETS[a].label + (a === "t2" ? " · gp-flow floor " + gp(DB.filters.gpvol || 2e6) + "/hr" : "")
+    : "custom filters";
+  for (const [k, p] of Object.entries(SCAN_PRESETS))
+    $("#" + p.btn).classList.toggle("primary", a === k);
+}
 function paintFilters(){
   for (const [el,key] of Object.entries(FMAP)){
     const n = $("#"+el);
     if (n.type === "checkbox") n.checked = !!DB.filters[key];
     else n.value = DB.filters[key];
   }
+  paintPresetState();
 }
 for (const [el,key] of Object.entries(FMAP)){
   $("#"+el).addEventListener("change", e => {
@@ -3775,8 +3811,15 @@ for (const [el,key] of Object.entries(FMAP)){
                     : n.type === "number"   ? clampNum(n.value, DEFAULT_FILTERS[key])
                     : n.value;
     if (key === "rows") DB.filters.rows = +n.value;
-    save(); renderScan();
+    save(); paintPresetState(); renderScan();
   });
+}
+for (const [k, p] of Object.entries(SCAN_PRESETS)){
+  $("#" + p.btn).onclick = () => {
+    Object.assign(DB.filters, p.f);
+    save(); paintFilters(); renderScan();
+    toast(p.label + " preset applied" + (k === "t2" ? " — volume now gates on gp-flow (" + gp(DB.filters.gpvol || 2e6) + "/hr thin side)" : "") + ".");
+  };
 }
 $("#fReset").onclick = () => { DB.filters = {...DEFAULT_FILTERS}; DB.sort = {k:"roi",dir:-1}; save(); paintFilters(); paintSortHeads(); renderScan(); };
 
@@ -4479,7 +4522,7 @@ function validateImport(d){
           slots: Math.min(8, Math.max(1, num(d.slots) || 7)),
           horizonH: Math.min(16, Math.max(4, num(d.horizonH) || 10)),
           reserve: Math.max(0, num(d.reserve) != null ? num(d.reserve) : 3000000),
-          filters: (d.filters && typeof d.filters === "object") ? d.filters : {...DEFAULT_FILTERS},
+          filters: Object.assign({...DEFAULT_FILTERS}, (d.filters && typeof d.filters === "object") ? d.filters : {}),
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 
