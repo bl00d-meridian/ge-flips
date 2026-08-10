@@ -843,6 +843,10 @@ function load(){
       DB.filtersT2 = {...SCAN_T2_DEFAULTS};
       DB.splitScanV1 = 1;
     }
+    /* One-time (user-directed, Aug 9 2026): adopt the T1 tier defaults — the
+       split-scanner migration had carried the old single-scanner state into
+       T1 verbatim (max 100k, margin 1), which the user asked to reset. */
+    if (!DB.t1ResetV1){ DB.filtersT1 = {...SCAN_T1_DEFAULTS}; DB.t1ResetV1 = 1; }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
@@ -1448,6 +1452,14 @@ function renderScan(){
   $("#scanBody").innerHTML = shown.map(c => {
     const flags = [];
     flags.push(tierBadge(itemTier(c.id, c)));   // computed tier, override-aware
+    /* Gate-mismatch badge: passes this scanner's filters but would fail the
+       full plan gate chain — so the pipeline won't admit it and the plan
+       would bench it. Suppressed while the verdict is only "chart still
+       loading": unknown is not failing. */
+    const cand = candidateFor(DB.watch.find(x => x.id === c.id) || { id: c.id, qty: null });
+    if (cand.failed && !/no chart yet/.test(cand.failed))
+      flags.push('<span class="badge b-warn" title="Passes this scanner but would FAIL Today\'s Plan gates — '
+        + esc(gateName(cand.failed)) + ': ' + esc(cand.failed) + ' The scout pipeline won\'t admit it either.">✗ gates</span>');
     if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
     if (c.roi > 12 && c.volSide < 20000) flags.push('<span class="badge b-warn" title="Fat ROI on modest volume — manipulation, dying item, or stale data. Margin-test before sizing.">check me</span>');
     if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — everyone\'s flipping tool recommends this item, so expect the spread compressed to the tax floor. Volume is safety, not margin.">crowded #'+c.crowdRank+'</span>');
@@ -1858,6 +1870,27 @@ function candidateFor(w){
              score: failed ? 0 : eMargin * Math.max(1, horizonUnits) * (1 + Math.min(wins, 5) * 0.1) };
 }
 function planCandidates(){ return DB.watch.map(candidateFor); }
+
+/* Short gate names for the scanner's mismatch badge — derived from the bench
+   copy itself so the scanner and the plan can never disagree on the reason. */
+function gateName(failed){
+  if (!failed) return null;
+  if (/proven loser/.test(failed)) return "proven-loser bench";
+  if (/sustained ROI/.test(failed)) return "ROI floor";
+  if (/margin ≈ tax|ticks of margin|tick floor/.test(failed)) return "margin floor (ticks / 3× tax)";
+  if (/one-sided book/.test(failed)) return "book skew";
+  if (/one-way flow/.test(failed)) return "flow imbalance";
+  if (/no price history/.test(failed)) return "no history";
+  if (/no chart yet/.test(failed)) return "chart still loading";
+  if (/falling chart|downtrend/.test(failed)) return "trend";
+  if (/volume dying/.test(failed)) return "volume trend";
+  if (/can't size|clamps to 0|no buy limit/.test(failed)) return "sizing";
+  if (/thin side/.test(failed)) return "volume floor";
+  if (/falling knife/.test(failed)) return "momentum";
+  if (/slow fills/.test(failed)) return "fill history";
+  if (/no live price/.test(failed)) return "no live price";
+  return "plan gate";
+}
 
 /* One position per family, highest score wins. Applied after the gates so the
    bench reason names the winner rather than hiding the item entirely. */
@@ -4603,6 +4636,7 @@ function validateImport(d){
           filtersT2: Object.assign({...SCAN_T2_DEFAULTS}, (d.filtersT2 && typeof d.filtersT2 === "object") ? d.filtersT2 : {}),
           scanTab: d.scanTab === "t2" ? "t2" : "t1",
           splitScanV1: 1,
+          t1ResetV1: d.t1ResetV1 ? 1 : 0,
           scoutT1Cap: Math.min(20, Math.max(0, num(d.scoutT1Cap) != null ? num(d.scoutT1Cap) : 8)),
           scoutT2Cap: Math.min(20, Math.max(0, num(d.scoutT2Cap) != null ? num(d.scoutT2Cap) : 6)),
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
