@@ -21,6 +21,12 @@
     DB.reserve = 3e6; DB.t1Budget = 100e6; DB.t2Budget = 50e6; DB.slots = 7;
     DB.minExpectGp = 0; DB.clusterCapPct = 8; DB.lastCoScanAt = Date.now();
     DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    /* Sustained qualification: freeze streak upkeep (the suite controls
+       DB.qual by hand) and pre-qualify the core fixture items so allocator
+       tests exercise the allocator, not the seasoning clock. */
+    S.qualStamp = S.latestAt + "|" + S.hourAt;
+    const qualified = () => ({ n: 3, firstAt: Date.now() - 3 * 3600e3, lastAt: Date.now() - 3600e3 });
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
 
     const nowS = Math.floor(Date.now()/1000);
     const mkItem = (id, n) => {
@@ -365,6 +371,7 @@
     mkItem(9020, "Probe theta");
     S.latest[9020] = { high: 8800, low: 8000, highTime: nowS-60, lowTime: nowS-120 };
     S.hour[9020]   = { avgHighPrice: 8800, avgLowPrice: 8000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.qual[9020] = qualified();
     DB.planPriority = []; DB.planDemoted = [];
     DB.watch = [{id:9003,qty:null},{id:9020,qty:null}];
     DB.clusters = []; DB.t2Budget = 0;
@@ -404,11 +411,90 @@
     ok("import keeps variant bookkeeping", vAbs.db.clusterCands.some(x => x.variants === 1 && x.status === "dismissed"),
        JSON.stringify(vAbs.db.clusterCands));
 
+    // ═══ SUSTAINED QUALIFICATION (spec'd, found dropped, built Aug 10 2026) + full-chain fails ═══
+    DB.flips = []; DB.positions = []; DB.watch = [{id:9001, qty:null}];
+    DB.clusters = []; DB.planPriority = []; DB.planDemoted = []; DB.qual = {}; DB.gateLog = [];
+    DB.slots = 7; DB.t1Budget = 100e6; DB.t2Budget = 50e6; DB.minExpectGp = 0;
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    S.vol5Low = new Map();
+
+    // first pass this snapshot → qualifying 1/3, unfunded, ETA in the future, ledgered
+    S.qualStamp = null;
+    let plS = buildPlan();
+    ok("first-time passer seasons instead of funding", plS.picks.length === 0 && plS.qualifying.length === 1
+       && plS.qualifying[0].id === 9001 && plS.qualifying[0].qual.n === 1 && plS.qualifying[0].qual.eta > Date.now(),
+       JSON.stringify({picks: plS.picks.map(p => p.id), q: plS.qualifying.map(q => ({id: q.id, n: q.qual.n})),
+                       bench: plS.bench.map(b => b.name + ": " + b.failed)}));
+    ok("seasoning delay ledgered for the audit", DB.gateLog.some(e => e.g === "seasoning" && e.id === 9001),
+       JSON.stringify(DB.gateLog.slice(-4)));
+
+    // re-render of the same data snapshot is not new evidence
+    plS = buildPlan();
+    ok("same snapshot never double-counts a pass", DB.qual[9001].n === 1, JSON.stringify(DB.qual));
+
+    // an hour later (simulated), the next pass counts
+    DB.qual[9001].lastAt -= 3600e3 + 1; DB.qual[9001].firstAt -= 3600e3 + 1;
+    S.qualStamp = null;
+    plS = buildPlan();
+    ok("pass an hour apart advances the streak", DB.qual[9001].n === 2 && plS.qualifying[0].qual.n === 2,
+       JSON.stringify(DB.qual));
+
+    // a failed evaluation resets — consecutive means consecutive
+    const okHigh = S.latest[9001].high;
+    S.latest[9001].high = 4010;
+    S.qualStamp = null;
+    buildPlan();
+    ok("failed pass resets the streak", !DB.qual[9001], JSON.stringify(DB.qual));
+    S.latest[9001].high = okHigh;
+
+    // 3 counted passes spanning ≥2h → fundable
+    DB.qual[9001] = { n: 3, firstAt: Date.now() - 3 * 3600e3, lastAt: Date.now() - 1800e3 };
+    S.qualStamp = null;
+    plS = buildPlan();
+    ok("3 passes spanning 2h qualify for funding", plS.picks.some(p => p.id === 9001) && plS.qualifying.length === 0,
+       JSON.stringify({picks: plS.picks.map(p => p.id), q: plS.qualifying.map(q => q.id)}));
+
+    // measurement waives seasoning, reason stated on the funded line
+    DB.qual = {}; S.qualStamp = S.latestAt + "|" + S.hourAt;
+    DB.flips = [{ id: Date.now() - 86400e3, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: today(), note: "" }];
+    plS = buildPlan();
+    const wvQ = plS.picks.find(p => p.id === 9001);
+    ok("logged round trip waives seasoning with stated reason",
+       !!wvQ && (wvQ.sizeNotes || []).some(s => /seasoning waived — logged round trip/.test(s)),
+       JSON.stringify({picks: plS.picks.map(p => ({id: p.id, notes: p.sizeNotes})), q: plS.qualifying.map(q => q.id)}));
+    DB.flips = [];
+
+    // the qualifying pipeline renders with count and ETA copy
+    DB.qual = {}; S.qualStamp = null;
+    S.tab = "watch"; renderWatch();
+    const qHTML = document.querySelector("#planList").innerHTML;
+    ok("plan renders the qualifying pipeline", /QUALIFYING 1\/3/.test(qHTML) && /qualifies at ~/.test(qHTML)
+       && /margin-test it/.test(qHTML), qHTML.slice(Math.max(0, qHTML.indexOf("QUALIFYING")), Math.max(0, qHTML.indexOf("QUALIFYING")) + 300));
+
+    // full-chain evaluation: every failure collected, headline = first, gaps carry have/need
+    S.latest[9002] = { high: 4010, low: 4000, highTime: nowS-60, lowTime: nowS-120 };
+    S.hour[9002]   = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 100 };
+    const cF = candidateFor({ id: 9002, qty: null });
+    ok("full chain collects every failure with the same headline", (cF.fails || []).length >= 3
+       && cF.failed === cF.fails[0].detail && /sustained ROI/.test(cF.failed)
+       && cF.fails.some(f => f.g === "flow imbalance") && cF.fails.some(f => f.g === "volume floor"),
+       JSON.stringify((cF.fails || []).map(f => f.g)));
+    ok("gate gaps carry have/need/short for the near-miss view",
+       cF.fails.every(f => f.detail) && cF.fails.some(f => f.have != null && f.need != null && f.short),
+       JSON.stringify(cF.fails));
+    S.latest[9002] = { high: 4400, low: 4000, highTime: nowS-60, lowTime: nowS-120 };
+    S.hour[9002]   = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
+    S.qualStamp = S.latestAt + "|" + S.hourAt;
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,
       decisionLog: DB.decisionLog, gateLog: DB.gateLog, audRuled: DB.audRuled,
+      qual: { 9001: { n: 2, firstAt: 100, lastAt: 200 }, 9999: { n: 0 } },
       nudgeSnooze: { export: "2026-08-09" } })));
+    ok("import keeps qualification streaks, rejects malformed", v.db.qual["9001"] && v.db.qual["9001"].n === 2
+       && !v.db.qual["9999"], JSON.stringify(v.db.qual));
     ok("import keeps cluster state", v.db.clusters.length === DB.clusters.length && v.db.clusterCands.length > 0
        && v.db.clusterCapPct === 8 && v.db.clusterCorr === 0.6 && v.db.clusterMinDays === 21,
        JSON.stringify({c: v.db.clusters.length, k: v.db.clusterCands.length}));
