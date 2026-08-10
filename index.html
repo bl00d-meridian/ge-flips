@@ -4388,7 +4388,9 @@ function renderClusters(){
       + esc(itemName(id)) + '</span>'
     ).join("");
     return '<tr><td><b>⬡ ' + esc(cl.name) + '</b>'
-      + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px">' + esc(cl.story) + '</div>' : '')
+      /* td inherits white-space:nowrap — without the explicit normal, max-width
+         can't wrap the story and it runs the row off the screen edge. */
+      + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px;white-space:normal">' + esc(cl.story) + '</div>' : '')
       + '<div style="margin-top:3px"><button class="sm" data-cldetail="' + cl.id + '" title="Is the thesis holding? Pairwise correlation, decay over time, overlaid charts — and member management.">detail…</button></div></td>'
       + '<td style="white-space:normal;text-align:left;max-width:380px;min-width:180px">' + (mems || '<span class="dim">empty — tag watchlist rows with ⬡</span>') + '</td>'
       + '<td class="num' + (ex >= cap ? ' neg' : '') + '">' + gp(ex) + ' / ' + gp(cap)
