@@ -441,18 +441,18 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
           <th title="Profit per unit for one full round trip: sell − buy − tax">Margin</th>
           <th title="The same margin counted in ticks (1 tick = 1 gp, the minimum price step). The plan's floor is 15: at 4 ticks, one tick of adverse move erases a quarter of the edge — this is why cheap items keep losing despite healthy-looking ROI %">Ticks</th>
           <th title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
+          <th class="sec" title="Expected profit per full cycle at the planned quantity">Profit</th>
+          <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
+          <th class="sec" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
+          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
           <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
           <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
-          <th title="Suggested size — auto-clamped to the smallest of: one-third of working capital, the 4h buy limit, and what the book can absorb">Plan qty</th>
           <th></th>
           <th title="Your margin-tested prices override live data everywhere for 16h after the test — then live prices take back over">Tested</th>
+          <th title="Suggested size — auto-clamped to the smallest of: one-third of working capital, the 4h buy limit, and what the book can absorb">Plan qty</th>
           <th title="gp tied up at the planned quantity (qty × buy)">Position</th>
-          <th class="sec" title="Expected profit per full cycle at the planned quantity">Profit</th>
-          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
-          <th class="sec" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
           <th class="sec" title="Price over the last 7 days — flat is good, plunging is a knife">7-day</th>
           <th class="sec" title="Fitted 7-day price drift in % — the plan benches anything below −5%">Trend</th>
-          <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
           <th></th>
         </tr></thead>
         <tbody id="watchBody"></tbody>
@@ -2910,11 +2910,14 @@ function renderWatch(){
             : full(c.margin)+" ticks: one 1-gp adverse step erases "+Math.round(100/Math.max(1,c.margin))+"% of the edge — under the "+tf+"-tick floor"+(c.exempt ? ", even halved for tax-exempt" : ""))+'">'
         + (c.margin != null ? full(c.margin)+(c.margin >= tf ? " ✓" : " ✗") : "—")+'</td>'; })()
       + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
+      + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
+      + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
+      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
+      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
+      + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
+      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
-      + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
-      + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
-      + '</td>'
       + '<td style="white-space:nowrap"><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button>'
       + '<button class="sm'+(w.invTarget > 0 ? ' primary' : '')+'" data-inv="'+w.id+'" title="'+(w.invTarget > 0
           ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
@@ -2922,27 +2925,25 @@ function renderWatch(){
           ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv.target)+' units.'
           : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button></td>'
       + '<td style="white-space:nowrap">'+testCell+'</td>'
+      + '<td style="white-space:nowrap"><input type="number" class="num'+(auto ? " clamped" : "")+'" style="width:66px" value="'+qty+'" min="0" data-qty="'+w.id+'">'
+      + (auto ? '<span class="auto-tag" title="Auto-clamped to '+full(cap)+' by '+capReason(c, cap)+'.">auto</span>' : '')
+      + '</td>'
       + '<td class="num">'+gp(position)+'</td>'
-      + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
-      + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
-      + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
       + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
       + '<td class="num sec '+(tr == null ? "dim" : sign(tr))+'">'+(tr == null ? "—" : (tr>0?"+":"") + tr.toFixed(1) + "%")+'</td>'
-      + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
-      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
-      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
       + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
       + '</tr>';
   }).join("");
 
   const over = st > 0 && totalPos > st;
   $("#watchFoot").innerHTML = '<tr>'
-    + '<td colspan="9">Total across '+priced+' item'+(priced===1?"":"s")
-    + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire stack">over stack</span>' : '') + '</td>'
-    + '<td class="num'+(over ? " neg" : "")+'">'+gp(totalPos)+'</td>'
-    + '<td class="num sec '+sign(totalProfit)+'">'+gp(totalProfit)+'</td>'
-    + '<td colspan="6" class="dim">of '+gp(st)+' working capital'
-    + (st > 0 ? ' · ' + (totalPos/st*100).toFixed(0) + '% committed' : '') + '</td>'
+    + '<td colspan="4">Total across '+priced+' item'+(priced===1?"":"s")
+    + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire working capital">over stack</span>' : '') + '</td>'
+    + '<td class="num sec '+sign(totalProfit)+'" title="expected profit per full cycle at plan sizes">'+gp(totalProfit)+'</td>'
+    + '<td colspan="8" class="dim">of '+gp(st)+' working capital'
+    + (st > 0 ? ' · ' + (totalPos/st*100).toFixed(0) + '% committed at plan size' : '') + '</td>'
+    + '<td class="num'+(over ? " neg" : "")+'" title="gp tied up at plan sizes">'+gp(totalPos)+'</td>'
+    + '<td colspan="3"></td>'
     + '</tr>';
 
   renderPlan();
