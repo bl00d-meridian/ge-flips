@@ -194,6 +194,49 @@
        && /Cluster queue/.test(ckHTML) && /Gate health/.test(ckHTML) && /Decision log/.test(ckHTML));
     ok("ruled cards rest", /rests a week/.test(ckHTML));
 
+    // ═══ POSITION QTY CORRECTIONS (friction, Aug 9 2026 — mixed hide cape) ═══
+    const promptQ = [];
+    window.prompt = () => promptQ.shift();
+    window.confirm = () => true;   // keep remainder standing
+    DB.positions = [{ id: 501, itemId: 9002, name: "Probe beta", qty: 23, buy: 27000, placedAt: nowMs - 3600e3, stage: "bought", stageAt: nowMs }];
+    promptQ.push("18");
+    partialPosition(501);
+    const fixed = DB.positions.find(p => p.id === 501);
+    const rem = DB.positions.find(p => p.id !== 501 && p.itemId === 9002 && (p.stage || "buying") === "buying");
+    ok("bought-stage fix splits remainder to a standing buy", !!fixed && fixed.qty === 18 && fixed.stage === "bought"
+       && !!rem && rem.qty === 5 && rem.buy === 27000, JSON.stringify(DB.positions));
+    DB.positions = [{ id: 502, itemId: 9002, name: "Probe beta", qty: 23, buy: 27000, placedAt: nowMs - 3600e3, stage: "bought", stageAt: nowMs }];
+    window.confirm = () => false;  // remainder never filled
+    promptQ.push("18");
+    partialPosition(502);
+    ok("bought-stage fix can drop the remainder", DB.positions.length === 1 && DB.positions[0].qty === 18, JSON.stringify(DB.positions));
+    window.confirm = () => true;
+    const flipsBefore = DB.flips.length;
+    DB.positions = [{ id: 503, itemId: 9002, name: "Probe beta", qty: 23, buy: 27000, placedAt: nowMs - 3600e3, stage: "selling", ask: 28188, stageAt: nowMs }];
+    promptQ.push("18");
+    fixSellQty(503);
+    ok("selling-stage fix qty corrects without logging", DB.positions[0].qty === 18 && DB.flips.length === flipsBefore, JSON.stringify(DB.positions));
+    ok("bought stage offers the fix button", /data-part="503"/.test(posActions({ id: 503, stage: "bought", qty: 1 }))
+       && /fix qty…/.test(posActions({ id: 503, stage: "bought", qty: 1 })));
+    DB.positions = [];
+
+    // ═══ EXPORT NAG SNOOZE (friction, Aug 9 2026) ═══
+    DB.lastExportAt = 0;
+    DB.lastReviewAt = nowMs;
+    DB.checks = { date: today(), walkup: CHECKLISTS.walkup.steps.map((s2, i2) => i2), weekly: [] };
+    DB.nudgeSnooze = {};
+    const mv1 = nextMove();
+    ok("export nag surfaces with snooze key", /Export the log/.test(mv1.msg) && mv1.snoozeKey === "export", JSON.stringify(mv1));
+    renderNow();
+    ok("NOW bar renders the dismiss control", /data-nowsnooze="export"/.test(document.querySelector("#nowBar").innerHTML));
+    DB.nudgeSnooze.export = today();
+    const mv2 = nextMove();
+    ok("snoozed for today", !/Export the log/.test(mv2.msg), JSON.stringify(mv2));
+    DB.nudgeSnooze.export = yd;
+    const mv3 = nextMove();
+    ok("snooze expires next day", /Export the log/.test(mv3.msg) && mv3.snoozeKey === "export", JSON.stringify(mv3));
+    DB.nudgeSnooze = {};
+
     // ═══ CO-MOVEMENT DETECTOR END-TO-END (no network: cached series + wiki cache) ═══
     mkItem(9004, "Probe delta"); mkItem(9005, "Probe epsilon"); mkItem(9006, "Probe zeta");
     DB.watch = [9001,9002,9003,9004,9005,9006].map(id => ({ id, qty: null }));
@@ -243,13 +286,15 @@
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,
-      decisionLog: DB.decisionLog, gateLog: DB.gateLog, audRuled: DB.audRuled })));
+      decisionLog: DB.decisionLog, gateLog: DB.gateLog, audRuled: DB.audRuled,
+      nudgeSnooze: { export: "2026-08-09" } })));
     ok("import keeps cluster state", v.db.clusters.length === DB.clusters.length && v.db.clusterCands.length > 0
        && v.db.clusterCapPct === 8 && v.db.clusterCorr === 0.6 && v.db.clusterMinDays === 21,
        JSON.stringify({c: v.db.clusters.length, k: v.db.clusterCands.length}));
     ok("import keeps audit state", v.db.decisionLog.length === DB.decisionLog.length
-       && v.db.gateLog.length === DB.gateLog.length && Object.keys(v.db.audRuled).length > 0,
-       JSON.stringify({dl: v.db.decisionLog.length, gl: v.db.gateLog.length}));
+       && v.db.gateLog.length === DB.gateLog.length && Object.keys(v.db.audRuled).length > 0
+       && v.db.nudgeSnooze.export === "2026-08-09",
+       JSON.stringify({dl: v.db.decisionLog.length, gl: v.db.gateLog.length, ns: v.db.nudgeSnooze}));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }
