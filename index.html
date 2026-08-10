@@ -562,6 +562,38 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </div>
     </div>
 
+    <div class="panel" id="catPanel">
+      <div class="ph"><h3>Catalyst calendar & entry watch</h3><span class="sub" id="catSub"></span></div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f">Catalyst — named event<input id="catName" style="width:200px" placeholder="e.g. new raid launch"></label>
+        <label class="f">Window start<input type="date" id="catWinA" style="width:140px"></label>
+        <label class="f">Window end<input type="date" id="catWinB" style="width:140px"></label>
+        <div class="ac" id="acCat" style="max-width:220px"><input placeholder="Link an item…"></div>
+        <button class="sm" id="catAdd">+ catalyst</button>
+        <label class="f" title="Exit-liquidity warning: flag any candidate where the intended position would exceed this share of the item's daily gp volume. A thesis you can't exit isn't a trade.">Exit-liq warn %<input type="number" id="slvLiq" min="1" max="100" style="width:56px"></label>
+      </div>
+      <div id="catDraftItems" style="margin-bottom:6px"></div>
+      <div class="note" style="margin-bottom:8px">
+        Per catalyst, <b>↻ screen entries</b> reads each linked item's 90-day daily series and states
+        <b>DISCOUNTED</b> (below baseline — thesis intact) vs <b>RAMPING</b> (price and volume rising together —
+        others are front-running; late-entry warning), ranked by discount depth × catalyst proximity × exit
+        liquidity. Proposes only — nothing enters the sleeve without your press on the form below.
+      </div>
+      <div id="catBody"></div>
+    </div>
+
+    <div class="panel" id="anomPanel">
+      <div class="ph"><h3>Accumulation anomaly scan — weekly</h3><span class="sub" id="anomSub"></span>
+        <span style="margin-left:auto"><button class="sm" id="anomRun" title="Runs weekly on its own; this button runs it now.">↻ scan now</button></span></div>
+      <div class="note" style="margin-bottom:6px">
+        Items over 1m gp showing a sustained price+volume rise across 2–3 weeks with <b>no linked catalyst</b> —
+        flagged "being accumulated — reason unknown; find the catalyst before considering entry".
+        Max 5 flags a week, by anomaly strength. <b>No thesis, no position</b> — a flag is a homework
+        assignment, never an entry signal.
+      </div>
+      <div id="anomBody"></div>
+    </div>
+
     <div class="panel" id="slvFormPanel">
       <div class="ph"><h3 id="slvFormTitle">New position</h3>
         <span class="sub">every field is mandatory — a position cannot save without all of them</span>
@@ -970,6 +1002,10 @@ let DB = {
   sleeve: [],         // thesis-sleeve positions [{id,itemId,name,qty,basis,enteredAt,catalyst:{name,windowStart,windowEnd},thesis,ladder:[{kind,trigger,frac,filledAt?}],invalidation,phase,legacy,health,soldQty,closedAt}]
   sleeveExits: [],    // realized sleeve exits [{t,d,posId,itemId,name,qty,price,basis,net,rung}] — never mixed into DB.flips or any flipping stat
   sleeveRungPct: 5,   // a price rung arms when the exit-guidance price is within this % of its trigger
+  catalysts: [],      // catalyst calendar [{id,name,windowStart,windowEnd,items:[ids],clusters:[ids],notes,src,createdAt}] — the user's (or ratified briefings')
+  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v}] — "reason unknown; find the catalyst"; 30d retention
+  lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
+  sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
   checks: { date:"", walkup:[], weekly:[] }
 };
@@ -978,7 +1014,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -5432,6 +5468,13 @@ function saveSleeveFromForm(){
       phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null };
     DB.sleeve.push(pos);
     logDecision("sleeve", pos.name, "enter", d.catName + " · " + d.thesis);
+    /* Exit-liquidity advisory — a warning, never a block: the ruling on
+       thin exits is the user's, made with the number in view. */
+    const liqRec = slvDailyCache.get(d.itemId);
+    const liqSt = liqRec ? slvSeriesStats(liqRec.days) : null;
+    if (liqSt && exitLiqWarn(d.qty * d.basis, liqSt.gpVolDay))
+      toast("⚠ Exit liquidity: this position is " + gp(d.qty * d.basis) + " against ~" + gp(liqSt.gpVolDay)
+        + "/day traded (over " + slvLiqPct() + "%). A thesis you can't exit isn't a trade — saved anyway, your call.");
     slvFormFill({}); slvEditId = null;
     msg("");
     save(); renderSleeve();
@@ -5549,6 +5592,8 @@ function renderSleeve(){
     : "";
   $("#slvBody").innerHTML = (cards || '<div class="empty">No sleeve positions. Every position needs its catalyst, thesis, exit ladder and invalidation before it can save — the form below enforces all four.</div>') + closedHTML;
   renderSlvRungs();
+  renderSleeveEngine();
+  renderCatDraft();
 }
 
 /* ── sleeve wiring ── */
@@ -5676,6 +5721,345 @@ function sleeveWeeklyInline(){
   return '<div class="inline">' + (lines.length ? lines.join("")
     : '<div class="dim">No sleeve positions.</div>') + '</div>';
 }
+
+/* ═══════════ SLEEVE CANDIDATE ENGINE — proposes only ═══════════
+   Catalyst calendar → entry watch (DISCOUNTED vs RAMPING against a 90-day
+   baseline), weekly accumulation-anomaly scan, cluster-crossover laggard
+   flags, and a discount × proximity × exit-liquidity ranking. Everything
+   here queues homework for the user; nothing enters the sleeve, spends the
+   budget, or touches the flipping machinery without the form's save press. */
+const SLV_DAILY_TTL = 20 * 3600e3;
+const slvDailyCache = new Map();
+/* Separate from dailyFor's 31-day mid-only cache: the engine needs 90 days
+   AND per-day volume. Same polite endpoint, its own cache. */
+async function slvDailyFor(id){
+  const c = slvDailyCache.get(id);
+  if (c && Date.now() - c.at < SLV_DAILY_TTL) return c;
+  const d = await getJSON("/timeseries?id=" + id + "&timestep=24h");
+  const days = (d.data || []).slice(-90).map(p => {
+    const hi = Number.isFinite(p.avgHighPrice) ? p.avgHighPrice : null;
+    const lo = Number.isFinite(p.avgLowPrice)  ? p.avgLowPrice  : null;
+    const mid = (hi != null && lo != null) ? (hi + lo) / 2 : (hi != null ? hi : lo);
+    const vol = (p.highPriceVolume || 0) + (p.lowPriceVolume || 0);
+    return { d: new Date(p.timestamp * 1000).toISOString().slice(0, 10), mid, vol };
+  }).filter(x => Number.isFinite(x.mid) && x.mid > 0);
+  const rec = { at: Date.now(), days };
+  slvDailyCache.set(id, rec);
+  return rec;
+}
+
+/* Pure series verdicts — probe-tested. Baseline = median of everything
+   except the last 14 days; current = last-7 median. The accumulation
+   signature compares the last week against 2–3 weeks ago on BOTH price and
+   volume — rising together is the front-running shape. Under 21 days of
+   data the answer is null, never a guess. */
+function slvSeriesStats(days){
+  if (!days || days.length < 21) return null;
+  const mids = days.map(x => x.mid), vols = days.map(x => x.vol || 0);
+  const last7m = medianOf(mids.slice(-7)), last7v = medianOf(vols.slice(-7));
+  const basem = medianOf(mids.slice(0, -14)), basev = medianOf(vols.slice(0, -14));
+  const priorM = medianOf(mids.slice(-28, -14)), priorV = medianOf(vols.slice(-28, -14));
+  const priceVs = basem > 0 ? (last7m / basem - 1) * 100 : null;
+  const volVs = basev > 0 ? (last7v / basev - 1) * 100 : null;
+  const rise14p = priorM > 0 ? (last7m / priorM - 1) * 100 : null;
+  const rise14v = priorV > 0 ? (last7v / priorV - 1) * 100 : null;
+  const accum = rise14p != null && rise14v != null && rise14p >= 4 && rise14v >= 25;
+  const gpVolDay = medianOf(days.slice(-14).map(x => (x.vol || 0) * x.mid));
+  return { priceVs, volVs, rise14p, rise14v, accum, gpVolDay, last7m };
+}
+const entryVerdict = st => !st ? null
+  : (st.priceVs != null && st.priceVs <= 0) ? "DISCOUNTED"
+  : (st.accum || (st.priceVs != null && st.priceVs >= 5)) ? "RAMPING" : "neutral";
+/* Ranking: discount depth × catalyst proximity × exit liquidity. Zero past
+   the window — a catalyst that already happened has no entry to rank. */
+function slvRankScore(st, runwayD){
+  if (!st || runwayD == null || runwayD < 0) return 0;
+  const discount = Math.max(0, -(st.priceVs != null ? st.priceVs : 0));
+  const proximity = 1 / (1 + runwayD / 30);
+  const liq = st.gpVolDay > 0 ? Math.log10(1 + st.gpVolDay) : 0;
+  return discount * proximity * liq;
+}
+const slvLiqPct = () => Math.min(100, Math.max(1, DB.sleeveExitLiqPct != null ? DB.sleeveExitLiqPct : 15));
+/* The intended position for the warning is what the sleeve could actually
+   deploy: the free budget (or the whole budget when nothing is free). */
+const slvIntendGp = () => sleeveFree() > 0 ? sleeveFree() : (DB.sleeveBudget || 0);
+const exitLiqWarn = (intendGp, gpVolDay) => gpVolDay > 0 && intendGp > gpVolDay * slvLiqPct() / 100;
+
+const catLinkedIds = cat => {
+  const ids = new Set(cat.items || []);
+  for (const clId of (cat.clusters || [])){
+    const cl = (DB.clusters || []).find(x => x.id === clId);
+    if (cl) for (const m of cl.members) ids.add(m);
+  }
+  return [...ids];
+};
+const catRunwayD = cat => {
+  const a = Date.parse(String(cat.windowStart || "") + "T00:00:00");
+  return Number.isFinite(a) ? Math.ceil((a - Date.now()) / 86400e3) : null;
+};
+
+/* Entry watch: fetch-per-member, polite, cached 20h. Results live in S —
+   a screen is a reading, not state. */
+let entryWatchBusy = false;
+async function runEntryWatch(catId){
+  const cat = (DB.catalysts || []).find(c => c.id === catId);
+  if (!cat || entryWatchBusy) return;
+  entryWatchBusy = true;
+  try {
+    if (!S.entryWatch) S.entryWatch = new Map();
+    const rows = [];
+    const runway = catRunwayD(cat);
+    for (const id of catLinkedIds(cat)){
+      let st = null, thin = false;
+      try { st = slvSeriesStats((await slvDailyFor(id)).days); } catch(e){ /* polite: skip */ }
+      if (!st) thin = true;
+      rows.push({ id, st, thin, verdict: entryVerdict(st),
+        score: slvRankScore(st, runway),
+        liqWarn: st ? exitLiqWarn(slvIntendGp(), st.gpVolDay) : false });
+      await new Promise(r => setTimeout(r, 250));
+    }
+    rows.sort((a, b) => b.score - a.score);
+    S.entryWatch.set(cat.id, { at: Date.now(), runway, rows });
+  } finally {
+    entryWatchBusy = false;
+    if (S.tab === "sleeve") renderSleeve();
+  }
+}
+
+/* Cluster crossover: when a catalyst-linked set moves but a member lags —
+   "same thesis, unpriced member". Reads cached series only; a screen or
+   anomaly scan fills the cache. */
+function crossoverFlags(){
+  const flags = [];
+  for (const cat of DB.catalysts || []){
+    const ids = catLinkedIds(cat);
+    if (ids.length < 2) continue;
+    const moves = ids.map(id => {
+      const rec = slvDailyCache.get(id);
+      if (!rec || rec.days.length < 18) return null;
+      const mids = rec.days.map(x => x.mid);
+      const cur = medianOf(mids.slice(-4)), old = medianOf(mids.slice(-18, -14));
+      return old > 0 ? { id, mv: (cur / old - 1) * 100 } : null;
+    }).filter(Boolean);
+    if (moves.length < 2) continue;
+    const lead = moves.reduce((a, b) => (b.mv > a.mv ? b : a));
+    if (lead.mv < 10) continue;
+    for (const m of moves)
+      if (m.id !== lead.id && m.mv < Math.max(2, lead.mv * 0.25))
+        flags.push({ cat, lead, lag: m });
+  }
+  return flags;
+}
+
+/* Weekly accumulation-anomaly scan. Pre-screens >1m items by 24h gp flow to
+   the top 40 (politeness cap — stated in the panel, never silent), fetches
+   their 90d series 300ms apart, flags at most 5 by strength. */
+let anomalyBusy = false;
+async function runAnomalyScan(force){
+  if (anomalyBusy) return;
+  if (!force && Date.now() - (DB.lastAnomalyScanAt || 0) < 7 * 86400e3) return;
+  if (!S.items.length || !S.latestAt) return;
+  anomalyBusy = true;
+  try {
+    const linked = new Set();
+    for (const cat of DB.catalysts || []) for (const id of catLinkedIds(cat)) linked.add(id);
+    const already = new Set((DB.anomalyFlags || []).filter(f => Date.now() - f.at < 30 * 86400e3).map(f => f.itemId));
+    const cands = [];
+    for (const it of S.items){
+      const L = S.latest[it.i];
+      if (!L) continue;
+      const px = Number.isFinite(L.high) ? L.high : L.low;
+      if (!(px > 1e6)) continue;
+      if (linked.has(it.i) || sleeveHas(it.i) || already.has(it.i)) continue;
+      const v24 = S.volumes[it.i] || 0;
+      if (!(v24 > 0)) continue;
+      cands.push({ id: it.i, gp: v24 * px });
+    }
+    cands.sort((a, b) => b.gp - a.gp);
+    const short = cands.slice(0, 40);
+    S.anomScanned = short.length; S.anomPool = cands.length;
+    const hits = [];
+    for (const c of short){
+      try {
+        const st = slvSeriesStats((await slvDailyFor(c.id)).days);
+        if (st && st.accum)
+          hits.push({ itemId: c.id, st, strength: st.rise14p * (1 + Math.max(0, st.rise14v) / 100) });
+      } catch(e){ /* polite: skip this item, keep scanning */ }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    hits.sort((a, b) => b.strength - a.strength);
+    const now = Date.now();
+    for (const h of hits.slice(0, 5))
+      DB.anomalyFlags.push({ id: now + DB.anomalyFlags.length, itemId: h.itemId, name: itemName(h.itemId),
+        at: now, d: today(), strength: Math.round(h.strength * 10) / 10,
+        rise14p: Math.round(h.st.rise14p * 10) / 10, rise14v: Math.round(h.st.rise14v) });
+    DB.anomalyFlags = DB.anomalyFlags.filter(x => now - x.at < 30 * 86400e3).slice(-40);
+    DB.lastAnomalyScanAt = now;
+    save();
+  } finally {
+    anomalyBusy = false;
+    if (S.tab === "sleeve") renderSleeve();
+  }
+}
+
+let catDraftItems = [];
+function renderCatDraft(){
+  const box = $("#catDraftItems");
+  if (!box) return;
+  box.innerHTML = catDraftItems.length
+    ? 'Will link: ' + catDraftItems.map(id => '<span class="memchip">' + esc(itemName(id))
+        + ' <button class="sm ghost" data-catdraftrm="' + id + '" style="padding:0 5px">✕</button></span>').join("")
+    : "";
+}
+function renderSleeveEngine(){
+  if (!$("#catBody")) return;
+  const cats = DB.catalysts || [];
+  $("#catSub").textContent = cats.length + " catalyst" + (cats.length === 1 ? "" : "s") + " on the calendar";
+  const xo = crossoverFlags();
+  $("#catBody").innerHTML = cats.length ? cats.map(cat => {
+    const ids = catLinkedIds(cat);
+    const chips = (cat.items || []).map(id => '<span class="memchip">' + esc(itemName(id))
+      + ' <button class="sm ghost" data-catrmitem="' + cat.id + ':' + id + '" style="padding:0 5px">✕</button></span>').join("")
+      + (cat.clusters || []).map(clId => {
+          const cl = (DB.clusters || []).find(x => x.id === clId);
+          return cl ? '<span class="memchip">⬡ ' + esc(cl.name) + ' <button class="sm ghost" data-catrmcl="' + cat.id + ':' + clId + '" style="padding:0 5px">✕</button></span>' : "";
+        }).join("");
+    const ew = S.entryWatch && S.entryWatch.get(cat.id);
+    const rowsHTML = ew ? (ew.rows.length ? '<div class="tw"><table><thead><tr><th>Item</th>'
+        + '<th title="Last-7-day median price vs the 90-day baseline (median of everything but the last 14 days)">Px vs 90d base</th>'
+        + '<th title="Same comparison on daily unit volume">Vol vs base</th><th>Verdict</th>'
+        + '<th title="Median daily gp volume, last 14 days — the exit-liquidity denominator">gp/day</th>'
+        + '<th title="discount depth × catalyst proximity × exit liquidity">Rank</th></tr></thead><tbody>'
+        + ew.rows.map(r => {
+            const v = r.verdict;
+            return '<tr><td>' + esc(itemName(r.id))
+              + (r.liqWarn ? ' <span class="badge b-risk" title="Intended position (' + gp(slvIntendGp()) + ') exceeds ' + slvLiqPct() + '% of this item\'s daily gp volume. A thesis you can\'t exit isn\'t a trade.">⚠ exit liq</span>' : '') + '</td>'
+              + (r.thin ? '<td colspan="5" class="dim">under 21 days of series data — not judged, not guessed</td>'
+                : '<td class="num ' + sign(-(r.st.priceVs || 0)) + '">' + (r.st.priceVs > 0 ? "+" : "") + r.st.priceVs.toFixed(1) + '%</td>'
+                + '<td class="num">' + (r.st.volVs != null ? (r.st.volVs > 0 ? "+" : "") + r.st.volVs.toFixed(0) + "%" : "—") + '</td>'
+                + '<td>' + (v === "DISCOUNTED" ? '<span class="badge b-tax" title="Below the 90-day baseline with the thesis intact — the entry the calendar exists to find.">DISCOUNTED</span>'
+                          : v === "RAMPING" ? '<span class="badge b-warn" title="Price and volume rising together — others are front-running the same catalyst. Late-entry warning.">RAMPING</span>'
+                          : '<span class="dim">neutral</span>') + '</td>'
+                + '<td class="num">' + gp(r.st.gpVolDay) + '</td>'
+                + '<td class="num">' + (r.score > 0 ? r.score.toFixed(1) : "—") + '</td>')
+              + '</tr>';
+          }).join("") + '</tbody></table></div>'
+        + '<div class="dim" style="font-size:11px">screened ' + ago(ew.at) + ' · runway ' + (ew.runway != null ? (ew.runway >= 0 ? ew.runway + "d to window" : "window passed") : "no window") + '</div>'
+      : '<div class="dim">no linked items resolved</div>') : "";
+    const catXo = xo.filter(x => x.cat.id === cat.id).map(x =>
+      '<div class="plan-note" style="margin-top:4px">⚑ crossover: <b>' + esc(itemName(x.lead.id)) + ' '
+      + (x.lead.mv > 0 ? "+" : "") + x.lead.mv.toFixed(0) + '%</b>, ' + esc(itemName(x.lag.id)) + ' '
+      + (Math.abs(x.lag.mv) < 2 ? "flat" : (x.lag.mv > 0 ? "+" : "") + x.lag.mv.toFixed(0) + "%")
+      + ' — same thesis, unpriced member.</div>').join("");
+    return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:8px 11px;margin-bottom:8px">'
+      + '<div><b>⚡ ' + esc(cat.name) + '</b> <span class="dim">' + esc(slvCountdown({ name: cat.name, windowStart: cat.windowStart, windowEnd: cat.windowEnd })) + '</span>'
+      + (cat.src === "intel" ? ' <span class="badge b-ok" title="Created from a ratified analyst briefing record.">from briefing</span>' : '')
+      + '<span style="float:right;white-space:nowrap">'
+      + '<button class="sm" data-catwatch="' + cat.id + '"' + (entryWatchBusy ? ' disabled' : '') + '>↻ screen entries</button> '
+      + '<button class="sm" data-cataddi="' + cat.id + '">+ item</button> '
+      + '<button class="sm" data-cataddcl="' + cat.id + '">+ cluster</button> '
+      + '<button class="sm ghost" data-catdel="' + cat.id + '">✕</button></span></div>'
+      + '<div style="margin-top:3px;white-space:normal">' + (chips || '<span class="dim">no items linked yet</span>') + '</div>'
+      + (cat.notes ? '<div class="dim" style="white-space:normal">' + esc(cat.notes) + '</div>' : '')
+      + catXo + rowsHTML + '</div>';
+  }).join("") : '<div class="empty">No catalysts on the calendar. Name the event, set its window, link the items it moves — the entry watch does the rest.</div>';
+
+  const fresh = (DB.anomalyFlags || []).filter(f => Date.now() - f.at < 30 * 86400e3);
+  $("#anomSub").textContent = (DB.lastAnomalyScanAt ? "last scan " + ago(DB.lastAnomalyScanAt) : "never run")
+    + (S.anomScanned != null ? " · screened top " + S.anomScanned + " of " + S.anomPool + " >1m items by gp flow" : "");
+  $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f =>
+    '<div class="bench-row"><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
+    + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
+    + '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position</div></span>'
+    + '<span class="r">' + esc(f.d) + '</span></div>').join("")
+    : '<div class="bench-row"><span class="dim">No anomaly flags in the last 30 days.</span></div>';
+}
+
+/* ── engine wiring ── */
+const acCat = makeAC("#acCat", it => {
+  if (!catDraftItems.includes(it.i)) catDraftItems.push(it.i);
+  renderCatDraft();
+});
+$("#catAdd").onclick = () => {
+  const name = $("#catName").value.trim();
+  const a = $("#catWinA").value, b = $("#catWinB").value;
+  if (!name){ toast("A catalyst needs a name — a specific event, not a vibe."); return; }
+  if (!a || !b){ toast("A catalyst needs its window (start and end dates)."); return; }
+  const cat = { id: Date.now(), name, windowStart: a, windowEnd: b,
+    items: catDraftItems.slice(), clusters: [], notes: "", src: "manual", createdAt: Date.now() };
+  DB.catalysts.push(cat);
+  logDecision("catalyst", name, "add", "window " + a + " → " + b + " · " + cat.items.length + " items linked");
+  catDraftItems = [];
+  $("#catName").value = ""; $("#catWinA").value = ""; $("#catWinB").value = "";
+  save(); renderSleeve();
+  toast("Catalyst \"" + name + "\" on the calendar — link items and screen entries when you're ready.");
+};
+document.addEventListener("click", e => {
+  const t = e.target;
+  const drm = t.closest("[data-catdraftrm]");
+  if (drm){ catDraftItems = catDraftItems.filter(x => x !== +drm.dataset.catdraftrm); renderCatDraft(); return; }
+  const cw = t.closest("[data-catwatch]");
+  if (cw){ runEntryWatch(+cw.dataset.catwatch); renderSleeve(); return; }
+  const cd = t.closest("[data-catdel]");
+  if (cd){
+    const idx = DB.catalysts.findIndex(c => c.id === +cd.dataset.catdel);
+    if (idx < 0) return;
+    const [gone] = DB.catalysts.splice(idx, 1);
+    logDecision("catalyst", gone.name, "delete", "removed from the calendar");
+    save(); renderSleeve();
+    toast("Catalyst removed.", () => { DB.catalysts.splice(idx, 0, gone); save(); renderSleeve(); });
+    return;
+  }
+  const ci = t.closest("[data-cataddi]");
+  if (ci){
+    const cat = DB.catalysts.find(c => c.id === +ci.dataset.cataddi);
+    if (!cat) return;
+    const a = prompt("Link an item to \"" + cat.name + "\" — exact or partial name:", "");
+    if (a === null) return;
+    const q = String(a).trim().toLowerCase();
+    if (!q) return;
+    const hit = S.items.find(x => x.n.toLowerCase() === q) || S.items.find(x => x.n.toLowerCase().startsWith(q));
+    if (!hit){ toast("No item matches \"" + a + "\"."); return; }
+    if (!cat.items.includes(hit.i)) cat.items.push(hit.i);
+    save(); renderSleeve();
+    toast(hit.n + " linked to \"" + cat.name + "\".");
+    return;
+  }
+  const ccl = t.closest("[data-cataddcl]");
+  if (ccl){
+    const cat = DB.catalysts.find(c => c.id === +ccl.dataset.cataddcl);
+    if (!cat) return;
+    if (!DB.clusters.length){ toast("No ratified clusters to link — confirm one first."); return; }
+    const a = prompt("Link which ratified cluster to \"" + cat.name + "\"?\n\n"
+      + DB.clusters.map((cl, i) => (i + 1) + ". " + cl.name).join("\n"), "");
+    if (a === null) return;
+    const cl = DB.clusters[Math.floor(clampNum(a, NaN)) - 1];
+    if (!cl){ toast("Pick a number from the list."); return; }
+    if (!cat.clusters.includes(cl.id)) cat.clusters.push(cl.id);
+    save(); renderSleeve();
+    toast("⬡ " + cl.name + " linked — its members join the entry watch.");
+    return;
+  }
+  const cri = t.closest("[data-catrmitem]");
+  if (cri){
+    const [cid, iid] = cri.dataset.catrmitem.split(":").map(Number);
+    const cat = DB.catalysts.find(c => c.id === cid);
+    if (!cat) return;
+    cat.items = cat.items.filter(x => x !== iid);
+    save(); renderSleeve();
+    return;
+  }
+  const crc = t.closest("[data-catrmcl]");
+  if (crc){
+    const [cid, clid] = crc.dataset.catrmcl.split(":").map(Number);
+    const cat = DB.catalysts.find(c => c.id === cid);
+    if (!cat) return;
+    cat.clusters = (cat.clusters || []).filter(x => x !== clid);
+    save(); renderSleeve();
+    return;
+  }
+});
+$("#anomRun").onclick = () => { runAnomalyScan(true); toast("Anomaly scan started — top >1m items by gp flow, politely, ~20s."); };
 
 /* ═══════════ FLIP LOG ═══════════ */
 function renderLog(){
@@ -7369,6 +7753,25 @@ function validateImport(d){
             if (p.abandoned) o.abandoned = 1;
             return o;
           }).filter(Boolean),
+          sleeveExitLiqPct: Math.min(100, Math.max(1, num(d.sleeveExitLiqPct) != null ? num(d.sleeveExitLiqPct) : 15)),
+          lastAnomalyScanAt: Math.max(0, num(d.lastAnomalyScanAt) || 0),
+          catalysts: (Array.isArray(d.catalysts) ? d.catalysts : []).map(c => {
+            const name = String((c && c.name) || "").trim();
+            if (!name){ rejected++; return null; }
+            return { id: num(c.id) || uid(), name,
+              windowStart: String(c.windowStart || "").slice(0, 10), windowEnd: String(c.windowEnd || "").slice(0, 10),
+              items: [...new Set((Array.isArray(c.items) ? c.items : []).map(x => num(x)).filter(x => x > 0))],
+              clusters: [...new Set((Array.isArray(c.clusters) ? c.clusters : []).map(x => num(x)).filter(x => x > 0))],
+              notes: String(c.notes || ""), src: c.src === "intel" ? "intel" : "manual",
+              createdAt: num(c.createdAt) || Date.now() };
+          }).filter(Boolean),
+          anomalyFlags: (Array.isArray(d.anomalyFlags) ? d.anomalyFlags : []).map(f => {
+            const itemId = num(f && f.itemId), at = num(f && f.at);
+            if (!(itemId > 0) || !(at > 0)) return null;
+            return { id: num(f.id) || uid(), itemId, name: String(f.name || itemName(itemId)),
+              at, d: String(f.d || "").slice(0, 10), strength: num(f.strength) || 0,
+              rise14p: num(f.rise14p) || 0, rise14v: num(f.rise14v) || 0 };
+          }).filter(Boolean).slice(-40),
           sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
             const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
             if (!(qty > 0) || !(price > 0) || !(itemId > 0)) return null;
@@ -7492,7 +7895,8 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["scSeedN","seedTrips",1,10],["scSibSeed","sibPerSeed",0,30],["scSibTot","sibTotal",0,60],
                                  ["szMinExp","minExpectGp",0,1e8],
                                  ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30],
-                                 ["slvBudget","sleeveBudget",0,2e9],["slvMax","sleeveMaxPos",1,10],["slvRung","sleeveRungPct",1,25]]){
+                                 ["slvBudget","sleeveBudget",0,2e9],["slvMax","sleeveMaxPos",1,10],["slvRung","sleeveRungPct",1,25],
+                                 ["slvLiq","sleeveExitLiqPct",1,100]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
@@ -7575,6 +7979,7 @@ $("#clDays").value = DB.clusterMinDays != null ? DB.clusterMinDays : 20;
 $("#slvBudget").value = DB.sleeveBudget != null ? DB.sleeveBudget : 60000000;
 $("#slvMax").value = DB.sleeveMaxPos != null ? DB.sleeveMaxPos : 3;
 $("#slvRung").value = DB.sleeveRungPct != null ? DB.sleeveRungPct : 5;
+$("#slvLiq").value = DB.sleeveExitLiqPct != null ? DB.sleeveExitLiqPct : 15;
 /* Walk-up cadence: no schedule is assumed — the app opens on the same move
    list whenever you show up. */
 S.mode = "walkup";
@@ -7601,6 +8006,11 @@ refresh().then(() => { renderAll(); fillSparks(); });
    have passed; the interval keeps long-lived tabs honest. */
 setTimeout(() => runClusterScan(false), 15000);
 setInterval(() => runClusterScan(false), 6 * 3600e3);
+/* Weekly accumulation-anomaly scan, same politeness discipline: the guard
+   inside skips until 7 days have passed; offset from the cluster scan so
+   the two never interleave requests. */
+setTimeout(() => runAnomalyScan(false), 45000);
+setInterval(() => runAnomalyScan(false), 6 * 3600e3 + 300e3);
 
 /* Poll on a self-scheduling timer so failures can back off instead of
    hammering a struggling API every 60s forever. */
