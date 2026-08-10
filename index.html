@@ -269,6 +269,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <nav class="tabs" id="tabs">
     <button data-tab="watch" class="on">Watchlist</button>
     <button data-tab="clusters">Clusters</button>
+    <button data-tab="sleeve">Sleeve</button>
     <button data-tab="routine">Routine</button>
     <button data-tab="log">Flip Log</button>
     <button data-tab="shadow">Shadow Fund</button>
@@ -539,6 +540,56 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div id="cluDetail"><span class="dim">Pick a confirmed cluster's <b>detail…</b> button above to see whether — and to
         what extent — its correlation is holding: the pairwise excess-correlation matrix, a rolling correlation-over-time
         view to watch the thesis decay, and the members' normalized 31-day charts overlaid.</span></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ THESIS SLEEVE ═══════════ -->
+  <section class="tab" id="tab-sleeve">
+    <div class="panel" id="sleevePanel">
+      <div class="ph"><h2>Thesis sleeve — catalyst positions</h2><span class="sub" id="slvSub"></span></div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" title="Capital ceiling for NEW sleeve entries, carved from working capital. Disjoint from the tier pools and the flip allocator — neither ever reads or spends it. Migrated legacy holds are already funded and never count against it.">Sleeve budget<input type="number" id="slvBudget" step="5000000" min="0" style="width:110px"></label>
+        <label class="f" title="Maximum concurrent NEW sleeve positions. Legacy migrations are excluded from the count.">Max new pos<input type="number" id="slvMax" min="1" max="10" style="width:56px"></label>
+        <label class="f" title="A price rung arms its SELL card when the exit-guidance price (current instasell) comes within this % of the rung trigger.">Rung arm %<input type="number" id="slvRung" min="1" max="25" style="width:52px"></label>
+        <span class="note" style="align-self:center;max-width:600px" id="slvBudgetNote"></span>
+      </div>
+      <div id="slvBody"></div>
+      <div class="note" style="margin-top:8px">
+        <b>Judged at exit, not at the mark.</b> The sleeve proposes and surfaces SELL cards when exit rungs arm;
+        you execute in-game and confirm every fill. Sleeve gp never blends into a flipping metric — no shared
+        velocity, no sleeve gp in the couch-minute Sharpe. Entries, exits, phase flags, ladder edits, and
+        thesis-health lights are all your presses, and the material ones land in the decision log.
+      </div>
+    </div>
+
+    <div class="panel" id="slvFormPanel">
+      <div class="ph"><h3 id="slvFormTitle">New position</h3>
+        <span class="sub">every field is mandatory — a position cannot save without all of them</span>
+        <span style="margin-left:auto"><button class="sm ghost hide" id="slvCancel">cancel edit</button></span></div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="ac" id="acSleeve" style="max-width:260px"><input placeholder="Item…"></div>
+        <label class="f">Qty<input type="number" id="slvQty" min="1" style="width:90px"></label>
+        <label class="f" title="What you actually paid (or will pay) per unit — realized P&L at exit is judged against this, net of tax.">Entry / cost basis each<input type="number" id="slvBasis" min="1" style="width:110px"></label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" title="The named event this position rides — a specific update, boss, league, poll result. 'Number go up' is not a catalyst.">Catalyst — named event<input id="slvCat" placeholder="e.g. Varlamore pt 2 launch" style="width:240px"></label>
+        <label class="f">Window start<input type="date" id="slvWinA" style="width:140px"></label>
+        <label class="f">Window end<input type="date" id="slvWinB" style="width:140px"></label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" style="flex:1;min-width:300px" title="One sentence, yours — why this item repriced upward on this catalyst.">Thesis (one sentence, yours)<input id="slvThesis" style="width:100%"></label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" style="flex:1;min-width:300px" title="What kills the thesis early — the observation that means you were wrong and should exit before the ladder plays out.">Invalidation — what kills the thesis early<input id="slvInval" style="width:100%"></label>
+      </div>
+      <div class="note" style="margin-bottom:4px"><b>Exit ladder</b> — at least 2 rungs. Each rung: a trigger
+        (price level, catalyst phase, or a date fallback) and the fraction of the position to sell there.</div>
+      <div id="slvRungRows"></div>
+      <div class="row" style="margin-top:6px">
+        <button class="sm" id="slvAddRung">+ rung</button>
+        <button class="primary" id="slvSave">Save position</button>
+        <span class="note" id="slvFormMsg" style="align-self:center"></span>
+      </div>
     </div>
   </section>
 
@@ -916,6 +967,9 @@ let DB = {
   gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
   qual: {},           // sustained qualification: id → {n, firstAt, lastAt} counted full-gate passes (spec: 3 spanning ≥2h)
   deployLog: [],      // funnel headline snapshots [{h,pass,funded,dep}] — hourly buckets (last refresh of the hour wins), 7d retention
+  sleeve: [],         // thesis-sleeve positions [{id,itemId,name,qty,basis,enteredAt,catalyst:{name,windowStart,windowEnd},thesis,ladder:[{kind,trigger,frac,filledAt?}],invalidation,phase,legacy,health,soldQty,closedAt}]
+  sleeveExits: [],    // realized sleeve exits [{t,d,posId,itemId,name,qty,price,basis,net,rung}] — never mixed into DB.flips or any flipping stat
+  sleeveRungPct: 5,   // a price rung arms when the exit-guidance price is within this % of its trigger
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
   checks: { date:"", walkup:[], weekly:[] }
 };
@@ -924,7 +978,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","deployLog","sleeve","sleeveExits"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -986,6 +1040,30 @@ function load(){
         subject: "tier budgets + thesis sleeve", action: "recalibrate (T1 100m→60m, T2 50m→30m, sleeve +60m)",
         reason: "resized to evidence — funnel showed flipping capacity below prior budgets; surplus reallocated to thesis sleeve" });
       DB.recalV1 = 1;
+    }
+    /* One-time (thesis sleeve, user-directed Aug 10 2026): the existing
+       Crimson kisten and Elder maul holds migrate into the sleeve for
+       tracking with whatever cost bases and notes they carry. LEGACY
+       positions: already funded, excluded from the 60m budget and the
+       concurrency cap. Mandatory fields they lack (catalyst, ladder,
+       invalidation) are completed by hand via edit — never invented here. */
+    if (!DB.sleeveMigV1){
+      const isLegacy = n => /crimson\s*kisten|elder\s*maul/i.test(String(n || ""));
+      const stay = [];
+      for (const h of DB.holds){
+        if (isLegacy(h.name) && h.itemId > 0){
+          DB.sleeve.push({ id: Date.now() + DB.sleeve.length, itemId: h.itemId, name: h.name,
+            qty: Math.max(1, Math.floor(h.qty || 1)), basis: h.paid > 0 ? h.paid : null,
+            enteredAt: h.addedAt || Date.now(), catalyst: null, thesis: String(h.note || ""),
+            ladder: [], invalidation: "", phase: null, legacy: 1, health: null,
+            soldQty: 0, closedAt: null });
+          DB.decisionLog.push({ t: Date.now(), d: today(), kind: "sleeve", subject: String(h.name),
+            action: "migrate-legacy-hold",
+            reason: "moved into the thesis sleeve for tracking — already funded, excluded from the sleeve budget; complete its catalyst/ladder/invalidation by hand" });
+        } else stay.push(h);
+      }
+      DB.holds = stay;
+      DB.sleeveMigV1 = 1;
     }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
@@ -3270,8 +3348,19 @@ function renderPlan(){
   if (S.planMode === "sell"){
     $("#planTitle").textContent = "Sells — walk-up";
     hint.textContent = "Relist at your tested margin, not a number from a previous visit. A sell that won't move: drop it below instabuy and take the small loss.";
+    /* Armed sleeve rungs lead the sell list — a triggered exit ladder is the
+       one sell with a thesis behind it. Proposal only: sold… records what
+       actually filled in-game, against the rung. */
+    const slvCards = sleeveRungCards();
+    const slvHTML = slvCards.map(cd =>
+      '<li><div class="body"><b class="sell">SELL RUNG</b> <span class="num">' + full(cd.qty) + '</span> '
+      + '<span title="' + nameTitle(itemName(cd.pos.itemId, cd.pos.name)) + '">' + esc(itemName(cd.pos.itemId, cd.pos.name)) + '</span>'
+      + ' — guidance <span class="num">' + (cd.guide != null ? full(cd.guide) : "—") + '</span> <span class="dim">(current instasell)</span>'
+      + '<div class="why">' + esc(cd.st.why) + ' · rung ' + (cd.i + 1) + ' (' + cd.r.frac + '% of the position)'
+      + ' · sleeve position, not a flip — logging the fill records it against the rung; realized P&L is judged at exit vs cost, net of tax</div></div>'
+      + '<span class="plan-actions"><button class="sm" data-slvexit="' + cd.pos.id + ':' + cd.i + '">sold…</button></span></li>').join("");
     const lines = sellLines();
-    list.innerHTML = lines.length ? lines.map(s => {
+    list.innerHTML = slvHTML + (lines.length ? lines.map(s => {
         const st = STAGES[s.stage], nm = itemName(s.p.itemId, s.p.name);
         const head = s.stage === "buying"
           ? '<b class="buy">BUY PENDING</b> <span class="num">'+full(s.p.qty)+'</span> '+esc(nm)
@@ -3288,7 +3377,7 @@ function renderPlan(){
           + (s.ageH > 24 && s.stage !== "selling" ? ' · <span class="neg">sat over a day</span>' : '') + '</div></div>'
           + '<span class="plan-actions">'+posActions(s.p)+'</span></li>';
       }).join("")
-      : '<li><span class="dim">No open positions. Mark plan lines as placed on the buy plan and they show up here.</span></li>';
+      : (slvCards.length ? "" : '<li><span class="dim">No open positions. Mark plan lines as placed on the buy plan and they show up here.</span></li>'));
     const actionable = lines.filter(s => s.stage !== "buying");
     const tot = actionable.reduce((a,s) => a + (s.net || 0), 0);
     foot.innerHTML = lines.length ? 'Expected net from sells: <span class="num '+sign(tot)+'">'+gp(tot)+'</span>'
@@ -5095,6 +5184,499 @@ function auditSibAction(id, act){
         () => { DB.watch.splice(idx, 0, gone); delete DB.audRuled["sib:" + id]; save(); renderWatch(); renderRoutine(); });
 }
 
+/* ═══════════ THESIS SLEEVE — catalyst position trades ═══════════
+   Position trades on a NAMED catalyst, deliberately outside the flipping
+   machinery: the sleeve budget is carved from working capital but no
+   allocator, pool, or gate ever reads it, and sleeve gp never blends into a
+   flipping metric. The tool tracks, monitors, and surfaces SELL cards when
+   exit rungs arm; every entry, exit, phase flag, ladder edit, and health
+   light is the user's press. Judged at exit, not at the mark. */
+const SLV_PHASES = ["announced", "launch"];
+const SLV_PHASE_LABEL = { announced: "announcement happened", launch: "launch week" };
+const sleeveOpenPositions = () => (DB.sleeve || []).filter(p => !p.closedAt);
+const sleeveRemQty = p => Math.max(0, (p.qty || 0) - (p.soldQty || 0));
+const sleeveHas = id => (DB.sleeve || []).some(p => !p.closedAt && p.itemId === id);
+const sleeveRealizedNet = () => (DB.sleeveExits || []).reduce((a, x) => a + (Number.isFinite(x.net) ? x.net : 0), 0);
+/* Budget: NEW entries only — migrated legacy holds are already funded and
+   never count. Committed = remaining units at cost, so capital frees as
+   exits actually fill and fully when a position closes. */
+function sleeveCommitted(){
+  let gp = 0;
+  for (const p of sleeveOpenPositions()) if (!p.legacy && p.basis > 0) gp += sleeveRemQty(p) * p.basis;
+  return gp;
+}
+const sleeveFree = () => Math.max(0, (DB.sleeveBudget || 0) - sleeveCommitted());
+const sleeveNewOpenCount = () => sleeveOpenPositions().filter(p => !p.legacy).length;
+
+/* Guardrail: one item, one mandate — an item in the flipping machinery
+   cannot also become a sleeve position. Returns the reason, or null. */
+function sleeveMandateConflict(itemId){
+  if (DB.watch.some(w => w.id === itemId)) return "on the flipping watchlist";
+  if (DB.positions.some(p => p.itemId === itemId)) return "in an open flip position";
+  if (DB.invLots.some(l => l.itemId === itemId)) return "held as inventory-mode lots";
+  return null;
+}
+
+/* Exit guidance = the current INSTASELL (the low — what selling instantly
+   fetches). A catalyst exit is an execution, not a patient quote. */
+function sleeveGuidePrice(itemId){
+  const L = S.latest[itemId];
+  if (!L) return null;
+  return Number.isFinite(L.low) ? L.low : (Number.isFinite(L.high) ? L.high : null);
+}
+const slvRungPct = () => Math.min(25, Math.max(1, DB.sleeveRungPct != null ? DB.sleeveRungPct : 5));
+/* Rung fraction is of the ORIGINAL position size, clamped to what remains. */
+const rungQty = (pos, r) => Math.max(1, Math.min(sleeveRemQty(pos), Math.round((pos.qty || 0) * (r.frac || 0) / 100)));
+
+/* Rung trigger math — pure, probe-tested. A rung ARMS when:
+   · price rung — the guidance price is within sleeveRungPct% of the trigger;
+   · date rung — the fallback date is within 7 days (or passed);
+   · phase rung — the user flagged that catalyst phase (launch implies
+     announced; the user is the news feed, nothing is inferred).
+   A filled rung never re-arms. */
+function rungState(pos, i, guide, now){
+  const r = (pos.ladder || [])[i];
+  if (!r) return null;
+  if (r.filledAt) return { armed: false, done: true, why: "filled " + ago(r.filledAt) };
+  const t = now != null ? now : Date.now();
+  if (r.kind === "price"){
+    if (!(guide > 0)) return { armed: false, done: false, why: "no live price yet" };
+    const arm = r.trigger * (1 - slvRungPct() / 100);
+    return guide >= arm
+      ? { armed: true, done: false, why: "guidance " + full(guide) + " within " + slvRungPct() + "% of the " + full(r.trigger) + " trigger" }
+      : { armed: false, done: false, why: "guidance " + full(guide) + " vs " + full(r.trigger) + " trigger" };
+  }
+  if (r.kind === "date"){
+    const ms = Date.parse(String(r.trigger) + "T00:00:00");
+    if (!Number.isFinite(ms)) return { armed: false, done: false, why: "unreadable date" };
+    const dLeft = Math.ceil((ms - t) / 86400e3);
+    return dLeft <= 7
+      ? { armed: true, done: false, why: dLeft <= 0 ? "date fallback passed" : "date fallback in " + dLeft + "d" }
+      : { armed: false, done: false, why: "date fallback in " + dLeft + "d" };
+  }
+  if (r.kind === "phase"){
+    const at = SLV_PHASES.indexOf(pos.phase), need = SLV_PHASES.indexOf(r.trigger);
+    return at >= 0 && need >= 0 && at >= need
+      ? { armed: true, done: false, why: "catalyst phase flagged: " + (SLV_PHASE_LABEL[pos.phase] || pos.phase) }
+      : { armed: false, done: false, why: "waiting on phase: " + (SLV_PHASE_LABEL[r.trigger] || r.trigger) };
+  }
+  return { armed: false, done: false, why: "unknown rung kind" };
+}
+
+/* Armed SELL cards across all open positions — what the walk-up surfaces. */
+function sleeveRungCards(){
+  const cards = [];
+  for (const pos of sleeveOpenPositions()){
+    if (!sleeveRemQty(pos)) continue;
+    const guide = sleeveGuidePrice(pos.itemId);
+    (pos.ladder || []).forEach((r, i) => {
+      const st = rungState(pos, i, guide);
+      if (st && st.armed) cards.push({ pos, r, i, st, guide, qty: rungQty(pos, r) });
+    });
+  }
+  return cards;
+}
+const sleeveRungLineText = c => "SELL RUNG: " + full(c.qty) + " " + itemName(c.pos.itemId, c.pos.name)
+  + (c.guide != null ? " — guidance " + full(c.guide) + " (current instasell)" : " — no live price")
+  + " · " + c.st.why;
+
+/* Recording an exit is the user confirming an in-game fill — realized P&L
+   at exit vs cost, net of tax. Sleeve exits live in their own ledger. */
+function recordSleeveExit(posId, rungIdx){
+  const pos = (DB.sleeve || []).find(p => p.id === posId);
+  if (!pos || pos.closedAt) return;
+  const rem = sleeveRemQty(pos);
+  if (!(rem > 0)){ toast("Nothing left to sell in this position."); return; }
+  const r = rungIdx != null ? (pos.ladder || [])[rungIdx] : null;
+  const guide = sleeveGuidePrice(pos.itemId);
+  const q0 = r ? Math.min(rem, rungQty(pos, r)) : rem;
+  const q = prompt("Sleeve exit — " + itemName(pos.itemId, pos.name)
+    + (r ? " (rung " + (rungIdx + 1) + ": " + r.frac + "% of the position)" : "")
+    + "\n\nHow many units sold? (" + full(rem) + " remaining)", String(q0));
+  if (q === null) return;
+  let qty = Math.floor(clampNum(q, NaN));
+  if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+  if (qty > rem){ qty = rem; toast("Clamped to the " + full(rem) + " actually remaining."); }
+  const pr = prompt("At what price each did the sell fill?\n\nGuidance: current instasell"
+    + (guide != null ? " " + full(guide) : " unavailable") + ".", guide != null ? String(guide) : "");
+  if (pr === null) return;
+  const px = Math.round(clampNum(pr, NaN));
+  if (!(px > 0)){ toast("Price must be a positive number."); return; }
+  const net = pos.basis > 0 ? qty * (px - geTax(px, pos.itemId) - pos.basis) : null;
+  DB.sleeveExits.push({ t: Date.now(), d: today(), posId: pos.id, itemId: pos.itemId,
+    name: itemName(pos.itemId, pos.name), qty, price: px, basis: pos.basis > 0 ? pos.basis : null,
+    net, rung: rungIdx != null ? rungIdx : null });
+  if (r) r.filledAt = Date.now();
+  pos.soldQty = (pos.soldQty || 0) + qty;
+  if (sleeveRemQty(pos) === 0) pos.closedAt = Date.now();
+  save(); renderSleeve();
+  if (S.tab === "watch") renderPlan();
+  if (S.tab === "routine") renderRoutine();
+  toast("Sleeve exit recorded: " + full(qty) + " at " + full(px)
+    + (net != null ? " — realized " + gp(net) + " net of tax vs cost." : " — no cost basis recorded, so P&L stays unknown.")
+    + (pos.closedAt ? " Position closed; its budget is freed." : "")
+    + " Sleeve gp stays out of every flipping metric — the bank picks it up at your next stamp.");
+}
+
+function slvCountdown(cat){
+  if (!cat || !cat.name) return "no catalyst recorded";
+  const a = Date.parse(String(cat.windowStart || "") + "T00:00:00");
+  const b = Date.parse(String(cat.windowEnd || "") + "T23:59:59");
+  const now = Date.now();
+  if (Number.isFinite(a) && now < a) return "window opens in " + Math.ceil((a - now) / 86400e3) + "d";
+  if (Number.isFinite(b) && now <= b) return "window OPEN — closes in " + Math.max(0, Math.ceil((b - now) / 86400e3)) + "d";
+  if (Number.isFinite(b)) return "window passed " + Math.floor((now - b) / 86400e3) + "d ago";
+  return "window unreadable";
+}
+
+/* Mandatory-field check — shared by the save path and the incomplete-legacy
+   warning. Every miss is named; nothing saves around it. */
+function sleeveMissingFields(d){
+  const missing = [];
+  if (!(d.itemId > 0)) missing.push("item");
+  if (!(d.qty > 0)) missing.push("quantity");
+  if (!(d.basis > 0)) missing.push("entry / cost basis");
+  if (!d.catName) missing.push("catalyst (named event)");
+  if (!d.winA || !Number.isFinite(Date.parse(d.winA + "T00:00:00"))) missing.push("catalyst window start");
+  if (!d.winB || !Number.isFinite(Date.parse(d.winB + "T00:00:00"))) missing.push("catalyst window end");
+  if (!d.thesis) missing.push("thesis (one sentence, yours)");
+  if (!d.inval) missing.push("invalidation (what kills the thesis early)");
+  const rungs = d.rungs || [];
+  if (rungs.length < 2) missing.push("exit ladder (at least 2 rungs)");
+  rungs.forEach((r, i) => {
+    const okT = r.kind === "price" ? r.trigger > 0
+              : r.kind === "date"  ? Number.isFinite(Date.parse(String(r.trigger) + "T00:00:00"))
+              : r.kind === "phase" ? SLV_PHASES.includes(r.trigger) : false;
+    if (!okT) missing.push("rung " + (i + 1) + " trigger");
+    if (!(r.frac >= 1 && r.frac <= 100)) missing.push("rung " + (i + 1) + " fraction (1–100%)");
+  });
+  return missing;
+}
+const slvPosToDraft = p => ({ itemId: p.itemId, qty: p.qty, basis: p.basis,
+  catName: p.catalyst ? p.catalyst.name : "", winA: p.catalyst ? p.catalyst.windowStart : "",
+  winB: p.catalyst ? p.catalyst.windowEnd : "", thesis: p.thesis || "", inval: p.invalidation || "",
+  rungs: (p.ladder || []).map(r => ({ kind: r.kind, trigger: r.trigger, frac: r.frac })) });
+
+/* ── form state & rendering ── */
+let slvRungs = [{ kind: "price", trigger: "", frac: "" }, { kind: "price", trigger: "", frac: "" }];
+let slvEditId = null;
+function renderSlvRungs(){
+  const box = $("#slvRungRows");
+  if (!box) return;
+  box.innerHTML = slvRungs.map((r, i) =>
+    '<div class="row" style="margin-bottom:4px;align-items:center">'
+    + '<span class="dim" style="width:52px">rung ' + (i + 1) + '</span>'
+    + '<label class="f">Trigger type<select data-slvrk="' + i + '" style="width:110px">'
+      + ['price', 'phase', 'date'].map(k => '<option value="' + k + '"' + (r.kind === k ? ' selected' : '') + '>' + k + '</option>').join("")
+    + '</select></label>'
+    + (r.kind === "phase"
+        ? '<label class="f">Phase<select data-slvrt="' + i + '" style="width:190px">'
+          + '<option value=""' + (SLV_PHASES.includes(r.trigger) ? '' : ' selected') + '>pick…</option>'
+          + SLV_PHASES.map(ph => '<option value="' + ph + '"' + (r.trigger === ph ? ' selected' : '') + '>' + SLV_PHASE_LABEL[ph] + '</option>').join("")
+          + '</select></label>'
+      : r.kind === "date"
+        ? '<label class="f">Date fallback<input type="date" data-slvrt="' + i + '" value="' + esc(r.trigger || "") + '" style="width:150px"></label>'
+        : '<label class="f">Price trigger<input type="number" data-slvrt="' + i + '" min="1" value="' + (r.trigger > 0 ? r.trigger : "") + '" style="width:120px"></label>')
+    + '<label class="f">Sell fraction %<input type="number" data-slvrf="' + i + '" min="1" max="100" value="' + (r.frac || "") + '" style="width:70px"></label>'
+    + (slvRungs.length > 2 ? '<button class="sm ghost" data-slvrungdel="' + i + '">✕</button>' : '')
+    + '</div>').join("");
+}
+function slvFormFill(d){
+  acSleeve.itemId = d.itemId || null;
+  acSleeve.input.value = d.itemId ? itemName(d.itemId) : "";
+  $("#slvQty").value = d.qty || "";
+  $("#slvBasis").value = d.basis || "";
+  $("#slvCat").value = d.catName || "";
+  $("#slvWinA").value = d.winA || "";
+  $("#slvWinB").value = d.winB || "";
+  $("#slvThesis").value = d.thesis || "";
+  $("#slvInval").value = d.inval || "";
+  slvRungs = (d.rungs && d.rungs.length ? d.rungs : [{ kind: "price", trigger: "", frac: "" }, { kind: "price", trigger: "", frac: "" }])
+    .map(r => ({ kind: r.kind, trigger: r.trigger, frac: r.frac }));
+  renderSlvRungs();
+}
+function slvFormCollect(){
+  return { itemId: acSleeve.itemId, qty: Math.floor(clampNum($("#slvQty").value, 0)),
+    basis: Math.round(clampNum($("#slvBasis").value, 0)),
+    catName: $("#slvCat").value.trim(), winA: $("#slvWinA").value, winB: $("#slvWinB").value,
+    thesis: $("#slvThesis").value.trim(), inval: $("#slvInval").value.trim(),
+    rungs: slvRungs.map(r => ({ kind: r.kind,
+      trigger: r.kind === "price" ? Math.round(clampNum(r.trigger, 0)) : String(r.trigger || "").trim(),
+      frac: Math.round(clampNum(r.frac, 0)) })) };
+}
+
+function saveSleeveFromForm(){
+  const d = slvFormCollect();
+  const msg = t => { $("#slvFormMsg").innerHTML = t; };
+  const missing = sleeveMissingFields(d);
+  if (missing.length){
+    msg('<span class="neg">Cannot save — missing: ' + esc(missing.join("; ")) + '.</span>');
+    return;
+  }
+  const editing = slvEditId != null ? DB.sleeve.find(p => p.id === slvEditId) : null;
+  if (!editing){
+    const conflict = sleeveMandateConflict(d.itemId);
+    if (conflict){ msg('<span class="neg">Blocked: ' + esc(itemName(d.itemId)) + ' is ' + conflict + ' — one item, one mandate.</span>'); return; }
+    if (sleeveHas(d.itemId)){ msg('<span class="neg">' + esc(itemName(d.itemId)) + ' is already an open sleeve position.</span>'); return; }
+    if (sleeveNewOpenCount() >= (DB.sleeveMaxPos || 3)){
+      msg('<span class="neg">Max ' + (DB.sleeveMaxPos || 3) + ' concurrent new positions — closing one is the only way to a seat.</span>'); return;
+    }
+    const cost = d.qty * d.basis;
+    if (cost > sleeveFree()){
+      msg('<span class="neg">Costs ' + gp(cost) + ' but only ' + gp(sleeveFree()) + ' of the sleeve budget is free — '
+        + 'full budget requires closing a position, never raiding pools or the reserve.</span>'); return;
+    }
+    const pos = { id: Date.now(), itemId: d.itemId, name: itemName(d.itemId), qty: d.qty, basis: d.basis,
+      enteredAt: Date.now(), catalyst: { name: d.catName, windowStart: d.winA, windowEnd: d.winB },
+      thesis: d.thesis, ladder: d.rungs, invalidation: d.inval,
+      phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null };
+    DB.sleeve.push(pos);
+    logDecision("sleeve", pos.name, "enter", d.catName + " · " + d.thesis);
+    slvFormFill({}); slvEditId = null;
+    msg("");
+    save(); renderSleeve();
+    toast("Sleeve position saved: " + full(d.qty) + " " + pos.name + " on \"" + d.catName + "\" — "
+      + gp(d.qty * d.basis) + " of the sleeve budget committed.");
+    return;
+  }
+  /* Editing. qty/basis lock once exits exist — realized data outranks edits.
+     A ladder change is decision-logged with a required reason. */
+  const hasExits = DB.sleeveExits.some(x => x.posId === editing.id);
+  if (hasExits && (d.qty !== editing.qty || d.basis !== editing.basis)){
+    msg('<span class="neg">Qty and cost basis are locked once exits exist — realized data outranks edits.</span>'); return;
+  }
+  if (!editing.legacy && (d.qty !== editing.qty || d.basis !== editing.basis)){
+    const newCost = d.qty * d.basis, others = sleeveCommitted() - sleeveRemQty(editing) * (editing.basis || 0);
+    if (newCost + others > (DB.sleeveBudget || 0)){
+      msg('<span class="neg">Resize would commit ' + gp(newCost + others) + ' — over the ' + gp(DB.sleeveBudget || 0) + ' sleeve budget.</span>'); return;
+    }
+  }
+  const ladderChanged = JSON.stringify((editing.ladder || []).map(r => [r.kind, r.trigger, r.frac]))
+                     !== JSON.stringify(d.rungs.map(r => [r.kind, r.trigger, r.frac]));
+  if (ladderChanged){
+    const reason = prompt("Ladder edit for " + editing.name + " — reason (required, decision-logged):", "");
+    if (reason === null) return;
+    if (!String(reason).trim()){ toast("A ladder edit needs a reason — nothing was changed."); return; }
+    logDecision("sleeve", editing.name, "ladder-edit", String(reason).trim());
+    /* carry filled stamps over to unchanged rungs by index */
+    d.rungs.forEach((r, i) => {
+      const old = (editing.ladder || [])[i];
+      if (old && old.filledAt && old.kind === r.kind && String(old.trigger) === String(r.trigger)) r.filledAt = old.filledAt;
+    });
+  } else {
+    d.rungs.forEach((r, i) => { const old = (editing.ladder || [])[i]; if (old && old.filledAt) r.filledAt = old.filledAt; });
+  }
+  const wasIncomplete = sleeveMissingFields(slvPosToDraft(editing)).length > 0;
+  editing.qty = d.qty; editing.basis = d.basis;
+  editing.catalyst = { name: d.catName, windowStart: d.winA, windowEnd: d.winB };
+  editing.thesis = d.thesis; editing.invalidation = d.inval; editing.ladder = d.rungs;
+  if (wasIncomplete && editing.legacy) logDecision("sleeve", editing.name, "complete-fields", "legacy migration completed by hand");
+  slvEditId = null; $("#slvCancel").classList.add("hide");
+  $("#slvFormTitle").textContent = "New position";
+  slvFormFill({});
+  msg("");
+  save(); renderSleeve();
+  toast(editing.name + " updated.");
+}
+
+function renderSleeve(){
+  if (!$("#slvBody")) return;
+  const open = sleeveOpenPositions();
+  const legacyN = open.filter(p => p.legacy).length;
+  $("#slvSub").textContent = open.length + " open (" + sleeveNewOpenCount() + " new of " + (DB.sleeveMaxPos || 3)
+    + (legacyN ? " · " + legacyN + " legacy" : "") + ") · realized all-time "
+    + gp(sleeveRealizedNet()) + " — separate from all flipping stats";
+  $("#slvBudgetNote").innerHTML = "Committed <b>" + gp(sleeveCommitted()) + "</b> of " + gp(DB.sleeveBudget || 0)
+    + " sleeve budget · free <b>" + gp(sleeveFree()) + "</b>. New entries only — legacy positions are already funded "
+    + "and excluded. Full budget requires closing a position; the tier pools and the shadow reserve are never raided.";
+  const cards = open.map(p => {
+    const rem = sleeveRemQty(p);
+    const guide = sleeveGuidePrice(p.itemId);
+    const live = livePrice(p.itemId);
+    const vsEntry = (live != null && p.basis > 0) ? (live - p.basis) / p.basis * 100 : null;
+    const m2m = (guide != null && p.basis > 0) ? rem * (guide - geTax(guide, p.itemId) - p.basis) : null;
+    const heldD = Math.floor((Date.now() - (p.enteredAt || Date.now())) / 86400e3);
+    const missing = sleeveMissingFields(slvPosToDraft(p));
+    const conflict = sleeveMandateConflict(p.itemId);
+    const rungsHTML = (p.ladder || []).map((r, i) => {
+      const st = rungState(p, i, guide);
+      const label = r.kind === "price" ? full(r.trigger) : r.kind === "date" ? r.trigger : (SLV_PHASE_LABEL[r.trigger] || r.trigger);
+      return '<span class="memchip' + (st.done ? ' off' : '') + '" title="' + esc(st.why) + '">'
+        + '#' + (i + 1) + ' ' + r.kind + ' ' + esc(String(label)) + ' · ' + r.frac + '%'
+        + (st.done ? ' ✓' : st.armed ? ' <b class="pos">ARMED</b>' : '')
+        + (st.armed ? ' <button class="sm" data-slvexit="' + p.id + ':' + i + '">sold…</button>' : '')
+        + '</span>';
+    }).join("") || '<span class="dim">no ladder yet — edit to add one (mandatory)</span>';
+    const phaseBtns = SLV_PHASES.map(ph =>
+      '<button class="sm' + (p.phase === ph || (p.phase === "launch" && ph === "announced") ? ' primary' : '') + '" data-slvphase="' + p.id + ':' + ph
+      + '" title="You are the news feed — press when it actually happened; press again to clear a mis-tap.">' + SLV_PHASE_LABEL[ph] + '</button>').join(" ");
+    const health = p.health
+      ? '<span class="badge ' + (p.health === "intact" ? "b-tax" : p.health === "watch" ? "b-warn" : "b-risk") + '">' + p.health + '</span>'
+      : '<span class="dim">no health light yet — set it in the weekly review</span>';
+    return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:9px 12px;margin-bottom:8px">'
+      + '<div><b>' + esc(itemName(p.itemId, p.name)) + '</b>'
+      + (p.legacy ? ' <span class="badge b-ok" title="Migrated hold — already funded, excluded from the sleeve budget and the concurrency cap.">legacy</span>' : '')
+      + ' <span class="num">' + full(rem) + '</span>' + (rem !== p.qty ? '<span class="dim num"> / ' + full(p.qty) + '</span>' : '')
+      + ' at <span class="num">' + (p.basis > 0 ? full(p.basis) : "?") + '</span>'
+      + ' · live <span class="num">' + (live != null ? full(live) : "—") + '</span>'
+      + (vsEntry != null ? ' · vs entry <span class="' + sign(vsEntry) + ' num">' + (vsEntry > 0 ? "+" : "") + vsEntry.toFixed(1) + '%</span>' : '')
+      + ' · held ' + heldD + 'd · ' + health + '</div>'
+      + '<div style="margin-top:3px"><span class="badge b-seed">catalyst</span> '
+      + (p.catalyst && p.catalyst.name ? '<b>' + esc(p.catalyst.name) + '</b> · ' + esc(slvCountdown(p.catalyst)) : '<span class="neg">none recorded</span>')
+      + ' &nbsp; ' + phaseBtns + '</div>'
+      + (p.thesis ? '<div class="dim" style="margin-top:3px;white-space:normal">thesis: ' + esc(p.thesis) + '</div>' : '')
+      + (p.invalidation ? '<div class="dim" style="white-space:normal">invalidation: ' + esc(p.invalidation) + '</div>' : '')
+      + '<div style="margin-top:4px;white-space:normal">' + rungsHTML + '</div>'
+      + '<div class="dim" style="margin-top:3px" title="Displayed for awareness only — the position is judged at exit, not at the mark.">'
+      + (m2m != null ? 'mark-to-market ' + gp(m2m) + ' — judged at exit, not at the mark' : 'mark-to-market unavailable') + '</div>'
+      + (missing.length ? '<div class="plan-note" style="margin-top:5px">⚠ mandatory fields incomplete — ' + esc(missing.join("; ")) + '. Use <b>edit…</b> to complete them.</div>' : '')
+      + (conflict ? '<div class="plan-note" style="margin-top:5px">⚠ one item, one mandate — this item is now also ' + esc(conflict) + '. Resolve by hand; the tool won\'t pick a side.</div>' : '')
+      + '<div style="margin-top:5px"><button class="sm" data-slvedit="' + p.id + '">edit…</button> '
+      + '<button class="sm" data-slvexit="' + p.id + ':x" title="Record a sell that wasn\'t tied to a rung">record exit…</button> '
+      + '<button class="sm ghost" data-slvdrop="' + p.id + '" title="Stop tracking without recording a sale — requires a reason, decision-logged">✕ abandon</button></div>'
+      + '</div>';
+  }).join("");
+  const closed = (DB.sleeve || []).filter(p => p.closedAt);
+  const closedHTML = closed.length
+    ? '<details style="margin-top:6px"><summary style="cursor:pointer" class="dim">Closed positions — ' + closed.length + '</summary>'
+      + closed.slice(-20).reverse().map(p => {
+          const net = DB.sleeveExits.filter(x => x.posId === p.id).reduce((a, x) => a + (Number.isFinite(x.net) ? x.net : 0), 0);
+          return '<div class="bench-row"><span>' + esc(itemName(p.itemId, p.name))
+            + (p.abandoned ? ' <span class="badge b-warn">abandoned</span>' : '')
+            + ' — ' + (p.catalyst && p.catalyst.name ? esc(p.catalyst.name) : 'no catalyst') + '</span>'
+            + '<span class="r num ' + sign(net) + '">' + gp(net) + ' realized</span></div>';
+        }).join("") + '</details>'
+    : "";
+  $("#slvBody").innerHTML = (cards || '<div class="empty">No sleeve positions. Every position needs its catalyst, thesis, exit ladder and invalidation before it can save — the form below enforces all four.</div>') + closedHTML;
+  renderSlvRungs();
+}
+
+/* ── sleeve wiring ── */
+document.addEventListener("click", e => {
+  const t = e.target;
+  const ex = t.closest("[data-slvexit]");
+  if (ex){
+    const [pid, ri] = ex.dataset.slvexit.split(":");
+    recordSleeveExit(+pid, ri === "x" ? null : +ri);
+    return;
+  }
+  const ed = t.closest("[data-slvedit]");
+  if (ed){
+    const pos = DB.sleeve.find(p => p.id === +ed.dataset.slvedit);
+    if (!pos) return;
+    slvEditId = pos.id;
+    $("#slvFormTitle").textContent = "Edit — " + itemName(pos.itemId, pos.name);
+    $("#slvCancel").classList.remove("hide");
+    slvFormFill(slvPosToDraft(pos));
+    $("#slvFormPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  const ph = t.closest("[data-slvphase]");
+  if (ph){
+    const [pid, phase] = ph.dataset.slvphase.split(":");
+    const pos = DB.sleeve.find(p => p.id === +pid);
+    if (!pos) return;
+    if (pos.phase === phase){
+      pos.phase = null;
+      delete pos.phaseAt;
+      logDecision("sleeve", itemName(pos.itemId, pos.name), "phase-clear", SLV_PHASE_LABEL[phase] + " unflagged (mis-tap remedy)");
+      toast("Phase cleared.");
+    } else {
+      pos.phase = phase; pos.phaseAt = Date.now();
+      logDecision("sleeve", itemName(pos.itemId, pos.name), "phase", SLV_PHASE_LABEL[phase] + " flagged by hand — the user is the news feed");
+      toast("Catalyst phase flagged: " + SLV_PHASE_LABEL[phase] + ". Any phase rung it satisfies is now armed.");
+    }
+    save(); renderSleeve();
+    if (S.tab === "routine") renderRoutine();
+    return;
+  }
+  const hl = t.closest("[data-slvhealth]");
+  if (hl){
+    const [pid, state] = hl.dataset.slvhealth.split(":");
+    const pos = DB.sleeve.find(p => p.id === +pid);
+    if (!pos) return;
+    pos.health = state; pos.healthAt = Date.now();
+    save();
+    if (S.tab === "routine") renderRoutine(); else renderSleeve();
+    return;
+  }
+  const dr = t.closest("[data-slvdrop]");
+  if (dr){
+    const pos = DB.sleeve.find(p => p.id === +dr.dataset.slvdrop);
+    if (!pos) return;
+    const reason = prompt("Abandon " + itemName(pos.itemId, pos.name) + " without recording a sale — reason (required, decision-logged):", "");
+    if (reason === null) return;
+    if (!String(reason).trim()){ toast("Abandoning needs a reason — nothing was changed."); return; }
+    pos.closedAt = Date.now(); pos.abandoned = 1;
+    logDecision("sleeve", itemName(pos.itemId, pos.name), "abandon", String(reason).trim());
+    save(); renderSleeve();
+    toast("Position abandoned — decision-logged. Its budget is freed.",
+          () => { delete pos.closedAt; delete pos.abandoned; save(); renderSleeve(); });
+    return;
+  }
+  const rd = t.closest("[data-slvrungdel]");
+  if (rd){
+    slvRungs.splice(+rd.dataset.slvrungdel, 1);
+    renderSlvRungs();
+    return;
+  }
+});
+document.addEventListener("change", e => {
+  const rk = e.target.closest("[data-slvrk]");
+  if (rk){
+    const r = slvRungs[+rk.dataset.slvrk];
+    if (r && r.kind !== rk.value){ r.kind = rk.value; r.trigger = ""; renderSlvRungs(); }
+    return;
+  }
+  const rt = e.target.closest("[data-slvrt]");
+  if (rt){ const r = slvRungs[+rt.dataset.slvrt]; if (r) r.trigger = rt.value; return; }
+  const rf = e.target.closest("[data-slvrf]");
+  if (rf){ const r = slvRungs[+rf.dataset.slvrf]; if (r) r.frac = clampNum(rf.value, 0); return; }
+});
+const acSleeve = makeAC("#acSleeve", () => {}, true);
+$("#slvAddRung").onclick = () => { slvRungs.push({ kind: "price", trigger: "", frac: "" }); renderSlvRungs(); };
+$("#slvSave").onclick = saveSleeveFromForm;
+$("#slvCancel").onclick = () => {
+  slvEditId = null;
+  $("#slvCancel").classList.add("hide");
+  $("#slvFormTitle").textContent = "New position";
+  $("#slvFormMsg").textContent = "";
+  slvFormFill({});
+};
+
+/* Weekly-review SLEEVE section — the user's manual thesis-health lights
+   (never inferred), realized exits, and sleeve stats fully separate from
+   every flipping metric. */
+function sleeveWeeklyInline(){
+  const open = sleeveOpenPositions();
+  const lines = open.map(p => {
+    const live = livePrice(p.itemId);
+    const vsEntry = (live != null && p.basis > 0) ? (live - p.basis) / p.basis * 100 : null;
+    const btn = st => '<button class="sm' + (p.health === st ? ' primary' : '') + '" data-slvhealth="' + p.id + ':' + st + '">' + st + '</button>';
+    return '<div>⚑ <b>' + esc(itemName(p.itemId, p.name)) + '</b>'
+      + (p.legacy ? ' <span class="badge b-ok">legacy</span>' : '')
+      + (vsEntry != null ? ' · vs entry <span class="' + sign(vsEntry) + '">' + (vsEntry > 0 ? "+" : "") + vsEntry.toFixed(1) + '%</span>' : '')
+      + ' · ' + esc(p.catalyst && p.catalyst.name ? p.catalyst.name + " — " + slvCountdown(p.catalyst) : "no catalyst recorded")
+      + ' · thesis health (your ruling, never inferred): ' + btn("intact") + ' ' + btn("watch") + ' ' + btn("broken") + '</div>';
+  });
+  const recent = (DB.sleeveExits || []).filter(x => Date.now() - x.t < 14 * 86400e3);
+  if (recent.length){
+    lines.push('<div class="dim" style="margin-top:4px">Realized exits, 14d:</div>');
+    for (const x of recent.slice(-8).reverse())
+      lines.push('<div class="dim">' + esc(x.d) + ' — ' + full(x.qty) + ' ' + esc(x.name) + ' at ' + full(x.price)
+        + (Number.isFinite(x.net) ? ' → <span class="' + sign(x.net) + '">' + gp(x.net) + '</span> net of tax' : '')
+        + (x.rung != null ? ' (rung ' + (x.rung + 1) + ')' : '') + '</div>');
+  }
+  const closed = (DB.sleeve || []).filter(p => p.closedAt && !p.abandoned);
+  const wins = closed.filter(p => DB.sleeveExits.filter(x => x.posId === p.id).reduce((a, x) => a + (x.net || 0), 0) > 0).length;
+  lines.push('<div style="margin-top:4px">Sleeve stats — realized all-time <b class="' + sign(sleeveRealizedNet()) + '">' + gp(sleeveRealizedNet()) + '</b>'
+    + ' · ' + closed.length + ' closed (' + wins + ' positive)'
+    + ' · committed ' + gp(sleeveCommitted()) + ' of ' + gp(DB.sleeveBudget || 0)
+    + ' · <span class="dim">fully separate from flipping metrics — no blended velocity, no sleeve gp in the couch-minute Sharpe</span></div>');
+  return '<div class="inline">' + (lines.length ? lines.join("")
+    : '<div class="dim">No sleeve positions.</div>') + '</div>';
+}
+
 /* ═══════════ FLIP LOG ═══════════ */
 function renderLog(){
   const flips = DB.flips.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"") || b.id - a.id);
@@ -5571,6 +6153,7 @@ const CHECKLISTS = {
     ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
     ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "clusters#clusterPanel", "clusters"],
+    ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
@@ -5603,8 +6186,10 @@ function renderRoutine(){
        : dataDays < REVIEW_MIN_DAYS ? " · collecting data — " + dataDays + "/" + REVIEW_MIN_DAYS + " days logged before the verdicts mean much"
        : DB.lastReviewAt ? " · last review " + ago(DB.lastReviewAt) : "");
   $("#ckTitle").textContent = list.title;
-  /* Wednesday hold-lighter advisory, cluster members called out by name. */
-  const wed = m === "walkup" ? wedClusterAdvisoryText([]) : "";
+  /* Wednesday hold-lighter advisory, cluster members called out by name.
+     Sleeve items ride along informationally (§ guardrail: update advisories
+     apply to sleeve items too, never as a bench). */
+  const wed = m === "walkup" ? wedClusterAdvisoryText(sleeveOpenPositions().map(p => p.itemId)) : "";
   $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   $("#ckList").innerHTML = list.steps.map((s,i) => {
@@ -5618,8 +6203,9 @@ function renderRoutine(){
         : '<div class="inline"><div class="dim">Nothing clears the gates today.</div></div>';
     } else if (s[3] === "sell"){
       const lines = sellLines();
-      inline = lines.length
-        ? '<div class="inline">' + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
+      const slvL = sleeveRungCards().map(c => '<div>⚑ ' + esc(sleeveRungLineText(c)) + '</div>').join("");
+      inline = (lines.length || slvL)
+        ? '<div class="inline">' + slvL + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
         : '<div class="inline"><div class="dim">No open positions.</div></div>';
     } else if (s[3] === "quotes"){
       const qs = invItems().map(w2 => invQuoteText(invQuote(w2)));
@@ -5687,6 +6273,8 @@ function renderRoutine(){
         + ' in the review queue await your ruling — advisory only until confirmed.</div>');
       inline = '<div class="inline">' + (lines.length ? lines.join("")
         : '<div class="dim">No confirmed clusters — correlated positions are currently treated as independent bets. The Thesis clusters panel (Watchlist tab) collects candidates.</div>') + '</div>';
+    } else if (s[3] === "sleeve"){
+      inline = sleeveWeeklyInline();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -5965,6 +6553,7 @@ function renderAll(){
   if (S.tab === "scan")    renderScan();
   if (S.tab === "watch")   renderWatch();
   if (S.tab === "clusters") renderClusters();
+  if (S.tab === "sleeve")  renderSleeve();
   if (S.tab === "log")     renderLog();
   if (S.tab === "routine") renderRoutine();
   if (S.tab === "shadow")  renderShadow();
@@ -6748,7 +7337,46 @@ function validateImport(d){
           t2Budget: Math.max(0, num(d.t2Budget) != null ? num(d.t2Budget) : 30000000),
           sleeveBudget: Math.max(0, num(d.sleeveBudget) != null ? num(d.sleeveBudget) : 60000000),
           sleeveMaxPos: Math.min(10, Math.max(1, num(d.sleeveMaxPos) != null ? num(d.sleeveMaxPos) : 3)),
+          sleeveRungPct: Math.min(25, Math.max(1, num(d.sleeveRungPct) != null ? num(d.sleeveRungPct) : 5)),
           recalV1: d.recalV1 ? 1 : 0,
+          sleeveMigV1: d.sleeveMigV1 ? 1 : 0,
+          sleeve: (Array.isArray(d.sleeve) ? d.sleeve : []).map(p => {
+            const itemId = num(p && p.itemId), qty = num(p && p.qty);
+            if (!(itemId > 0) || !(qty > 0)){ rejected++; return null; }
+            const o = { id: num(p.id) || uid(), itemId, name: String(p.name || itemName(itemId)),
+              qty: Math.floor(qty), basis: num(p.basis) > 0 ? num(p.basis) : null,
+              enteredAt: num(p.enteredAt) || Date.now(),
+              catalyst: (p.catalyst && typeof p.catalyst === "object" && !Array.isArray(p.catalyst))
+                ? { name: String(p.catalyst.name || ""), windowStart: String(p.catalyst.windowStart || "").slice(0, 10),
+                    windowEnd: String(p.catalyst.windowEnd || "").slice(0, 10) } : null,
+              thesis: String(p.thesis || ""), invalidation: String(p.invalidation || ""),
+              ladder: (Array.isArray(p.ladder) ? p.ladder : []).map(r => {
+                if (!r || !["price", "date", "phase"].includes(r.kind)) return null;
+                const rr = { kind: r.kind,
+                  trigger: r.kind === "price" ? num(r.trigger) : String(r.trigger || ""),
+                  frac: Math.min(100, Math.max(1, num(r.frac) || 0)) };
+                if (r.kind === "price" && !(rr.trigger > 0)) return null;
+                if (num(r.filledAt) > 0) rr.filledAt = num(r.filledAt);
+                return rr;
+              }).filter(Boolean),
+              phase: ["announced", "launch"].includes(p.phase) ? p.phase : null,
+              legacy: p.legacy ? 1 : 0,
+              health: ["intact", "watch", "broken"].includes(p.health) ? p.health : null,
+              soldQty: Math.max(0, num(p.soldQty) || 0),
+              closedAt: num(p.closedAt) > 0 ? num(p.closedAt) : null };
+            if (num(p.phaseAt) > 0) o.phaseAt = num(p.phaseAt);
+            if (num(p.healthAt) > 0) o.healthAt = num(p.healthAt);
+            if (p.abandoned) o.abandoned = 1;
+            return o;
+          }).filter(Boolean),
+          sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
+            const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
+            if (!(qty > 0) || !(price > 0) || !(itemId > 0)) return null;
+            return { t: num(x.t) || Date.now(), d: String(x.d || "").slice(0, 10), posId: num(x.posId) || 0,
+              itemId, name: String(x.name || itemName(itemId)), qty: Math.floor(qty), price: Math.round(price),
+              basis: num(x.basis) > 0 ? num(x.basis) : null,
+              net: num(x.net), rung: num(x.rung) != null && num(x.rung) >= 0 ? num(x.rung) : null };
+          }).filter(Boolean),
           partCapPct: Math.min(100, Math.max(1, num(d.partCapPct) != null ? num(d.partCapPct) : 10)),
           fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
           tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
@@ -6863,11 +7491,13 @@ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16]
                                  ["scT1Cap","scoutT1Cap",0,20],["scT2Cap","scoutT2Cap",0,20],
                                  ["scSeedN","seedTrips",1,10],["scSibSeed","sibPerSeed",0,30],["scSibTot","sibTotal",0,60],
                                  ["szMinExp","minExpectGp",0,1e8],
-                                 ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30]]){
+                                 ["clCap","clusterCapPct",1,100],["clCorr","clusterCorr",0.1,0.95],["clDays","clusterMinDays",5,30],
+                                 ["slvBudget","sleeveBudget",0,2e9],["slvMax","sleeveMaxPos",1,10],["slvRung","sleeveRungPct",1,25]]){
   $("#"+el).addEventListener("change", e => {
     DB[key] = Math.min(hi, Math.max(lo, clampNum(e.target.value, DB[key])));
     e.target.value = DB[key];
     save(); renderWatch();
+    if (S.tab === "sleeve") renderSleeve();
   });
 }
 $("#scoutTog").onclick = () => {
@@ -6942,6 +7572,9 @@ $("#szMinExp").value = DB.minExpectGp || 0;
 $("#clCap").value = DB.clusterCapPct != null ? DB.clusterCapPct : 15;
 $("#clCorr").value = DB.clusterCorr != null ? DB.clusterCorr : 0.5;
 $("#clDays").value = DB.clusterMinDays != null ? DB.clusterMinDays : 20;
+$("#slvBudget").value = DB.sleeveBudget != null ? DB.sleeveBudget : 60000000;
+$("#slvMax").value = DB.sleeveMaxPos != null ? DB.sleeveMaxPos : 3;
+$("#slvRung").value = DB.sleeveRungPct != null ? DB.sleeveRungPct : 5;
 /* Walk-up cadence: no schedule is assumed — the app opens on the same move
    list whenever you show up. */
 S.mode = "walkup";
