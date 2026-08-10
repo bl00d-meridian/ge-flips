@@ -1,0 +1,255 @@
+<script>
+(async function(){
+  const out = [];
+  const ok = (name, cond, extra) => out.push((cond ? "PASS " : "FAIL ") + name + (cond ? "" : " :: " + (extra || "")));
+  try {
+    window.prompt = () => null; window.confirm = () => true;
+
+    // ---- pure unit tests ----
+    ok("pearson +1", Math.abs(pearson([1,2,3,4],[2,4,6,8]) - 1) < 1e-9);
+    ok("pearson -1", Math.abs(pearson([1,2,3,4],[8,6,4,2]) + 1) < 1e-9);
+    ok("pearson flat null", pearson([1,1,1,1],[1,2,3,4]) === null);
+    const dr = dailyRetMap([{d:"2026-08-01",mid:100},{d:"2026-08-02",mid:110},{d:"2026-08-04",mid:121}]);
+    ok("dailyRetMap consecutive only", dr.size === 1 && Math.abs(dr.get("2026-08-02") - 0.1) < 1e-9, JSON.stringify([...dr]));
+    ok("cluSig sorted", cluSig([5,2,9]) === "2,5,9");
+
+    // ---- clean fixture state ----
+    DB.flips = []; DB.positions = []; DB.invLots = []; DB.watch = [];
+    DB.clusters = []; DB.clusterCands = []; DB.blacklist = [];
+    DB.scoutOn = false; DB.planPriority = []; DB.planDemoted = [];
+    DB.bank = 500e6; DB.bankAsOf = Date.now(); DB.shadowReserve = 300e6;
+    DB.reserve = 3e6; DB.t1Budget = 100e6; DB.t2Budget = 50e6; DB.slots = 7;
+    DB.minExpectGp = 0; DB.clusterCapPct = 8; DB.lastCoScanAt = Date.now();
+    DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+
+    const nowS = Math.floor(Date.now()/1000);
+    const mkItem = (id, n) => {
+      const it = { i:id, n, l:25000, m:0, v:0, a:0 };
+      S.items.push(it); S.byId.set(id, it);
+      S.latest[id] = { high:4400, low:4000, highTime: nowS-60, lowTime: nowS-120 };
+      S.hour[id]  = { avgHighPrice:4400, avgLowPrice:4000, highPriceVolume:50000, lowPriceVolume:50000 };
+      S.min5[id]  = { highPriceVolume:4000, lowPriceVolume:4000 };
+      const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+      for (let k = 0; k < 168; k++){ const mid = 4200 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({t: nowS-(168-k)*3600, mid}); }
+      S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData:false });
+    };
+    mkItem(9001, "Probe alpha"); mkItem(9002, "Probe beta"); mkItem(9003, "Probe gamma");
+    DB.watch = [{id:9001, qty:null},{id:9002, qty:null},{id:9003, qty:null}];
+    DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
+
+    const c1 = calc(9001);
+    ok("fixture clears margin gates", !!c1 && c1.margin === 312 && c1.roi > 1.2, JSON.stringify(c1));
+
+    // ---- allocator: cluster exposure cap ----
+    const plan = buildPlan();
+    const fundedIds = plan.picks.map(p => p.id);
+    const inCl = plan.picks.filter(p => p.id === 9001 || p.id === 9002);
+    ok("one cluster member funded", inCl.length === 1,
+       JSON.stringify({fundedIds, bench: plan.bench.map(b => b.name + ": " + b.failed), next: plan.nextUp.map(n => n.name + ": " + n.why)}));
+    ok("funded member cluster-clamped with note", inCl.length === 1 && inCl[0].allocQty === 4000
+       && (inCl[0].sizeNotes || []).some(s => /^cluster cap: probe-cluster/.test(s)),
+       inCl.length ? JSON.stringify({q: inCl[0].allocQty, notes: inCl[0].sizeNotes}) : "none funded");
+    const blockedNU = plan.nextUp.find(n => n.id === 9001 || n.id === 9002);
+    ok("other member NEXT UP with cluster reason", !!blockedNU && /^cluster cap: probe-cluster at limit/.test(blockedNU.why),
+       blockedNU ? blockedNU.why : JSON.stringify(plan.nextUp.map(n => n.why)));
+    const gamma = plan.picks.find(p => p.id === 9003);
+    ok("uncapped item funded full", !!gamma && gamma.allocQty === 5000 && !(gamma.sizeNotes || []).some(s => /cluster/.test(s)),
+       gamma ? JSON.stringify({q: gamma.allocQty, notes: gamma.sizeNotes}) : "gamma missing: " + JSON.stringify({fundedIds, bench: plan.bench.map(b => b.name + ": " + b.failed)}));
+
+    // ---- exposure counts committed positions ----
+    DB.positions = [{ id: 1, itemId: 9001, name:"Probe alpha", qty: 4000, buy: 4000, placedAt: Date.now() }];
+    const plan2 = buildPlan();
+    const nu2 = plan2.nextUp.find(n => n.id === 9002);
+    ok("committed exposure blocks the cluster", !!nu2 && /^cluster cap: probe-cluster at limit/.test(nu2.why),
+       nu2 ? nu2.why : JSON.stringify({picks: plan2.picks.map(p => p.id), next: plan2.nextUp.map(n => n.id + ":" + n.why)}));
+    ok("exposure math", clusterExposure(DB.clusters[0]) === 16e6, String(clusterExposure(DB.clusters[0])));
+    DB.positions = [];
+
+    // ---- per-cluster P&L ----
+    DB.flips = [{ id: Date.now(), itemId: 9001, name:"Probe alpha", qty: 10, buy: 4000, sell: 4400, date: today(), note:"" }];
+    const expP = 10 * (4400 - 4000 - geTax(4400, 9001));
+    ok("cluster P&L from log", clusterPnL(DB.clusters[0], 0) === expP, clusterPnL(DB.clusters[0], 0) + " vs " + expP);
+
+    // ---- candidates: upsert / dedup / dismissal memory / confirmed-skip ----
+    const cA = upsertCand([9001,9002,9003], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.7, days:25} });
+    ok("upsert creates candidate", !!cA && DB.clusterCands.filter(x => x.sig === cA.sig).length === 1);
+    const cB = upsertCand([9003,9002,9001], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.8, days:26} });
+    ok("upsert dedups by sig, refreshes evidence", cB === cA && DB.clusterCands.filter(x => x.sig === cA.sig).length === 1 && cA.evidence.corr === 0.8);
+    cA.status = "dismissed";
+    upsertCand([9001,9002,9003], { status:"suspected", src:"comove", story:"co-moves — reason unknown", evidence:{corr:0.9, days:27} });
+    ok("dismissed stays dismissed", cA.status === "dismissed" && DB.clusterCands.filter(x => x.sig === cA.sig).length === 1);
+
+    // ---- seeded candidates resolve from mapping names ----
+    for (const pair of [[8001,"Blood rune"],[8002,"Death rune"],[8003,"Soul rune"],[8004,"Water rune"]]){
+      let have = false;
+      for (const it of S.items) if (it.n === pair[1]) have = true;
+      if (!have){ const it = { i:pair[0], n:pair[1], l:25000, m:0, v:0, a:0 }; S.items.push(it); S.byId.set(pair[0], it); }
+    }
+    DB.clSeedV1 = 0;
+    seedClusterCands();
+    const seeded = DB.clusterCands.find(x => x.name === "ancient-magicks-runes");
+    ok("seed cluster proposed (seeded — unconfirmed)", !!seeded && seeded.status === "seeded" && seeded.members.length >= 3,
+       JSON.stringify(DB.clusterCands.map(x => (x.name || x.story) + ":" + x.status)));
+
+    // ---- ratification flows ----
+    window.prompt = () => "probe-ratified";
+    confirmCand(seeded.id);
+    const rat = DB.clusters.find(cl => cl.name === "probe-ratified");
+    ok("confirm activates cluster", !!rat && seeded.status === "confirmed" && rat.members.join() === seeded.members.join());
+    ok("members of a confirmed cluster never re-flagged", upsertCand(rat.members.slice(), { status:"suspected", src:"comove", story:"x", evidence:{} }) === null);
+    const dCand = upsertCand([9001,9003,8001], { status:"dormant", src:"wiki", story:"all: Probe cat — story without smoke (no co-movement yet)", evidence:{cat:"Probe cat"} });
+    dismissCand(dCand.id);
+    ok("dismiss silences candidate", dCand.status === "dismissed");
+
+    // ---- renders ----
+    S.tab = "watch"; renderWatch();
+    const cluHTML = document.querySelector("#cluBody").innerHTML;
+    ok("panel renders confirmed clusters", /probe-cluster/.test(cluHTML) && /probe-ratified/.test(cluHTML));
+    ok("watch row shows cluster badge", /probe-cluster<\/span>/.test(document.querySelector("#watchBody").innerHTML));
+    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
+    ok("weekly review has cluster ledger", /cluster ledger/i.test(document.querySelector("#ckList").innerHTML)
+       && /probe-cluster/.test(document.querySelector("#ckList").innerHTML));
+
+    // ---- advisory pieces (day-independent) ----
+    DB.positions = [{ id: 2, itemId: 9001, name:"Probe alpha", qty: 10, buy: 4000, placedAt: Date.now() }];
+    const play = clustersInPlay([]);
+    ok("clustersInPlay names members", play.some(x => x.cl.name === "probe-cluster" && x.names.indexOf("Probe alpha") >= 0),
+       JSON.stringify(play.map(x => x.cl.name)));
+    const wtxt = wedClusterAdvisoryText([]);
+    ok("wed advisory fires only on Wednesdays", new Date().getDay() === 3 ? /probe-cluster/.test(wtxt) : wtxt === "", JSON.stringify(wtxt));
+
+    // ═══ DISCOVERY AUDIT ═══
+    const nowMs = Date.now(), day = 86400e3;
+    DB.positions = []; DB.audRuled = {}; DB.decisionLog = []; DB.gateLog = [];
+    DB.seedAt = { 9001: nowMs - 20 * day, 9010: nowMs - 20 * day };
+    DB.sibBorn = { 9002: { seed: 9001, t: nowMs - 10 * day }, 9003: { seed: 9001, t: nowMs - 10 * day } };
+    DB.flips = [
+      { id: nowMs - 5 * day, itemId: 9001, name:"Probe alpha", qty: 10, buy: 4000, sell: 4400, date: today(), note:"" },
+      { id: nowMs - 4 * day, itemId: 9002, name:"Probe beta",  qty: 10, buy: 4000, sell: 4400, date: today(), note:"" },
+      { id: nowMs - 3 * day, itemId: 9003, name:"Probe gamma", qty: 10, buy: 4000, sell: 4400, date: today(), note:"" }
+    ];
+    DB.watch.push({ id: 9011, src: "scout", sib: 9010, sibAt: nowMs - 8 * day, addedAt: nowMs - 8 * day });
+    DB.watch.push({ id: 9012, src: "scout", sib: 9010, sibAt: nowMs - 9 * day, addedAt: nowMs - 9 * day });
+
+    const sAud = seedAudit();
+    const aProm = sAud.find(x => x.id === 9001), aRet = sAud.find(x => x.id === 9010);
+    ok("seed audit recommends PROMOTE at 3 trading members", !!aProm && aProm.rec === "PROMOTE" && aProm.trading === 3
+       && aProm.lineageIds.length === 3, JSON.stringify(aProm));
+    ok("seed audit recommends RETIRE when cold and flat", !!aRet && aRet.rec === "RETIRE" && aRet.ungrad === 2, JSON.stringify(aRet));
+
+    const zAud = sibAudit();
+    ok("zombie watcher flagged", zAud.rows.filter(r => r.zombie).length === 2 && zAud.total === 2,
+       JSON.stringify(zAud.rows));
+
+    // prune one zombie via the action path
+    auditSibAction(9012, "confirm");
+    ok("zombie prune removes watcher + logs", !DB.watch.some(w => w.id === 9012)
+       && DB.decisionLog.some(x => x.kind === "sibling" && x.action === "prune")
+       && !!DB.audRuled["sib:9012"], JSON.stringify(DB.decisionLog));
+
+    // promote-to-thesis via the action path
+    window.prompt = () => "probe-lineage";
+    auditSeedAction(9001, "confirm");
+    const promoted = DB.clusters.find(cl => cl.name === "probe-lineage");
+    ok("PROMOTE confirm creates ratified cluster + logs", !!promoted && promoted.members.length === 3
+       && DB.decisionLog.some(x => x.kind === "seed" && x.action === "promote-to-thesis")
+       && DB.audRuled["seed:9001"] && DB.audRuled["seed:9001"].action === "promote",
+       JSON.stringify({clusters: DB.clusters.map(c => c.name), log: DB.decisionLog}));
+
+    // retire via the action path (prunes 9011, clears the seed)
+    auditSeedAction(9010, "confirm");
+    ok("RETIRE confirm prunes un-graduated siblings + clears seed", !DB.watch.some(w => w.id === 9011)
+       && !(9010 in DB.seedAt) && DB.decisionLog.some(x => x.kind === "seed" && x.action === "retire"),
+       JSON.stringify({watch: DB.watch.map(w => w.id), seedAt: DB.seedAt}));
+
+    // gate health: a bench row whose item later traded profitably reads "too tight"
+    const yd = new Date(nowMs - day).toLocaleDateString("en-CA");
+    DB.gateLog = [{ d: yd, id: 9002, g: "trend" }, { d: yd, id: 9003, g: "funded" }];
+    const gh = gateHealthAudit();
+    const tr = gh.rows.find(r => r.g === "trend");
+    ok("gate health tracks bench outcomes", !!tr && tr.benched === 1 && tr.traded === 1 && tr.net === 3120
+       && gh.fundedCount === 1 && gh.fundedNet === 3120, JSON.stringify(gh));
+
+    // buildPlan writes the gate ledger
+    buildPlan();
+    ok("plan writes gate ledger", DB.gateLog.some(e => e.g === "funded" && e.d === today()),
+       JSON.stringify(DB.gateLog.slice(-6)));
+
+    // audit renders in the weekly review
+    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
+    const ckHTML = document.querySelector("#ckList").innerHTML;
+    ok("weekly review renders the audit", /Seed audit/.test(ckHTML) && /Sibling audit/.test(ckHTML)
+       && /Cluster queue/.test(ckHTML) && /Gate health/.test(ckHTML) && /Decision log/.test(ckHTML));
+    ok("ruled cards rest", /rests a week/.test(ckHTML));
+
+    // ═══ CO-MOVEMENT DETECTOR END-TO-END (no network: cached series + wiki cache) ═══
+    mkItem(9004, "Probe delta"); mkItem(9005, "Probe epsilon"); mkItem(9006, "Probe zeta");
+    DB.watch = [9001,9002,9003,9004,9005,9006].map(id => ({ id, qty: null }));
+    DB.clusters = []; DB.clusterCands = []; DB.lastCoScanAt = 0;
+    DB.clusterCorr = 0.5; DB.clusterMinDays = 20;
+    const d0 = Date.parse("2026-07-10T00:00:00Z");
+    const mkDays = (retFn, nDays) => {
+      const days = []; let mid = 1000;
+      for (let t = 0; t < nDays; t++){
+        days.push({ d: new Date(d0 + t * 86400e3).toISOString().slice(0, 10), mid });
+        mid = mid * (1 + retFn(t));
+      }
+      return days;
+    };
+    const p = t => (t % 2 ? 0.03 : -0.03);
+    const q = t => [0.02, 0.02, -0.02, -0.02][t % 4];
+    const rr = t => [0.02, -0.01, -0.01][t % 3];
+    dailyCache.set(9001, { at: Date.now(), days: mkDays(p, 26) });
+    dailyCache.set(9002, { at: Date.now(), days: mkDays(p, 26) });
+    dailyCache.set(9003, { at: Date.now(), days: mkDays(t => p(t) * 0.9, 26) });
+    dailyCache.set(9004, { at: Date.now(), days: mkDays(q, 26) });
+    dailyCache.set(9005, { at: Date.now(), days: mkDays(rr, 26) });
+    dailyCache.set(9006, { at: Date.now(), days: mkDays(p, 6).map(x => ({ d: x.d, mid: x.mid })) });
+    const wc = { v: 1, byName: {} };
+    wc.byName["Probe alpha"]   = { at: Date.now(), cats: ["Probe Trails rewards", "Probe Dormant Cat"] };
+    wc.byName["Probe beta"]    = { at: Date.now(), cats: ["Probe Trails rewards"] };
+    wc.byName["Probe gamma"]   = { at: Date.now(), cats: ["Probe Trails rewards"] };
+    wc.byName["Probe delta"]   = { at: Date.now(), cats: ["Probe Dormant Cat"] };
+    wc.byName["Probe epsilon"] = { at: Date.now(), cats: ["Probe Dormant Cat"] };
+    wc.byName["Probe zeta"]    = { at: Date.now(), cats: [] };
+    localStorage.setItem("gef.wikicats.v1", JSON.stringify(wc));
+    await runClusterScan(true);
+    const susp = DB.clusterCands.find(x => x.sig === "9001,9002,9003");
+    ok("detector flags the co-moving trio", !!susp && susp.status === "suspected"
+       && susp.evidence && susp.evidence.corr > 0.5 && susp.evidence.days >= 20,
+       JSON.stringify(DB.clusterCands.map(x => x.sig + ":" + x.status)));
+    ok("wiki story attached to suspected", !!susp && susp.story === "all: Probe Trails rewards", susp ? susp.story : "no cand");
+    const dorm = DB.clusterCands.find(x => x.sig === "9001,9004,9005");
+    ok("dormant candidate from shared rare category", !!dorm && dorm.status === "dormant" && /story without smoke/.test(dorm.story),
+       JSON.stringify(DB.clusterCands.map(x => x.sig + ":" + x.status)));
+    ok("uncorrelated items not clustered", !DB.clusterCands.some(x => x.status === "suspected" && x.sig !== "9001,9002,9003"),
+       JSON.stringify(DB.clusterCands.map(x => x.sig + ":" + x.status)));
+    ok("thin-data guard reports, never flags", S.cluThin.indexOf("Probe zeta") >= 0
+       && !DB.clusterCands.some(x => x.members.indexOf(9006) >= 0), JSON.stringify(S.cluThin));
+    ok("scan stamps lastCoScanAt", DB.lastCoScanAt > 0);
+
+    // ---- import round-trip ----
+    const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
+      clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,
+      decisionLog: DB.decisionLog, gateLog: DB.gateLog, audRuled: DB.audRuled })));
+    ok("import keeps cluster state", v.db.clusters.length === DB.clusters.length && v.db.clusterCands.length > 0
+       && v.db.clusterCapPct === 8 && v.db.clusterCorr === 0.6 && v.db.clusterMinDays === 21,
+       JSON.stringify({c: v.db.clusters.length, k: v.db.clusterCands.length}));
+    ok("import keeps audit state", v.db.decisionLog.length === DB.decisionLog.length
+       && v.db.gateLog.length === DB.gateLog.length && Object.keys(v.db.audRuled).length > 0,
+       JSON.stringify({dl: v.db.decisionLog.length, gl: v.db.gateLog.length}));
+  } catch(e){
+    out.push("FAIL exception :: " + (e && e.stack || e));
+  }
+  const fails = out.filter(l => l.indexOf("FAIL") === 0);
+  document.title = fails.length ? "PROBE-FAIL " + fails.length : "PROBE-PASS";
+  const pre = document.createElement("pre");
+  pre.id = "probeOut";
+  pre.textContent = "===PROBE===\n" + out.join("\n") + "\n===END===";
+  document.body.appendChild(pre);
+  try {
+    fetch("http://127.0.0.1:8347/report", { method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "text/plain" }, body: document.title + "\n" + pre.textContent });
+  } catch(e){}
+})();
+</script>
