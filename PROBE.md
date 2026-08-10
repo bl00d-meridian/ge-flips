@@ -157,6 +157,22 @@ app's globals: `DB`, `S`, `buildPlan`, `calc`, ...). Conventions:
 - The report beacon fires once at the end — long-running additions are fine, the
   listener waits 150s and run.sh polls 90s (raise both if you add something slower).
 
+## Manual checklist (not probe-coverable)
+
+Things the headless suite can't see — walk these by hand when they change:
+
+- **Verify `/briefing` resolves in a fresh session.** Mechanism (Claude Code ≥ 2.1.x):
+  skills at `.claude/skills/<name>/SKILL.md` auto-register as `/<name>` slash commands
+  (the old `.claude/commands/` form is legacy — same effect, don't add a duplicate
+  wrapper). Registration is scanned **at session startup**, so a session started before
+  the skill directory existed says "no commands match" until you restart Claude Code —
+  that is staleness, not a broken skill. Non-interactive check from Git Bash:
+  `claude -p "/briefing" --max-turns 1 --output-format stream-json --verbose | head -c 2000`
+  — the first (`init`) event's `slash_commands` array must contain `"briefing"`
+  (`--max-turns 1` stops it before the actual web sweep runs). Fallback if the command
+  ever won't resolve: the skill is a thin pointer — telling Claude to "run the
+  BRIEFING.md procedure" produces the same output (BRIEFING.md is the binding contract).
+
 ## Kit inventory
 
 ```

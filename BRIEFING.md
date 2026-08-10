@@ -152,3 +152,4 @@ what was checked but NOT emitted (with the reason — usually "no source" or "pr
 5. Tell the user: records by type and confidence, and that the tracker's
    **Import briefing** button (Sleeve tab) reads `intelligence.json` into the
    ratification queue — nothing activates until they rule there.
+6. Do not commit or push unless the user asks.
