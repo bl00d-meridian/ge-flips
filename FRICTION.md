@@ -1,0 +1,13 @@
+(live queue — log new annoyances above the Resolved section, newest first)
+
+## Resolved — 2026-08-10
+
+- 2026-08-09 22:06 [watch] partial buy on mixed hide cape (t2 testing) had no correction path — fixed in `3273f29` (that morning's session): **fix qty…** now exists at the bought stage; the remainder splits to a tracked standing buy or drops.
+- 2026-08-09 22:07 [watch] wrong quantity knowingly carried to the sell listing — same fix: **fix qty…** on listed sells corrects the tracked count without logging anything.
+- 2026-08-09 22:08 [watch] export NOW tooltip couldn't be ignored — fixed in `3273f29`: **✕ today** snoozes it for the day; it returns until an export actually happens.
+- 2026-08-10 09:28 [watch] promote demanded a demotion despite 7 open slots — promote now funds directly whenever nothing must be evicted; the picker appears only on a genuine resource conflict and offers only demotions that free the binding resource, which it names (`e6635d8`).
+- 2026-08-10 09:50 [scan] ✗ GATE tag on divine battlemage potion while the plan had recommended the buy — root cause: the volume gate rode the /5m extrapolation, where one fill in a quiet window reads "12/h", so the gate flapped between refreshes. Ruled fix in `1758e55`: the 5m sample binds only at ≥5 units AND 2 consecutive below-floor refreshes, and its status is labeled everywhere (noise / n-of-2 / 5m pending). Placed rows also now announce when an item stops passing instead of going silent (`952d7a2`).
+- 2026-08-10 09:51 [watch] buy suggested while the scanner said the same item was excluded — same disease, same fix as 09:50.
+- 2026-08-10 09:53 [watch] repeated suggestions for already-dismissed thesis candidates — dismissal now absorbs re-detected variants (member overlap Jaccard ≥ 0.6): evidence merges silently, the queue line shows "(N dismissed, M variants absorbed)" (`e5fbaa4`).
+- 2026-08-10 09:53 [watch] "scan co movement" button unclear — renamed **find co-moving groups**, with standing copy beside it: what the scan reads, what it queues, that it only proposes, and when it last ran (`952d7a2`).
+- 2026-08-10 09:54 [watch] thesis clusters deserved their own page — new **Clusters** tab: the ledger and review queue move there, and every confirmed cluster gets a thesis detail with the pairwise excess-correlation matrix, a rolling correlation-over-time decay view, and the members' normalized 31-day charts overlaid (`1ba4e13`).

@@ -233,6 +233,36 @@ A 20-item watchlist takes 5 s to populate, and `renderWatch` (now including a fu
 
 ---
 
+## 6. Noticed in the Aug 10 2026 friction session — queued, not built
+
+### 6.1 vol5 die-off streaks are session state — S · **2**
+`S.vol5Low` (the 2-consecutive-refreshes confirmation for the 5m volume gate) lives in memory, so a
+browser reload resets a half-confirmed die-off and it must re-confirm from zero. Conservative direction
+(a reload can only *delay* a bench, never cause one), but worth persisting if reloads are frequent.
+*Sketch:* move the map into `DB` keyed by id with a staleness cutoff.
+
+### 6.2 Scanner's ✗ gates badge can't see seasoning — S · **2**
+The badge reports gate-chain failures only; an item mid-qualification shows no marker on the scan tab
+even though the plan won't fund it yet. A "qualifying n/3" mini-badge on scan rows for watch items with
+an active streak would make the two tabs tell one story.
+
+### 6.3 Deployment funnel lumps held/inventory into one residual row — S · **1**
+Items skipped from planning because a position or inventory buffer already commits their capital are
+attributed to a single "live position / inventory" row computed as a residual, not counted directly.
+Fine at current scale; count them explicitly if the row ever looks wrong.
+
+### 6.4 Gate-health ledger stays first-fail only — M · **3**
+The live snapshot now knows *all* gates each item fails (`fails[]`), but the 30-day ledger still records
+only the headline reason — deliberate, to preserve the audit's bucket semantics. A parallel ledger of
+full failure sets would let the marginal-gate attribution be computed over weeks instead of one refresh.
+Revisit after the panel has earned trust on live data.
+
+### 6.5 Thesis detail's first open can take ~8s on a cold cache — S · **1**
+The market factor needs dailies for the whole watchlist at 250ms politeness spacing; the 20h cache makes
+subsequent opens instant. Could prefetch after the weekly scan, which already pulls the same series.
+
+---
+
 ## Suggested order
 
 1. **1.1** (`gp()`) — misreporting your headline number today, ten-second fix.
