@@ -786,6 +786,9 @@
     ok("watch sort: active column painted, old one cleared",
        document.querySelector('#watchTable th[data-k="name"]').classList.contains("on")
        && !document.querySelector('#watchTable th[data-k="roi"]').classList.contains("on"));
+    ok("watch sort: direction arrow class tracks the flip (lo-first = asc)",
+       document.querySelector('#watchTable th[data-k="name"]').classList.contains("desc")
+       && !document.querySelector('#watchTable th[data-k="name"]').classList.contains("asc"));
     S.latest[9002].low = 3900; S.hour[9002].avgLowPrice = 3900;   // distinct buy for a numeric sort
     document.querySelector('#watchTable th[data-k="buy"]').click();
     ok("watch sort: numeric column starts hi-first", DB.watchSort.k === "buy" && DB.watchSort.dir === -1

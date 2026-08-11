@@ -84,6 +84,12 @@ th:first-child,td:first-child{text-align:left}
 th.s{cursor:pointer;user-select:none}
 th.s:hover{color:var(--gold)}
 th.s.on{color:var(--gold)}
+/* watchlist sort affordance: every sortable head shows a faint ⇅; the active
+   one shows the direction solid — hi-first ▼, lo-first ▲ */
+#watchTable th.s::after{content:"⇅";opacity:.35;margin-left:3px;font-size:9px}
+#watchTable th.s.on::after{opacity:1;color:var(--gold)}
+#watchTable th.s.on.desc::after{content:"▼"}
+#watchTable th.s.on.asc::after{content:"▲"}
 td{padding:5px 7px;text-align:right;border-bottom:1px solid #262017;white-space:nowrap}
 tbody tr:hover{background:#241e16}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -8061,7 +8067,15 @@ $$("#scanTable th.s").forEach(th => th.onclick = () => {
   save(); paintSortHeads(); renderScan();
 });
 
-function paintWatchSortHeads(){ $$("#watchTable th.s").forEach(th => th.classList.toggle("on", th.dataset.k === (DB.watchSort || {}).k)); }
+function paintWatchSortHeads(){
+  const ws = DB.watchSort || {};
+  $$("#watchTable th.s").forEach(th => {
+    const on = th.dataset.k === ws.k;
+    th.classList.toggle("on", on);
+    th.classList.toggle("desc", on && ws.dir === -1);
+    th.classList.toggle("asc",  on && ws.dir === 1);
+  });
+}
 $$("#watchTable th.s").forEach(th => th.onclick = () => {
   const k = th.dataset.k;
   DB.watchSort = (DB.watchSort || {}).k === k ? {k, dir: -DB.watchSort.dir} : {k, dir: k === "name" ? 1 : -1};
