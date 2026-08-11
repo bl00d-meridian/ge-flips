@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-11T04:50:00Z",
-  "coversFrom": "2026-08-03",
-  "coversTo": "2026-08-10",
+  "generatedAt": "2026-08-11T13:20:00Z",
+  "coversFrom": "2026-08-10",
+  "coversTo": "2026-08-11",
   "records": [
     {
       "id": "2026-08-10-graveyard-quest-calendar",
@@ -225,35 +225,35 @@
       "id": "2026-08-10-harmonised-orb-watch",
       "type": "watch-note",
       "confidence": "rumor",
-      "title": "Harmonised orb: sustained accumulation at its high, no public story after 2 sweeps",
-      "thesis": "Escalation of the tracker's persistent anomaly flag (unexplained-flag rule, 2nd consecutive no-story sweep). The orb sits AT its 30-day high (~430m on 2026-08-10, +5.0% vs mid-July baseline) and has not retraced, unlike the rest of the flagged cluster; two sweeps of T2 feeds and open-web search surface no post, no promotion, and no announcement naming it. Either early information or coordinated quiet accumulation; posture remains absence unless the catalyst can be named. One candidate mechanism exists but is NOT claimed as the explanation: the June Summer Sweep-Up blog listed harmonised orb weighting/functionality consolidation among uncommitted long-term suggestions requiring future content - that mention is 2 months old and cannot explain an August accumulation on its own.",
+      "title": "Harmonised orb: sustained accumulation at a NEW 30-day high, no public story after 3 sweeps",
+      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its THIRD consecutive no-story sweep (2026-08-11). The orb printed a new 30-day high (~428.7m on 2026-08-10, +6.4% price / +38% volume vs the Jul 18-27 baseline) and is still climbing - the only member of the flagged cluster still making highs while everything else retraces or plateaus. Three sweeps of T2 feeds plus repeated open-web wider-net searches (rule 9a) surface no post, no promotion, and no announcement naming it. Either early information or coordinated quiet accumulation; posture remains absence unless the catalyst can be named. One candidate mechanism exists but is NOT claimed as the explanation: the June Summer Sweep-Up blog listed harmonised orb weighting/functionality consolidation among uncommitted long-term suggestions requiring future content - that mention is 2 months old and cannot explain an August accumulation on its own.",
       "direction": "caution",
       "items": [{ "id": 24511, "name": "Harmonised orb" }],
       "sources": [
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24511", "note": "At 30d high 430.1m on 2026-08-10; +5.0% price / +11% volume vs Jul 18-27 baseline on 24h data (tracker's own baseline shows +9.3%/+378%)", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24511", "note": "New 30d high 428.7m on 2026-08-10, climbing 4 straight days; +6.4% price / +38% volume vs Jul 18-27 baseline on 24h data (tracker's own baseline shows +9.3%/+378%)", "tier": 1 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_2026", "note": "Candidate mechanism only: orb consolidation listed as uncommitted long-term suggestion", "tier": 1 }
       ],
       "sourceTier": 1,
       "validUntil": "2026-09-10",
       "contrary": "Volume elevation on 24h data is mild (+11%), so the 'accumulation' may be thinner than the tracker's short-baseline math suggests; a 146/day book this size moves on few actors.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "There is no named catalyst to be priced in - that is the point of this record. The observed move: 402.7m baseline to 430.1m, new 30d high, no retrace." }
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "There is no named catalyst to be priced in - that is the point of this record. The observed move: 396.0m Jul 18-27 baseline to 428.7m on 2026-08-10, a new 30d high with no retrace across three sweeps (Aug 6-10: 417.9, 416.8, 417.1, 423.4, 428.7m)." }
     },
     {
       "id": "2026-08-10-bandos-chestplate-watch",
       "type": "watch-note",
       "confidence": "rumor",
-      "title": "Bandos chestplate: set-wide drift on doubled volume, no public story after 2 sweeps",
-      "thesis": "Escalation of the tracker's persistent anomaly flag (unexplained-flag rule, 2nd consecutive no-story sweep). Chestplate +7.1% on +100% volume vs mid-July baseline; its sibling Bandos tassets tripped the tracker the same day (+5.4%, vol +108%, first hearing) - a set-wide move. No public story: both T2 feeds, open-web search, and the Summer Sweep-Up pages (which explicitly contain no Bandos changes) come up empty. Fits the broad endgame-melee repricing window (Sweep-Up buffs + TFA hype) but that class-level fit is analyst inference, not a sourced story. Either early information or quiet accumulation; posture is absence.",
+      "title": "Bandos chestplate: set-wide drift on doubled volume, no public story after 3 sweeps",
+      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its THIRD consecutive no-story sweep (2026-08-11). Chestplate +7.1% on +100% volume vs the Jul 18-27 baseline; price has plateaued around 24.0m since Aug 6 (peak 24.1m on Aug 9, small dip Aug 10) - the drift has stalled but not retraced, and volume remains doubled. Its sibling Bandos tassets is now on its own watch-note (2nd no-story sweep). No public story: T2 feeds, repeated open-web wider-net searches, and the Summer Sweep-Up pages (which explicitly contain no Bandos changes) all come up empty. Fits the broad endgame-melee repricing window (Sweep-Up buffs + TFA hype) but that class-level fit is analyst inference, not a sourced story. Either early information or quiet accumulation; posture is absence.",
       "direction": "caution",
       "items": [{ "id": 11832, "name": "Bandos chestplate" }],
       "sources": [
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11832", "note": "Baseline 22.6m to recent 24.2m (+7.1%) on vol 916 to 1,836/day; tassets sibling +5.4% / vol +108% same window", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11832", "note": "Baseline 22.4m to recent 24.0m (+7.1%) on vol 916 to 1,836/day; plateau since Aug 6, peak 24.1m Aug 9, 23.9m Aug 10", "tier": 1 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: the gear sweep contains no Bandos changes", "tier": 1 }
       ],
       "sourceTier": 1,
       "validUntil": "2026-09-10",
       "contrary": "GWD gear is a perennial mid-game demand staple; a +5-7% drift on doubled volume during a game-wide PvM hype window may be ordinary demand, not accumulation.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: chestplate 22.6m to 24.1m over ~3 weeks, still climbing as of Aug 9-10; tassets 15.3m to 16.2m, peak Jul 30." }
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: chestplate 22.4m baseline to 24.0m, plateaued since Aug 6 (24.1m peak Aug 9, 23.9m Aug 10); tassets 15.2m to 16.1m, peak Jul 30, flat since." }
     },
     {
       "id": "2026-08-10-gathering-efficiencies-hunter-supply",
@@ -300,6 +300,42 @@
       "validUntil": "2026-12-31",
       "contrary": "Basket membership is analyst-selected, not sourced from any official displacement statement; lock-in rewards regularly change stats between poll and release, which would re-scramble the incumbents; release is still only 'late 2026'.",
       "pricedIn": { "checked": true, "verdict": "partial", "detail": "Displacement repricing began on the Jul 30 blog (ACB -9%, tome +14%, mace flat, all on ~2.5x volume) but the release window is months out and unnamed; historical displacement concentrates near release." }
+    },
+    {
+      "id": "2026-08-11-inquisitors-hauberk-flag",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Inquisitor's hauberk repricing follows its Jul 22 piece-level buff and the TFA Breaker window; already retracing (answers anomaly flag)",
+      "thesis": "Answers the tracker's 2026-08-11 anomaly flag on Inquisitor's hauberk (+28.4% / vol +518% on the tracker's baseline, strength 175.6 - the strongest flag it has raised). The piece-level story is the set's story. The 22 July 2026 Summer Sweep-Up rework removed the set bonus and made pieces independently strong, and the hauberk was the largest single beneficiary: crush attack +12 to +16, stab/slash penalties -3 to 0, and its individual crush damage/accuracy contribution doubled from 0.5% to 1% per the wiki changelog. The TFA Breaker (BiS crush megarare, passed 88.4% on 2026-08-10) supplies the speculative second driver via community crush-synergy framing - speculation only; the wiki's hauberk page contains no TFA reference. Tape: ~117.7m Jul 18-27 baseline, 149.9m peak on Aug 5 (same peak day as the set), 137.5m on Aug 10 (+21.3% vs baseline on +123% volume) - five straight days of retrace. The flag tripped on a move that is already unwinding.",
+      "direction": "unclear",
+      "items": [{ "id": 24420, "name": "Inquisitor's hauberk" }],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "22 Jul 2026 shipped rework: set bonus removed, pieces gain independent crush bonuses", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Inquisitor%27s_hauberk", "note": "Changelog: crush +12 to +16, stab/slash -3 to 0, individual crush contribution 0.5% to 1%; page contains NO TFA reference", "tier": 1 },
+        { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Breaker crush megarare confirmed passing 88.4% on 2026-08-10", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24420", "note": "30-day price/volume history: peak Aug 5, retracing since", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-30",
+      "contrary": "The parent set carries an active ratified promotion-warning and a SUSPECTED PUMP flag in the tracker - piece-level moves inherit that caution in full; the Breaker synergy portion of the story is community speculation with no official source; and the price has already retraced ~8% from the Aug 5 peak, so anything entered now chases an unwinding move.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~117.7m, peak 149.9m on 2026-08-05, 137.5m on 2026-08-10; recent (Aug 7+) vs baseline: price +21.3%, volume +123% (tracker's flag math: +28.4% / +518% on its own baseline). The move peaked six days before the flag was exported and has retraced five straight days." }
+    },
+    {
+      "id": "2026-08-11-bandos-tassets-watch",
+      "type": "watch-note",
+      "confidence": "rumor",
+      "title": "Bandos tassets: set-wide drift on doubled volume, no public story after 2 sweeps",
+      "thesis": "Escalation under the unexplained-flag rule (2nd consecutive no-story sweep, still elevated). Tassets +5.6% on +108% volume vs the Jul 18-27 baseline; the price peaked at 16.4m on Jul 30 and has plateaued around 16.0m since, but the doubled-volume regime has now persisted three weeks with no story. Two sweeps of T2 feeds plus open-web wider-net search surface nothing; the Summer Sweep-Up pages explicitly contain no Bandos changes. Basket check: in no basket - the would-be GWD/melee basket has no attached catalyst, so the map has no story for it. Set-wide move with Bandos chestplate (own watch-note, now on its 3rd no-story sweep). Either early information or quiet accumulation; posture is absence unless the catalyst can be named.",
+      "direction": "caution",
+      "items": [{ "id": 11834, "name": "Bandos tassets" }],
+      "sources": [
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11834", "note": "Baseline 15.2m to recent 16.1m (+5.6%) on vol 1,041 to 2,168/day; peak 16.4m Jul 30, flat since", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: the gear sweep contains no Bandos changes", "tier": 1 }
+      ],
+      "sourceTier": 1,
+      "validUntil": "2026-09-10",
+      "contrary": "GWD gear is a perennial mid-game demand staple and +5-6% on doubled volume during a game-wide PvM hype window may be ordinary demand; unlike Harmonised orb, the price stopped making highs on Jul 30 - consistent with a demand wave already fading rather than ongoing accumulation.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: 15.2m baseline to 16.1m recent, peak 16.4m on 2026-07-30, plateau since; volume regime (roughly 2x) still active as of Aug 9." }
     }
   ]
 }
