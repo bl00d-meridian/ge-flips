@@ -1070,6 +1070,8 @@ let DB = {
   rampFlags: [],      // entry-watch DISCOUNTED→RAMPING transitions on calendar items [{catId,catName,itemId,name,at,runwayD}] — a tape question about the CATALYST ("is the window moving up?"); 30d retention
   entryWatchState: {},// "catId:itemId" → last entry-watch verdict, so transitions are detectable across sessions
   walkupLoad: [],     // walk-up attention instrumentation [{d,n}] — distinct decisions presented per day, 30d retention; the ≤7 budget is probe-asserted
+  shadowBook: [],     // SHADOW BOOK (ruled Aug 11 2026): counterfactual positions [{id,fam,itemId,name,qty,bid,ask,t,buyQ,sellQ,buyDone,obsMs,lastObs,state,benchedBy,gapTxt,regimes,closedAt,net,forced}] — touches no capital, no real metric, no plan; informs gate-tuning proposals and nothing else
+  shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
@@ -1090,7 +1092,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -1582,6 +1584,7 @@ async function doRefresh(opts = {}){
     await Promise.all(jobs);
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
+    shadowTick();   // shadow book observes every refresh — fills only accrue while watching
     runScout();
   } catch(e){
     S.err = e.message || String(e);
@@ -4279,6 +4282,215 @@ function depProposalFor(g, arr){
   return "Propose: shift this constant toward the median miss (" + (Math.round(m * 100) / 100) + " vs "
        + (Math.round(medianOf(needs) * 100) / 100) + " today). " + relocNote(arr) + " Your ruling.";
 }
+/* ═══ SHADOW BOOK (ruled Aug 11 2026) ═══
+   Counterfactual data collection while the real book sits. Touches no
+   capital, no real metric, no plan — shadow results inform gate-tuning
+   proposals and nothing else. Every number here is SIMULATED, including the
+   "current" regime's — the three regime curves compare like with like and
+   are never comparable to realized P&L.
+   Honest-fill doctrine: a shadow buy fills only when the tape prints
+   at-or-below its bid while the tracker is OBSERVING (5m volume-weighted,
+   capture-capped). An unobserved window is unknown, not unfilled — every
+   verdict carries its observed share of the horizon. */
+const SHADOW_LOOSE = 1 / 1.2, SHADOW_TIGHT = 1.2;   // ROI-floor one notch each way (1.2% → 1.0% / 1.44%); other gates unchanged, stated wherever regimes render
+const SHADOW_MAX_OPEN = 40, SHADOW_OBS_CAP = 10 * 60e3;
+const shadowOpen = () => DB.shadowBook.filter(p => p.state === "open");
+function shadowSizeFor(c){
+  const hu = Math.max(1, Math.floor(volGateFor(c).v * GATE.capture * FILLH()));
+  const cap = planCap(c);
+  return Math.max(1, Math.min(hu, cap != null ? cap : hu));
+}
+/* Open shadow candidates from this refresh's plan — dedup per family key
+   while open or inside a 2× horizon cooldown. */
+function shadowScan(P){
+  if (!S.latestAt) return;
+  const now = Date.now(), cool = 2 * FILLH() * 3600e3;
+  const recent = new Set(DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < cool).map(p => p.fam));
+  const openN = shadowOpen().length;
+  let room = Math.max(0, SHADOW_MAX_OPEN - openN);
+  const add = (fam, x, meta) => {
+    if (!room || recent.has(fam)) return;
+    const c = x.c || calc(x.id);
+    if (!c || c.buy == null || c.sell == null) return;
+    DB.shadowBook.push(Object.assign({ id: now + DB.shadowBook.length, fam, itemId: x.id,
+      name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
+      t: now, buyQ: 0, sellQ: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta));
+    recent.add(fam); room--;
+  };
+  const eRof = x => {
+    const c = x.c || calc(x.id);
+    if (!c || !(c.buy > 0)) return null;
+    const eM = effMargin(c);
+    return eM != null ? eM / c.buy * 100 : null;
+  };
+  /* Regime membership for funded picks: current + loose always; tight only
+     if it clears the tightened ROI floor. */
+  for (const x of P.picks || []){
+    const eR = eRof(x);
+    add("regime:" + x.id, x, { regimes: ["current", "loose"].concat(eR != null && eR >= GATE.roi * SHADOW_TIGHT ? ["tight"] : []) });
+  }
+  /* Every single-gate benched near-miss shadow-trades, stamped with the gate
+     and the gap; ROI-floor misses that clear the loose floor also join the
+     loose regime's book. */
+  for (const x of (P.all || []).filter(x => x.failed && Array.isArray(x.fails) && x.fails.length === 1)){
+    const f = x.fails[0];
+    const eR = eRof(x);
+    const looseToo = f.g === "ROI floor" && eR != null && eR >= GATE.roi * SHADOW_LOOSE;
+    add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: String(f.short || f.detail || ""),
+      regimes: looseToo ? ["loose"] : [] });
+  }
+}
+/* Fill sim + lifecycle, every data refresh. Buy leg: horizon from open;
+   sell leg: horizon from buy completion, unsold remainder force-exits at the
+   then-current instasell — the undercut-to-exit rule, simulated. */
+function shadowTick(){
+  const now = Date.now(), H = FILLH() * 3600e3;
+  let changed = false;
+  for (const p of shadowOpen()){
+    const L = S.latest[p.itemId];
+    const dt = Math.min(Math.max(0, now - (p.lastObs || now)), SHADOW_OBS_CAP);
+    p.obsMs += dt; p.lastObs = now;
+    if (!L){ continue; }
+    const m5 = S.min5[p.itemId] || {};
+    if (!p.buyDone){
+      if (L.low != null && L.low <= p.bid){
+        const credit = Math.max(1, Math.floor((m5.lowPriceVolume || 0) * GATE.capture));
+        p.buyQ = Math.min(p.qty, p.buyQ + credit);
+        changed = true;
+      }
+      if (p.buyQ >= p.qty){ p.buyDone = now; }
+      else if (now - p.t > H){
+        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = now; }   // partial: the bought units still need selling
+        else {
+          p.state = "unfilled"; p.closedAt = now; p.net = 0;
+          changed = true;
+        }
+      }
+    }
+    if (p.buyDone && p.state === "open"){
+      if (L.high != null && L.high >= p.ask){
+        const credit = Math.max(1, Math.floor((m5.highPriceVolume || 0) * GATE.capture));
+        p.sellQ = Math.min(p.qty, p.sellQ + credit);
+        changed = true;
+      }
+      if (p.sellQ >= p.qty){
+        p.state = "filled"; p.closedAt = now;
+        p.net = p.qty * (p.ask - geTax(p.ask, p.itemId)) - p.qty * p.bid;
+        changed = true;
+      } else if (now - p.buyDone > H){
+        const rem = p.qty - p.sellQ;
+        const exitPx = L.low != null ? L.low : p.bid;
+        p.state = "forced-exit"; p.closedAt = now; p.forced = rem;
+        p.net = p.sellQ * (p.ask - geTax(p.ask, p.itemId))
+              + rem * (exitPx - geTax(exitPx, p.itemId))
+              - p.qty * p.bid;
+        changed = true;
+      }
+    }
+  }
+  DB.shadowBook = DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < 30 * 86400e3).slice(-300);
+  /* Daily regime snapshot: 30d cumulative simulated net per regime — the
+     divergence ledger the proposal engine's persistence rule reads. */
+  const d = today();
+  const reg = r => DB.shadowBook.filter(p => p.state !== "open" && (p.regimes || []).includes(r))
+    .reduce((a, p) => a + (p.net || 0), 0);
+  const snap = { d, cur: reg("current"), loose: reg("loose"), tight: reg("tight") };
+  const last = DB.shadowDivLog[DB.shadowDivLog.length - 1];
+  if (!last || last.d !== d) DB.shadowDivLog.push(snap); else Object.assign(last, snap);
+  DB.shadowDivLog = DB.shadowDivLog.slice(-31);
+  if (changed) save();
+}
+/* Persistent regime divergence → a change-proposal with the numbers, through
+   the same evidence discipline as every gate proposal (4 of the last 7 daily
+   readings). Absent persistence, silence — a snapshot is advocacy. */
+function shadowRegimeEvidence(){
+  const log = DB.shadowDivLog.slice(-7);
+  if (log.length < 7) return null;
+  const looseWins = log.filter(x => x.loose > x.cur).length;
+  const tightWins = log.filter(x => x.tight > x.cur).length;
+  const latest = log[log.length - 1];
+  if (looseWins >= 4 && latest.loose > latest.cur)
+    return { dir: "loosen", html: '<b>Shadow book:</b> the loose ROI regime (' + (GATE.roi * SHADOW_LOOSE).toFixed(1)
+      + '%) out-earned current on ' + looseWins + ' of the last 7 days — 30d simulated net ' + gp(Math.round(latest.loose))
+      + ' vs ' + gp(Math.round(latest.cur)) + ', fill-reality baked in (honest fill sim, both books simulated). Evidence for an ROI-floor ruling; nothing changes without it.' };
+  if (tightWins >= 4 && latest.tight > latest.cur)
+    return { dir: "tighten", html: '<b>Shadow book:</b> the tight ROI regime (' + (GATE.roi * SHADOW_TIGHT).toFixed(2)
+      + '%) out-earned current on ' + tightWins + ' of the last 7 days — 30d simulated net ' + gp(Math.round(latest.tight))
+      + ' vs ' + gp(Math.round(latest.cur)) + ', fill-reality baked in. Evidence for an ROI-floor ruling; nothing changes without it.' };
+  return null;
+}
+/* Weekly counterfactual report: per-gate shadow P&L with fill reality, and
+   the three regime curves side by side. */
+/* Per-gate closed shadow outcomes — one computation, shared by the shadow
+   report and the unified gate-health view. */
+function shadowByGate(){
+  const byGate = new Map();
+  for (const p of DB.shadowBook.filter(p => p.state !== "open" && p.benchedBy && p.benchedBy.length)){
+    const g = p.benchedBy[0];
+    if (!byGate.has(g)) byGate.set(g, { arr: [] });
+    byGate.get(g).arr.push(p);
+  }
+  for (const s of byGate.values()){
+    s.n = s.arr.length;
+    s.filled = s.arr.filter(p => p.state === "filled").length;
+    s.forced = s.arr.filter(p => p.state === "forced-exit").length;
+    s.unfilled = s.arr.filter(p => p.state === "unfilled").length;
+    s.net = s.arr.reduce((a, p) => a + (p.net || 0), 0);
+    s.obsMed = medianOf(s.arr.map(p => Math.min(100, Math.round((p.obsMs || 0) / (FILLH() * 3600e3) * 100))));
+  }
+  return byGate;
+}
+/* Combined too-tight verdict (ruled Aug 11 2026): shadow profits alone are a
+   model opinion, realized profits alone are attribution-fuzzy — a case needs
+   BOTH streams pointing the same way. Realized direction reads ONLY the
+   traded-while-benched (override) stream, per the definitions protocol —
+   re-admission latency is never evidence against a gate. */
+function gateStreamDirs(g, ghRows){
+  const sh = shadowByGate().get(g);
+  const shadow = (!sh || (sh.filled + sh.forced) < 2)
+    ? { dir: null, txt: "shadow: insufficient closed outcomes" }
+    : { dir: sh.net > 0 ? "loosen" : "keep",
+        txt: "shadow: would-have-filled " + (sh.filled + sh.forced) + " of " + sh.n + ", net " + gp(Math.round(sh.net))
+           + " after tax, " + sh.unfilled + " would never have filled [simulated — fill-model caveats]" };
+  const r = (ghRows || gateHealthAudit().rows).find(x => x.g === g);
+  const realized = (!r || !r.ovrTraded)
+    ? { dir: null, txt: "realized: no traded-while-benched evidence" }
+    : { dir: r.ovrNet > 0 ? "loosen" : "keep",
+        txt: "realized: " + r.ovrTraded + " traded while still benched, net " + gp(r.ovrNet) + " [real fills — your overrides, the one clean stream]" };
+  return { shadow, realized };
+}
+
+function shadowAuditInline(){
+  const closed = DB.shadowBook.filter(p => p.state !== "open");
+  const lines = [];
+  const byGate = shadowByGate();
+  for (const [g, s] of byGate){
+    lines.push('<div>benched by <b>' + esc(g) + '</b> alone: shadow-traded ' + s.n
+      + ', filled ' + s.filled + (s.forced ? ' (+' + s.forced + ' forced-exit)' : '')
+      + ', net simulated <span class="' + sign(s.net) + '">' + gp(Math.round(s.net)) + '</span> after tax'
+      + ', vs would-not-have-filled ' + s.unfilled
+      + ' <span class="dim">(median ' + s.obsMed + '% of the horizon observed — unobserved windows are unknown, not unfilled)</span></div>');
+  }
+  if (!byGate.size) lines.push('<div class="dim">No closed per-gate shadow positions yet — they accrue as benched near-misses age through their horizons.</div>');
+  const regRow = (label, key) => {
+    const arr = closed.filter(p => (p.regimes || []).includes(key));
+    const net = arr.reduce((a, p) => a + (p.net || 0), 0);
+    const spark = DB.shadowDivLog.slice(-14).map(x => x[key === "current" ? "cur" : key]);
+    const lo = Math.min(0, ...spark), hi = Math.max(1, ...spark);
+    const bars = spark.map(v => '<i style="height:' + Math.max(1, Math.round((v - lo) / Math.max(1, hi - lo) * 14)) + 'px"></i>').join("");
+    return '<div>' + label + ': ' + arr.length + ' closed · 30d simulated net <span class="' + sign(net) + '">' + gp(Math.round(net))
+      + '</span> <span class="depspark" style="display:inline-flex;align-items:flex-end;gap:1px;height:14px">' + bars + '</span></div>';
+  };
+  lines.push('<div style="margin-top:6px"><b>Regime curves</b> — ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&L):</div>');
+  lines.push(regRow("current (" + GATE.roi + "%)", "current"));
+  lines.push(regRow("loose (" + (GATE.roi * SHADOW_LOOSE).toFixed(1) + "%)", "loose"));
+  lines.push(regRow("tight (" + (GATE.roi * SHADOW_TIGHT).toFixed(2) + "%)", "tight"));
+  const evd = shadowRegimeEvidence();
+  lines.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
+    : '<div class="dim">No persistent regime divergence (4 of 7 days) — no tuning case from the shadow book this week.</div>');
+  return '<div class="inline">' + lines.join("") + '</div>';
+}
+
 function renderDeploy(plan){
   const box = $("#depBody"); if (!box) return;
   if (!DB.watch.length){
@@ -4290,6 +4502,7 @@ function renderDeploy(plan){
   const all = P.all || [];
   const N = all.length;
   const pool = P.t1Pool + P.t2Pool;
+  try { shadowScan(P); shadowTick(); } catch(e){}   // counterfactual book rides the same refresh — advisory only
 
   /* ── headline snapshot ledger: one bucket per hour, last refresh of the
      hour wins, 7-day retention. Guarded on live data having arrived at least
@@ -4428,16 +4641,49 @@ function renderDeploy(plan){
         + ' gate-health ledger evidence, never snapshot advocacy (your ruling). No change proposed — the ledger will make the case if it holds.' });
       continue;
     }
-    props.push({ concur: false, html: '<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
+    /* Combined-stream verdict (ruled Aug 11 2026): persistence earns the
+       HEARING; the too-tight case itself needs shadow AND realized agreeing.
+       Disagreement is its own finding; an incomplete pair keeps accruing. */
+    const dirs = gateStreamDirs(g);
+    const persistTxt = '<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
       + persistItems.length + ' with ledger persistence — benched by it on 4+ of the last 7 days: '
       + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7) + "/7d)").join("; "))
-      + ' — ' + esc(shorts.join("; ")) + '. ' + esc(depProposalFor(g, arr)) });
+      + ' — ' + esc(shorts.join("; ")) + '. ';
+    if (dirs.shadow.dir === "loosen" && dirs.realized.dir === "loosen"){
+      props.push({ concur: false, html: persistTxt + 'Both evidence streams agree: ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
+        + '. ' + esc(depProposalFor(g, arr)) });
+    } else if (dirs.shadow.dir && dirs.realized.dir && dirs.shadow.dir !== dirs.realized.dir){
+      props.push({ concur: true, html: persistTxt + '<b>Streams disagree</b> — ' + dirs.shadow.txt + ' vs ' + dirs.realized.txt
+        + '. Shadow says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
+        + ' — investigate the fill model or the attribution before proposing (your ruling). No change proposed.' });
+    } else {
+      props.push({ concur: true, html: persistTxt + 'Outcome evidence incomplete — ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
+        + '. A too-tight case needs BOTH streams pointing the same way (your ruling); the persistence stands and the streams keep accruing. No change proposed.' });
+    }
   }
   const v5 = gated.filter(dieOffTagged);
   if (v5.length) props.push({ concur: true, html: 'On ' + v5.length + ' volume-floor bench' + (v5.length === 1 ? "" : "es")
     + ' the binding side is the confirmed 5m sample, not the 1h book: ' + esc(v5.map(x => x.name).join(", "))
     + '. The ruled binding conditions (≥5 units, 2 consecutive refreshes) are already applied — this reads as a real die-off, not sampling noise.'
     + ' Tagged "die-off detected" in the gate-health ledger; each episode\'s next 24h grades the confirmation in the weekly audit.' });
+  /* Regime divergence is a shadow-only stream — the combined-verdict rule
+     (ruled Aug 11 2026) applies to it like any too-tight/too-loose case. */
+  const shadowEvd = shadowRegimeEvidence();
+  if (shadowEvd){
+    const dirsR = gateStreamDirs("ROI floor");
+    const ghAll = gateHealthAudit();
+    const realizedAgrees = shadowEvd.dir === "loosen"
+      ? dirsR.realized.dir === "loosen"
+      : (ghAll.fundedTraded >= 2 && ghAll.fundedNet < 0);
+    if (realizedAgrees)
+      props.push({ concur: false, html: shadowEvd.html + ' Realized stream agrees: '
+        + (shadowEvd.dir === "loosen" ? dirsR.realized.txt
+           : 'funded passers net ' + gp(ghAll.fundedNet) + ' across ' + ghAll.fundedTraded + ' traded [real fills]') + '.' });
+    else
+      props.push({ concur: true, html: shadowEvd.html + ' Realized stream does not (yet) agree — '
+        + (shadowEvd.dir === "loosen" ? dirsR.realized.txt : 'funded passers are not losing')
+        + '. A regime case needs both streams pointing the same way (your ruling); the divergence keeps accruing, no change proposed.' });
+  }
   if (P.qualifying.length >= 3) props.push({ concur: true, html: 'Seasoning holds ' + P.qualifying.length + ' passing items ('
     + gp(P.qualifying.reduce((s, x) => s + x.qty * x.c.buy, 0)) + ' of would-buys) — they fund themselves at their ETAs, and a fresh margin test'
     + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.' });
@@ -5775,23 +6021,45 @@ function renderAuditInline(){
       + '<button class="sm ghost" data-clmerge="' + c.id + '">merge…</button>'
       + '<button class="sm' + (stale ? ' primary' : ' ghost') + '" data-cldismiss="' + c.id + '">dismiss</button></span></div>');
   }
-  /* §4 gate health */
+  /* §4 gate health — unified evidence streams (ruled Aug 11 2026): realized
+     outcomes (sparse, attribution-leaning) and shadow outcomes (dense,
+     model-caveated) side by side, natures labeled; a too-tight case needs
+     BOTH pointing the same way. */
   const gh = gateHealthAudit();
-  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week and the realized outcome of what later traded (actual logged round trips only, tax netted — never counterfactual fills or drift). Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
-  if (!gh.rows.length) secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
-  for (const r of gh.rows){
-    const bits = [];
-    if (r.ovrTraded)
-      bits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
+  const shGates = shadowByGate();
+  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week with BOTH evidence streams per gate: realized (actual logged round trips, tax netted) and shadow (honest fill simulation, quarantine-labeled). Shadow profits alone are a model opinion; realized profits alone are attribution-fuzzy; <b>agreement is evidence</b>. Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
+  const gateNames = new Set([...gh.rows.map(r => r.g), ...shGates.keys()]);
+  if (!gateNames.size) secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
+  for (const g of gateNames){
+    const r = gh.rows.find(x => x.g === g);
+    const sh = shGates.get(g);
+    const realBits = [];
+    if (r && r.ovrTraded)
+      realBits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
         + r.ovrTraded + ' item' + (r.ovrTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.ovrNet) + '">' + gp(r.ovrNet) + '</span> — '
         + (r.ovrNet > 0 ? 'you overruled this gate and won; that is the one honest strike against it'
                         : 'you overruled this gate and lost — the gate had it right'));
-    if (r.latTraded)
-      bits.push('<b title="Flips dated after the item had cleared the gates again — the market or the data changed and the gate re-admitted it.">traded after unbenching</b> (re-admission latency only): '
+    if (r && r.latTraded)
+      realBits.push('<b title="Flips dated after the item had cleared the gates again — the market or the data changed and the gate re-admitted it.">traded after unbenching</b> (re-admission latency only): '
         + r.latTraded + ' item' + (r.latTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.latNet) + '">' + gp(r.latNet) + '</span> — '
-        + 'the item cleared the gates before trading, so this measures how slowly the gate re-admits, not whether the bench-day call was wrong');
-    if (!bits.length) bits.push('<span class="dim">no outcome data — nothing it benched traded afterwards</span>');
-    secs.push('<div><b>' + esc(r.g) + '</b> — benched ' + r.benched + ' item' + (r.benched === 1 ? '' : 's') + ' this week · ' + bits.join(' · ') + '</div>');
+        + 'measures how slowly the gate re-admits, not whether the bench-day call was wrong');
+    const realLine = '├─ <b>realized</b>: ' + (realBits.length ? realBits.join(' · ') + ' <span class="dim">[real fills]</span>'
+      : '<span class="dim">no outcome data — nothing it benched traded afterwards [real fills]</span>');
+    const shLine = '└─ <b>shadow</b>: ' + (sh
+      ? 'would-have-filled ' + (sh.filled + sh.forced) + ' of ' + sh.n + ', net simulated <span class="' + sign(sh.net) + '">' + gp(Math.round(sh.net))
+        + '</span> after tax; ' + sh.unfilled + ' would never have filled at the benched price'
+        + ' <span class="dim">[simulated — fill-model caveats; median ' + sh.obsMed + '% of horizon observed]</span>'
+      : '<span class="dim">no closed shadow positions for this gate yet [simulated]</span>');
+    const dirs = gateStreamDirs(g, gh.rows);
+    const verdict = (dirs.shadow.dir && dirs.realized.dir)
+      ? (dirs.shadow.dir === dirs.realized.dir
+        ? '<div class="dim" style="margin-left:12px">streams AGREE (' + dirs.shadow.dir + ') — this is what evidence looks like; any proposal still needs the 4-of-7 bench persistence and traced consequences</div>'
+        : '<div class="plan-note" style="margin-left:12px">⚠ streams DISAGREE — shadow says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
+          + '. Investigate the fill model or the attribution before proposing (your ruling) — disagreement is its own finding, not a tiebreak.</div>')
+      : '';
+    secs.push('<div style="margin:4px 0"><b>' + esc(g) + '</b> — benched ' + (r ? r.benched : (sh ? sh.n : 0)) + ' item' + ((r ? r.benched : sh ? sh.n : 0) === 1 ? '' : 's') + ' this week'
+      + '<div style="margin-left:12px">' + realLine + '</div>'
+      + '<div style="margin-left:12px">' + shLine + '</div>' + verdict + '</div>');
   }
   if (gh.dieOff && gh.dieOff.episodes){
     const d0 = gh.dieOff, med = medianOf(d0.recHs);
@@ -8231,6 +8499,7 @@ const CHECKLISTS = {
     ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
+    ["Read the shadow book", "The counterfactual column: per-gate shadow P&L with fill reality baked in, and the three ROI-regime curves side by side — all simulated, informing gate proposals and nothing else:", null, "shadowbook"],
     ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
@@ -8380,6 +8649,8 @@ function renderRoutine(){
       inline = intelScorecardInline();
     } else if (s[3] === "attention"){
       inline = attentionGovernanceInline();
+    } else if (s[3] === "shadowbook"){
+      inline = shadowAuditInline();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -9668,6 +9939,28 @@ function validateImport(d){
                 .slice(0, 300)) : {},
           netWidenV1: d.netWidenV1 ? 1 : 0,
           basketMergeV1: d.basketMergeV1 ? 1 : 0,
+          quoteCommitV1: d.quoteCommitV1 ? 1 : 0,
+          shadowBook: (Array.isArray(d.shadowBook) ? d.shadowBook : []).map(p => {
+            const itemId = num(p && p.itemId), qty = num(p && p.qty), bid = num(p && p.bid), ask = num(p && p.ask);
+            if (!(itemId > 0) || !(qty > 0) || !(bid > 0) || !(ask > 0) || !p.fam) return null;
+            const o2 = { id: num(p.id) || uid(), fam: String(p.fam).slice(0, 80), itemId,
+              name: String(p.name || itemName(itemId)), qty: Math.floor(qty), bid: Math.round(bid), ask: Math.round(ask),
+              t: num(p.t) || Date.now(), buyQ: Math.max(0, num(p.buyQ) || 0), sellQ: Math.max(0, num(p.sellQ) || 0),
+              buyDone: num(p.buyDone) || 0, obsMs: Math.max(0, num(p.obsMs) || 0), lastObs: num(p.lastObs) || 0,
+              state: ["open", "filled", "unfilled", "forced-exit"].includes(p.state) ? p.state : "open",
+              regimes: (Array.isArray(p.regimes) ? p.regimes : []).filter(r => ["current", "loose", "tight"].includes(r)) };
+            if (Array.isArray(p.benchedBy) && p.benchedBy.length) o2.benchedBy = p.benchedBy.map(g => String(g).slice(0, 60)).slice(0, 4);
+            if (p.gapTxt) o2.gapTxt = String(p.gapTxt).slice(0, 160);
+            if (num(p.closedAt) > 0) o2.closedAt = num(p.closedAt);
+            if (num(p.net) != null) o2.net = num(p.net);
+            if (num(p.forced) > 0) o2.forced = num(p.forced);
+            return o2;
+          }).filter(Boolean).slice(-300),
+          shadowDivLog: (Array.isArray(d.shadowDivLog) ? d.shadowDivLog : []).map(x => {
+            const dd = String((x && x.d) || "");
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) return null;
+            return { d: dd, cur: num(x.cur) || 0, loose: num(x.loose) || 0, tight: num(x.tight) || 0 };
+          }).filter(Boolean).slice(-31),
           sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
             const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
             if (!(qty > 0) || !(price > 0) || !(itemId > 0)) return null;

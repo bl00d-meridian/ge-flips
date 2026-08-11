@@ -481,19 +481,28 @@
     ok("[R8.4] snapshot pile without ledger persistence emits no change-proposal",
        S.depProposalCount === 0 && /snapshot advocacy/.test(dep84a) && /Concur-recommended/.test(dep84a),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84a.slice(-600));
-    // seed 5 prior days of volume-floor benches — now the ledger makes the case
+    // seed 5 prior days of volume-floor benches — the ledger persistence earns
+    // the hearing; BOTH outcome streams agreeing makes the case (ruled Aug 11
+    // 2026): a realized override win + profitable closed shadow fills.
     const dm84 = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     for (let d = 1; d <= 5; d++) for (const id of [9001, 9002, 9003]) DB.gateLog.push({ d: dm84(d), id, g: "volume floor" });
+    DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: dm84(2), note: "" }];
+    DB.shadowBook = [
+      { id: 841, fam: "s841", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 50e3 },
+      { id: 842, fam: "s842", itemId: 9003, name: "Probe gamma", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 40e3 }
+    ];
     renderDeploy();
     const dep84b = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
     ok("[R8.4] ledger-backed proposal cites persistence and traces the next stage per admitted item",
        S.depProposalCount === 1 && /ledger persistence/.test(dep84b) && /4\+ of the last 7 days/.test(dep84b)
-       && /Next stage per admitted item/.test(dep84b),
+       && /Both evidence streams agree/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84b.slice(-800));
     // restore fixture volumes and ledgers for the next block
     for (const id of [9001, 9002, 9003])
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
-    DB.gateLog = []; DB.dieOffLog = []; S.depProposalCount = 0;
+    DB.gateLog = []; DB.dieOffLog = []; DB.flips = []; DB.shadowBook = []; S.depProposalCount = 0;
 
     // ═══ PROMOTE FLOW (friction Aug 10 2026: fund first, reason-aware picker) ═══
     DB.flips = []; DB.positions = []; DB.invLots = [];
@@ -686,13 +695,22 @@
     // constants change on ledger evidence, never single-refresh advocacy.
     ok("snapshot ROI pile renders as observation, not proposal", S.depProposalCount === 0
        && /never snapshot advocacy/.test(dep) && /ROI floor<\/b> blocks 3 items this refresh/.test(dep), dep);
-    // seed multi-day ledger persistence → the numbered proposal emits, propose-only
+    // seed multi-day ledger persistence + BOTH agreeing outcome streams
+    // (ruled Aug 11 2026) → the numbered proposal emits, propose-only
     const dmR = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     for (let d = 1; d <= 5; d++) for (const id of [9031, 9032, 9033]) DB.gateLog.push({ d: dmR(d), id, g: "ROI floor" });
+    DB.flips = [{ id: Date.now(), itemId: 9031, name: "Probe near-a", qty: 10, buy: 4000, sell: 4046, date: dmR(2), note: "" }];
+    DB.shadowBook = [
+      { id: 843, fam: "s843", itemId: 9032, name: "Probe near-b", qty: 10, bid: 4001, ask: 4043, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 30e3 },
+      { id: 844, fam: "s844", itemId: 9033, name: "Probe near-c", qty: 10, bid: 4001, ask: 4041, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 20e3 }
+    ];
     renderWatch();
     const dep2 = document.querySelector("#depBody").innerHTML;
     ok("proposal indicts the ROI floor with numbers, propose-only",
        /ROI floor<\/b> alone blocks 3 items this refresh, 3 with ledger persistence/.test(dep2)
+       && /Both evidence streams agree/.test(dep2)
        && /Propose: sustained-ROI floor 1\.2% → 1\.1%/.test(dep2) && /Your ruling/.test(dep2)
        && /Next stage per admitted item/.test(dep2)
        && /nothing changes without your per-gate ruling/i.test(dep2), dep2);
@@ -701,7 +719,7 @@
     S.latest[9002] = { high: 4400, low: 4000, highTime: nowS-60, lowTime: nowS-120 };
     S.hour[9002]   = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
     DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
-    DB.gateLog = [];
+    DB.gateLog = []; DB.flips = []; DB.shadowBook = [];
     DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
     S.qualStamp = S.latestAt + "|" + S.hourAt;
 
@@ -1935,6 +1953,130 @@
        vCoh.db.cohProps[0].dismissedC === 0.52 && /dismissed at 0\.52/.test(vCoh.db.cohProps[0].resurfaced),
        JSON.stringify(vCoh.db.cohProps[0]));
     DB.clusters = []; DB.cohProps = []; DB.cohLog = {}; DB.intel = [];
+
+    // ─── §18/§19: SHADOW BOOK + GATE-AUDIT UNIFICATION (ruled Aug 11 2026) ───
+    DB.shadowBook = []; DB.shadowDivLog = []; DB.gateLog = []; DB.flips = []; DB.positions = [];
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    for (const id of [9001, 9002, 9003]){   // restore canonical market data — earlier die-off blocks degrade it
+      S.latest[id] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
+      S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+      S.min5[id] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    }
+    S.vol5Low = new Map();
+    S.latestAt = S.latestAt || Date.now();   // shadowScan guards on live data having arrived — simulate it
+    // R18.1 — scan opens bench + regime shadows, honest entry, dedup
+    const fakeNear = (id, name) => ({ id, name, c: calc(id), failed: "sustained ROI too low",
+      fails: [{ g: "ROI floor", short: "roi 1.1% vs 1.2%", detail: "d" }] });
+    const shadowPlan = { all: [fakeNear(9002, "Probe beta"), fakeNear(9003, "Probe gamma")],
+      bench: [], pass: [], picks: [{ id: 9001, c: calc(9001) }], nextUp: [], qualifying: [],
+      t1Pool: 1e6, t2Pool: 0, deployed: 0 };
+    shadowScan(shadowPlan);
+    const sbBench = DB.shadowBook.find(p => p.fam === "bench:ROI floor:9002");
+    const sbPick = DB.shadowBook.find(p => p.fam === "regime:9001");
+    ok("[R18.1] bench near-miss shadows with gate stamp and honest entry (instasell + 1 tick)",
+       !!sbBench && sbBench.benchedBy.join() === "ROI floor" && sbBench.bid === calc(9002).buy + 1
+       && sbBench.gapTxt === "roi 1.1% vs 1.2%" && sbBench.qty >= 1,
+       JSON.stringify(sbBench));
+    ok("[R18.1] funded pick joins the regime books (current + loose at least)",
+       !!sbPick && sbPick.regimes.includes("current") && sbPick.regimes.includes("loose"),
+       JSON.stringify(sbPick));
+    const sbCount = DB.shadowBook.length;
+    shadowScan(shadowPlan);
+    ok("[R18.1] rescan while open opens nothing — one shadow per family",
+       DB.shadowBook.length === sbCount, DB.shadowBook.length + " vs " + sbCount);
+    // R18.2 — honest fill sim on a controlled position
+    DB.shadowBook = [{ id: 1, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
+      qty: 10, bid: 4001, ask: 4399, t: Date.now() - 60e3, buyQ: 0, sellQ: 0, buyDone: 0,
+      obsMs: 0, lastObs: Date.now() - 5 * 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
+    S.latest[9002] = { high: 4500, low: 4100, highTime: nowS, lowTime: nowS };   // low ABOVE bid — no fill
+    shadowTick();
+    const sb2 = DB.shadowBook[0];
+    ok("[R18.2] no print at-or-below the bid = no fill; observed time accrues capped",
+       sb2.buyQ === 0 && sb2.state === "open" && sb2.obsMs > 0 && sb2.obsMs <= 10 * 60e3,
+       JSON.stringify(sb2));
+    S.latest[9002] = { high: 4300, low: 4000, highTime: nowS, lowTime: nowS };   // prints through the bid; ask untouched
+    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    shadowTick();
+    ok("[R18.2] a print at-or-below the bid fills volume-weighted (capture-capped)",
+       sb2.buyQ === 10 && sb2.buyDone > 0 && sb2.state === "open", JSON.stringify(sb2));
+    S.latest[9002] = { high: 4399, low: 4000, highTime: nowS, lowTime: nowS };   // lifts the ask
+    shadowTick();
+    ok("[R18.2] sell side symmetric — full round trip closes with net after tax",
+       sb2.state === "filled" && sb2.net === 10 * (4399 - geTax(4399, 9002)) - 10 * 4001,
+       JSON.stringify({ state: sb2.state, net: sb2.net }));
+    DB.shadowBook.push({ id: 2, fam: "bench:ROI floor:9003", itemId: 9003, name: "Probe gamma",
+      qty: 10, bid: 3000, ask: 4399, t: Date.now() - FILLH() * 3600e3 - 60e3, buyQ: 0, sellQ: 0, buyDone: 0,
+      obsMs: 3600e3, lastObs: Date.now(), state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] });
+    S.latest[9003] = { high: 4500, low: 4100, highTime: nowS, lowTime: nowS };
+    shadowTick();
+    const sb3 = DB.shadowBook.find(p => p.id === 2);
+    ok("[R18.2] an unfillable bid expires at the horizon as would-not-have-filled — that IS the data",
+       sb3.state === "unfilled" && sb3.net === 0, JSON.stringify(sb3));
+    // R18.3 — per-gate counterfactual line, quarantine-labeled
+    const shAud = shadowAuditInline();
+    ok("[R18.3] weekly shadow report: per-gate would-have-filled / would-not with observed-share caveat",
+       /benched by <b>ROI floor<\/b> alone: shadow-traded 2, filled 1/.test(shAud)
+       && /would-not-have-filled 1/.test(shAud) && /unknown, not unfilled/.test(shAud),
+       shAud.slice(0, 500));
+    ok("[R18.3] regime curves labeled simulated, never comparable to realized",
+       /all three SIMULATED/.test(shAud) && /never compare to realized/.test(shAud), shAud.slice(500, 1100));
+    // R18.4 — divergence ledger feeds the evidence rule at 4-of-7
+    const dstr = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
+    DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
+    const evd18 = shadowRegimeEvidence();
+    ok("[R18.4] 5-of-7 loose wins with fill-reality = evidence, numbers cited, nothing applied",
+       !!evd18 && evd18.dir === "loosen" && /out-earned current on 5 of the last 7 days/.test(evd18.html)
+       && /nothing changes without it/.test(evd18.html),
+       JSON.stringify(evd18));
+    DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n === 1 ? 300e3 : 90e3, tight: 80e3 }));
+    ok("[R18.4] one big day is a snapshot, not persistence — no evidence",
+       shadowRegimeEvidence() === null);
+    // R19.1/19.2 — unified gate audit and combined verdict
+    const seedBench = (id, days) => { for (let n = 1; n <= days; n++) DB.gateLog.push({ d: dstr(n), id, g: "ROI floor" }); };
+    seedBench(9002, 5); seedBench(9003, 5); seedBench(9001, 5);
+    DB.flips = [{ id: Date.now(), itemId: 9002, name: "Probe beta", qty: 10, buy: 4000, sell: 4400, date: dstr(2), note: "" }];
+    DB.shadowBook = [
+      { id: 3, fam: "b1", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 },
+      { id: 4, fam: "b2", itemId: 9003, name: "Probe gamma", qty: 10, bid: 3000, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 }
+    ];
+    const aud19 = renderAuditInline();
+    ok("[R19.1] gate health renders both streams, natures labeled",
+       /├─ <b>realized<\/b>:/.test(aud19) && /└─ <b>shadow<\/b>:/.test(aud19)
+       && /\[real fills\]/.test(aud19) && /\[simulated — fill-model caveats/.test(aud19),
+       aud19.slice(aud19.indexOf("Gate health"), aud19.indexOf("Gate health") + 900));
+    ok("[R19.1] agreement is named as evidence in the row verdict",
+       /streams AGREE \(loosen\)/.test(aud19), aud19.slice(aud19.indexOf("Gate health"), aud19.indexOf("Gate health") + 1400));
+    // combined verdict in the funnel: agreement → change-proposal citing both
+    const nearPlan = { all: [fakeNear(9001, "Probe alpha"), fakeNear(9002, "Probe beta"), fakeNear(9003, "Probe gamma")],
+      bench: [], pass: [], picks: [], nextUp: [], qualifying: [], t1Pool: 1e6, t2Pool: 0, deployed: 0 };
+    DB.shadowDivLog = [];
+    renderDeploy(nearPlan);
+    let depHTML = document.querySelector("#depBody").innerHTML;
+    ok("[R19.2] streams agree → change-proposal cites both, counts as a ruling",
+       /Both evidence streams agree/.test(depHTML) && /\[real fills/.test(depHTML) && /\[simulated/.test(depHTML)
+       && S.depProposalCount === 1,
+       JSON.stringify({ count: S.depProposalCount, html: depHTML.slice(depHTML.indexOf("Proposals"), depHTML.indexOf("Proposals") + 600) }));
+    DB.flips = [{ id: Date.now(), itemId: 9002, name: "Probe beta", qty: 10, buy: 4400, sell: 4000, date: dstr(2), note: "" }];
+    renderDeploy(nearPlan);
+    depHTML = document.querySelector("#depBody").innerHTML;
+    ok("[R19.2] streams disagree → its own finding, concur lane, NOT a change-proposal",
+       /Streams disagree/.test(depHTML) && /investigate the fill model or the attribution/i.test(depHTML)
+       && S.depProposalCount === 0,
+       JSON.stringify({ count: S.depProposalCount }));
+    DB.shadowBook = [];
+    renderDeploy(nearPlan);
+    depHTML = document.querySelector("#depBody").innerHTML;
+    ok("[R19.2] incomplete pair → accruing note, no change proposed",
+       /Outcome evidence incomplete/.test(depHTML) && /needs BOTH streams/.test(depHTML)
+       && S.depProposalCount === 0,
+       JSON.stringify({ count: S.depProposalCount }));
+    DB.shadowBook = []; DB.shadowDivLog = []; DB.gateLog = []; DB.flips = [];
+    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
+    ok("[R18.4] the weekly review carries the shadow-book step with the regime curves",
+       /shadow book/i.test(document.querySelector("#ckList").innerHTML)
+       && /Regime curves/.test(document.querySelector("#ckList").innerHTML));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }
