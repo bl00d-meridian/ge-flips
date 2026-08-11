@@ -26,6 +26,7 @@
        preference would leak into this one — neutralize it up front. */
     DB.reviewEngagedAt = 0; DB.ckPref = ""; DB.ckDismissAt = 0; DB.flatSince = 0;
     DB.visitStartAt = Date.now(); S.ckExpandOverride = false; S.mode = "walkup";
+    DB.shadowExceptions = [];   // exception-lane rulings persist — a prior run's must not leak in
     /* Sustained qualification: freeze streak upkeep (the suite controls
        DB.qual by hand) and pre-qualify the core fixture items so allocator
        tests exercise the allocator, not the seasoning clock. */
@@ -2537,6 +2538,155 @@
     setTab("home");
     ok("[R24.2] the shadow vitals tile is wired to the shadow-book section itself, not the checklist top",
        Array.from(document.querySelectorAll("#homeVitals .vit")).some(v => v.dataset.goto === "review#ckstep-shadowbook"));
+
+    // ═══ R25 SHADOW ↔ ROW INTEGRATION (Aug 11 2026) — route evidence to the decision ═══
+    const now25 = Date.now();
+    DB.shadowBook = []; DB.shadowExceptions = []; DB.intel = []; DB.anomalyFlags = [];
+    const mkShadow = (id, i, state, net, t0, gate) => {
+      const p = { id: 90000 + i, fam: "t:" + id + ":" + i, itemId: id, name: itemName(id), qty: 10,
+        bid: 4001, ask: 4399, t: t0, buyQ: state === "unfilled" ? 0 : 10, sellQ: state === "filled" ? 10 : 0,
+        buyDone: state === "unfilled" ? 0 : t0, obsMs: 3600e3, lastObs: t0, state, regimes: [],
+        benchedBy: [gate], closedAt: t0 + 3600e3, net };
+      return p;
+    };
+    for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(9002, i, "filled", 8000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
+    DB.shadowBook.push(mkShadow(9003, 10, "filled", 2000, now25 - 5 * 86400e3, "volume floor"));
+    for (let i = 11; i < 15; i++) DB.shadowBook.push(mkShadow(9003, i, "unfilled", 0, now25 - (i - 9) * 86400e3, "volume floor"));
+    for (let i = 20; i < 23; i++) DB.shadowBook.push(mkShadow(9004, i, "filled", -3000, now25 - (5 - (i - 20)) * 86400e3, "ROI floor"));
+    const s25 = shadowSlice(9002);
+    ok("[R25.2] the per-item slice aggregates trips, fills, net, and span from existing collection",
+       s25.n === 5 && s25.bought === 5 && s25.net === 40000 && s25.fillRate === 1 && s25.spanD >= 7, JSON.stringify(s25));
+    ok("[R25.2] shadow dot: solid green when shadow-profitable, hollow under 40% fill rate, quarantine-labeled",
+       /sdot pos/.test(shadowDot(9002)) && /●/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
+       && /◌/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
+    ok("[R25.4] the citation puts the counterfactual in the bench sentence — accruing when profitable, agreeing when not",
+       /\(shadow: 5 trips, would-have-filled 5, net .+sim — evidence accruing toward a proposal\)/.test(shadowCite(9002))
+       && /bench agrees/.test(shadowCite(9004)), shadowCite(9002) + " | " + shadowCite(9004));
+    // R25.1 — toxic flow: crafted markout series, 3 marked-out fills, adverse > threshold
+    const sellAt25 = now25 - 6 * 3600e3;
+    const series25 = [];
+    for (let t = now25 - 48 * 3600e3; t <= now25; t += 1800e3)
+      series25.push({ t: Math.floor(t / 1000), mid: t <= sellAt25 - 1700e3 ? 5000 : t >= sellAt25 + 1700e3 ? 5700 : 5350 });
+    const sp25 = S.spark.get(9001);
+    S.spark.set(9001, Object.assign({}, sp25, { series: series25 }));
+    DB.flips = [0, 1, 2].map(k => ({ id: sellAt25 + k * 1000, itemId: 9001, name: "Probe alpha", qty: 10,
+      buy: 5100, sell: 5450, bh: 1, sh: 1, date: today(), note: "" }));
+    const tox25 = toxicFor(9001);
+    ok("[R25.1] toxic-flow verdict: >=3 marked-out fills, adverse markout beyond the threshold",
+       !!tox25 && tox25.n === 3 && tox25.adverse < 0, JSON.stringify(tox25));
+    setTab("watch");
+    const rowA25 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)")).find(r => /Probe alpha/.test(r.textContent));
+    ok("[R25.1] the watch row's ⚠ chip carries toxic flow (advisory amber)",
+       (ch => !!ch && /TOXIC FLOW/.test(ch.title) && /b-warn/.test(ch.className))(rowA25.querySelector(".tags [data-wdetail]")),
+       rowA25 ? (rowA25.querySelector(".tags [data-wdetail]") || {}).title : "row missing");
+    renderScan();
+    const scanA25 = Array.from(document.querySelectorAll("#scanBody tr")).find(r => /Probe alpha/.test(r.textContent));
+    ok("[R25.1] the scanner row for a watched item carries the same toxic-flow flag",
+       !!scanA25 && /TOXIC FLOW/.test(scanA25.innerHTML), scanA25 ? "found row" : "no scanner row for alpha");
+    // R25.3 — the expand view answers "what would have happened" in one tap
+    S.wDetail = new Set([9002]); renderWatch();
+    const det25 = document.querySelector("#watchBody tr.wdet");
+    ok("[R25.3] the expand view shows the item's shadow history with caveats",
+       !!det25 && /Shadow/.test(det25.textContent) && /would-not-have-filled/.test(det25.textContent)
+       && /all simulated/.test(det25.textContent) && /horizon observed/.test(det25.textContent),
+       det25 ? det25.textContent.slice(0, 200) : "no detail");
+    S.wDetail = new Set();
+    // R25.5 — discovery-slice near-misses shadow-trade, capped, blacklist excluded
+    delete S.latest[9301]; delete S.latest[9099];
+    for (let k = 0; k < 7; k++){
+      const id = 9310 + k, itk = { i: id, n: "Probe slice " + k, l: 25000, m: 0, v: 0, a: 0 };
+      S.items.push(itk); S.byId.set(id, itk);
+      S.latest[id] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
+      S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 40, lowPriceVolume: 40 };
+    }
+    DB.blacklist.push(9316);
+    S.latestAt = now25;
+    /* Earlier renders already ran the slice scan (it rides every plan read) —
+       isolate ONE cycle so the per-cycle cap is what gets measured. */
+    DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
+    shadowScan(buildPlan());
+    const slice25 = DB.shadowBook.filter(p => p.slice);
+    ok("[R25.5] slice near-misses accrue counterfactuals — capped at 5/cycle, single-gate stamped, blacklist excluded",
+       slice25.length === 5 && slice25.every(p => p.benchedBy && p.benchedBy.length === 1)
+       && !slice25.some(p => p.itemId === 9316),
+       JSON.stringify(slice25.map(p => p.itemId + ":" + p.benchedBy[0])));
+    DB.blacklist = DB.blacklist.filter(x => x !== 9316);
+
+    // ═══ R26 SHADOW-BACKED EXCEPTION LANE (Aug 11 2026) — per-item, evidence-gated, ruled ═══
+    exemptIds.add(9320); exemptIds.add(9321);
+    for (const id of [9320, 9321]){
+      const itx = { i: id, n: "Probe except " + id, l: 25000, m: 0, v: 0, a: 0 };
+      S.items.push(itx); S.byId.set(id, itx);
+      S.latest[id] = { high: 20100, low: 20000, highTime: nowS - 60, lowTime: nowS - 120 };
+      S.hour[id] = { avgHighPrice: 20100, avgLowPrice: 20000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+      const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+      for (let k = 0; k < 168; k++){ const mid = 20050 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS - (168 - k) * 3600, mid }); }
+      S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
+      DB.watch.push({ id, qty: null });
+      for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(id, (id - 9300) * 10 + i, "filled", 6000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
+    }
+    const cand26 = candidateFor({ id: 9320, qty: null });
+    ok("[R26.1] the fixture fails ONLY the ROI floor (tax-exempt: margin clears, ROI cannot)",
+       !!cand26.failed && cand26.fails.length === 1 && cand26.fails[0].g === "ROI floor",
+       JSON.stringify((cand26.fails || []).map(f => f.g)));
+    const ev26 = exceptionEvidence(9320);
+    ok("[R26.1] the evidence bar: ≥5 trips, ≥60% fill, net-positive, ≥7 days, no red flags → proposal",
+       !!ev26 && ev26.gate === "ROI floor", JSON.stringify(ev26 && ev26.s));
+    DB.blacklist.push(9320);
+    ok("[R26.1] a red flag (blacklist) bars the lane entirely", exceptionEvidence(9320) === null);
+    DB.blacklist = DB.blacklist.filter(x => x !== 9320);
+    setTab("home");
+    ok("[R26.1] the proposal rides the rulings digest with its one-tap grant",
+       /data-excgrant="9320"/.test(document.querySelector("#homeRulings").innerHTML)
+       && /shadow evidence contradicts the bench/.test(document.querySelector("#homeRulings").innerHTML));
+    document.querySelector('#homeRulings [data-excgrant="9320"]').click();
+    ok("[R26.2] one tap grants — decision-logged, probation active",
+       DB.shadowExceptions.length === 1 && DB.shadowExceptions[0].status === "active"
+       && DB.decisionLog.some(x => x.kind === "exception" && /grant probationary/.test(x.action)));
+    const P26 = buildPlan();
+    const pick26 = P26.picks.find(p => p.id === 9320);
+    ok("[R26.2] the excepted item funds despite the gate, at probation terms (half size, terms stated inline)",
+       !!pick26 && pick26.sizeNotes.some(s => /PROBATIONARY EXCEPTION/.test(s)),
+       pick26 ? JSON.stringify(pick26.sizeNotes) : JSON.stringify({ bench: P26.bench.filter(b => b.id === 9320).map(b => b.failed), nu: P26.nextUp.map(n => n.id) }));
+    // the 2× tick-floor probation safety is its own gate, stated
+    S.latest[9320].high = 20010;
+    const P26b = buildPlan();
+    ok("[R26.2] a margin under the 2× tick floor benches WITH the probation reason — the safety floor holds",
+       P26b.bench.some(b => b.id === 9320 && /exception probation: margin .+ under the 2× tick floor/.test(b.failed)),
+       JSON.stringify(P26b.bench.filter(b => b.id === 9320).map(b => b.failed)));
+    S.latest[9320].high = 20100;
+    // adjudication: 3 profitable real trips → standing waiver
+    DB.flips.push(...[1, 2, 3].map(k => ({ id: Date.now() + k, itemId: 9320, name: "Probe except 9320", qty: 10,
+      buy: 20000, sell: 20100, date: today(), note: "" })));
+    const P26c = buildPlan();
+    ok("[R26.3] 3 profitable probation trips convert to a standing waiver, logged, still funding",
+       DB.shadowExceptions[0].status === "waived"
+       && DB.decisionLog.some(x => /standing waiver/.test(x.action))
+       && P26c.picks.some(p => p.id === 9320 && p.sizeNotes.some(s => /standing per-item waiver/.test(s))),
+       JSON.stringify(DB.shadowExceptions[0]));
+    // losing adjudication: revoked, divergence recorded, back to the bench
+    ok("[R26.1] a waived item never re-proposes", exceptionEvidence(9320) === null);
+    const ev21 = exceptionEvidence(9321);
+    ok("[R26.4] cap semantics: a waived exception frees the active slot — 9321 may propose", !!ev21);
+    grantException(9321);
+    DB.flips.push(...[1, 2, 3].map(k => ({ id: Date.now() + 10 + k, itemId: 9321, name: "Probe except 9321", qty: 10,
+      buy: 20100, sell: 20000, date: today(), note: "" })));
+    const P26d = buildPlan();
+    const e21 = DB.shadowExceptions.find(e => e.id === 9321);
+    ok("[R26.3] 3 losing trips revoke — divergence recorded (sim said yes, reality said no), item back on the bench",
+       e21.status === "revoked" && e21.divergence === 1
+       && DB.decisionLog.some(x => /sim said yes, reality said no/.test(x.action))
+       && P26d.bench.some(b => b.id === 9321),
+       JSON.stringify(e21));
+    // cap: 2 active exceptions suppress further proposals (the bench line states the cap)
+    DB.shadowExceptions.push({ id: 9001, gate: "ROI floor", grantedAt: Date.now(), trips: 0, status: "active", evidence: { n: 5, filled: 5, net: 1 } },
+                             { id: 9004, gate: "ROI floor", grantedAt: Date.now(), trips: 0, status: "active", evidence: { n: 5, filled: 5, net: 1 } });
+    ok("[R26.4] at the cap (2 active) no further proposals render — probes of the gate's edges, not a permission system",
+       exceptionProposals().length === 0);
+    DB.shadowExceptions = []; DB.flips = []; DB.shadowBook = [];
+    DB.watch = DB.watch.filter(w => w.id !== 9320 && w.id !== 9321);
+    S.spark.set(9001, sp25);
+    renderWatch();
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

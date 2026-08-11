@@ -84,9 +84,12 @@ nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--go
 #homeDelta .dl:last-child{border-bottom:none}
 /* deep-link landing flash — you always know where you arrived */
 .landed{outline:2px solid var(--gold);outline-offset:2px;transition:outline-color 1.2s}
-/* four-slot row scheme: test dot + expand view */
+/* four-slot row scheme: test dot + expand view (+ the shadow ghost dot) */
 .tdot{font-size:10px;margin-left:4px;color:var(--dim);cursor:default}
 .tdot.on{color:var(--green)}
+.sdot{font-size:10px;margin-left:4px;color:var(--dim);cursor:default}
+.sdot.pos{color:var(--green)}
+.sdot.neg{color:var(--red)}
 tr.wdet td{background:#221c13;white-space:normal;text-align:left}
 .wdetbox{padding:4px 6px;font-size:12.5px;line-height:1.6;border-left:2px solid var(--gold-dim)}
 .wdetbox .memchip{margin:0 4px 0 0}
@@ -293,6 +296,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <span id="status">starting…</span>
       <button class="sm ghost" id="pendBadge" title="Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from Home's digest.">⚖</button>
       <button class="sm" id="refresh">↻ Refresh</button>
+      <button class="sm" id="toTop" title="Back to the top of the page — the header travels with you, so this is always one tap.">↑ top</button>
     </div>
   </div>
 </header>
@@ -1133,6 +1137,7 @@ let DB = {
   walkupLoad: [],     // walk-up attention instrumentation [{d,n}] — distinct decisions presented per day, 30d retention; the ≤7 budget is probe-asserted
   shadowBook: [],     // SHADOW BOOK (ruled Aug 11 2026): counterfactual positions [{id,fam,itemId,name,qty,bid,ask,t,buyQ,sellQ,buyDone,obsMs,lastObs,state,benchedBy,gapTxt,regimes,closedAt,net,forced}] — touches no capital, no real metric, no plan; informs gate-tuning proposals and nothing else
   shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
+  shadowExceptions: [], // SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,divergence?}] — active = probation (half size, 2× tick floor, 3 real trips adjudicate); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on shadow evidence alone — two lanes, two evidence standards.
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
@@ -1162,7 +1167,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -1994,12 +1999,18 @@ function renderScan(){
     if (c.skewMin != null && c.skewMin > 30)
       risks.push({ k: "onesided", hard: false, label: "ONE-SIDED",
         why: Math.round(c.skewMin) + " min between the last buy and last sell — one side of the book is asleep" });
+    if (w){
+      const tox = toxicFor(c.id);
+      if (tox) risks.push({ k: "toxic", hard: false, label: "TOXIC FLOW",
+        why: "avg adverse markout " + Math.abs(tox.adverse).toFixed(1) + " gp/unit vs " + tox.marginPU.toFixed(1)
+          + " gp/unit margin earned (threshold " + tox.mx + "× margin, " + tox.n + " marked-out fills)" });
+    }
     const chip = !risks.length ? ""
       : '<span class="badge ' + (risks.some(f => f.hard) ? "b-risk" : "b-warn") + '" title="'
         + esc(risks.map(f => f.label + ": " + f.why).join("\n")) + '">⚠ ' + risks.length + '</span>';
     return '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
-      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? testDot(w, c) : '') + '</div></td>'
+      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? testDot(w, c) + shadowDot(c.id) : '') + '</div></td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num dim sec">'+full(c.tax)+'</td>'
@@ -2029,9 +2040,10 @@ function renderScan(){
    nothing; anything interesting gets manually watched. */
 const BEYOND_NET_N = 15;
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function renderBeyondNet(watched){
-  const body = $("#beyondNetBody"), sub = $("#beyondNetSub");
-  if (!body) return;
+/* One sampler, two readers: the scanner's render and the shadow book's
+   slice scan draw the SAME seeded sample, so the rows you see are the rows
+   that accrue counterfactuals. */
+function beyondNetSample(){
   const lo = Math.min(DB.filtersT1.min || 400, DB.filtersT2.min || 5000);
   const hi = Math.max(DB.filtersT1.max || 8000, DB.filtersT2.max || 250_000);
   const pool = [];
@@ -2050,8 +2062,13 @@ function renderBeyondNet(watched){
     const j = i + Math.floor(rnd() * (pool.length - i));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  const pick = pool.slice(0, n);
-  sub.textContent = n + " of " + pool.length + " sanity-passing items, resampled each price cycle — the filters never saw these";
+  return { pick: pool.slice(0, n), poolN: pool.length };
+}
+function renderBeyondNet(watched){
+  const body = $("#beyondNetBody"), sub = $("#beyondNetSub");
+  if (!body) return;
+  const { pick, poolN } = beyondNetSample();
+  sub.textContent = pick.length + " of " + poolN + " sanity-passing items, resampled each price cycle — the filters never saw these";
   body.innerHTML = pick.length ? pick.map(c => '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span></td>'
       /* Gate verdict per slice item (user-directed Aug 11 2026): the same
@@ -3228,6 +3245,27 @@ function buildPlan(){
   ensurePlanDate();
   const all = planCandidates();
   updateQualStreaks(all);
+  /* SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026): adjudicate first —
+     3 real round trips convert probation to waiver or revoke it — then
+     route: an item failing ONLY its excepted gate funds. Probation adds a
+     2× tick-floor safety the waived gate never covered; a margin under it
+     benches with that reason. The gate's own constant never moves here. */
+  try { adjudicateExceptions(); } catch(e){}
+  for (const x of all){
+    if (!x.failed || !Array.isArray(x.fails) || !x.fails.length) continue;
+    const exc = excFor(x.id);
+    if (!exc || !x.fails.every(f => f.g === exc.gate)) continue;
+    if (exc.status === "active"){
+      const eM = effMargin(x.c);
+      if (!(eM != null && eM >= 2 * tickFloorFor(x.id))){
+        x.failed = "exception probation: margin " + (eM != null ? full(eM) : "?") + " under the 2× tick floor ("
+          + (2 * tickFloorFor(x.id)) + ") — the waived gate stays waived, the probation safety floor doesn't";
+        continue;
+      }
+    }
+    delete x.failed;
+    x.exception = exc;
+  }
   const bench = all.filter(x => x.failed);
   let pass = all.filter(x => !x.failed).sort((a,b) => b.score - a.score);
   pass = applyFamilyRule(pass, bench);
@@ -3305,6 +3343,14 @@ function buildPlan(){
       notes.push("participation-capped at " + (DB.partCapPct != null ? DB.partCapPct : 10) + "% of 1h volume (" + full(byPart) + ")");
     const rawCaution = x.caution && !x.cautionProven;
     if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
+    if (x.exception && x.exception.status === "active"){
+      cap = Math.max(1, Math.floor(cap * 0.5));
+      notes.push("PROBATIONARY EXCEPTION (your ruling): " + x.exception.gate + " waived on shadow evidence — half size, 2× tick floor, "
+        + x.exception.trips + "/" + EXC_ADJ_TRIPS + " adjudication trips logged");
+    } else if (x.exception){
+      notes.push("standing per-item waiver: " + x.exception.gate + " (ruled after " + EXC_ADJ_TRIPS
+        + " profitable probation trips — revocable in the row's expand view)");
+    }
     if (x.tier.t === 1 && !x.tier.proven){ cap = Math.floor(cap * 0.5); notes.push("unproven T1 — half size until 2 net-positive round trips"); }
     if (x.tier.t === 2 && !x.tier.proven){ cap = Math.max(0, Math.floor(cap / 3)); notes.push("T2 ramp — one-third size until 2 clean logged trips, then auto-graduates"); }
     return { cap, preRamp, byLiquidity, byPart, rawCaution, notes };
@@ -3332,7 +3378,8 @@ function buildPlan(){
     }
     /* Sustained qualification: a first-time passer seasons before funding.
        Exemptions are stated on the funded line, never applied silently. */
-    const qex = qualExemption(x.id, x.c);
+    const qex = qualExemption(x.id, x.c)
+      || (x.exception ? "probationary exception is your explicit ruling — seasoning would only delay the adjudication it exists for" : null);
     const qs = qualState(x.id);
     if (!qs.qualified){
       if (!qex){ qualifying.push({ ...x, qual: qs }); continue; }
@@ -4291,7 +4338,7 @@ function renderPlan(P0){
             + ' at <span class="num">' + full(x.c.buy) + '</span> each '
             + '<span class="dim">(' + gp(x.wouldCost) + ')</span> — expect <span class="num">~' + gp(x.wouldExpect) + '</span>/cycle'
             + (x.caution ? (x.cautionProven ? ' <span class="badge b-tax">proven '+esc(x.caution.label)+'</span>' : ' <span class="badge b-seed">caution '+esc(x.caution.label)+'</span>') : '')
-            + '<div class="why">passed gates, unfunded — ' + esc(x.why) + ' · ' + esc(whyTag(x)) + '</div>'
+            + '<div class="why">passed gates, unfunded — ' + esc(x.why) + esc(shadowCite(x.id)) + ' · ' + esc(whyTag(x)) + '</div>'
             + picker + '</div>'
             + '<span class="plan-actions">'
             + '<button class="sm" data-promote="'+x.id+'" title="Jump the funding ORDER — gate-passers fund on their own when capacity frees; this only overrides which one goes first.">promote</button>'
@@ -4329,8 +4376,21 @@ function renderPlan(P0){
   } else foot.innerHTML = wedHTML;
 
   $("#benchSummary").textContent = "Benched — " + bench.length + " item" + (bench.length === 1 ? "" : "s");
+  /* The gate's verdict and the counterfactual in the same sentence (ruled
+     Aug 11 2026); an evidence-bar pass renders the one-tap exception
+     proposal right on the line that states the bench reason. */
   $("#benchBody").innerHTML = bench.length
-    ? bench.map(b => '<div class="bench-row"><span>' + esc(b.name) + '</span><span class="r">' + esc(b.failed) + '</span></div>').join("")
+    ? bench.map(b => {
+        const ev = (b.id > 0) ? exceptionEvidence(b.id) : null;
+        const atCap = ev && excActiveN() >= EXC_MAX_ACTIVE;
+        return '<div class="bench-row"><span>' + esc(b.name) + '</span><span class="r">' + esc(b.failed) + esc(shadowCite(b.id))
+          + (ev && !atCap
+            ? ' <button class="sm" data-excgrant="' + b.id + '" title="Grant a PROBATIONARY EXCEPTION (your ruling, decision-logged): this item funds despite ' + esc(ev.gate)
+              + ' at half size, 2× tick floor, one position; ' + EXC_ADJ_TRIPS + ' real round trips adjudicate — profitable converts to a standing per-item waiver, losing revokes and records the divergence. The gate\'s constant never moves on shadow evidence alone.">grant exception?</button>'
+            : '')
+          + (atCap ? ' <span class="dim">(meets the exception bar — cap reached, ' + EXC_MAX_ACTIVE + ' active)</span>' : '')
+          + '</span></div>';
+      }).join("")
     : '<div class="bench-row"><span class="dim">Nothing benched — every watchlist item passed.</span></div>';
   renderDeploy();
 }
@@ -4453,14 +4513,38 @@ function shadowScan(P){
   }
   /* Every single-gate benched near-miss shadow-trades, stamped with the gate
      and the gap; ROI-floor misses that clear the loose floor also join the
-     loose regime's book. */
-  for (const x of (P.all || []).filter(x => x.failed && Array.isArray(x.fails) && x.fails.length === 1)){
+     loose regime's book. Blacklist-gate misses never shadow-trade — the
+     blacklist is the user's alone, and a ledger arguing against it would be
+     the machine building a case against a non-delegable call. */
+  for (const x of (P.all || []).filter(x => x.failed && Array.isArray(x.fails) && x.fails.length === 1
+      && x.fails[0].g !== "blacklist")){
     const f = x.fails[0];
     const eR = eRof(x);
     const looseToo = f.g === "ROI floor" && eR != null && eR >= GATE.roi * SHADOW_LOOSE;
     add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: String(f.short || f.detail || ""),
       regimes: looseToo ? ["loose"] : [] });
   }
+  /* Discovery-slice near-misses (ruled Aug 11 2026): the slice carries gate
+     verdicts now, so its single-gate near-misses accrue counterfactuals too
+     — capped per cycle to bound the ledger. Chart-dependent gates are
+     unknowable for slice items (unknown is not failing) and don't count
+     toward the single-gate test. */
+  let sliceRoom = SLICE_SHADOW_CAP;
+  try {
+    for (const c of beyondNetSample().pick){
+      if (!sliceRoom || !room) break;
+      if (DB.watch.some(w => w.id === c.id)) continue;   // watch items ride the paths above
+      if (isBlk(c.id)) continue;                          // the blacklist is the user's alone
+      const cand = candidateFor({ id: c.id, qty: null });
+      if (!cand.failed) continue;
+      const fl = (cand.fails || []).filter(f => f.g !== "chart still loading" && f.g !== "no history");
+      if (fl.length !== 1) continue;
+      const before = room;
+      add("slice:" + fl[0].g + ":" + c.id, { id: c.id, c }, { benchedBy: [fl[0].g],
+        gapTxt: String(fl[0].short || fl[0].detail || ""), slice: 1, regimes: [] });
+      if (room < before) sliceRoom--;
+    }
+  } catch(e){}
 }
 /* Fill sim + lifecycle, every data refresh. Buy leg: horizon from open;
    sell leg: horizon from buy completion, unsold remainder force-exits at the
@@ -4562,6 +4646,145 @@ function shadowByGate(){
   }
   return byGate;
 }
+/* ═══ SHADOW ↔ ROW INTEGRATION (ruled Aug 11 2026) ═══
+   Route existing evidence to the point of decision — no new collection.
+   The per-item slice below is the same closed-trip data the per-gate
+   aggregate reads, grouped so the counterfactual can sit on the row that
+   asks about it. Every number SIMULATED, quarantine-labeled wherever it
+   renders. */
+const SHADOW_ROW_MIN = 3;        // dot renders from 3 closed trips (ruled)
+const SHADOW_FILLRATE_LO = 0.4;  // below this the dot hollows: the margin exists, the fills don't
+const SLICE_SHADOW_CAP = 5;      // discovery-slice shadow entries per cycle (ruled) — bounds the ledger
+function shadowSlice(id){
+  const closed = (DB.shadowBook || []).filter(p => p.itemId === id && p.state !== "open");
+  if (!closed.length) return null;
+  const bought = closed.filter(p => p.state === "filled" || p.state === "forced-exit").length;
+  const net = closed.reduce((a, p) => a + (p.net || 0), 0);
+  const regs = [...new Set(closed.flatMap(p => (p.regimes && p.regimes.length) ? p.regimes
+    : (p.benchedBy && p.benchedBy.length) ? ["bench: " + p.benchedBy[0]] : ["discovery"]))];
+  const spanD = (Math.max(...closed.map(p => p.closedAt || p.t)) - Math.min(...closed.map(p => p.t))) / 86400e3;
+  return { n: closed.length, bought, unfilled: closed.length - bought, net,
+    fillRate: bought / closed.length, regs, spanD,
+    obsMed: medianOf(closed.map(p => Math.min(100, Math.round((p.obsMs || 0) / (FILLH() * 3600e3) * 100)))),
+    last: closed.slice(-5) };
+}
+/* Toxic-flow verdict per item — the same math the weekly mkcap verdicts use,
+   gated on ≥3 marked-out fills because one bad markout is noise (ruled). */
+function toxicFor(id){
+  const mk = itemMarkouts(id);
+  if (!mk || mk.n < 3) return null;
+  const fl = DB.flips.filter(f => f.itemId === id);
+  const qty = fl.reduce((a, f) => a + f.qty, 0);
+  const marginPU = qty ? fl.reduce((a, f) => a + flipProfit(f), 0) / qty : 0;
+  const mx = Math.max(0.05, DB.markoutX || 0.5);
+  const toxic = marginPU > 0 && ((mk.avg30 != null && -mk.avg30 > mx * marginPU)
+                              || (mk.avg2h != null && -mk.avg2h > mx * marginPU));
+  if (!toxic) return null;
+  const adverse = Math.min(...[mk.avg30, mk.avg2h].filter(x => x != null));
+  return { adverse, marginPU, mx, n: mk.n };
+}
+/* The bench/next-up citation: the gate's verdict and the counterfactual in
+   the same sentence, where the reason is read. */
+function shadowCite(id){
+  const s = shadowSlice(id);
+  if (!s) return "";
+  const verdict = s.net <= 0
+    ? (s.bought === 0 ? "bench agrees — it would not even have filled" : "bench agrees")
+    : "evidence accruing toward a proposal";
+  return " (shadow: " + s.n + " trip" + (s.n === 1 ? "" : "s") + ", would-have-filled " + s.bought
+    + ", net " + gp(Math.round(s.net)) + " sim — " + verdict + ")";
+}
+
+/* ═══ SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026) ═══
+   Per-item, evidence-gated, YOUR press. Two lanes, two evidence standards,
+   explicitly: an exception routes ONE ITEM around a gate on your ruling;
+   the gate's constant still moves only on realized+shadow two-stream
+   agreement at the persistence bar. Exceptions are probes of the gate's
+   edges, not a parallel permission system — hence the cap. */
+const EXC_MIN_TRIPS = 5, EXC_FILLRATE = 0.6, EXC_MIN_DAYS = 7, EXC_ADJ_TRIPS = 3, EXC_MAX_ACTIVE = 2;
+const excFor = id => (DB.shadowExceptions || []).find(e => e.id === id && e.status !== "revoked");
+const excActiveN = () => (DB.shadowExceptions || []).filter(e => e.status === "active").length;
+/* Evidence bar for ONE item (cap-blind — the caller states the cap). */
+function exceptionEvidence(id){
+  const s = shadowSlice(id);
+  if (!s || s.n < EXC_MIN_TRIPS || s.fillRate < EXC_FILLRATE || !(s.net > 0) || s.spanD < EXC_MIN_DAYS) return null;
+  if (suspectedPump(id) || isBlk(id) || toxicFor(id)) return null;   // red flags bar the lane entirely
+  if (excFor(id)) return null;                                        // already granted or waived
+  const gates = {};
+  for (const p of (DB.shadowBook || []).filter(p => p.itemId === id && p.state !== "open"))
+    for (const g of (p.benchedBy || [])) gates[g] = (gates[g] || 0) + 1;
+  const gate = Object.entries(gates).sort((a, b) => b[1] - a[1]).map(x => x[0])[0];
+  if (!gate) return null;   // regime/discovery trips don't ground an exception — it waives a named gate
+  return { id, gate, s };
+}
+function exceptionProposals(){
+  const out = [];
+  if (excActiveN() >= EXC_MAX_ACTIVE) return out;   // at cap the cite says so; no proposal renders
+  const ids = [...new Set((DB.shadowBook || []).filter(p => p.state !== "open").map(p => p.itemId))];
+  for (const id of ids){
+    const ev = exceptionEvidence(id);
+    if (ev) out.push(ev);
+    if (out.length + excActiveN() >= EXC_MAX_ACTIVE) break;
+  }
+  return out;
+}
+function grantException(id){
+  const ev = exceptionEvidence(id);
+  if (!ev){ toast("The evidence bar is no longer met — nothing granted."); return; }
+  if (excActiveN() >= EXC_MAX_ACTIVE){ toast("Exception cap reached (" + EXC_MAX_ACTIVE + " active) — probes of the gate's edges, not a parallel permission system."); return; }
+  DB.shadowExceptions.push({ id, gate: ev.gate, grantedAt: Date.now(), trips: 0, status: "active",
+    evidence: { n: ev.s.n, filled: ev.s.bought, net: Math.round(ev.s.net) } });
+  logDecision("exception", itemName(id), "grant probationary exception",
+    ev.gate + " waived for this item on shadow evidence (" + ev.s.n + " trips, " + ev.s.bought + " filled, net "
+    + gp(Math.round(ev.s.net)) + " sim) — probation: half size, 2× tick floor, one position; " + EXC_ADJ_TRIPS
+    + " real round trips adjudicate. The gate's constant does not move — two lanes, two evidence standards.");
+  save();
+  toast("Probationary exception granted for " + itemName(id) + " — it funds despite " + ev.gate
+    + " at probation terms; " + EXC_ADJ_TRIPS + " real round trips adjudicate.");
+  rerenderCk(); updatePendBadge();
+  if (onWatch()) renderWatch();
+}
+function revokeException(id){
+  const e = excFor(id);
+  if (!e) return;
+  const was = e.status;
+  e.status = "revoked"; e.adjudicatedAt = Date.now();
+  logDecision("exception", itemName(id), "exception revoked (your press)",
+    e.gate + " — " + (was === "waived" ? "standing waiver" : "probation") + " revoked by hand; the item returns to the gate's normal verdict");
+  save(); rerenderCk(); updatePendBadge();
+  if (onWatch()) renderWatch();
+  toast("Exception revoked — " + itemName(id) + " returns to the bench when " + e.gate + " says so.");
+}
+/* Adjudication: the first 3 REAL round trips after the grant decide.
+   Profitable → standing per-item waiver (logged, revocable). Losing →
+   revoked, and the divergence ("sim said yes, reality said no") is recorded
+   as fill-model calibration data. Runs on every plan recompute. */
+function adjudicateExceptions(){
+  let changed = false;
+  for (const e of (DB.shadowExceptions || []).filter(e => e.status === "active")){
+    const trips = DB.flips.filter(f => f.itemId === e.id && f.id > e.grantedAt)
+      .sort((a, b) => a.id - b.id);
+    if (e.trips !== trips.length){ e.trips = trips.length; changed = true; }
+    if (trips.length < EXC_ADJ_TRIPS) continue;
+    const judged = trips.slice(0, EXC_ADJ_TRIPS);
+    const net = judged.reduce((a, f) => a + flipProfit(f), 0);
+    e.adjudicatedAt = Date.now(); e.realNet = net;
+    if (net > 0){
+      e.status = "waived";
+      logDecision("exception", itemName(e.id), "exception → standing waiver",
+        e.gate + " — " + EXC_ADJ_TRIPS + " probation trips net " + gp(net)
+        + " realized; the per-item waiver stands (revocable in the row's expand view). The gate's constant is untouched.");
+    } else {
+      e.status = "revoked"; e.divergence = 1;
+      logDecision("exception", itemName(e.id), "exception revoked — sim said yes, reality said no",
+        e.gate + " — " + EXC_ADJ_TRIPS + " probation trips net " + gp(net)
+        + " realized against shadow-profitable evidence (" + gp(e.evidence.net) + " sim). Divergence recorded: fill-model calibration data. The item returns to the bench.");
+    }
+    changed = true;
+  }
+  if (changed) save();
+}
+
 /* Combined too-tight verdict (ruled Aug 11 2026): shadow profits alone are a
    model opinion, realized profits alone are attribution-fuzzy — a case needs
    BOTH streams pointing the same way. Realized direction reads ONLY the
@@ -5267,7 +5490,7 @@ function planStatusInfo(id, P){
       + (pk.sizeNotes && pk.sizeNotes.length ? " · " + pk.sizeNotes.join("; ") : "") };
   const nuIdx = P ? P.nextUp.findIndex(x => x.id === id) : -1;
   if (nuIdx >= 0) return { key: "nextup", cls: "b-ok", label: "NEXT UP #" + (nuIdx + 1),
-    why: P.nextUp[nuIdx].why + ". Passes every gate — it auto-promotes at the next recompute when the binding resource frees; the promote button only jumps the ORDER." };
+    why: P.nextUp[nuIdx].why + shadowCite(id) + ". Passes every gate — it auto-promotes at the next recompute when the binding resource frees; the promote button only jumps the ORDER." };
   const q = P && P.qualifying.find(x => x.id === id);
   if (q) return { key: "qualifying", cls: "b-seed", label: "qualifying " + q.qual.n + "/" + QUAL_PASSES,
     why: "Seasoning: " + q.qual.n + "/" + QUAL_PASSES + " sustained full-gate passes spanning 2h+ before first funding"
@@ -5277,8 +5500,8 @@ function planStatusInfo(id, P){
   if (b){
     const fl = Array.isArray(b.fails) ? b.fails : [];
     if (fl.length) return { key: "fails", cls: "b-warn", label: "fails " + fl.length + " gate" + (fl.length === 1 ? "" : "s"),
-      why: fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · ") };
-    return { key: "benched", cls: "b-warn", label: "benched", why: b.failed };
+      why: fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · ") + shadowCite(id) };
+    return { key: "benched", cls: "b-warn", label: "benched", why: b.failed + shadowCite(id) };
   }
   return { key: "pending", cls: "b-warn", label: "gates pending",
     why: "Not in this recompute's candidate set — usually the chart is still loading; the verdict improves on its own." };
@@ -5338,7 +5561,29 @@ function rowRiskFlags(w, c, sp, P){
   const pq = planQty(w, c);
   if (pq.cap === 0) push("toobig", true, "TOO BIG", "a single unit costs more than one-third of working capital");
   else if (pq.auto) push("clamped", false, "⅓-CLAMP", "plan qty auto-clamped to " + full(pq.cap) + " by " + capReason(c, pq.cap));
+  /* Toxic flow joins the ⚠ pool (ruled Aug 11 2026) — advisory amber; the
+     same verdict the weekly mkcap step computes, ≥3 marked-out fills. */
+  const tox = toxicFor(w.id);
+  if (tox) push("toxic", false, "TOXIC FLOW", "avg adverse markout " + Math.abs(tox.adverse).toFixed(1)
+    + " gp/unit vs " + tox.marginPU.toFixed(1) + " gp/unit margin earned (threshold " + tox.mx + "× margin, "
+    + tox.n + " marked-out fills) — someone better-informed is hitting your quotes");
   return out;
+}
+/* Slot-5 dot (dot-class like the test dot — the four-BADGE rule holds):
+   the item's shadow record at a glance. Solid green shadow-profitable,
+   solid red shadow-losing, hollow when fill rate < 40% — the margin
+   exists, the fills don't. All simulated, said so in the tooltip. */
+function shadowDot(id){
+  const s = shadowSlice(id);
+  if (!s || s.n < SHADOW_ROW_MIN) return "";
+  const hollow = s.fillRate < SHADOW_FILLRATE_LO;
+  return '<span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
+    + '" title="SHADOW (all simulated — informs gate proposals and nothing else): ' + s.n
+    + ' closed trips · fill rate ' + Math.round(s.fillRate * 100) + '%'
+    + (hollow ? " — the margin exists, the fills don’t" : "")
+    + ' · net ' + gp(Math.round(s.net)) + ' sim · book: ' + esc(s.regs.join(", "))
+    + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)">'
+    + (hollow ? "◌" : "●") + '</span>';
 }
 const riskChip = (id, flags) => !flags.length ? ""
   : '<button class="badge ' + (flags.some(f => f.hard) ? "b-risk" : "b-warn") + '" data-wdetail="' + id
@@ -5397,6 +5642,27 @@ function watchDetailRow(w, c, sp, P, risks){
   if (hv) bits.push('<div class="dim">hour-of-day: this hour runs ' + hv.ratio.toFixed(2) + '× the item\'s daily average</div>');
   if (Number.isFinite(w.tBuy)) bits.push('<div><b>Test:</b> buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell)
     + ' · ' + ago(w.tAt) + (c.tested ? ' <span class="pos">(ACTIVE — overrides live prices for 16h)</span>' : ' (expired)') + '</div>');
+  /* Shadow section (ruled Aug 11 2026): "what would have happened if I'd
+     traded this" — answerable per row in one tap. All simulated. */
+  const sh = shadowSlice(w.id);
+  if (sh){
+    bits.push('<div><b>Shadow</b> <span class="dim">(all simulated — informs gate proposals and nothing else)</span>: '
+      + sh.n + ' closed trip' + (sh.n === 1 ? '' : 's') + ' · would-not-have-filled ' + sh.unfilled
+      + ' · net ' + gp(Math.round(sh.net)) + ' sim · fill rate ' + Math.round(sh.fillRate * 100)
+      + '% · book: ' + esc(sh.regs.join(", ")) + ' · median ' + sh.obsMed
+      + '% of horizon observed — unobserved windows are unknown, not unfilled</div>'
+      + sh.last.map(p => '<div class="dim">— ' + new Date(p.closedAt || p.t).toLocaleDateString("en-CA") + ' ' + esc(p.state)
+        + ' · bid ' + full(p.bid) + ' / ask ' + full(p.ask) + ' × ' + full(p.qty)
+        + (p.state === "unfilled" ? '' : ' · net ' + gp(Math.round(p.net || 0)) + ' sim')
+        + (p.forced ? ' · ' + full(p.forced) + ' force-exited' : '') + '</div>').join(""));
+  }
+  const exc = excFor(w.id);
+  if (exc) bits.push('<div><b>Exception:</b> ' + (exc.status === "active"
+      ? 'PROBATION — ' + esc(exc.gate) + ' waived (your ruling ' + ago(exc.grantedAt) + '); half size, 2× tick floor, '
+        + exc.trips + '/' + EXC_ADJ_TRIPS + ' adjudication trips logged'
+      : 'STANDING WAIVER — ' + esc(exc.gate) + ' (adjudicated: ' + EXC_ADJ_TRIPS + ' probation trips net '
+        + gp(exc.realNet || 0) + ' realized)')
+    + ' <button class="sm ghost" data-excrevoke="' + w.id + '" title="Revoke the exception — the item returns to the gate\'s normal verdict. Decision-logged.">revoke</button></div>');
   return '<tr class="wdet"><td colspan="16"><div class="wdetbox">' + bits.join("") + '</div></td></tr>';
 }
 const WFILTER_OPTS = [["", "all rows"], ["funded", "funded"], ["nextup", "NEXT UP"], ["qualifying", "qualifying"],
@@ -5486,6 +5752,7 @@ function renderWatch(){
       + identityBadge(w, c)
       + riskChip(w.id, risks)
       + testDot(w, c)
+      + shadowDot(w.id)
       + '</div>';
     /* Filter row reaches every collapsed state — aggregation costs no
        capability. Filtered rows still count in the totals (stated in foot). */
@@ -8064,6 +8331,18 @@ function pendingRulingItems(){
           + ' — <a href="#" data-goto="review#ckstep-audit">rule it in the review\'s audit</a>' });
     }
   } catch(e){ /* advisory only */ }
+  /* Exception-lane proposals ride the same queue as every ruling (one tap
+     from Home). Suppressed at the cap — the bench line says so instead. */
+  try {
+    for (const ev of exceptionProposals()){
+      const key = "exc:" + ev.id;
+      items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
+        html: '👻 shadow evidence contradicts the bench: <b>' + esc(itemName(ev.id)) + '</b> — '
+          + ev.s.n + ' trips, ' + ev.s.bought + ' filled, net ' + gp(Math.round(ev.s.net)) + ' sim vs <b>' + esc(ev.gate) + '</b>'
+          + ' <button class="sm" data-excgrant="' + ev.id + '" title="PROBATIONARY EXCEPTION (your ruling): funds despite the gate at half size, 2× tick floor, one position; '
+          + EXC_ADJ_TRIPS + ' real round trips adjudicate. The gate\'s constant never moves on shadow evidence alone — two lanes, two standards.">grant exception</button>' });
+    }
+  } catch(e){ /* advisory only */ }
   if (S.depProposalCount > 0){
     const key = "funnel";
     items.push({ key, pri: 3, sort: 1, snoozed: rulingSnoozed(key),
@@ -9413,6 +9692,10 @@ document.addEventListener("click", e => {
     toast("Swept " + nFs + " exported note" + (nFs === 1 ? "" : "s") + " to resolved.");
     return;
   }
+  const eg = e.target.closest("[data-excgrant]");
+  if (eg){ grantException(+eg.dataset.excgrant); return; }
+  const er = e.target.closest("[data-excrevoke]");
+  if (er){ revokeException(+er.dataset.excrevoke); return; }
   const wd = e.target.closest("[data-wdetail]");
   if (wd){
     if (!S.wDetail) S.wDetail = new Set();
@@ -9847,6 +10130,7 @@ $("#nowBar").addEventListener("click", e => {
 });
 setInterval(renderNow, 60e3);   // time-of-day transitions flip the suggestion without a reload
 $("#refresh").onclick = () => { failCount = 0; refresh(); };
+$("#toTop").onclick = () => window.scrollTo({ top: 0 });
 $("#pendBadge").onclick = () => navGoto("home#homeRulingsPanel");   // land ON the digest, flashed
 $("#planMode").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -10786,6 +11070,18 @@ function validateImport(d){
             if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) return null;
             return { d: dd, cur: num(x.cur) || 0, loose: num(x.loose) || 0, tight: num(x.tight) || 0 };
           }).filter(Boolean).slice(-31),
+          /* Exception-lane records are RULINGS — they survive the carry. */
+          shadowExceptions: (Array.isArray(d.shadowExceptions) ? d.shadowExceptions : []).map(e => {
+            const id = num(e && e.id), g = String((e && e.gate) || "").slice(0, 60);
+            if (!(id > 0) || !g || !["active", "waived", "revoked"].includes(e.status)) return null;
+            const o2 = { id, gate: g, grantedAt: num(e.grantedAt) || Date.now(), trips: Math.max(0, num(e.trips) || 0),
+              status: e.status, evidence: (e.evidence && typeof e.evidence === "object" && !Array.isArray(e.evidence))
+                ? { n: num(e.evidence.n) || 0, filled: num(e.evidence.filled) || 0, net: num(e.evidence.net) || 0 } : { n: 0, filled: 0, net: 0 } };
+            if (num(e.adjudicatedAt) > 0) o2.adjudicatedAt = num(e.adjudicatedAt);
+            if (num(e.realNet) != null) o2.realNet = num(e.realNet);
+            if (e.divergence) o2.divergence = 1;
+            return o2;
+          }).filter(Boolean).slice(-40),
           sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
             const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
             if (!(qty > 0) || !(price > 0) || !(itemId > 0)) return null;
