@@ -38,6 +38,13 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   clear an entry — not even a margin test.
 - **Automated decisions show their work.** Every bench, clamp, and cap states its reason
   inline where the user reads it.
+- **Every allocator-touched entity states where it stands** (user ruling, Aug 11 2026).
+  An unexplained state reads as a broken feature even when the machinery underneath is
+  correct — the F18 incident: held items passed all gates, appeared in no bucket, and
+  made working auto-promote machinery feel press-gated. Funded, next-up, qualifying,
+  benched, held, owned-elsewhere, hidden, skipped: each says so, with its reason, on the
+  surface where it renders. The converse binds too: an element that cannot explain its
+  presence on the screen does not render.
 - Known repeated bug class: gates that re-punish what sizing already priced in
   (double-counting). Bench only on information the sizing/margin logic doesn't use.
 - **Restraint may auto-arm; deployment never** (user ruling, Aug 10 2026). Defensive
