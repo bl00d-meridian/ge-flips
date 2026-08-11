@@ -466,23 +466,23 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <label class="f" title="Sibling watch slots per seed">Sib/seed<input type="number" id="scSibSeed" min="0" max="30" style="width:48px"></label>
         <label class="f" title="Sibling watch slots overall — beyond the normal watch cap, pruned hardest-first when full">Sib total<input type="number" id="scSibTot" min="0" max="60" style="width:48px"></label>
       </div>
-      <div class="tw"><table>
+      <div class="tw"><table id="watchTable">
         <thead><tr>
-          <th>Item</th>
+          <th class="s" data-k="name">Item</th>
           <th class="sec" title="Price over the last 7 days — flat is good, plunging is a knife">7-day</th>
-          <th title="Post-tax profit per unit (sell − buy − tax). gp and ticks are the same number (1 tick = 1 gp), so this column is both: ✓/✗ marks it against the plan's tick floor (15, halved for tax-exempt items)">Margin</th>
-          <th title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
-          <th class="sec" title="Expected profit per full cycle at the planned quantity">Profit</th>
+          <th class="s" data-k="margin" title="Post-tax profit per unit (sell − buy − tax). gp and ticks are the same number (1 tick = 1 gp), so this column is both: ✓/✗ marks it against the plan's tick floor (15, halved for tax-exempt items)">Margin</th>
+          <th class="s" data-k="roi" title="Margin ÷ buy price — return on the gp you tie up each cycle">ROI %</th>
+          <th class="s sec" data-k="profit" title="Expected profit per full cycle at the planned quantity">Profit</th>
           <th class="sec" title="Volume by hour of day — when this item actually trades">By hour</th>
-          <th class="sec" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
-          <th title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
-          <th title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
+          <th class="s sec" data-k="volSide" title="Units per hour on the quieter side of the book — fills go at the slow side's pace">Vol (thin)</th>
+          <th class="s" data-k="buy" title="What a patient buy offer pays — the low ('instasell') price">Buy</th>
+          <th class="s" data-k="sell" title="What a patient sell offer receives — the high ('instabuy') price">Sell</th>
           <th></th>
           <th title="Your margin-tested prices override live data everywhere for 16h after the test — then live prices take back over">Tested</th>
-          <th title="Suggested size — auto-clamped to the smallest of: one-third of working capital, the 4h buy limit, and what the book can absorb">Plan qty</th>
-          <th title="gp tied up at the planned quantity (qty × buy)">Position</th>
-          <th class="sec" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
-          <th class="sec" title="Fitted 7-day price drift in % — the plan benches anything below −5%">Trend</th>
+          <th class="s" data-k="qty" title="Suggested size — auto-clamped to the smallest of: one-third of working capital, the 4h buy limit, and what the book can absorb">Plan qty</th>
+          <th class="s" data-k="position" title="gp tied up at the planned quantity (qty × buy)">Position</th>
+          <th class="s sec" data-k="limit" title="GE buy limit — the most you can buy per rolling 4h window">Limit</th>
+          <th class="s sec" data-k="trend" title="Fitted 7-day price drift in % — the plan benches anything below −5%">Trend</th>
           <th></th>
         </tr></thead>
         <tbody id="watchBody"></tbody>
@@ -971,6 +971,7 @@ let DB = {
   scoutT1Cap: 8,      // scout·T1 candidates the pipeline maintains
   scoutT2Cap: 6,      // scout·T2 candidates
   sort: {k:"roi", dir:-1},
+  watchSort: {k:"roi", dir:-1},   // watchlist column sort — same idiom as the scanner's
   watch: [],        // [{id, qty|null, tBuy, tSell, tAt}]
   flips: [],        // [{id,itemId,name,qty,buy,sell,date,note}]
   positions: [],    // [{id,itemId,name,qty,buy,placedAt}]
@@ -4568,13 +4569,32 @@ function renderWatch(){
     return;
   }
   let totalPos = 0, totalProfit = 0, priced = 0;
-  /* Display order: post-tax ROI, best first. Scout appends in discovery order,
-     which means nothing to a human scanning the list; the stored array is left
-     alone so nothing else changes under it. */
-  const roiOf = new Map(DB.watch.map(w => { const c = calc(w.id);
-    return [w.id, c && c.roi != null ? c.roi : -1e15]; }));
+  /* Display order: click a column head to sort, click again to flip hi/lo
+     (scanner idiom); default is post-tax ROI, best first. Scout appends in
+     discovery order, which means nothing to a human scanning the list; the
+     stored array is left alone so nothing else changes under it. */
+  const ws = DB.watchSort || {k:"roi", dir:-1};
+  const sortOf = new Map(DB.watch.map(w => {
+    const c = calc(w.id);
+    if (!c) return [w.id, null];
+    const sp = S.spark.get(w.id);
+    const q = planQty(w, c).qty;
+    return [w.id, {
+      name: c.name, margin: c.margin, roi: c.roi,
+      profit: c.margin != null ? q * c.margin : null,
+      volSide: c.volSide, buy: c.buy, sell: c.sell, qty: q,
+      position: c.buy != null ? q * c.buy : null,
+      limit: c.limit, trend: sp ? trendPct(sp.pts) : null
+    }];
+  }));
   body.innerHTML = DB.watch.slice()
-    .sort((a, b) => roiOf.get(b.id) - roiOf.get(a.id))
+    .sort((a, b) => {
+      const ra = sortOf.get(a.id), rb = sortOf.get(b.id);
+      if (!ra || !rb) return !ra && !rb ? 0 : !ra ? 1 : -1;   /* no-data rows sink */
+      if (ws.k === "name") return ws.dir * String(ra.name).localeCompare(String(rb.name));
+      const x = ra[ws.k] == null ? -Infinity : ra[ws.k], y = rb[ws.k] == null ? -Infinity : rb[ws.k];
+      return ws.dir * (x - y);
+    })
     .map(w => {
     const c = calc(w.id);
     if (!c) return '<tr><td colspan="15" class="dim">'+esc(itemName(w.id))+' — no data</td><td><button class="sm ghost" data-del="'+w.id+'">✕</button></td></tr>';
@@ -8040,6 +8060,14 @@ $$("#scanTable th.s").forEach(th => th.onclick = () => {
   DB.sort = DB.sort.k === k ? {k, dir: -DB.sort.dir} : {k, dir: k === "name" ? 1 : -1};
   save(); paintSortHeads(); renderScan();
 });
+
+function paintWatchSortHeads(){ $$("#watchTable th.s").forEach(th => th.classList.toggle("on", th.dataset.k === (DB.watchSort || {}).k)); }
+$$("#watchTable th.s").forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  DB.watchSort = (DB.watchSort || {}).k === k ? {k, dir: -DB.watchSort.dir} : {k, dir: k === "name" ? 1 : -1};
+  save(); paintWatchSortHeads(); renderWatch();
+});
+paintWatchSortHeads();
 
 $("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setTab(b.dataset.tab); };
 $("#nowBar").addEventListener("click", e => {

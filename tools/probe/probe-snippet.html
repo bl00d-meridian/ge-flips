@@ -774,6 +774,28 @@
     DB.watch = [{id:9001,qty:null},{id:9002,qty:null},{id:9003,qty:null}];
     DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
 
+    // ═══ WATCHLIST COLUMN SORT (click a head to sort, click again to flip) ═══
+    S.tab = "watch";
+    const wsRows = () => Array.from(document.querySelectorAll("#watchBody .name")).map(n => n.textContent);
+    document.querySelector('#watchTable th[data-k="name"]').click();
+    ok("watch sort: name column sorts A→Z on first click", DB.watchSort.k === "name" && DB.watchSort.dir === 1
+       && wsRows()[0] === "Probe alpha" && wsRows()[wsRows().length - 1] === "Probe gamma", JSON.stringify(wsRows()));
+    document.querySelector('#watchTable th[data-k="name"]').click();
+    ok("watch sort: second click flips hi/lo", DB.watchSort.dir === -1 && wsRows()[0] === "Probe gamma",
+       JSON.stringify(wsRows()));
+    ok("watch sort: active column painted, old one cleared",
+       document.querySelector('#watchTable th[data-k="name"]').classList.contains("on")
+       && !document.querySelector('#watchTable th[data-k="roi"]').classList.contains("on"));
+    S.latest[9002].low = 3900; S.hour[9002].avgLowPrice = 3900;   // distinct buy for a numeric sort
+    document.querySelector('#watchTable th[data-k="buy"]').click();
+    ok("watch sort: numeric column starts hi-first", DB.watchSort.k === "buy" && DB.watchSort.dir === -1
+       && wsRows()[wsRows().length - 1] === "Probe beta", JSON.stringify(wsRows()));
+    document.querySelector('#watchTable th[data-k="buy"]').click();
+    ok("watch sort: numeric flip puts the low first", DB.watchSort.dir === 1 && wsRows()[0] === "Probe beta",
+       JSON.stringify(wsRows()));
+    S.latest[9002].low = 4000; S.hour[9002].avgLowPrice = 4000;
+    DB.watchSort = {k:"roi", dir:-1}; paintWatchSortHeads(); renderWatch();   // restore default order
+
     // ---- import round-trip ----
     const v = validateImport(JSON.parse(JSON.stringify({ clusters: DB.clusters, clusterCands: DB.clusterCands,
       clusterCapPct: 8, clusterCorr: 0.6, clusterMinDays: 21, lastCoScanAt: 123, clSeedV1: 1,
