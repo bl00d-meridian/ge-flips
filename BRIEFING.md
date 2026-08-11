@@ -140,7 +140,7 @@ are the analyst's working map of the market:
 |---|---|
 | Official OSRS news | `https://secure.runescape.com/m=news/archive?oldschool=1` and article pages |
 | OSRS wiki news/upcoming | `https://oldschool.runescape.wiki/w/Upcoming_updates` (and linked update pages) |
-| r/2007scape, past week | JSON endpoints only — see method below |
+| r/2007scape, past week | RSS/Atom via `curl` — see method below (the `.json` endpoints 403 from this machine) |
 | Dev blogs | whatever the above link to — read the primary, cite the primary |
 | Item mapping (name → id) | `https://prices.runescape.wiki/api/v1/osrs/mapping` |
 
@@ -166,9 +166,41 @@ method:
   fine via curl (WebFetch gets 403 there) — the Cloudflare shell affects the news
   *archive* listing, not article pages.
 
-If the RSS feeds also become blocked, degrade gracefully: state "T2 source unavailable
-this sweep" in the BRIEF header and proceed on T0/T1 — an honest partial brief beats a
-stalled one.
+**Re-verified 2026-08-11 ~17:47 UTC**, each method run from the terminal with a
+descriptive User-Agent, control host first so the layer could not be guessed at:
+
+| Method | Result |
+|---|---|
+| control — `prices.runescape.wiki/api/v1/osrs/latest` | **200**, 341,485 bytes — egress is healthy |
+| `curl` → `old.reddit.com/r/2007scape/top/.rss?t=week&limit=50` | **200**, 86,492 bytes, **50 entries** — the standing method |
+| `curl` → `old.reddit.com/r/2007scape/.rss` (bare) | **200**, 52,930 bytes, 25 entries — works, but half the coverage; not the standing URL |
+| `curl` → `www.reddit.com/r/2007scape/top.json?t=week` | **403**, 189,908-byte rendered HTML block page |
+| WebFetch → `old.reddit.com` | refused at the tool level, unchanged |
+
+The 403 carries `Server: snooserv`, `Via: 1.1 varnish`, `Retry-After: 0` and a full
+block page rather than a connection error, and the RSS feed succeeds against the same
+host seconds later: this is **Reddit-side filtering of the JSON endpoints, not sandbox
+egress**. There is nothing to add to any allowed-domains list, and no courier fallback
+is needed while the terminal path works. Keep `top/.rss?t=week&limit=50` as standing —
+50 entries beats the bare feed's 25 — and keep the ≥5s spacing guard even though four
+requests at 2–3s spacing did not 429 on this run; the guard costs nothing.
+
+**T2 status is stated explicitly in the BRIEF header, every sweep** (user ruling,
+2026-08-11). "Source unavailable" and "source read, nothing found" are the same words at
+a glance and mean opposite things — absence of data is not data of absence, so say which
+one it is, out loud, in one of exactly these two shapes:
+
+- `T2: read via RSS, N entries (top-of-week + hot), no promotion-shaped content` — a
+  successful read, with the entry count as proof it happened and the finding stated even
+  when the finding is "nothing".
+- `T2: NOT read — <reason>` — e.g. `NOT read — old.reddit RSS returned 403`. Never
+  imply a quiet community when the truth is a blind eye.
+
+If the RSS feeds also become blocked, degrade gracefully: use the `NOT read` form with
+the reason and proceed on T0/T1 — an honest partial brief beats a stalled one. Before
+writing that line, actually run the standing `curl` RSS method: a fallback's failure
+(WebFetch refusing the domain) is not the source being dark, and reporting it as such
+has happened once already (the superseded 2026-08-10 morning block).
 | 30-day charts (priced-in check) | `https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=<id>` |
 
 ## Output 1 — `intelligence.json` (repo root, overwritten per run)
@@ -237,7 +269,9 @@ correct, non-priced-in call. Write records accordingly: they will be graded.
 ## Output 2 — `briefings/BRIEF-<date>.md`
 
 Human-readable brief, dated filename, header stating the date range covered
-(`Covers YYYY-MM-DD → YYYY-MM-DD`). Sections: what shipped, what's scheduled, what the
+(`Covers YYYY-MM-DD → YYYY-MM-DD`) **and the explicit T2 status line** in one of the two
+shapes fixed in the Reddit method above — read-with-count, or NOT-read-with-reason.
+Sections: what shipped, what's scheduled, what the
 community is loud about, records emitted (one line each with confidence + expiry), and
 what was checked but NOT emitted (with the reason — usually "no source" or "priced in").
 When `flags-pending.json` was present, a **Flags addressed** section is mandatory: one
