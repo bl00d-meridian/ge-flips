@@ -260,12 +260,12 @@
     const p = t => (t % 2 ? 0.03 : -0.03);
     const q = t => [0.02, 0.02, -0.02, -0.02][t % 4];
     const rr = t => [0.02, -0.01, -0.01][t % 3];
-    dailyCache.set(9001, { at: Date.now(), days: mkDays(p, 26) });
-    dailyCache.set(9002, { at: Date.now(), days: mkDays(p, 26) });
-    dailyCache.set(9003, { at: Date.now(), days: mkDays(t => p(t) * 0.9, 26) });
-    dailyCache.set(9004, { at: Date.now(), days: mkDays(q, 26) });
-    dailyCache.set(9005, { at: Date.now(), days: mkDays(rr, 26) });
-    dailyCache.set(9006, { at: Date.now(), days: mkDays(p, 6).map(x => ({ d: x.d, mid: x.mid })) });
+    slvDailyCache.set(9001, { at: Date.now(), days: mkDays(p, 26) });
+    slvDailyCache.set(9002, { at: Date.now(), days: mkDays(p, 26) });
+    slvDailyCache.set(9003, { at: Date.now(), days: mkDays(t => p(t) * 0.9, 26) });
+    slvDailyCache.set(9004, { at: Date.now(), days: mkDays(q, 26) });
+    slvDailyCache.set(9005, { at: Date.now(), days: mkDays(rr, 26) });
+    slvDailyCache.set(9006, { at: Date.now(), days: mkDays(p, 6).map(x => ({ d: x.d, mid: x.mid })) });
     const wc = { v: 1, byName: {} };
     wc.byName["Probe alpha"]   = { at: Date.now(), cats: ["Probe Trails rewards", "Probe Dormant Cat"] };
     wc.byName["Probe beta"]    = { at: Date.now(), cats: ["Probe Trails rewards"] };
@@ -706,7 +706,7 @@
     S.qualStamp = S.latestAt + "|" + S.hourAt;
 
     // ═══ CLUSTERS TAB: thesis detail (matrix, decay view, overlay) ═══
-    // dailyCache still holds the detector fixtures: 9001/9002 co-move (p),
+    // slvDailyCache still holds the detector fixtures: 9001/9002 co-move (p),
     // 9003 tracks them at 0.9×, 9004 diverges (q), 9005 a third pattern.
     DB.clusters = [{ id: 5, name: "probe-detail", members: [9001, 9002, 9004], capPct: null, story: "", src: "manual", confirmedAt: Date.now() }];
     DB.watch = [9001, 9002, 9003, 9004, 9005].map(id => ({ id, qty: null }));
@@ -1548,6 +1548,25 @@
     const catLC = DB.catalysts.find(c => c.name === "Far Event");
     ok("[R12.2] ratified long-catalyst creates an estimate-window calendar entry",
        !!catLC && catLC.estWindow === 1 && /ESTIMATE/.test(effLC), effLC);
+    // R15.1 (audit F1) — the estimate is visible everywhere the window renders
+    S.tab = "sleeve"; renderSleeve(); renderClusters();
+    ok("[R15.1] calendar card badges the estimate window",
+       /est\. window/.test(document.querySelector("#catBody").innerHTML),
+       document.querySelector("#catBody").innerHTML.slice(0, 300));
+    S.entryWatch = new Map([[catLC.id, { at: Date.now(), runway: 55,
+      rows: [{ id: 9001, st: null, thin: true, verdict: null, score: 0, liqWarn: false }] }]]);
+    renderSleeve();
+    ok("[R15.1] entry-watch runway line carries the estimate",
+       /~55d to window \(estimate\)/.test(document.querySelector("#catBody").innerHTML),
+       document.querySelector("#catBody").innerHTML.slice(0, 500));
+    S.entryWatch = new Map();
+    DB.lastBriefImportAt = Date.now() - 9 * 86400e3; DB.briefRemindDismissKey = "";
+    const tight0 = DB.catWinTightenD; DB.catWinTightenD = 60;   // reach the 60d-out estimate window
+    const brEst = briefReminderInfo();
+    ok("[R15.1] briefing reminder names the window as estimated",
+       !!brEst && brEst.kind === "catwin" && /estimated window/.test(brEst.msg) && /opens in ~/.test(brEst.msg),
+       JSON.stringify(brEst));
+    DB.catWinTightenD = tight0; DB.lastBriefImportAt = Date.now();
     // R12.3 — story-resolution + no-story counters
     DB.anomalyFlags = [
       { id: 8101, itemId: 9001, name: "Probe alpha", at: Date.now() - 3600e3, d: today(), strength: 9, rise14p: 10, rise14v: 90 },
@@ -1612,12 +1631,40 @@
     const lp = flagLagProfile();
     ok("[R12.6] two explained flags yield a median peak-to-flag lag",
        !!lp && lp.n === 2 && lp.medianD === 7, JSON.stringify(lp));
+    ok("[R15.2] the profile reads the full signature — dominant class and median retrace",
+       !!lp && lp.classLabel === "demand-context [confirmed]" && lp.classN === 2 && lp.medianRetrace === -3,
+       JSON.stringify(lp));
     DB.anomalyFlags = [{ id: 8103, itemId: 9003, name: "Probe gamma", at: Date.now(), d: today(), strength: 5, rise14p: 6, rise14v: 50 }];
     S.tab = "sleeve"; renderSleeve(); renderClusters();
     ok("[R12.6] unexplained flag renders the signature note as attention-only copy",
        /median 7d before the scan tripped/.test(document.querySelector("#anomBody").innerHTML)
        && /likely post-peak/.test(document.querySelector("#anomBody").innerHTML),
        document.querySelector("#anomBody").innerHTML.slice(0, 400));
+    ok("[R15.2] the rendered note carries story class and retrace, not lag alone",
+       /mostly demand-context \[confirmed\] stories, 2 of 2/.test(document.querySelector("#anomBody").innerHTML)
+       && /median retrace -3% since peak/.test(document.querySelector("#anomBody").innerHTML),
+       document.querySelector("#anomBody").innerHTML.slice(0, 500));
+    // R15.3 (audit F3) — the flag row links to its watch-note instead of asking for one
+    DB.anomalyFlags[0].noStory = 2;
+    DB.intel.push({ id: "r-wn-gamma", type: "watch-note", confidence: "rumor", title: "Gamma watch",
+      thesis: "t", direction: "caution", items: [9003], sources: [{ url: "https://example.test/wn", tier: 1 }],
+      sourceTier: 1, validUntil: inDays(20), importedAt: Date.now(), status: "ratified", teeth: 0, outcome: null });
+    renderSleeve(); renderClusters();
+    ok("[R15.3] flag row shows the escalation happened — watch-note id + posture absence",
+       /escalated to watch-note <b>r-wn-gamma<\/b>/.test(document.querySelector("#anomBody").innerHTML)
+       && /posture absence/.test(document.querySelector("#anomBody").innerHTML)
+       && !/escalation due/.test(document.querySelector("#anomBody").innerHTML),
+       document.querySelector("#anomBody").innerHTML.slice(0, 500));
+    // R15.4 (audit F4) — one cache: dailyFor slices the shared 90-day series, no second fetch
+    const mkNinety = [];
+    for (let i = 0; i < 90; i++) mkNinety.push({ d: new Date(Date.parse("2026-05-01T00:00:00Z") + i * 86400e3).toISOString().slice(0, 10), mid: 1000 + i, vol: 10 });
+    slvDailyCache.set(9099, { at: Date.now(), days: mkNinety });
+    const df = await dailyFor(9099);
+    ok("[R15.4] dailyFor is a 31-day slicing read of the shared cache",
+       df.days.length === 31 && df.days[0].mid === 1059 && df.days[30].mid === 1089
+       && dailyView(9099).days.length === 31,
+       JSON.stringify({ n: df.days.length, first: df.days[0], last: df.days[30] }));
+    slvDailyCache.delete(9099);
     DB.flagArchive = []; DB.anomalyFlags = []; DB.intel = []; DB.catalysts = [];
 
     // ─── §13: COMPLEXITY GOVERNANCE ───

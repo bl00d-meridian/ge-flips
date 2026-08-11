@@ -2296,22 +2296,18 @@ function seedClusterCands(){
    labeled honestly: the detector knows they co-move, not why. Thin data
    never flags — a pair needs clusterMinDays overlapping trading days, and
    below that the verdict is "insufficient data", not a guess. */
-const DAILY_TTL = 20 * 3600e3;
-const dailyCache = new Map();
+/* One daily-series cache for the whole app (audit F4, ratified Aug 10 2026):
+   slvDailyFor's 90-day mid+volume cache is the single source; this is a
+   31-day slicing read of it. Same endpoint, one fetch, one invalidation
+   story. dailyView reads the shared cache synchronously for chart overlays. */
 async function dailyFor(id){
-  const c = dailyCache.get(id);
-  if (c && Date.now() - c.at < DAILY_TTL) return c;
-  const d = await getJSON("/timeseries?id=" + id + "&timestep=24h");
-  const days = (d.data || []).slice(-31).map(p => {
-    const hi = Number.isFinite(p.avgHighPrice) ? p.avgHighPrice : null;
-    const lo = Number.isFinite(p.avgLowPrice)  ? p.avgLowPrice  : null;
-    const mid = (hi != null && lo != null) ? (hi + lo) / 2 : (hi != null ? hi : lo);
-    return { d: new Date(p.timestamp * 1000).toISOString().slice(0, 10), mid };
-  }).filter(x => Number.isFinite(x.mid) && x.mid > 0);
-  const rec = { at: Date.now(), days };
-  dailyCache.set(id, rec);
-  return rec;
+  const r = await slvDailyFor(id);
+  return { at: r.at, days: r.days.slice(-31) };
 }
+const dailyView = id => {
+  const rec = slvDailyCache.get(id);
+  return rec ? { at: rec.at, days: rec.days.slice(-31) } : null;
+};
 /* Returns only across CONSECUTIVE calendar days — a gap (no trades) must not
    masquerade as one day's move. Gaps shrink overlap; the thin-data guard
    then says so instead of correlating fiction. */
@@ -5116,11 +5112,11 @@ function clusterDetailHTML(cl, excess){
       + thr + ' threshold — green holds the thesis, amber drifts, red is decay. Windows with under 6 shared days are skipped, not guessed.</div>'
     : '<span class="dim">Not enough overlapping trading days for a rolling view — the thesis has no track to decay on yet.</span>';
 
-  /* overlaid normalized member charts, from the daily cache */
+  /* overlaid normalized member charts, from the shared daily cache */
   const palette = ["#e8b64c", "#78bf5e", "#7fa9d4", "#cf5a4e", "#a07fd6", "#d9a441", "#6fbfb0", "#c77fae"];
   const lines = [];
   for (let i = 0; i < M.length; i++){
-    const rec = dailyCache.get(M[i]);
+    const rec = dailyView(M[i]);
     if (!rec || !rec.days || rec.days.length < 2) continue;
     const base = rec.days[0].mid;
     lines.push({ nm: itemName(M[i]), col: palette[i % palette.length],
@@ -6385,7 +6381,7 @@ function renderSleeveEngine(){
                 + '<td class="num">' + (r.score > 0 ? r.score.toFixed(1) : "—") + '</td>')
               + '</tr>';
           }).join("") + '</tbody></table></div>'
-        + '<div class="dim" style="font-size:11px">screened ' + ago(ew.at) + ' · runway ' + (ew.runway != null ? (ew.runway >= 0 ? ew.runway + "d to window" : "window passed") : "no window") + '</div>'
+        + '<div class="dim" style="font-size:11px">screened ' + ago(ew.at) + ' · runway ' + (ew.runway != null ? (ew.runway >= 0 ? (cat.estWindow ? "~" : "") + ew.runway + "d to window" + (cat.estWindow ? " (estimate)" : "") : "window passed" + (cat.estWindow ? " (estimated window)" : "")) : "no window") + '</div>'
       : '<div class="dim">no linked items resolved</div>') : "";
     const catXo = xo.filter(x => x.cat.id === cat.id).map(x =>
       '<div class="plan-note" style="margin-top:4px">⚑ crossover: <b>' + esc(itemName(x.lead.id)) + ' '
@@ -6394,6 +6390,7 @@ function renderSleeveEngine(){
       + ' — same thesis, unpriced member.</div>').join("");
     return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:8px 11px;margin-bottom:8px">'
       + '<div><b>⚡ ' + esc(cat.name) + '</b> <span class="dim">' + esc(slvCountdown({ name: cat.name, windowStart: cat.windowStart, windowEnd: cat.windowEnd })) + '</span>'
+      + (cat.estWindow ? ' <span class="badge b-warn" title="Long-horizon entry: this window is the analyst\'s ESTIMATE, not an announced date — countdown and runway math carry that uncertainty. The badge clears when an officially dated update replaces the window.">est. window</span>' : '')
       + (cat.src === "intel" ? ' <span class="badge b-ok" title="Created from a ratified analyst briefing record.">from briefing</span>' : '')
       + '<span style="float:right;white-space:nowrap">'
       + '<button class="sm" data-catwatch="' + cat.id + '"' + (entryWatchBusy ? ' disabled' : '') + '>↻ screen entries</button> '
@@ -6419,10 +6416,18 @@ function renderSleeveEngine(){
     + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
     + (f.dismissed ? ' <span class="badge b-warn" title="Dismissed by you — this silences the tape-question briefing reminder for this flag only. It never lifts a pump defense; only dismissing the warning record does that.">dismissed</span>' : '')
     + (f.storyId ? '<div class="dim">answered by the analyst: record ' + esc(f.storyId) + '</div>'
-      : '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position'
-        + (f.noStory ? ' · <b>' + f.noStory + '× no public story</b>' + (f.noStory >= 2 ? ' — watch-note escalation due' : ' — wider-net re-hearing due') : '') + '</div>')
-    + (!f.storyId && lagP ? '<div class="dim" title="Lag profile from ' + lagP.n + ' explained flags: attention only — it re-ranks nothing and blocks nothing.">signature note: past explained flags peaked a median '
-        + lagP.medianD + 'd before the scan tripped — if this one matches that class, the move is likely post-peak</div>' : '')
+      : (wn => wn
+          ? '<div class="dim">escalated to watch-note <b>' + esc(wn.id) + '</b>'
+            + (wn.status === "ratified" ? '' : ' (awaiting your ruling)')
+            + ' — posture absence; lifted by dismissal or expiry of the record</div>'
+          : '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position'
+            + (f.noStory ? ' · <b>' + f.noStory + '× no public story</b>' + (f.noStory >= 2 ? ' — watch-note escalation due' : ' — wider-net re-hearing due') : '') + '</div>')
+        ((DB.intel || []).find(r => r.type === "watch-note" && r.status !== "dismissed" && !intelExpired(r) && (r.items || []).includes(f.itemId))))
+    + (!f.storyId && lagP ? '<div class="dim" title="Lag profile from ' + lagP.n + ' explained flags: attention only — it re-ranks nothing and blocks nothing.">signature note: past explained flags '
+        + (lagP.classLabel ? '(mostly ' + esc(lagP.classLabel) + ' stories, ' + lagP.classN + ' of ' + lagP.n + ') ' : '')
+        + 'peaked a median ' + lagP.medianD + 'd before the scan tripped'
+        + (lagP.medianRetrace != null ? ', median retrace ' + lagP.medianRetrace + '% since peak' : '')
+        + ' — if this one matches that class, the move is likely post-peak</div>' : '')
     + (pf ? '<div class="neg">⚠ ' + esc(pf.why) + '</div>' : '') + '</span>'
     + '<span class="r">' + esc(f.d)
     + (f.dismissed ? '' : ' <button class="sm ghost" data-anomdismiss="' + f.id + '" title="Silences the tape-question briefing reminder for this flag. Does NOT lift any pump defense — that takes dismissing the warning record itself.">dismiss</button>')
@@ -6729,13 +6734,26 @@ function importIntelligence(d){
   return { added, updated, absorbed, noSource, malformed, resurfaced, tierRejected };
 }
 
-/* LAG PROFILE from the flag archive: median peak-to-flag lag over explained
-   flags. Displayed on new flags so the scan states its own latency —
-   "signature matches a story-driven run; if so, likely post-peak." */
+/* LAG PROFILE from the flag archive: median peak-to-flag lag, dominant story
+   class, and median retrace over explained flags (audit F2, ratified Aug 10
+   2026 — the signature fields exist to make the note meaningful). Displayed
+   on new flags so the scan states its own latency — "matches demand-context
+   [confirmed] runs: typical lag 5d, median retrace −6%; likely post-peak." */
 function flagLagProfile(){
-  const lags = (DB.flagArchive || []).map(a => a.peakToFlagD).filter(x => x != null && x >= 0);
+  const arch = (DB.flagArchive || []);
+  const lags = arch.map(a => a.peakToFlagD).filter(x => x != null && x >= 0);
   if (lags.length < 2) return null;
-  return { n: lags.length, medianD: Math.round(medianOf(lags)) };
+  const byClass = new Map();
+  for (const a of arch){
+    if (!a.storyType) continue;
+    const k = a.storyType + (a.storyConf ? " [" + a.storyConf + "]" : "");
+    byClass.set(k, (byClass.get(k) || 0) + 1);
+  }
+  const top = [...byClass.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+  const rets = arch.map(a => a.retracePct).filter(x => x != null);
+  return { n: lags.length, medianD: Math.round(medianOf(lags)),
+    classLabel: top ? top[0] : null, classN: top ? top[1] : 0,
+    medianRetrace: rets.length ? +medianOf(rets).toFixed(1) : null };
 }
 
 /* ═══ PUMP FINGERPRINT — market structure meets narrative ═══
@@ -7354,7 +7372,8 @@ function briefReminderInfo(){
   const tightD = DB.briefTightStaleD != null ? DB.briefTightStaleD : 3;
   if (cw && (staleD == null || staleD > tightD))
     cands.push({ kind: "catwin", key: "catwin-" + cw.cat.id + "-" + Math.floor((staleD == null ? 999 : staleD) / tightD),
-      msg: "⚡ catalyst window " + (cw.live ? "live" : "opens in " + cw.inD + "d") + " (" + cw.cat.name + ") — "
+      msg: "⚡ catalyst window " + (cw.live ? "live" : "opens in " + (cw.cat.estWindow ? "~" : "") + cw.inD + "d")
+        + " (" + cw.cat.name + (cw.cat.estWindow ? ", estimated window" : "") + ") — "
         + staleTxt + ", run the briefing." });
   /* 3/4 — the standing weekly/update-Wednesday logic, unchanged. */
   const wed = lastGameUpdateWednesday();

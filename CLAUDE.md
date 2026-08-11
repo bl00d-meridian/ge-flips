@@ -81,8 +81,11 @@ gate eventually agreeing with itself is not the user being right against it).
 
 ## Integration audit (standing discipline — user ruling, Aug 10 2026)
 
-Run by the agent weekly or on the user's demand. Distinct from probes (parts work) and
-friction review (reported pain): this hunts **unreported composition defects**.
+Run by the agent **after any week containing a build session; skip after pure-usage
+weeks** (integration debt accrues at build speed — cadence tied to activity, not the
+calendar; user ruling, Aug 10 2026), and on the user's demand. Distinct from probes
+(parts work) and friction review (reported pain): this hunts **unreported composition
+defects**.
 
 1. **Workflow walks:** trace each real workflow end-to-end through the actual code
    paths — walk-up, briefing cycle, sleeve entry-to-exit, weekly review — and for every

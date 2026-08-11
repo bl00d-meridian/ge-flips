@@ -84,5 +84,10 @@ gates: a row in this table without a probe tag says so out loud.
 | **§14 Clusters → catalyst baskets merge (ruled Aug 10 2026)** | | |
 | R14.1 | Clusters tab removed; basket ledger, review queue, and coherence view live on the Sleeve tab under the calendar; all cluster machinery (caps, exposure, P&L, candidate queue, dismissal memory, Jaccard absorption) carries over unchanged | probe `[R14.1]` + existing cluster-cap probes now running against the merged layout |
 | R14.2 | One object, one name: a basket attached to a calendar catalyst renders as that catalyst's basket (⚡ badge + per-catalyst "basket coherence…" button feeding the coherence panel); a catalyst-less basket renders "standing" (kept for caps + blast radius) | probe `[R14.2]` |
+| **§15 Integration-audit fixes (F1–F4 ratified Aug 10 2026 — audits/AUDIT-2026-08-10.md)** | | |
+| R15.1 | F1: estimate windows look like estimates everywhere they render — calendar card "est. window" badge, entry-watch runway "(estimate)", briefing reminder "(estimated window)" | probe `[R15.1]` |
+| R15.2 | F2: lag profile reads the full signature — dominant story class (type [confidence]) and median retrace ride the note alongside the median lag | probe `[R15.2]` |
+| R15.3 | F3: a flag with an active watch-note naming its item renders the link ("escalated to watch-note <id> — posture absence") instead of "escalation due" | probe `[R15.3]` |
+| R15.4 | F4: one daily-series cache — `dailyFor` is a 31-day slicing read of the shared 90-day cache (no second fetch, no second invalidation story); chart overlays read it via `dailyView` | probe `[R15.4]` |
 | **§6 Verification** | | |
 | R6.1 | Probe report cross-references this file (`===REQS===` section from `[R#]` assertion tags) | the report itself |
