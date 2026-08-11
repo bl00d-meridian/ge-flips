@@ -116,9 +116,28 @@ tr.drilltr td{background:#141109;white-space:normal;text-align:left;padding:0 6p
 .glent .glfrom{margin-top:4px;color:var(--dim)}
 .glent .gldo{margin-top:4px;color:var(--text);border-left:2px solid var(--gold-dim);padding-left:8px}
 .glent .glcav{margin-top:4px;color:var(--amber);font-size:12px}
-/* a gate name in a bench reason is tappable to its family entry */
-.glref{border-bottom:1px dotted var(--gold-dim);cursor:pointer}
-.glref:hover{color:var(--gold);border-bottom-color:var(--gold)}
+/* ---- glossed terms + inline popover (ruled Aug 11 2026) ----
+   RESTRAINT: a dotted underline and nothing else. No icon, no colour — the
+   indicators carry state, the underlines carry vocabulary, and a row must
+   not read as a minefield of help links. */
+.glt{border-bottom:1px dotted var(--gold-dim);cursor:help;-webkit-tap-highlight-color:transparent}
+.glt:hover{color:var(--gold);border-bottom-color:var(--gold)}
+.glt.on{color:var(--gold);border-bottom-style:solid}
+/* the dot glyphs carry their own colour, so the underline goes under the slot */
+.dslot .glt,.glt.glyph{border-bottom:none}
+.glt.glyph{border-bottom:1px dotted var(--gold-dim);padding-bottom:1px}
+.glpop{
+  position:absolute;z-index:60;max-width:min(340px,92vw);
+  background:#1c1811;border:1px solid var(--gold-dim);border-radius:4px;
+  padding:8px 10px;font-size:12.5px;line-height:1.5;color:var(--text);
+  box-shadow:0 6px 18px #000a;display:none;
+}
+.glpop.on{display:block}
+.glpop .glp-term{color:var(--gold);font-weight:600;font-size:12.5px;margin-bottom:3px}
+.glpop .glp-do{margin-top:5px;border-left:2px solid var(--gold-dim);padding-left:7px}
+.glpop .glp-do b{color:var(--gold-dim)}
+.glpop .glp-more{margin-top:6px;font-size:11.5px}
+.glpop .glp-more a{cursor:pointer}
 /* two-stream gate tree */
 .gtree{margin:5px 0 9px;padding:6px 9px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--gold-dim);border-radius:3px}
 .gtree .gname{font-size:13px;color:var(--gold)}
@@ -5425,7 +5444,7 @@ const PAPER_TRIP_COLS = [
   { k: "outcome", lab: "Outcome" },
   { k: "net", lab: "Net sim", num: 1, sortk: "_net", html: 1 },
   { k: "regime", lab: "Regime" },
-  { k: "cohort", lab: "Cohort" },
+  { k: "cohort", lab: "Cohort", html: 1 },
   { k: "gate", lab: "Benched by" }
 ];
 const dtShort = t => t ? new Date(t).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -5457,7 +5476,7 @@ function paperTripRows(trips){
       outcome,
       net: '<span class="' + sign(p.net || 0) + '">' + gp(Math.round(p.net || 0)) + '</span>', _net: Math.round(p.net || 0),
       regime: (p.regimes && p.regimes.length) ? p.regimes.join(" + ") : "—",
-      cohort: coh, gate,
+      cohort: glTerm("paper-cohort", esc(coh)), gate,
       _cohort: coh,
       _txt: [p.name || itemName(p.itemId), outcome, coh, gate, (p.regimes || []).join(" ")].join(" ")
     };
@@ -5850,14 +5869,14 @@ function paperGateSection(){
           : '<span class="dim">0</span>') + '</td></tr>';
   }).join("");
   bits.push('<div class="tw"><table id="paperGateTable"><thead><tr>'
-    + '<th>Gate</th><th title="Closed paper trips this gate benched, alone">Benched</th>'
-    + '<th title="Would have filled at the participation haircut — the conservative reading">Would fill</th>'
-    + '<th title="The same trips read at 100% participation of the tape that crossed the price">At 100%</th>'
-    + '<th title="Would-not-have-filled: the bid never got the tape. That is the data, not a gap in it.">Would not</th>'
+    + '<th>Gate</th><th>' + glTerm("paper-book", "Benched") + '</th>'
+    + '<th>' + glTerm("paper-participation", "Would fill") + '</th>'
+    + '<th>' + glTerm("paper-participation", "At 100%") + '</th>'
+    + '<th>' + glTerm("paper-fill", "Would not") + '</th>'
     + '<th title="Filled (including forced exits) as a share of closed trips">Fill rate</th>'
     + '<th title="Simulated net after GE tax across the gate\'s closed trips">Net sim</th>'
-    + '<th title="Median share of the fill horizon observed — unobserved windows are unknown, not unfilled">Observed</th>'
-    + '<th title="Closed trips excluded from this row: under the observed-share floor, so tape coincidence rather than a patient-fill test. Recorded, openable, counted toward nothing.">Excluded</th></tr></thead>'
+    + '<th>' + glTerm("paper-observed", "Observed") + '</th>'
+    + '<th>' + glTerm("paper-insufficient", "Excluded") + '</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table></div>');
   bits.push('<div class="dim" style="margin-top:6px">A gate whose benched trips would have filled AND netted positive is a candidate for a proposal — never a change. '
     + 'The combined verdict needs the realized stream too, which lives in <a href="#" data-goto="gates#gateStreamPanel">Gate Health</a>.</div>');
@@ -6054,9 +6073,9 @@ function hoursLedgerInline(){
       + '<td>' + shCell + thinNote(r.thin, "hour:" + r.h, r.thinTrips) + '</td><td class="' + sign(r.net) + '">' + (r.n ? gp(Math.round(r.net)) : "—") + '</td></tr>';
   }).join("");
   lines.push('<div class="tw"><table id="hoursTable"><thead><tr><th>Hour</th>'
-    + '<th title="Post-tax spread averaged across watched items — presence-independent, the unbiased stream">Market spread</th>'
+    + '<th>' + glTerm("prosp-hours", "Market spread") + '</th>'
     + '<th title="How many watched items contributed an hourly reading">Items</th>'
-    + '<th title="Simulated fill rate of the paper trips opened in this hour — accrues only while observing">Paper fill rate</th>'
+    + '<th>' + glTerm("prosp-hours", "Paper fill rate") + '</th>'
     + '<th title="Simulated net of the paper trips opened in this hour">Net sim</th></tr></thead><tbody>'
     + trs + '</tbody></table></div>');
   /* The overnight question, answered only where both streams can speak. */
@@ -6956,7 +6975,7 @@ function planStatusInfo(id, P){
     why: "Not in this recompute's candidate set — usually the chart is still loading; the verdict improves on its own." };
 }
 const planStatusBadge = (id, P) => { const s = planStatusInfo(id, P);
-  return '<span class="badge ' + s.cls + '" title="' + esc(s.why) + '">' + esc(s.label) + '</span>'; };
+  return '<span class="badge ' + s.cls + '" title="' + esc(s.why) + '">' + glTerm("ind-status", esc(s.label)) + '</span>'; };
 
 /* Slot 2 — identity: tier + provenance + proof merged into ONE badge that
    is still the tier-override cycle control. ·M marks a manual override. */
@@ -7046,7 +7065,7 @@ function shadowDot(id){
       + (gapN ? ', ' + gapN + ' unobserved (horizon expired while the tab was closed — held out of every aggregate)' : '')
       + ' · no verdict until ' + SHADOW_ROW_MIN + ' have closed'
       + (closedN ? ' · net so far ' + gp(Math.round(s.net)) + ' sim' : '')
-      + '. All simulated — a screen ranking probation candidates, not evidence.">◌</span></span>';
+      + '. All simulated — a screen ranking probation candidates, not evidence.">' + glTerm("ind-paperdot", "◌", "glyph") + '</span></span>';
   const hollow = s.fillRate < SHADOW_FILLRATE_LO;
   return '<span class="dslot"><span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
     + '" title="Paper screen: ' + s.n
@@ -7056,7 +7075,7 @@ function shadowDot(id){
     + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)'
     + (s.thin ? ' · ' + s.thin + ' further trip' + (s.thin === 1 ? '' : 's') + ' excluded — insufficient observation' : '')
     + '. All simulated — ranks probation candidates, not evidence.">'
-    + (hollow ? "◎" : "◉") + '</span></span>';
+    + glTerm("ind-paperdot", hollow ? "◎" : "◉", "glyph") + '</span></span>';
 }
 const riskChip = (id, flags) => !flags.length ? ""
   : '<button class="badge ' + (flags.some(f => f.hard) ? "b-risk" : "b-warn") + '" data-wdetail="' + id
@@ -7070,8 +7089,8 @@ function testDot(w, c){
      as a test state (user ruling, Aug 11 2026). Tooltip names itself first. */
   const inner = !(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell)) ? ""
     : c.tested
-      ? '<span class="tdot on" title="Margin test: VERIFIED ' + ago(w.tAt) + ' — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Your own fills override live prices for 16h. (Steel, not green: verified vs stale is not good vs bad.)">●</span>'
-      : '<span class="tdot" title="Margin test: EXPIRED (' + ago(w.tAt) + ') — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Live prices are back in charge; ↻ in the Tested column re-tests.">○</span>';
+      ? '<span class="tdot on" title="Margin test: VERIFIED ' + ago(w.tAt) + ' — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Your own fills override live prices for 16h. (Steel, not green: verified vs stale is not good vs bad.)">' + glTerm("ind-testdot", "●", "glyph") + '</span>'
+      : '<span class="tdot" title="Margin test: EXPIRED (' + ago(w.tAt) + ') — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Live prices are back in charge; ↻ in the Tested column re-tests.">' + glTerm("ind-testdot", "○", "glyph") + '</span>';
   return '<span class="dslot">' + inner + '</span>';
 }
 
@@ -8170,9 +8189,9 @@ function gateStreamsSection(){
           })
         + ', net <span class="' + sign(r.latNet) + '">' + gp(r.latNet) + '</span> — '
         + 'measures how slowly the gate re-admits, not whether the bench-day call was wrong');
-    const realLine = '├─ <b>realized</b>: ' + (realBits.length ? realBits.join(' · ') + ' <span class="dim">[real fills]</span>'
+    const realLine = '├─ <b>' + glTerm("gov-propose", "realized") + '</b>: ' + (realBits.length ? realBits.join(' · ') + ' <span class="dim">[real fills]</span>'
       : '<span class="dim">no outcome data — nothing it benched traded afterwards [real fills]</span>');
-    const shLine = '└─ <b>paper</b>: ' + (sh
+    const shLine = '└─ <b>' + glTerm("paper-book", "paper") + '</b>: ' + (sh
       ? 'would-have-filled ' + drill("gate:shfill:" + g, String(sh.filled + sh.forced), {
             head: g + " — the paper trips that would have filled",
             cols: PAPER_TRIP_COLS, rows: paperTripRows(sh.arr.filter(p => p.state === "filled" || p.state === "forced-exit")),
@@ -8578,14 +8597,14 @@ function prospectingInline(){
       + (r.capped ? ' <span class="dim">[id ledger at its ' + STRATA_ID_CAP + '-item cap — sampling counts stop rising, outcomes keep accruing]</span>' : '')
       + '</td></tr>';
   }).join("");
-  secs.push('<div class="tw"><table id="strataTable"><thead><tr><th>Stratum</th>'
+  secs.push('<div class="tw"><table id="strataTable"><thead><tr><th>' + glTerm("prosp-stratum", "Stratum") + '</th>'
     + '<th title="Distinct items the gate chain ran on — a re-draw is not a second test">Sampled</th>'
     + '<th title="Single-gate near-misses that opened a paper trip">Near-miss</th>'
     + '<th title="Random draws that cleared every gate">Clean</th>'
     + '<th title="Closed paper trips credited to this stratum (durable counter)">Closed</th>'
     + '<th title="Of those, how many would have filled">Filled</th>'
     + '<th title="Simulated net across its closed trips">Net sim</th>'
-    + '<th title="Closed trips excluded from this region&#39;s verdict: under the observed-share floor. Durable counter, kept separate.">Excluded</th>'
+    + '<th>' + glTerm("paper-insufficient", "Excluded") + '</th>'
     + '<th>Verdict</th></tr></thead><tbody>'
     + trs + '</tbody></table></div>');
   return secs.join("");
@@ -11678,12 +11697,179 @@ const glEntryFor = term => GL_GATE_MAP.get(term) || null;
 /* Wrap a rendered gate name so it lands on its family entry. Used wherever a
    bench reason names a gate; falls back to plain text for anything unmapped,
    because a dead link is worse than no link. */
+/* ═══ INLINE GLOSSARY POPOVERS (user ruling, Aug 11 2026) ═══════════════
+   The definition where the term renders, not one click away. ONE source and
+   two presentations: the popover is rendered from the same GLOSSARY entry
+   the full glossary renders, so a definition cannot drift from its entry.
+
+   TRIGGER PARITY is the load-bearing rule: hover on desktop and tap on touch
+   open the SAME popover with the SAME content, through the same function.
+   The phone is the primary reading surface, so nothing here may be a
+   desktop-only affordance.
+
+   The popover carries the short definition and the "what it changes" line
+   only — a popover that needs scrolling has failed, which the probe measures
+   rather than trusts — with "full entry →" for the rest.
+
+   RESTRAINT, amended from use (Aug 11 2026): **a control that already
+   delivers its own intel is not glossed.** The ⚠ caution chip is a button
+   that opens the row's expand view listing every caution and its reason, and
+   a definition popover on top of that competed with the thing the user was
+   reaching for. Same for the expand view's own caution lines, which already
+   render their `why` inline. Gloss VOCABULARY — a word whose meaning is not
+   otherwise available where it renders — never a control whose press is the
+   explanation. */
+const glEntryById = (() => {
+  const m = new Map();
+  for (const g of GLOSSARY) for (const e of g.entries || []) m.set(e.id, e);
+  return m;
+})();
+/* First sentence of the entry's own `what`, so the popover text is derived
+   rather than duplicated. `short` overrides it only where the first sentence
+   does not stand alone. */
+function glFirstSentence(html){
+  const s = String(html || "");
+  const m = s.match(/^[\s\S]*?[.!?](?=\s+[A-Z<]|\s*$)/);
+  return (m ? m[0] : s).trim();
+}
+const glShort = e => e.short || glFirstSentence(e.what);
+/* One markup builder — hover and tap both land here, which is what makes
+   parity structural rather than something to remember. */
+function glPopHTML(id){
+  const e = glEntryById.get(id);
+  if (!e) return "";
+  return '<div class="glp-term">' + esc(e.term) + '</div>'
+    + '<div class="glp-what">' + glShort(e) + '</div>'
+    + '<div class="glp-do"><b>Changes for you:</b> ' + e.do + '</div>'
+    + '<div class="glp-more"><a data-glmore="' + esc(id) + '">full entry →</a></div>';
+}
+/* A glossed term: dotted underline, no icon, no colour of its own. */
+function glTerm(id, label, cls){
+  if (!glEntryById.has(id)) return esc(label);
+  return '<span class="glt' + (cls ? " " + cls : "") + '" data-glt="' + esc(id) + '">' + label + '</span>';
+}
+/* Gate names keep their own helper so every bench reason routes through the
+   family map rather than hardcoding an id. */
 function gateChip(g){
   const id = glEntryFor(g);
-  return id
-    ? '<span class="glref" data-gl="' + id + '" title="What this gate is, and what it should change for you.">' + esc(g) + '</span>'
-    : esc(g);
+  return id ? glTerm(id, esc(g)) : esc(g);
 }
+let glPopId = null, glPopAnchor = null, glDown = null, glSwallowClick = false, glCloseT = null;
+/* The gap between a term and its popover is dead space: crossing it fires
+   pointerout with a relatedTarget that is neither, which closed the popover
+   before "full entry →" could be reached (reported from use, Aug 11 2026).
+   A short deferred close that either end can cancel is the fix — the popover
+   stays reachable without becoming sticky. */
+function glCancelClose(){ if (glCloseT){ clearTimeout(glCloseT); glCloseT = null; } }
+function glDeferClose(){ glCancelClose(); glCloseT = setTimeout(() => { glCloseT = null; glPopClose(); }, 260); }
+function glPopEl(){
+  let p = document.getElementById("glPop");
+  if (!p){
+    p = document.createElement("div");
+    p.id = "glPop"; p.className = "glpop"; p.setAttribute("role", "tooltip");
+    document.body.appendChild(p);
+  }
+  return p;
+}
+function glPopClose(){
+  glCancelClose();
+  const p = document.getElementById("glPop");
+  if (p) p.classList.remove("on");
+  if (glPopAnchor) glPopAnchor.classList.remove("on");
+  glPopId = null; glPopAnchor = null;
+}
+function glPopOpen(id, anchor){
+  const html = glPopHTML(id);
+  if (!html) return;
+  const p = glPopEl();
+  p.innerHTML = html;
+  p.classList.add("on");
+  if (glPopAnchor && glPopAnchor !== anchor) glPopAnchor.classList.remove("on");
+  glPopId = id; glPopAnchor = anchor;
+  if (anchor) anchor.classList.add("on");
+  /* Positioned against the document so it travels with the page; flipped
+     above the term when it would overflow the bottom, and clamped
+     horizontally so a phone never renders it half off-screen. */
+  const r = anchor.getBoundingClientRect();
+  const pr = p.getBoundingClientRect();
+  const sx = window.pageXOffset, sy = window.pageYOffset;
+  let top = r.bottom + sy + 2;
+  if (r.bottom + 2 + pr.height > window.innerHeight && r.top - 2 - pr.height > 0)
+    top = r.top + sy - pr.height - 2;
+  let left = r.left + sx;
+  const maxLeft = sx + window.innerWidth - pr.width - 8;
+  if (left > maxLeft) left = Math.max(sx + 8, maxLeft);
+  if (left < sx + 8) left = sx + 8;
+  p.style.top = Math.round(top) + "px";
+  p.style.left = Math.round(left) + "px";
+  featTouchMark("glossary:popover");
+}
+function glPopToggle(id, anchor){
+  if (glPopId === id && glPopAnchor === anchor) glPopClose();
+  else glPopOpen(id, anchor);
+}
+/* ── desktop: hover ────────────────────────────────────────────────────── */
+document.addEventListener("pointerover", e => {
+  if (e.pointerType && e.pointerType !== "mouse") return;   // touch sends compat hover events; ignore them here
+  const inPop = e.target.closest && e.target.closest("#glPop");
+  if (inPop){ glCancelClose(); return; }        // moving INTO the popover keeps it open
+  const t = e.target.closest && e.target.closest("[data-glt]");
+  if (!t) return;
+  glCancelClose();
+  glPopOpen(t.dataset.glt, t);
+});
+document.addEventListener("pointerout", e => {
+  if (e.pointerType && e.pointerType !== "mouse") return;
+  const from = e.target.closest && (e.target.closest("[data-glt]") || e.target.closest("#glPop"));
+  if (!from || !glPopAnchor) return;
+  const to = e.relatedTarget;
+  if (to && to.closest && (to.closest("#glPop") || to.closest("[data-glt]") === glPopAnchor)){
+    glCancelClose(); return;
+  }
+  /* Deferred, not immediate: the pointer has to be allowed to cross the gap. */
+  glDeferClose();
+});
+/* ── touch: tap, but never a drag or a scroll ──────────────────────────── */
+document.addEventListener("pointerdown", e => {
+  const t = e.target.closest && e.target.closest("[data-glt]");
+  if (t) glDown = { el: t, x: e.clientX, y: e.clientY, t: Date.now(), sy: window.pageYOffset };
+  else glDown = null;
+  /* An outside press closes, WITHOUT preventDefault — the press still
+     reaches whatever is beneath, so the popover never blocks an action. */
+  if (!t && glPopId && !(e.target.closest && e.target.closest("#glPop"))) glPopClose();
+}, true);
+document.addEventListener("pointerup", e => {
+  const d = glDown; glDown = null;
+  if (!d) return;
+  if (e.pointerType === "mouse") return;         // the mouse path is hover; a click on a term does nothing extra
+  const t = e.target.closest && e.target.closest("[data-glt]");
+  if (!t || t !== d.el) return;
+  /* THE PHONE FAILURE MODE: a scroll that begins on a term must not open a
+     definition. Movement, page travel and dwell all have to look like a tap. */
+  const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+  const scrolled = Math.abs(window.pageYOffset - d.sy);
+  if (moved > 10 || scrolled > 4 || Date.now() - d.t > 700) return;
+  glSwallowClick = true;
+  setTimeout(() => { glSwallowClick = false; }, 400);
+  glPopToggle(t.dataset.glt, t);
+}, true);
+/* A tap on a term must not also trigger whatever the row does. */
+document.addEventListener("click", e => {
+  const more = e.target.closest && e.target.closest("[data-glmore]");
+  if (more){
+    e.preventDefault(); e.stopPropagation();
+    const id = more.dataset.glmore;
+    glPopClose();
+    glGoto(id);
+    return;
+  }
+  const t = e.target.closest && e.target.closest("[data-glt]");
+  if (t && glSwallowClick){ e.preventDefault(); e.stopPropagation(); return; }
+  if (!t && glPopId && !(e.target.closest && e.target.closest("#glPop"))) glPopClose();
+}, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape") glPopClose(); });
+/* Scrolling dismisses rather than dragging a stale popover down the page. */
+window.addEventListener("scroll", () => { if (glPopId) glPopClose(); }, { passive: true });
 function renderGlossary(){
   const box = $("#glBody");
   if (!box) return;

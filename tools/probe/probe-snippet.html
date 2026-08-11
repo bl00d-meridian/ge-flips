@@ -2177,7 +2177,8 @@
     ];
     const aud19 = gateStreamsSection();
     ok("[R19.1] gate health renders both streams, natures labeled",
-       /├─ <b>realized<\/b>:/.test(aud19) && /└─ <b>paper<\/b>:/.test(aud19)
+       /├─ <b><span class="glt"[^>]*>realized<\/span><\/b>:/.test(aud19)
+       && /└─ <b><span class="glt"[^>]*>paper<\/span><\/b>:/.test(aud19)
        && /\[real fills\]/.test(aud19) && /\[simulated — fill-model caveats/.test(aud19),
        aud19.slice(0, 1200));
     ok("[R19.1] agreement is named as evidence in the row verdict",
@@ -2291,7 +2292,11 @@
        truncation — the same clock-dependence ruled on for [R18.1]. The slice
        line has its own assertion under [R29.5]; here it is cleared. */
     for (const p of DB.shadowBook) delete p.cleanFind;
-    renderHome();
+    /* renderHomeDelta, NOT renderHome: the full Home render runs the vitals,
+       which run the plan, which runs the slice scan — which re-stamps the
+       clean finds this fixture just cleared. Re-rendering the block under
+       test is the whole job here. */
+    renderHomeDelta();
     const dls20 = Array.from(document.querySelectorAll("#homeDelta .dl"));
     ok("[R20.5] delta block renders one line per nonzero category, truncated at 6 with +N more",
        dls20.length === 7 && /\+1 more/.test(dls20[6].textContent),
@@ -3817,7 +3822,7 @@
        JSON.stringify({ n: g37.n, thin: g37.thin, filled: g37.filled, net: g37.net }));
     const gs37 = paperGateSection();
     ok("[R37.1] the per-gate table states the excluded count and opens it to the excluded trips",
-       /data-drill="paper:gate:ROI floor:thin"[^>]*>3</.test(gs37) && /Excluded<\/th>/.test(gs37),
+       /data-drill="paper:gate:ROI floor:thin"[^>]*>3</.test(gs37) && /Excluded<\/span><\/th>/.test(gs37),
        gs37.slice(gs37.indexOf("<tbody"), gs37.indexOf("<tbody") + 400));
     setTab("trade", "paper"); renderAll();
     /* Guarded, not asserted through: a missing face must fail THIS assertion
@@ -3879,7 +3884,7 @@
     setTab("trade", "prospect"); renderAll();
     ok("[R37.4] the stratum row states the exclusion and opens it",
        /data-drill="prosp:equip:ring:insuf"[^>]*>1</.test(document.querySelector("#prospectStrata").innerHTML)
-       && /Excluded<\/th>/.test(document.querySelector("#prospectStrata").innerHTML),
+       && /Excluded<\/span><\/th>/.test(document.querySelector("#prospectStrata").innerHTML),
        document.querySelector("#prospectStrata").innerHTML.slice(0, 200));
     setTab("home");
     DB.shadowBook = []; DB.strataStats = {}; DB.shadowDivLog = []; DB.shadowExceptions = [];
@@ -3921,18 +3926,16 @@
     /* The link works end to end: a bench reason's gate name lands on its
        entry, visibly — the same standard every deep link is held to. */
     const gc38 = gateChip("ROI floor");
-    ok("[R38.3] a gate name in a bench reason renders as a tappable reference to its family entry",
-       /data-gl="gate-price"/.test(gc38) && />ROI floor</.test(gc38), gc38);
-    const host38 = document.createElement("div");
-    host38.innerHTML = gc38;
-    document.body.appendChild(host38);
-    host38.querySelector("[data-gl]").click();
+    ok("[R38.3] a gate name in a bench reason renders as a glossed term",
+       /data-glt="gate-price"/.test(gc38) && />ROI floor</.test(gc38), gc38);
+    /* The full-entry route now runs through the popover (R39): the term
+       opens a definition, and "full entry →" inside it lands on the entry. */
+    glGoto("gate-price");
     const ent38 = document.getElementById("gl-gate-price");
-    ok("[R38.3] the tap opens the group and lands on the entry, VISIBLY — not merely present in the DOM",
-       !!ent38 && ent38.offsetParent !== null && getComputedStyle(ent38).display !== "none"
-       && document.getElementById("glgrp-gates").open,
-       JSON.stringify({ present: !!ent38, visible: !!ent38 && ent38.offsetParent !== null }));
-    host38.remove();
+    ok("[R38.3] the full-entry route opens the group and lands on the entry, VISIBLY",
+       !!ent38 && document.getElementById("glgrp-gates").open
+       && ent38.getBoundingClientRect().height > 0,
+       JSON.stringify({ present: !!ent38, h: ent38 && ent38.getBoundingClientRect().height }));
     ok("[R38.3] a collapsed group hides its entries — the index stays navigable at this size",
        /* Measured, not inferred: a child of a CLOSED <details> is unslotted
           rather than display:none, so it can still report a display value
@@ -3999,6 +4002,189 @@
     document.querySelector("#glFind").dispatchEvent(new Event("input", { bubbles: true }));
   } catch(e){
     out.push("FAIL glossary coverage :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R39 — INLINE GLOSSARY POPOVERS (user ruling, Aug 11 2026) ═══
+       The definition where the term renders. Trigger parity, no drift from
+       the glossary entry, no scrolling, and none of the phone failure
+       modes. */
+    setTab("home"); renderAll(); glPopClose();
+    const mkTerm39 = id => { const d = document.createElement("div");
+      d.style.cssText = "position:absolute;top:200px;left:20px";
+      d.innerHTML = glTerm(id, "probe term");
+      document.body.appendChild(d);
+      return { host: d, el: d.querySelector("[data-glt]") }; };
+    const pop39 = () => document.getElementById("glPop");
+    const popOn = () => { const p = pop39(); return !!p && p.classList.contains("on"); };
+    /* ── parity: hover and tap produce the SAME popover content ── */
+    const t1 = mkTerm39("gate-price");
+    t1.el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    const hoverHTML = popOn() ? pop39().innerHTML : "";
+    glPopClose();
+    const tap39 = el => {
+      const r = el.getBoundingClientRect();
+      const o = { bubbles: true, pointerType: "touch", clientX: r.left + 2, clientY: r.top + 2 };
+      el.dispatchEvent(new PointerEvent("pointerdown", o));
+      el.dispatchEvent(new PointerEvent("pointerup", o));
+    };
+    tap39(t1.el);
+    const tapHTML = popOn() ? pop39().innerHTML : "";
+    ok("[R39.1] trigger parity — hover and tap open the same popover with identical content",
+       !!hoverHTML && !!tapHTML && hoverHTML === tapHTML,
+       JSON.stringify({ hover: hoverHTML.slice(0, 80), tap: tapHTML.slice(0, 80) }));
+    /* ── no drift: the popover text comes from the GLOSSARY entry ── */
+    const e39 = glEntryById.get("gate-price");
+    ok("[R39.2] popover content derives from the glossary entry — a definition cannot drift from it",
+       tapHTML.indexOf(glShort(e39)) >= 0 && tapHTML.indexOf(e39.do) >= 0
+       && tapHTML.indexOf(esc(e39.term)) >= 0,
+       tapHTML.slice(0, 200));
+    ok("[R39.2] it carries the short definition and the decision line only, plus a link to the rest",
+       /Changes for you:/.test(tapHTML) && /data-glmore="gate-price"/.test(tapHTML)
+       && tapHTML.indexOf(e39.what) < 0,   // NOT the whole entry
+       String(tapHTML.length));
+    /* ── a popover that needs scrolling has failed: measured, every term,
+          at whatever viewport the suite is running ── */
+    const tall39 = [];
+    for (const [id] of glEntryById){
+      const t = mkTerm39(id);
+      tap39(t.el);
+      const p = pop39();
+      if (p && p.scrollHeight > p.clientHeight + 1) tall39.push(id + ":" + p.scrollHeight + ">" + p.clientHeight);
+      glPopClose(); t.host.remove();
+    }
+    ok("[R39.3] no popover scrolls, at this viewport, for any glossed term",
+       tall39.length === 0, JSON.stringify(tall39.slice(0, 8)));
+    /* ── the phone failure mode: a scroll that starts on a term ── */
+    const t2 = mkTerm39("paper-book");
+    glPopClose();
+    (() => { const r = t2.el.getBoundingClientRect();
+             t2.el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: r.left + 2, clientY: r.top + 2 }));
+             t2.el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", clientX: r.left + 2, clientY: r.top + 60 })); })();
+    ok("[R39.4] a drag that begins on a term does NOT open a definition",
+       !popOn(), "moved 58px before release");
+    glPopClose();
+    /* Scrolled to the top FIRST: earlier landing assertions leave the page
+       wherever they scrolled it, and if that happens to be the bottom then
+       "scroll down 40" moves nothing and the fixture quietly stops testing
+       the thing it names. The travel is reported in the extra so a fixture
+       that cannot move says so instead of passing. */
+    window.scrollTo(0, 0);
+    const travel39 = (() => { const r = t2.el.getBoundingClientRect();
+             const o = { bubbles: true, pointerType: "touch", clientX: r.left + 2, clientY: r.top + 2 };
+             const y0 = window.pageYOffset;
+             t2.el.dispatchEvent(new PointerEvent("pointerdown", o));
+             window.scrollTo(0, y0 + 40);
+             const moved = window.pageYOffset - y0;
+             t2.el.dispatchEvent(new PointerEvent("pointerup", o));
+             return moved; })();
+    ok("[R39.4] a scroll that begins on a term does NOT open a definition",
+       travel39 > 4 && !popOn(), "page travelled " + travel39 + "px during the gesture");
+    window.scrollTo(0, 0); glPopClose();
+    /* ── dismissal: Esc, outside tap, and a second tap on the term ── */
+    tap39(t2.el);
+    const openedAgain = popOn();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    ok("[R39.5] Esc closes it", openedAgain && !popOn());
+    tap39(t2.el);
+    const beforeOutside = popOn();
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 5, clientY: 5 }));
+    ok("[R39.5] a press outside closes it — and is not swallowed, so it still reaches what is beneath",
+       beforeOutside && !popOn(), "outside press");
+    tap39(t2.el);
+    const openOnce = popOn();
+    tap39(t2.el);
+    ok("[R39.5] a second tap on the same term closes it", openOnce && !popOn());
+    /* ── painted-box visibility, per the case law's fourth entry ── */
+    tap39(t2.el);
+    const p39 = pop39(), pr39 = p39.getBoundingClientRect();
+    ok("[R39.6] an open popover is PAINTED, not merely present — measured, not inferred",
+       popOn() && pr39.height > 0 && pr39.width > 0
+       && pr39.left >= 0 && pr39.right <= window.innerWidth + 1,
+       JSON.stringify({ h: Math.round(pr39.height), w: Math.round(pr39.width),
+         l: Math.round(pr39.left), r: Math.round(pr39.right), vw: window.innerWidth }));
+    glPopClose();
+    const prClosed39 = pop39().getBoundingClientRect();
+    ok("[R39.6] a closed popover paints nothing",
+       prClosed39.height === 0 && prClosed39.width === 0,
+       JSON.stringify({ h: prClosed39.height, w: prClosed39.width }));
+    t1.host.remove(); t2.host.remove();
+    /* ── scope: the terms the ruling named are glossed where they render ── */
+    ok("[R39.7] gate names, row status, caution chips and the dot glyphs are glossed where they render",
+       /data-glt="gate-/.test(gateChip("ROI floor"))
+       && /data-glt="ind-status"/.test(planStatusBadge(9001, buildPlan()))
+       && /data-glt="ind-paperdot"/.test((() => {
+            DB.shadowBook = [{ id: 39001, fam: "f39", itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001,
+              ask: 4399, t: Date.now() - 86400e3, buyQ: 10, sellQ: 10, buyQFull: 10, buyDone: 1,
+              obsMs: FILLH() * 3600e3, lastObs: Date.now(), state: "filled", closedAt: Date.now(),
+              net: 100, regimes: [] }];
+            const d = shadowDot(9001); DB.shadowBook = []; return d; })()),
+       "gate/status/dot");
+    /* Seeded, because the per-gate table only renders when a gate HAS closed
+       outcomes — asserting the headers against an empty table would pass on
+       a section that rendered no headers at all. */
+    DB.shadowBook = [{ id: 39002, fam: "f39b", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001,
+      ask: 4399, t: Date.now() - 86400e3, buyQ: 10, sellQ: 10, buyQFull: 10, buyDone: 1,
+      obsMs: FILLH() * 3600e3, lastObs: Date.now(), state: "filled", closedAt: Date.now(),
+      net: 100, benchedBy: ["ROI floor"], regimes: [] }];
+    const pgs39 = paperGateSection();
+    ok("[R39.7] paper-book column headers and cohort labels are glossed",
+       /id="paperGateTable"/.test(pgs39)
+       && /data-glt="paper-observed"[^>]*>Observed</.test(pgs39)
+       && /data-glt="paper-book"[^>]*>Benched</.test(pgs39)
+       && /data-glt="paper-cohort"[^>]*>watchlist</.test(paperTripRows(DB.shadowBook)[0].cohort),
+       pgs39.slice(pgs39.indexOf("<thead"), pgs39.indexOf("<thead") + 260));
+    DB.shadowBook = [];
+    /* ── the hover bridge: reported from use — the popover closed while the
+          mouse crossed the gap toward "full entry →" ──
+       The fixture settles the scroll position first and lets any pending
+       scroll event drain: dismiss-on-scroll is correct app behaviour, and an
+       ambient scroll left over from earlier fixture activity would otherwise
+       close the popover mid-measurement and blame the bridge. */
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 150));
+    glPopClose();
+    const t3 = mkTerm39("gate-liquidity");
+    t3.el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    const bridgeOpen = popOn();
+    /* leave the term toward neither the term nor the popover — the dead gap */
+    t3.el.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse", relatedTarget: document.body }));
+    /* ...and arrive at the popover before the deferred close fires */
+    const timerBefore39 = glCloseT;
+    pop39().dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    const timerAfter39 = glCloseT;
+    const openAfterCancel39 = popOn();
+    await new Promise(r => setTimeout(r, 400));
+    void timerBefore39; void timerAfter39; void openAfterCancel39;
+    ok("[R39.8] the popover survives the mouse crossing the gap into it — 'full entry →' is reachable",
+       bridgeOpen && popOn(),
+       "opened=" + bridgeOpen + " stillOpen=" + popOn() + " id=" + glPopId
+       + " cancelled=" + (timerAfter39 === null) + " openAfterCancel=" + openAfterCancel39);
+    ok("[R39.8] and the full-entry link inside it is clickable rather than decorative",
+       !!pop39().querySelector("[data-glmore]"),
+       pop39().innerHTML.slice(-120));
+    /* leaving the popover for good does close it, after the grace period */
+    pop39().dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse", relatedTarget: document.body }));
+    await new Promise(r => setTimeout(r, 400));
+    ok("[R39.8] leaving the popover for good closes it — the delay is a bridge, not stickiness",
+       !popOn(), "closed after leaving");
+    t3.host.remove();
+    /* ── restraint: a control that already delivers its own intel is NOT
+          glossed, because the popover competed with the press ── */
+    const riskHTML39 = riskChip(9001, [{ label: "thin", why: "probe", hard: false },
+                                       { label: "crowded", why: "probe", hard: false }]);
+    ok("[R39.9] the ⚠ caution chip is not glossed — its press already opens the reasons",
+       /data-wdetail=/.test(riskHTML39) && !/data-glt=/.test(riskHTML39), riskHTML39);
+    ok("[R39.9] nor are the expand view's caution lines, which already render their reason inline",
+       (() => { DB.watch = [{ id: 9001, qty: null }];
+                S.wDetail = new Set([9001]); renderWatch();
+                const tr = document.querySelector("#watchBody tr.wdet");
+                const h = tr ? tr.innerHTML : "";
+                S.wDetail = new Set();
+                return !/data-glt="ind-caution"/.test(h); })(),
+       "expand view");
+    glPopClose();
+  } catch(e){
+    out.push("FAIL glossary popovers :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

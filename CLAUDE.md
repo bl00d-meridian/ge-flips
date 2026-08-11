@@ -280,6 +280,13 @@ makes it a glossary rather than a dictionary:
   found.
 - Known caveats ride the entry, not a footnote: paper-book quarantine status, stratum
   approximation, markout attribution lean, observed-share limits.
+- **The entry also renders inline, as a popover on the term itself** (ruled Aug 11 2026):
+  hover on desktop, tap on touch, same content from the same entry — one source, two
+  presentations, so a definition cannot drift. Two restraints, both learned from use:
+  mark terms with a dotted underline and nothing else (the indicators carry state, the
+  underlines carry vocabulary), and **never gloss a control that already delivers its own
+  intel** — a chip whose press opens the explanation, or a line that already renders its
+  reason. Gloss vocabulary, not affordances.
 - Gate names are registered by listing them in their family entry's `names` array, which
   is what makes them tappable from a bench reason; `[R38.2]` asserts every name
   `gateName()` can return has a home, so an unglossed gate fails the suite.
