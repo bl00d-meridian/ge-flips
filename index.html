@@ -790,19 +790,23 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <label class="f" title="Pairwise correlation of daily returns, net of the all-item average, must exceed this before two items link up in the detector.">Excess corr<input type="number" id="clCorr" min="0.1" max="0.95" step="0.05" style="width:60px"></label>
         <label class="f" title="Overlapping trading days a pair needs before it can be flagged at all — below this the verdict is 'insufficient data', never a guess.">Min days<input type="number" id="clDays" min="5" max="30" style="width:52px"></label>
         <span class="note" style="align-self:center;max-width:560px">
-          One story, many tickers: correlated positions are one bet. A basket <b>attached to a calendar
-          catalyst</b> is that catalyst's item basket — its coherence renders in the catalyst's entry watch
-          above. A basket with <b>no catalyst</b> is a STANDING BASKET, kept for the two jobs that need no
-          date: exposure caps and update-day blast-radius warnings. The weekly detector, wiki categories,
-          the seed list, and the coherence screen only <b>propose</b> into the review queue below —
-          <b>nothing caps capital until you confirm</b>. Coherence-driven membership (ruled Aug 2026):
-          adds need excess corr &gt; 0.5 vs the basket composite in ≥3 of the last 4 weekly readings,
-          drops need &lt; 0.25 for 4 straight — <b>persistence, not snapshots, and net of the market
-          factor, precisely because chasing raw co-movement admits coincidences</b>. A basket groomed
-          purely by realized correlation converges on describing the past, not the thesis — so
-          statistical members (co-movement without a story) cap at 40% of membership and are excluded
-          from entry-watch narratives and laggard logic while still counting toward the exposure cap.
-          (Formerly the Clusters tab — merged here Aug 2026; membership ratification unchanged.)
+          <b>One story, many tickers</b> — correlated positions are one bet. Everything here
+          <b>proposes</b>; nothing caps capital until you confirm.
+          <details style="margin-top:4px"><summary style="cursor:pointer">how baskets work</summary>
+            A basket <b>attached to a calendar catalyst</b> is that catalyst's item basket — its coherence
+            renders in the catalyst's entry watch above. A basket with <b>no catalyst</b> is a STANDING
+            BASKET, kept for the two jobs that need no date: exposure caps and update-day blast-radius
+            warnings. The weekly detector, wiki categories, the seed list and the coherence screen only
+            propose into the review queue below.<br><br>
+            Coherence-driven membership (ruled Aug 2026): adds need excess corr &gt; 0.5 vs the basket
+            composite in ≥3 of the last 4 weekly readings, drops need &lt; 0.25 for 4 straight —
+            persistence, not snapshots, and net of the market factor, precisely because chasing raw
+            co-movement admits coincidences. A basket groomed purely by realized correlation converges on
+            describing the past, not the thesis — so statistical members (co-movement without a story) cap
+            at 40% of membership and are excluded from entry-watch narratives and laggard logic while
+            still counting toward the exposure cap.
+            (Formerly the Clusters tab — merged here Aug 2026; membership ratification unchanged.)
+          </details>
         </span>
       </div>
       <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
@@ -1810,6 +1814,7 @@ async function doRefresh(opts = {}){
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     shadowTick();   // paper book observes every refresh — fills only accrue while watching
+    accrueBackground();   // plan-driven ledgers ride the POLL, not a render path — tab-independent by construction
     runScout();
     scannerShadowScan();   // scanner paper cohort — self-throttled to the scout cadence, polite-budgeted
     try { recipeTick(); } catch(e){}   // crafting basis rides the /latest bulk fetch — no new requests
@@ -4424,8 +4429,13 @@ function renderPlan(P0){
             + '; a late fill means the price came down through the bid. Cancel and re-quote (stale-buy rule)</span>' : '')
         + '</div></div>'
         + '<span class="plan-actions">'
+        + (sRem > 0 && bRem > 0 ? '<button class="sm primary" data-qboth="' + q0.id
+            + '" data-sq="' + sRem + '" data-sp="' + qp.ask + '" data-bq="' + bRem + '" data-bp="' + qp.bid
+            + '" title="Both legs filled — logs the sell and then the buy in one press, each prefilled with its remaining standing qty and quoted price. Sell runs first so the FIFO consume happens before the new lot lands.">both filled…</button>' : '')
         + (sRem > 0 ? '<button class="sm" data-invsell="' + q0.id + '" data-q="' + sRem + '" data-p="' + qp.ask + '">sell filled…</button>' : '')
         + (bRem > 0 ? '<button class="sm" data-invlot="' + q0.id + '" data-q="' + bRem + '" data-p="' + qp.bid + '">buy filled…</button>' : '')
+        + ((sRem > 0 || bRem > 0) ? '<button class="sm ghost" data-qreprice="' + q0.id
+            + '" title="Cancelled and relisted in-game (the aging ladder\'s instruction) — records the new prices and restarts the leg clock, because a relisted offer is a new offer. Without this the advice repeats every walk-up against a price you already moved.">repriced…</button>' : '')
         + '<button class="sm ghost" data-qclear="' + q0.id + '" title="Offers canceled or otherwise done in-game — clears the standing record; nothing is logged">cleared</button>'
         + '</span></li>';
     }
@@ -4447,6 +4457,9 @@ function renderPlan(P0){
       + '</div></div>'
       + '<span class="plan-actions">'
       + ((q.sellQty > 0 || q.buyQty > 0) ? '<button class="sm" data-qplace="' + q.w.id + '" title="Mark both legs as standing offers you have placed in-game — timestamped and persisted; every walk-up shows elapsed time and fill state until the cycle completes">placed</button>' : '')
+      + (q.sellQty > 0 && q.buyQty > 0 ? '<button class="sm primary" data-qboth="' + q.w.id
+          + '" data-sq="' + q.sellQty + '" data-sp="' + q.ask + '" data-bq="' + q.buyQty + '" data-bp="' + q.bid
+          + '" title="Both legs filled — logs the sell and then the buy in one press, each prefilled from the proposed leg. Sell runs first so the FIFO consume happens before the new lot lands.">both filled…</button>' : '')
       + (q.sellQty > 0 ? '<button class="sm" data-invsell="' + q.w.id + '" data-q="' + q.sellQty + '" data-p="' + q.ask + '">sold…</button>' : '')
       + (q.buyQty > 0 ? '<button class="sm" data-invlot="' + q.w.id + '" data-q="' + q.buyQty + '" data-p="' + q.bid + '">buy filled…</button>' : '')
       + '</span></li>';
@@ -5680,6 +5693,93 @@ function freshnessInline(){
   return '<div class="inline">' + lines.join("") + '</div>';
 }
 
+/* ═══ QUOTE FILL FLOWS ═══
+   Factored out of the click handler so one press can run BOTH legs (friction
+   note, Aug 11 2026). Each keeps the ruled fill-dialog behaviour: qty
+   prefilled with the proposed leg — or the remaining standing qty on a placed
+   quote — and editable, so a partial fill records exactly what filled. */
+function invBuyFillFlow(id, defQty, defPx){
+  const c = calc(id);
+  const wq = DB.watch.find(x => x.id === id);
+  const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
+  const q = prompt("Buy fill for " + itemName(id) + " — how many units filled (so far)?"
+    + (qpSnap && qpSnap.buyQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.buyQty - qpSnap.buyFilled)) + " of " + full(qpSnap.buyQty) + " still open." : ""),
+    defQty || "");
+  if (q === null) return;
+  const qty = Math.floor(clampNum(q, NaN));
+  if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+  const pr = prompt("At what price each? (your actual fill)", defPx || (c && c.buy != null ? String(c.buy) : ""));
+  if (pr === null) return;
+  const px = Math.round(clampNum(pr, NaN));
+  if (!(px > 0)){ toast("Price must be a positive number."); return; }
+  const lot = recordInvBuyFill(id, qty, px);
+  renderWatch();
+  const qpNow = wq && wq.quotePlaced;
+  toast("Lot recorded: " + full(qty) + " at " + full(px) + " — FIFO basis " + gp(invCostGp(id)) + " across " + full(invHeld(id)) + " held"
+      + (qpNow && qpNow.buyQty > 0 ? " · buy leg " + full(qpNow.buyFilled) + "/" + full(qpNow.buyQty) + " filled, " + full(Math.max(0, qpNow.buyQty - qpNow.buyFilled)) + " standing" : "") + ".",
+        () => { DB.invLots = DB.invLots.filter(l => l.id !== lot.id);
+                if (wq){ if (qpSnap) wq.quotePlaced = { ...qpSnap }; else delete wq.quotePlaced; }
+                save(); renderWatch(); });
+}
+function invSellFillFlow(id, defQty, defPx){
+  const c = calc(id), held = invHeld(id);
+  if (!(held > 0)){ toast("No units in the buffer — record the buy lots first."); return; }
+  const wq = DB.watch.find(x => x.id === id);
+  const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
+  const q = prompt("Sell fill from the " + itemName(id) + " buffer — how many units filled (so far)? (held: " + full(held) + ")"
+    + (qpSnap && qpSnap.sellQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.sellQty - qpSnap.sellFilled)) + " of " + full(qpSnap.sellQty) + " still open." : ""),
+    defQty || "");
+  if (q === null) return;
+  let qty = Math.floor(clampNum(q, NaN));
+  if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
+  if (qty > held){ qty = held; toast("Clamped to the " + full(held) + " actually held."); }
+  const pr = prompt("At what price each did they sell?", defPx || (c && c.sell != null ? String(c.sell) : ""));
+  if (pr === null) return;
+  const px = Math.round(clampNum(pr, NaN));
+  if (!(px > 0)){ toast("Price must be a positive number."); return; }
+  const out = recordInvSellFill(id, qty);
+  renderWatch();
+  logFromWatch(id, out.qty, Math.round(out.avgCost), px);
+  const qpNow = wq && wq.quotePlaced;
+  toast("FIFO: " + full(out.qty) + " consumed at true cost " + full(Math.round(out.avgCost))
+      + " each — the log form is prefilled, press + Log flip to record the P/L"
+      + (qpNow && qpNow.sellQty > 0 ? " · sell leg " + full(qpNow.sellFilled) + "/" + full(qpNow.sellQty) + " filled, " + full(Math.max(0, qpNow.sellQty - qpNow.sellFilled)) + " standing" : "") + ".");
+}
+
+/* ═══ BACKGROUND ACCRUAL — DECOUPLED FROM RENDERING (user ruling, Aug 11 2026) ═══
+   Every ledger below used to be written from inside `renderDeploy`, reached
+   through the vitals renderer. That happened to run on all four tabs, so it
+   worked — but "happens to be called from the current layout" is precisely the
+   coupling that produced the reorg accrual bug, and it fails silently the next
+   time a surface moves. Accrual now rides the POLL directly: doRefresh calls
+   this, so the ledgers fill whatever tab is open and even if no view renders
+   at all. The writes are idempotent (per hour, per item·gate·day, per family
+   with a cooldown), so the render path calling them too is harmless. */
+function stampDeployLog(P){
+  try {
+    if (!S.latestAt || !P) return;   // an offline boot reads funded 0 and must not pollute the series
+    const pool = (P.t1Pool || 0) + (P.t2Pool || 0);
+    const hb = Math.floor(Date.now() / 3600e3);
+    const entry = { h: hb, pass: P.pass.length, funded: P.picks.length,
+                    dep: pool > 0 ? Math.round(P.deployed / pool * 100) : 0 };
+    const last = DB.deployLog[DB.deployLog.length - 1];
+    if (!last || last.h !== hb){
+      DB.deployLog.push(entry);
+      if (DB.deployLog[0] && DB.deployLog[0].h <= hb - 168) DB.deployLog = DB.deployLog.filter(e => e.h > hb - 168);
+      save();
+    } else if (last.pass !== entry.pass || last.funded !== entry.funded || last.dep !== entry.dep){
+      Object.assign(last, entry); save();
+    }
+  } catch(e){}
+}
+function accrueBackground(){
+  try {
+    const P = buildPlan();       // writes the gate-health ledger, die-off episodes and qualification streaks
+    shadowScan(P);               // opens paper positions + stamps the per-stratum sampling ledger
+    stampDeployLog(P);           // hourly funnel bucket
+  } catch(e){}
+}
+
 function renderDeploy(plan){
   const box = $("#depBody"); if (!box) return;
   if (!DB.watch.length){
@@ -5696,21 +5796,7 @@ function renderDeploy(plan){
   /* ── headline snapshot ledger: one bucket per hour, last refresh of the
      hour wins, 7-day retention. Guarded on live data having arrived at least
      once — an offline boot reads funded 0 and must not pollute the series. */
-  try {
-    if (S.latestAt){
-      const hb = Math.floor(Date.now() / 3600e3);
-      const entry = { h: hb, pass: P.pass.length, funded: P.picks.length,
-                      dep: pool > 0 ? Math.round(P.deployed / pool * 100) : 0 };
-      const last = DB.deployLog[DB.deployLog.length - 1];
-      if (!last || last.h !== hb){
-        DB.deployLog.push(entry);
-        if (DB.deployLog[0] && DB.deployLog[0].h <= hb - 168) DB.deployLog = DB.deployLog.filter(e => e.h > hb - 168);
-        save();
-      } else if (last.pass !== entry.pass || last.funded !== entry.funded || last.dep !== entry.dep){
-        Object.assign(last, entry); save();
-      }
-    }
-  } catch(e){}
+  stampDeployLog(P);
 
   /* ── funnel: first-fail attribution, in the order the chain applies ── */
   const firstGate = x => x.fails && x.fails.length ? x.fails[0].g : (gateName(x.failed) || "plan gate");
@@ -11326,57 +11412,48 @@ document.addEventListener("click", e => {
     save(); renderWatch(); return;
   }
   const il = t.closest("[data-invlot]");
-  if (il){
-    const id = +il.dataset.invlot, c = calc(id);
-    const wq = DB.watch.find(x => x.id === id);
-    const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
-    /* Fill dialog (ruled Aug 10 2026): qty prefilled with the proposed leg —
-       or the remaining standing qty on a placed quote — and editable, so a
-       partial fill is recorded as exactly what filled. */
-    const q = prompt("Buy fill for " + itemName(id) + " — how many units filled (so far)?"
-      + (qpSnap && qpSnap.buyQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.buyQty - qpSnap.buyFilled)) + " of " + full(qpSnap.buyQty) + " still open." : ""),
-      il.dataset.q || "");
-    if (q === null) return;
-    const qty = Math.floor(clampNum(q, NaN));
-    if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
-    const pr = prompt("At what price each? (your actual fill)", il.dataset.p || (c && c.buy != null ? String(c.buy) : ""));
-    if (pr === null) return;
-    const px = Math.round(clampNum(pr, NaN));
-    if (!(px > 0)){ toast("Price must be a positive number."); return; }
-    const lot = recordInvBuyFill(id, qty, px);
-    renderWatch();
-    const qpNow = wq && wq.quotePlaced;
-    toast("Lot recorded: " + full(qty) + " at " + full(px) + " — FIFO basis " + gp(invCostGp(id)) + " across " + full(invHeld(id)) + " held"
-        + (qpNow && qpNow.buyQty > 0 ? " · buy leg " + full(qpNow.buyFilled) + "/" + full(qpNow.buyQty) + " filled, " + full(Math.max(0, qpNow.buyQty - qpNow.buyFilled)) + " standing" : "") + ".",
-          () => { DB.invLots = DB.invLots.filter(l => l.id !== lot.id);
-                  if (wq){ if (qpSnap) wq.quotePlaced = { ...qpSnap }; else delete wq.quotePlaced; }
-                  save(); renderWatch(); });
+  if (il){ invBuyFillFlow(+il.dataset.invlot, il.dataset.q, il.dataset.p); return; }
+  const iv = t.closest("[data-invsell]");
+  if (iv){ invSellFillFlow(+iv.dataset.invsell, iv.dataset.q, iv.dataset.p); return; }
+  /* BOTH LEGS, ONE PRESS (friction note, Aug 11 2026): a market maker walks
+     up to a cycle where both legs moved, and logging that meant finding two
+     buttons and remembering the second. Sell first so the FIFO consume runs
+     against the buffer before the new lot lands. */
+  const qb = t.closest("[data-qboth]");
+  if (qb){
+    const id = +qb.dataset.qboth;
+    if (invHeld(id) > 0 && +qb.dataset.sq > 0) invSellFillFlow(id, qb.dataset.sq, qb.dataset.sp);
+    if (+qb.dataset.bq > 0) invBuyFillFlow(id, qb.dataset.bq, qb.dataset.bp);
     return;
   }
-  const iv = t.closest("[data-invsell]");
-  if (iv){
-    const id = +iv.dataset.invsell, c = calc(id), held = invHeld(id);
-    if (!(held > 0)){ toast("No units in the buffer — record the buy lots first."); return; }
-    const wq = DB.watch.find(x => x.id === id);
-    const qpSnap = wq && wq.quotePlaced ? { ...wq.quotePlaced } : null;
-    const q = prompt("Sell fill from the " + itemName(id) + " buffer — how many units filled (so far)? (held: " + full(held) + ")"
-      + (qpSnap && qpSnap.sellQty > 0 ? " Standing leg: " + full(Math.max(0, qpSnap.sellQty - qpSnap.sellFilled)) + " of " + full(qpSnap.sellQty) + " still open." : ""),
-      iv.dataset.q || "");
-    if (q === null) return;
-    let qty = Math.floor(clampNum(q, NaN));
-    if (!(qty > 0)){ toast("Quantity must be a positive number."); return; }
-    if (qty > held){ qty = held; toast("Clamped to the " + full(held) + " actually held."); }
-    const pr = prompt("At what price each did they sell?", iv.dataset.p || (c && c.sell != null ? String(c.sell) : ""));
-    if (pr === null) return;
-    const px = Math.round(clampNum(pr, NaN));
-    if (!(px > 0)){ toast("Price must be a positive number."); return; }
-    const out = recordInvSellFill(id, qty);
-    renderWatch();
-    logFromWatch(id, out.qty, Math.round(out.avgCost), px);
-    const qpNow = wq && wq.quotePlaced;
-    toast("FIFO: " + full(out.qty) + " consumed at true cost " + full(Math.round(out.avgCost))
-        + " each — the log form is prefilled, press + Log flip to record the P/L"
-        + (qpNow && qpNow.sellQty > 0 ? " · sell leg " + full(qpNow.sellFilled) + "/" + full(qpNow.sellQty) + " filled, " + full(Math.max(0, qpNow.sellQty - qpNow.sellFilled)) + " standing" : "") + ".");
+  /* REPRICE (friction note, Aug 11 2026): the aging ladder tells you to
+     cancel and relist, and there was nowhere to record that — so the leg kept
+     its old price and its old clock, and the same advice fired every walk-up
+     forever. Recording it restarts the leg's clock, which is the honest
+     reading: a relisted offer is a new offer. */
+  const qrp = t.closest("[data-qreprice]");
+  if (qrp){
+    const id = +qrp.dataset.qreprice, wq = DB.watch.find(x => x.id === id), c = calc(id);
+    const qp = wq && wq.quotePlaced;
+    if (!qp){ toast("No standing quote to reprice."); return; }
+    const snap = { ...qp };
+    if (qp.sellQty - qp.sellFilled > 0){
+      const a = prompt("Relisted the SELL leg at what price? (blank leaves it)", String(c && c.sell != null ? c.sell : qp.ask));
+      if (a === null) return;
+      const ax = Math.round(clampNum(a, NaN));
+      if (ax > 0) qp.ask = ax;
+    }
+    if (qp.buyQty - qp.buyFilled > 0){
+      const b = prompt("Relisted the BUY leg at what price? (blank leaves it)", String(c && c.buy != null ? c.buy : qp.bid));
+      if (b === null) return;
+      const bx = Math.round(clampNum(b, NaN));
+      if (bx > 0) qp.bid = bx;
+    }
+    qp.t = Date.now();   // a relisted offer is a new offer: the aging clock restarts
+    save(); renderWatch();
+    toast(itemName(id) + " quote repriced — SELL " + full(qp.ask) + " / BUY " + full(qp.bid)
+        + "; the aging clock restarts from now.",
+        () => { if (wq) wq.quotePlaced = snap; save(); renderWatch(); });
     return;
   }
   const qpl = t.closest("[data-qplace]");

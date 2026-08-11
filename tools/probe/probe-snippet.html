@@ -3234,6 +3234,34 @@
     out.push("FAIL shadow-screening :: " + (e && e.stack || e));
   }
   try {
+    // ═══ R34 ACCRUAL IS TAB-INDEPENDENT (user ruling, Aug 11 2026) ═══
+    // Every plan-driven ledger must fill from the POLL, not from whichever view
+    // happens to render. Asserted by driving accrual with each tab active and
+    // with NO render at all — the reorg accrual bug must not return.
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    for (const t of ["home", "trade", "sleeve", "review"]){
+      DB.gateLog = []; DB.deployLog = []; DB.shadowBook = []; DB.strataStats = {};
+      setTab(t);
+      accrueBackground();
+      ok("[R34.1] plan-driven ledgers accrue with the " + t + " tab active",
+         DB.gateLog.length > 0 && DB.deployLog.length > 0,
+         t + " :: " + JSON.stringify({ gate: DB.gateLog.length, deploy: DB.deployLog.length }));
+    }
+    DB.gateLog = []; DB.deployLog = [];
+    S.tab = "review"; S.sub = "log";
+    accrueBackground();   // no render call at all
+    ok("[R34.1] accrual does not require ANY view to render — it rides the poll",
+       DB.gateLog.length > 0 && DB.deployLog.length > 0,
+       JSON.stringify({ gate: DB.gateLog.length, deploy: DB.deployLog.length }));
+    /* The paper book's own accrual (positions opened + the per-stratum
+       sampling ledger) must be tab-independent too, not just the gate log. */
+    DB.shadowBook = []; DB.strataStats = {};
+    S.tab = "review"; S.sub = "log";
+    accrueBackground();
+    ok("[R34.1] the paper book opens positions without any view rendering",
+       DB.shadowBook.length > 0,
+       JSON.stringify({ book: DB.shadowBook.length, strata: Object.keys(DB.strataStats).length }));
+    setTab("home");
     // ═══ R32 DATA FRESHNESS · R33 COLD-START (pre-quiet-period audit, Aug 11 2026) ═══
     const now32 = Date.now();
     // R32.1 — a stalled scheduled stream is VISIBLE, and event-driven silence is not a stall
