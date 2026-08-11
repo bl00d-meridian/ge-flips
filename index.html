@@ -84,7 +84,7 @@ nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--go
 #homeDelta .dl:last-child{border-bottom:none}
 /* deep-link landing flash — you always know where you arrived */
 .landed{outline:2px solid var(--gold);outline-offset:2px;transition:outline-color 1.2s}
-/* four-slot row scheme: test dot + expand view (+ the shadow ghost dot) */
+/* four-slot row scheme: test dot + expand view (+ the paper ghost dot) */
 /* Row dots (user ruling, Aug 11 2026): SHAPE carries identity, colour carries
    state within that identity, and the two families never share a colour
    meaning. Test = plain circle in neutral steel (verified vs stale is not
@@ -539,8 +539,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="panel">
       <div class="note" id="dotLegend" style="margin-bottom:6px">
         <b>Row dots</b> — shape is the identity, colour is the state inside it, and the two families never share a colour meaning:
-        <span class="dslot"><span class="sdot pos">◉</span></span> shadow-profitable ·
-        <span class="dslot"><span class="sdot neg">◉</span></span> shadow-losing ·
+        <span class="dslot"><span class="sdot pos">◉</span></span> paper-profitable ·
+        <span class="dslot"><span class="sdot neg">◉</span></span> paper-losing ·
         <span class="dslot"><span class="sdot">◎</span></span> shadow: the margin exists, the fills don't ·
         <span class="dslot"><span class="sdot acc">◌</span></span> shadow accruing (under 3 closed trips — no verdict yet) ·
         <span class="dslot"><span class="tdot on">●</span></span> margin test verified ·
@@ -1121,7 +1121,7 @@ let DB = {
                               // (migrated legacy holds are already funded and never count against it)
   sleeveMaxPos: 3,            // max concurrent NEW sleeve positions (legacy migrations excluded)
   partCapPct: 10,             // participation cap: max share of 1h unit volume any plan line may take
-  shadowPartPct: 50,          // shadow-book fill-participation haircut (ruled Aug 11 2026): a shadow leg claims at most this % of the tape volume that crossed its price, ON TOP of the capture cap; the 100%-participation reading accrues beside it so the ledger reports both
+  shadowPartPct: 50,          // paper-book fill-participation haircut (ruled Aug 11 2026): a paper leg claims at most this % of the tape volume that crossed its price, ON TOP of the capture cap; the 100%-participation reading accrues beside it so the ledger reports both
   minExpectGp: 0,             // worth-a-slot floor in gp/cycle; 0 = auto (0.1% of the tier pools)
   blacklist: [],      // item ids the user has banned — no automated path may admit, fund, or clear them
   seedTrips: 3,       // profitable trips in 14d that make an item a discovery SEED (below the 4-trip funding floor on purpose)
@@ -1155,12 +1155,13 @@ let DB = {
   rampFlags: [],      // entry-watch DISCOUNTED→RAMPING transitions on calendar items [{catId,catName,itemId,name,at,runwayD}] — a tape question about the CATALYST ("is the window moving up?"); 30d retention
   entryWatchState: {},// "catId:itemId" → last entry-watch verdict, so transitions are detectable across sessions
   walkupLoad: [],     // walk-up attention instrumentation [{d,n}] — distinct decisions presented per day, 30d retention; the ≤7 budget is probe-asserted
-  shadowBook: [],     // SHADOW BOOK (ruled Aug 11 2026; reweighted to SCREENING Aug 11 2026): counterfactual positions [{id,fam,itemId,name,qty,bid,ask,t,buyQ,sellQ,buyQFull,sellQFull,buyDone,obsMs,lastObs,state,benchedBy,gapTxt,regimes,closedAt,net,forced,cohort?,scanTier?,score?}] — touches no capital, no real metric, no plan; a screen ranking probation candidates for the exception lane, never evidence of profitability. buyQ/sellQ are the conservative (participation-haircut) legs that drive state and net; buyQFull/sellQFull carry the 100%-participation reading so the ledger reports both. cohort:"scanner" (+scanTier,score) = the scanner shadow cohort (user-directed Aug 11 2026) — the FILTER question's population, kept separate from watchlist/slice in every ledger view; its evidence nominates scout attention only, never probation
+  shadowBook: [],     // PAPER BOOK (ruled Aug 11 2026; reweighted to SCREENING Aug 11 2026): counterfactual positions [{id,fam,itemId,name,qty,bid,ask,t,buyQ,sellQ,buyQFull,sellQFull,buyDone,obsMs,lastObs,state,benchedBy,gapTxt,regimes,closedAt,net,forced,cohort?,scanTier?,score?}] — touches no capital, no real metric, no plan; a screen ranking probation candidates for the exception lane, never evidence of profitability. buyQ/sellQ are the conservative (participation-haircut) legs that drive state and net; buyQFull/sellQFull carry the 100%-participation reading so the ledger reports both. cohort:"scanner" (+scanTier,score) = the scanner paper cohort (user-directed Aug 11 2026) — the FILTER question's population, kept separate from watchlist/slice in every ledger view; its evidence nominates scout attention only, never probation
   shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
-  shadowExceptions: [], // SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,mkAdverse?,divergence?}] — active = probation (half size, 2× tick floor; 3 real trips adjudicate on net P&L AND adverse markout, ruled Aug 11 2026); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on shadow screening alone — screening ranks candidates for the live test; realized trips are the only path to a waiver.
-  strataStats: {},    // POND PROSPECTING (user-directed Aug 11 2026): per-stratum discovery ledger, key → {ids:[distinct item ids seen, capped],samp,nm,pass,trips,filled,net,first} — durable across the shadow book's 30d pruning, so the quarterly "which pond regions hold edge" map is answerable with a ledger instead of a hunch; observation only, admits nothing
+  shadowExceptions: [], // PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,mkAdverse?,divergence?}] — active = probation (half size, 2× tick floor; 3 real trips adjudicate on net P&L AND adverse markout, ruled Aug 11 2026); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on paper screening alone — screening ranks candidates for the live test; realized trips are the only path to a waiver.
+  strataStats: {},    // POND PROSPECTING (user-directed Aug 11 2026): per-stratum discovery ledger, key → {ids:[distinct item ids seen, capped],samp,nm,pass,trips,filled,net,first} — durable across the paper book's 30d pruning, so the quarterly "which pond regions hold edge" map is answerable with a ledger instead of a hunch; observation only, admits nothing
   recipeLog: {},      // CRAFTING BASIS (user-directed Aug 11 2026): recipe key → [{d,m,l:[leg prices]}] daily readings, 31d — m = patient processing margin (output ask net of tax minus input bids); the baseline a 2× break is measured against, and the per-leg attribution when one breaks
   recipeFlags: [],    // basis breaks [{k,name,at,m,base,leg}] — 30d retention; a flip signal on the mispriced leg AND a manipulation tell (pumps distort one leg of a recipe before the other); advisory, sizes nothing
+  shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
@@ -1208,6 +1209,39 @@ function load(){
     /* One-time: committed slots dropped from 8 to 7 so a game-content buy never
        has to cancel a flip. Settings can still raise it back to 8 deliberately. */
     if (!DB.slotCapV2){ if (DB.slots === 8) DB.slots = 7; DB.slotCapV2 = 1; }
+    /* SHADOW PURGE (user ruling, Aug 11 2026). Trips that closed before the
+       force-exit fix were exited at the price on the day the tab reopened,
+       booking days of price drift as simulated P&L. That baseline argues for
+       LOOSER gates on evidence of fills that never happened, so it is
+       discarded rather than carried: the whole counterfactual book, the
+       regime divergence ledger, and the simulated outcomes rolled into the
+       per-stratum ledger. Everything downstream (per-gate aggregates, the
+       hours ledger's paper stream, exception evidence) reads from those, so
+       clearing them clears the derived numbers too.
+       KEPT: every REALIZED stream — the flip log, markouts, and the realized
+       side of gate health are actual fills and were never affected.
+       Exception-lane records are RULINGS and are not deleted by machine; the
+       grounding evidence is marked void instead, so the row says its basis
+       was discarded and you can revoke it yourself. */
+    if (!DB.shadowPurgeV1){
+      const hadBook = (DB.shadowBook || []).length, hadDiv = (DB.shadowDivLog || []).length;
+      const hadTrips = Object.values(DB.strataStats || {}).reduce((a, s) => a + (s.trips || 0), 0);
+      DB.shadowBook = []; DB.shadowDivLog = [];
+      for (const s of Object.values(DB.strataStats || {})){ s.trips = 0; s.filled = 0; s.net = 0; }
+      let voided = 0;
+      for (const e of (DB.shadowExceptions || []))
+        if (e.evidence && !e.evidenceVoid){ e.evidenceVoid = 1; voided++; }
+      DB.shadowEpoch = Date.now();
+      DB.shadowPurgeV1 = 1;
+      if (hadBook || hadDiv || hadTrips || voided)
+        logDecision("shadow", "paper book", "cleared — corrupted baseline discarded",
+          "Trips that closed before the force-exit fix booked days of price drift as simulated P&L: a position whose horizon expired while the tab was closed was exited at the price on the day you came back. That baseline would argue for looser gates on evidence of fills that never happened. Discarded " + hadBook
+          + " counterfactual position" + (hadBook === 1 ? "" : "s") + ", " + hadDiv + " daily regime reading"
+          + (hadDiv === 1 ? "" : "s") + " and " + hadTrips + " rolled per-stratum trip" + (hadTrips === 1 ? "" : "s")
+          + (voided ? "; marked the grounding evidence void on " + voided + " exception-lane record"
+             + (voided === 1 ? "" : "s") + " (the RULINGS stand — revoke them by hand if you want them gone)" : "")
+          + ". Realized streams untouched: the flip log, markouts and the realized side of gate health are real fills. New epoch starts now; paper surfaces read \"accruing since\" until the first cohort matures.");
+    }
     /* One-time: a long-standing Soulreaper axe sell occupies a slot (listed
        Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
        raise Offers back to 7 in the sizing row. */
@@ -1775,9 +1809,9 @@ async function doRefresh(opts = {}){
     await Promise.all(jobs);
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
-    shadowTick();   // shadow book observes every refresh — fills only accrue while watching
+    shadowTick();   // paper book observes every refresh — fills only accrue while watching
     runScout();
-    scannerShadowScan();   // scanner shadow cohort — self-throttled to the scout cadence, polite-budgeted
+    scannerShadowScan();   // scanner paper cohort — self-throttled to the scout cadence, polite-budgeted
     try { recipeTick(); } catch(e){}   // crafting basis rides the /latest bulk fetch — no new requests
     /* The 7-day chart drives the trend, momentum and volume-trend gates, but
        nothing refreshed it on a timer — a tab left open for a fortnight kept
@@ -2128,7 +2162,7 @@ function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t
    reaches the small strata — a 15-item sample tests the pond's average, not
    its structure. The slice now draws from ONE named stratum per price cycle,
    in rotation, so every structural corner is sampled on a fixed clock instead
-   of by luck. Same 15 items, same sanity gates, same shadow eligibility; the
+   of by luck. Same 15 items, same sanity gates, same paper eligibility; the
    stratum is stamped on the row and on every counterfactual it opens, so
    per-stratum results accumulate into an empirical map of which pond regions
    hold edge — the prospecting question answered with a ledger.
@@ -2207,7 +2241,7 @@ function seededDraw(pool, n, salt){
   }
   return pool.slice(0, k);
 }
-/* One sampler, two readers: the scanner's render and the shadow book's
+/* One sampler, two readers: the scanner's render and the paper book's
    slice scan draw the SAME seeded sample, so the rows you see are the rows
    that accrue counterfactuals. */
 function beyondNetSample(){
@@ -3450,7 +3484,7 @@ function buildPlan(){
   ensurePlanDate();
   const all = planCandidates();
   updateQualStreaks(all);
-  /* SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026): adjudicate first —
+  /* PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): adjudicate first —
      3 real round trips, judged on net P&L AND adverse markout (reweight
      ruling), convert probation to waiver or revoke it — then route: an item
      failing ONLY its excepted gate funds. Probation adds a 2× tick-floor
@@ -3551,7 +3585,7 @@ function buildPlan(){
     if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
     if (x.exception && x.exception.status === "active"){
       cap = Math.max(1, Math.floor(cap * 0.5));
-      notes.push("PROBATIONARY EXCEPTION (your ruling): " + x.exception.gate + " waived on shadow screening — live half-size test, 2× tick floor, "
+      notes.push("PROBATIONARY EXCEPTION (your ruling): " + x.exception.gate + " waived on paper screening — live half-size test, 2× tick floor, "
         + x.exception.trips + "/" + EXC_ADJ_TRIPS + " adjudication trips logged (net P&L + adverse markout decide)");
     } else if (x.exception){
       notes.push("standing per-item waiver: " + x.exception.gate + " (ruled after " + EXC_ADJ_TRIPS
@@ -4592,7 +4626,7 @@ function renderPlan(P0){
         return '<div class="bench-row"><span>' + esc(b.name) + '</span><span class="r">' + esc(b.failed) + esc(shadowCite(b.id))
           + (ev && !atCap
             ? ' <button class="sm" data-excgrant="' + b.id + '" title="Grant a PROBATIONARY EXCEPTION (your ruling, decision-logged): this item funds despite ' + esc(ev.gate)
-              + ' at half size, 2× tick floor, one position; ' + EXC_ADJ_TRIPS + ' real round trips adjudicate on net P&L and adverse markout — profitable with clean markouts converts to a standing per-item waiver; losing or markout-toxic revokes and records the divergence. The shadow screen only ranked the candidate — the live test decides; the gate\'s constant never moves on screening alone.">grant exception?</button>'
+              + ' at half size, 2× tick floor, one position; ' + EXC_ADJ_TRIPS + ' real round trips adjudicate on net P&L and adverse markout — profitable with clean markouts converts to a standing per-item waiver; losing or markout-toxic revokes and records the divergence. The paper screen only ranked the candidate — the live test decides; the gate\'s constant never moves on screening alone.">grant exception?</button>'
             : '')
           + (atCap ? ' <span class="dim">(meets the exception bar — cap reached, ' + EXC_MAX_ACTIVE + ' active)</span>' : '')
           + '</span></div>';
@@ -4670,10 +4704,10 @@ function depProposalFor(g, arr){
   return "Propose: shift this constant toward the median miss (" + (Math.round(m * 100) / 100) + " vs "
        + (Math.round(medianOf(needs) * 100) / 100) + " today). " + relocNote(arr) + " Your ruling.";
 }
-/* ═══ SHADOW BOOK (ruled Aug 11 2026; reweighted to SCREENING Aug 11 2026) ═══
+/* ═══ PAPER BOOK (ruled Aug 11 2026; reweighted to SCREENING Aug 11 2026) ═══
    Counterfactual data collection while the real book sits. Touches no
    capital, no real metric, no plan. STANDING WEIGHT (outside review, ruled):
-   the shadow book is a SCREEN — its output is a ranked shortlist of what
+   the paper book is a SCREEN — its output is a ranked shortlist of what
    deserves a LIVE half-size probation test through the exception lane, not
    a verdict about profitability. The sim assumes a book you're not in —
    thin books change when you post. Screening tool, not evidence; realized
@@ -4702,6 +4736,24 @@ const shadowOpen = () => DB.shadowBook.filter(p => p.state === "open");
    excluded from every aggregate — a hole in the record is not a result
    (audit fix, Aug 11 2026). They are still counted and reported as holes. */
 const shadowResolved = p => p.state !== "open" && p.state !== "unobserved";
+/* EPOCH NOTICE (user ruling, Aug 11 2026). After the purge the book is empty,
+   and an empty book looks exactly like a broken one. Until the machinery
+   could actually produce a verdict again — 7 daily regime readings AND
+   enough closed trips for a row to have an opinion — every paper surface
+   states that it is YOUNG and why the old data is gone. It retires itself. */
+const shadowEpochYoung = () => !!DB.shadowEpoch
+  && ((DB.shadowDivLog || []).length < 7
+      || (DB.shadowBook || []).filter(shadowResolved).length < SHADOW_ROW_MIN);
+function shadowEpochNote(){
+  if (!shadowEpochYoung()) return "";
+  const d = new Date(DB.shadowEpoch).toLocaleDateString("en-CA");
+  const n = (DB.shadowBook || []).filter(shadowResolved).length;
+  const days = Math.max(0, Math.floor((Date.now() - DB.shadowEpoch) / 86400e3));
+  return '<div class="plan-note"><b>Accruing since ' + d + ' — prior data discarded (force-exit defect).</b> '
+    + 'Trips that closed before the fix were exited at the price on the day the tab reopened, booking days of drift as simulated P&amp;L; that baseline would have argued for looser gates on fills that never happened, so it was cleared rather than carried. '
+    + n + ' trip' + (n === 1 ? '' : 's') + ' closed in ' + days + ' day' + (days === 1 ? '' : 's')
+    + ' since. <b>Thin here means young, not broken</b> — this notice retires itself once the ledger can support a verdict again. Realized streams (flip log, markouts, the realized side of gate health) were never affected.</div>';
+}
 const shadowGaps = () => (DB.shadowBook || []).filter(p => p.state === "unobserved").length;
 function shadowSizeFor(c){
   const hu = Math.max(1, Math.floor(volGateFor(c).v * GATE.capture * FILLH()));
@@ -4943,7 +4995,7 @@ function shadowTick(){
   }
   /* Roll closed slice/gap outcomes into the DURABLE per-stratum ledger before
      the 30-day pruning drops them — the quarterly "which pond regions hold
-     edge" map has to outlive the shadow book's retention window. Each record
+     edge" map has to outlive the paper book's retention window. Each record
      rolls exactly once. */
   for (const p of DB.shadowBook){
     if (p.state === "open" || p.state === "unobserved" || p.rolled || !p.stratum) continue;
@@ -4988,18 +5040,18 @@ function shadowRegimeEvidence(){
     ? " (7 readings spanning " + spanD + " days — the app was closed on " + (spanD - 7) + " of them; this is not a clean 7-day window)"
     : "";
   if (looseWins >= 4 && latest.loose > latest.cur)
-    return { dir: "loosen", html: '<b>Shadow screen:</b> the loose ROI regime (' + (GATE.roi * SHADOW_LOOSE).toFixed(1)
+    return { dir: "loosen", html: '<b>Paper screen:</b> the loose ROI regime (' + (GATE.roi * SHADOW_LOOSE).toFixed(1)
       + '%) out-earned current on ' + looseWins + ' of the last 7 readings' + windowTxt + ' — 30d simulated net ' + gp(Math.round(latest.loose))
       + ' vs ' + gp(Math.round(latest.cur)) + ' at ' + shadowPartPct() + '% fill participation (both books simulated). Reading: the loose regime\'s candidates earned probation slots — a screening rank, not proof the regime is right; live half-size trips through the exception lane are the only path to a waiver, and the ROI floor moves only on your ruling — nothing changes without it.' };
   if (tightWins >= 4 && latest.tight > latest.cur)
-    return { dir: "tighten", html: '<b>Shadow screen:</b> the tight ROI regime (' + (GATE.roi * SHADOW_TIGHT).toFixed(2)
+    return { dir: "tighten", html: '<b>Paper screen:</b> the tight ROI regime (' + (GATE.roi * SHADOW_TIGHT).toFixed(2)
       + '%) out-earned current on ' + tightWins + ' of the last 7 readings' + windowTxt + ' — 30d simulated net ' + gp(Math.round(latest.tight))
       + ' vs ' + gp(Math.round(latest.cur)) + ' at ' + shadowPartPct() + '% fill participation. Reading: the tight regime\'s candidates earned probation slots — a screening rank, not proof the regime is right; the ROI floor moves only on your ruling — nothing changes without it.' };
   return null;
 }
-/* Weekly counterfactual report: per-gate shadow P&L with fill reality, and
+/* Weekly counterfactual report: per-gate paper P&L with fill reality, and
    the three regime curves side by side. */
-/* Per-gate closed shadow outcomes — one computation, shared by the shadow
+/* Per-gate closed paper outcomes — one computation, shared by the shadow
    report and the unified gate-health view. */
 function shadowByGate(){
   const byGate = new Map();
@@ -5021,7 +5073,7 @@ function shadowByGate(){
   }
   return byGate;
 }
-/* ═══ SHADOW ↔ ROW INTEGRATION (ruled Aug 11 2026) ═══
+/* ═══ PAPER ↔ ROW INTEGRATION (ruled Aug 11 2026) ═══
    Route existing evidence to the point of decision — no new collection.
    The per-item slice below is the same closed-trip data the per-gate
    aggregate reads, grouped so the counterfactual can sit on the row that
@@ -5029,7 +5081,7 @@ function shadowByGate(){
    renders. */
 const SHADOW_ROW_MIN = 3;        // dot renders from 3 closed trips (ruled)
 const SHADOW_FILLRATE_LO = 0.4;  // below this the dot hollows: the margin exists, the fills don't
-const SLICE_SHADOW_CAP = 5;      // discovery-slice shadow entries per cycle (ruled) — bounds the ledger
+const SLICE_SHADOW_CAP = 5;      // discovery-slice paper entries per cycle (ruled) — bounds the ledger
 function shadowSlice(id, exclScanner){
   /* exclScanner (exception lane only): scanner-cohort trips nominate scout
      ADMISSION, never probation — the funnel moves one stage per ruling. */
@@ -5074,13 +5126,13 @@ function shadowCite(id){
   const verdict = s.net <= 0
     ? (s.bought === 0 ? "bench agrees — it would not even have filled" : "bench agrees")
     : "screening: probation candidate — a live half-size test decides, not the sim";
-  return " (shadow screen: " + s.n + " trip" + (s.n === 1 ? "" : "s") + ", would-have-filled " + s.bought
+  return " (paper screen: " + s.n + " trip" + (s.n === 1 ? "" : "s") + ", would-have-filled " + s.bought
     + " at " + shadowPartPct() + "% participation" + (s.boughtFull !== s.bought ? " (" + s.boughtFull + " at 100%)" : "")
     + ", net " + gp(Math.round(s.net)) + " sim — " + verdict + ")";
 }
 
-/* ═══ SHADOW-BACKED EXCEPTION LANE (ruled Aug 11 2026) ═══
-   Per-item, screening-gated, YOUR press. This lane IS what the shadow book
+/* ═══ PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026) ═══
+   Per-item, screening-gated, YOUR press. This lane IS what the paper book
    screens FOR (reweight ruling, Aug 11 2026): the screen ranks candidates,
    the grant starts a LIVE half-size probation test, and the realized trips
    — adjudicated on net P&L and adverse markout — are the only path to a
@@ -5124,7 +5176,7 @@ function grantException(id){
   DB.shadowExceptions.push({ id, gate: ev.gate, grantedAt: Date.now(), trips: 0, status: "active",
     evidence: { n: ev.s.n, filled: ev.s.bought, net: Math.round(ev.s.net) } });
   logDecision("exception", itemName(id), "grant probationary exception",
-    ev.gate + " waived for this item on shadow screening (" + ev.s.n + " trips, " + ev.s.bought + " filled at "
+    ev.gate + " waived for this item on paper screening (" + ev.s.n + " trips, " + ev.s.bought + " filled at "
     + shadowPartPct() + "% participation, net " + gp(Math.round(ev.s.net)) + " sim — the conservative reading) — probation: half size, 2× tick floor, one position; " + EXC_ADJ_TRIPS
     + " real round trips adjudicate on net P&L and adverse markout. The gate's constant does not move — screening ranks the candidate, the live test decides.");
   save();
@@ -5207,7 +5259,7 @@ function adjudicateExceptions(){
   if (changed) save();
 }
 
-/* Combined too-tight verdict (ruled Aug 11 2026): shadow profits alone are a
+/* Combined too-tight verdict (ruled Aug 11 2026): paper profits alone are a
    model opinion, realized profits alone are attribution-fuzzy — a case needs
    BOTH streams pointing the same way. Realized direction reads ONLY the
    traded-while-benched (override) stream, per the definitions protocol —
@@ -5215,9 +5267,9 @@ function adjudicateExceptions(){
 function gateStreamDirs(g, ghRows){
   const sh = shadowByGate().get(g);
   const shadow = (!sh || (sh.filled + sh.forced) < 2)
-    ? { dir: null, txt: "shadow screen: insufficient closed outcomes" }
+    ? { dir: null, txt: "paper screen: insufficient closed outcomes" }
     : { dir: sh.net > 0 ? "loosen" : "keep",
-        txt: "shadow screen: would-have-filled " + (sh.filled + sh.forced) + " of " + sh.n + " at " + shadowPartPct()
+        txt: "paper screen: would-have-filled " + (sh.filled + sh.forced) + " of " + sh.n + " at " + shadowPartPct()
            + "% participation (" + sh.filledFull + " at 100%), net " + gp(Math.round(sh.net))
            + " after tax, " + sh.unfilled + " would never have filled [simulated — assumes a book you're not in]" };
   const r = (ghRows || gateHealthAudit().rows).find(x => x.g === g);
@@ -5231,6 +5283,7 @@ function gateStreamDirs(g, ghRows){
 function shadowAuditInline(){
   const closed = DB.shadowBook.filter(shadowResolved);
   const lines = [];
+  if (shadowEpochNote()) lines.push(shadowEpochNote());
   /* Standing caveat (reweight ruling, Aug 11 2026) — self-impact limitation
      stated wherever the panel renders. */
   lines.push('<div class="plan-note">Screening tool, not evidence — the sim assumes a book you\'re not in; thin books change when you post. '
@@ -5238,14 +5291,14 @@ function shadowAuditInline(){
     + 'Fills claimed at ' + shadowPartPct() + '% participation of the tape that crossed each price (setting), 100%-participation reading beside it.</div>');
   const byGate = shadowByGate();
   for (const [g, s] of byGate){
-    lines.push('<div>benched by <b>' + esc(g) + '</b> alone: shadow-traded ' + s.n
+    lines.push('<div>benched by <b>' + esc(g) + '</b> alone: paper-traded ' + s.n
       + ', filled ' + s.filled + (s.forced ? ' (+' + s.forced + ' forced-exit)' : '')
       + ' at ' + shadowPartPct() + '% participation (would also fill ' + s.filledFull + ' at 100%)'
       + ', net simulated <span class="' + sign(s.net) + '">' + gp(Math.round(s.net)) + '</span> after tax'
       + ', vs would-not-have-filled ' + s.unfilled
       + ' <span class="dim">(median ' + s.obsMed + '% of the horizon observed — unobserved windows are unknown, not unfilled)</span></div>');
   }
-  if (!byGate.size) lines.push('<div class="dim">No closed per-gate shadow positions yet — they accrue as benched near-misses age through their horizons.</div>');
+  if (!byGate.size) lines.push('<div class="dim">No closed per-gate paper positions yet — they accrue as benched near-misses age through their horizons.</div>');
   /* FILTER OPPORTUNITY COST (user-directed, Aug 11 2026): the scanner
      cohort's question is about the PIPELINE — are the filters excluding
      money — not the gates; populations never mix in the per-gate lines
@@ -5259,7 +5312,7 @@ function shadowAuditInline(){
     const sNet = scanClosed.reduce((a, p) => a + (p.net || 0), 0);
     const wNet = wlWin.reduce((a, p) => a + (p.net || 0), 0);
     const winD = Math.max(1, Math.round((Date.now() - t0) / 86400e3));
-    lines.push('<div style="margin-top:6px"><b>Filter opportunity cost</b> — scanner-cohort shadow trips closed: ' + scanClosed.length
+    lines.push('<div style="margin-top:6px"><b>Filter opportunity cost</b> — scanner-cohort paper trips closed: ' + scanClosed.length
       + ' (scanner·T1 ' + scanClosed.filter(p => p.scanTier === 1).length + ' · scanner·T2 ' + scanClosed.filter(p => p.scanTier === 2).length
       + '), net <span class="' + sign(sNet) + '">' + gp(Math.round(sNet)) + '</span> sim, vs watchlist-cohort net <span class="' + sign(wNet) + '">'
       + gp(Math.round(wNet)) + '</span> (' + wlWin.length + ' trip' + (wlWin.length === 1 ? '' : 's') + ') over the same ' + winD + 'd window. '
@@ -5287,7 +5340,7 @@ function shadowAuditInline(){
   lines.push(regRow("tight (" + (GATE.roi * SHADOW_TIGHT).toFixed(2) + "%)", "tight"));
   const evd = shadowRegimeEvidence();
   lines.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
-    : '<div class="dim">No persistent regime divergence (4 of 7 days) — no tuning case from the shadow book this week.</div>');
+    : '<div class="dim">No persistent regime divergence (4 of 7 days) — no tuning case from the paper book this week.</div>');
   return '<div class="inline">' + lines.join("") + '</div>';
 }
 
@@ -5338,6 +5391,7 @@ function hoursLedgerInline(){
   const top = withMkt.slice().sort((a, b) => b.mkt - a.mkt).slice(0, 3);
   const hh = h => String(h).padStart(2, "0") + ":00";
   const lines = [];
+  if (shadowEpochNote()) lines.push(shadowEpochNote());
   lines.push('<div class="plan-note">Two streams, different natures. <b>Market</b> (post-tax spread by hour, from the 7-day hourly series) covers every hour equally whether or not you were awake — this is the unbiased one. <b>Shadow</b> (simulated fill rate) only accrues while the tracker is open, so hours you never observe read "no data", never "bad hour". Advisory: this sizes nothing.</div>');
   lines.push('<div>Average post-tax spread across watched items: <b>' + avg.toFixed(2) + '%</b> · widest hours: '
     + top.map(r => '<b>' + hh(r.h) + '</b> ' + r.mkt.toFixed(2) + '%'
@@ -5351,7 +5405,7 @@ function hoursLedgerInline(){
       + '" style="height:' + hgt + 'px;opacity:' + (r.n ? 1 : 0.4) + '"></i>';
   }).join("");
   lines.push('<div class="depspark" style="display:flex;align-items:flex-end;gap:2px;height:18px;margin:4px 0">' + bars + '</div>'
-    + '<div class="dim">00:00 → 23:00 · faded bars are hours the shadow book has never observed (market data still counts)</div>');
+    + '<div class="dim">00:00 → 23:00 · faded bars are hours the paper book has never observed (market data still counts)</div>');
   /* The overnight question, answered only where both streams can speak. */
   const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
   if (night.length){
@@ -5566,7 +5620,7 @@ function freshnessInline(){
     lines.push('<div class="plan-note"><b class="neg">⚠ Price-history fetching is paused</b> — '
       + Math.ceil((S.tsPauseUntil - Date.now()) / 60e3) + ' minutes left on the circuit breaker after '
       + S.tsFail + ' consecutive /timeseries failures. Anything chart-derived below (trend gates, the hours ledger\'s market stream, sparklines) is running on cached data. Live prices are unaffected.</div>');
-  lines.push('<div class="plan-note"><b>Every accrual in this tool ticks off the app being open — and VISIBLE.</b> The poll skips entirely while the tab is hidden (backgrounded or minimized), so a fortnight behind another tab accrues nothing at all: no shadow fills, no stratum samples, no daily snapshots. Nothing is lost, but nothing is gained either. A stalled stream and a quiet one look identical on a chart, so each stream states when it last accrued. <b>Scheduled</b> streams can be late; <b>event-driven</b> ones are silent when nothing happened, and that silence is data, not a fault.</div>');
+  lines.push('<div class="plan-note"><b>Every accrual in this tool ticks off the app being open — and VISIBLE.</b> The poll skips entirely while the tab is hidden (backgrounded or minimized), so a fortnight behind another tab accrues nothing at all: no paper fills, no stratum samples, no daily snapshots. Nothing is lost, but nothing is gained either. A stalled stream and a quiet one look identical on a chart, so each stream states when it last accrued. <b>Scheduled</b> streams can be late; <b>event-driven</b> ones are silent when nothing happened, and that silence is data, not a fault.</div>');
   lines.push(stale.length
     ? '<div class="plan-note"><b class="neg">⚠ ' + stale.length + ' stream' + (stale.length === 1 ? '' : 's')
       + ' behind schedule:</b> ' + stale.map(r => esc(r.name) + ' (' + ago(r.at) + ')').join(" · ")
@@ -5745,7 +5799,7 @@ function renderDeploy(plan){
       + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7) + "/7d)").join("; "))
       + ' — ' + esc(shorts.join("; ")) + '. ';
     if (dirs.shadow.dir === "loosen" && dirs.realized.dir === "loosen"){
-      props.push({ concur: false, html: persistTxt + 'Realized overrides make the case and the shadow screen concurs: ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
+      props.push({ concur: false, html: persistTxt + 'Realized overrides make the case and the paper screen concurs: ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
         + '. ' + esc(depProposalFor(g, arr)) });
     } else if (dirs.shadow.dir && dirs.realized.dir && dirs.shadow.dir !== dirs.realized.dir){
       props.push({ concur: true, html: persistTxt + '<b>Streams disagree</b> — ' + dirs.shadow.txt + ' vs ' + dirs.realized.txt
@@ -5761,7 +5815,7 @@ function renderDeploy(plan){
     + ' the binding side is the confirmed 5m sample, not the 1h book: ' + esc(v5.map(x => x.name).join(", "))
     + '. The ruled binding conditions (≥5 units, 2 consecutive refreshes) are already applied — this reads as a real die-off, not sampling noise.'
     + ' Tagged "die-off detected" in the gate-health ledger; each episode\'s next 24h grades the confirmation in the weekly audit.' });
-  /* Regime divergence is a shadow-only stream — the combined-verdict rule
+  /* Regime divergence is a paper-only stream — the combined-verdict rule
      (ruled Aug 11 2026) applies to it like any too-tight/too-loose case. */
   const shadowEvd = shadowRegimeEvidence();
   if (shadowEvd){
@@ -5839,7 +5893,7 @@ function deploySparkHTML(){
 /* Per-tier scanner screen for the pipeline: the tier scanner's OWN filters,
    plus the sustained-ROI floor. This is the cheap pre-screen; admission then
    requires the FULL plan gate chain (candidateFor) below. minRoiFactor < 1
-   (scanner shadow cohort only) admits near-the-floor items so single-gate
+   (scanner paper cohort only) admits near-the-floor items so single-gate
    ROI near-misses survive the screen — the scout itself always passes 1. */
 function scanScreenTier(t, minRoiFactor){
   const f = t === 2 ? DB.filtersT2 : DB.filtersT1;
@@ -6348,9 +6402,9 @@ function rowRiskFlags(w, c, sp, P){
     + tox.n + " marked-out fills) — someone better-informed is hitting your quotes");
   return out;
 }
-/* Shadow dot (dot-class like the test dot — the four-BADGE rule holds): the
-   item's shadow record at a glance. GLYPH FAMILY IS THE IDENTITY (user
-   ruling, Aug 11 2026): every shadow state is a circle-within-a-circle —
+/* Paper dot (dot-class like the test dot — the four-BADGE rule holds): the
+   item's paper record at a glance. GLYPH FAMILY IS THE IDENTITY (user
+   ruling, Aug 11 2026): every paper state is a circle-within-a-circle —
    ◉ verdict, ◎ fills-missing, ◌ accruing — so it can never be misread as the
    test dot's plain ●/○ at a glance or on a phone. Colour then carries state
    WITHIN that identity, and only here does green/red mean good/bad. */
@@ -6362,14 +6416,14 @@ function shadowDot(id){
   const closedN = s ? s.n : 0;
   const total = closedN + openN + gapN;
   if (!total) return '<span class="dslot"></span>';   // no history: the SLOT still holds its place, the dot does not render
-  /* ACCRUING STATE (user ruling, Aug 11 2026). A row with shadow history that
+  /* ACCRUING STATE (user ruling, Aug 11 2026). A row with paper history that
      renders nothing is the F18 defect in a new place: the machinery is
      working and the surface is silent, so the feature reads as broken. Below
      the verdict threshold there is no verdict to give — but "accruing, N
      trips" is itself a state, and every state says so. Dim outline, distinct
      glyph, and it leads the dot slot so it is never lost behind the test dot. */
   if (closedN < SHADOW_ROW_MIN)
-    return '<span class="dslot"><span class="sdot acc" title="Shadow screen: ACCRUING — '
+    return '<span class="dslot"><span class="sdot acc" title="Paper screen: ACCRUING — '
       + total + ' trip' + (total === 1 ? '' : 's') + ' on this item · ' + closedN + ' closed, ' + openN + ' still open'
       + (gapN ? ', ' + gapN + ' unobserved (horizon expired while the tab was closed — held out of every aggregate)' : '')
       + ' · no verdict until ' + SHADOW_ROW_MIN + ' have closed'
@@ -6377,9 +6431,9 @@ function shadowDot(id){
       + '. All simulated — a screen ranking probation candidates, not evidence.">◌</span></span>';
   const hollow = s.fillRate < SHADOW_FILLRATE_LO;
   return '<span class="dslot"><span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
-    + '" title="Shadow screen: ' + s.n
+    + '" title="Paper screen: ' + s.n
     + ' closed trips · fill rate ' + Math.round(s.fillRate * 100) + '% at ' + shadowPartPct() + '% participation'
-    + (hollow ? " — the margin exists, the fills don’t" : (s.net > 0 ? " — shadow-profitable" : " — shadow-losing"))
+    + (hollow ? " — the margin exists, the fills don’t" : (s.net > 0 ? " — paper-profitable" : " — paper-losing"))
     + ' · net ' + gp(Math.round(s.net)) + ' sim · book: ' + esc(s.regs.join(", "))
     + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)'
     + '. All simulated — ranks probation candidates, not evidence.">'
@@ -6393,7 +6447,7 @@ const riskChip = (id, flags) => !flags.length ? ""
    absent = never tested. The numbers live in the tooltip. */
 function testDot(w, c){
   /* The slot is emitted whether or not there is a dot in it — a fixed
-     position is what stops the shadow dot sliding over here and being read
+     position is what stops the paper dot sliding over here and being read
      as a test state (user ruling, Aug 11 2026). Tooltip names itself first. */
   const inner = !(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell)) ? ""
     : c.tested
@@ -7369,7 +7423,7 @@ function renderAuditInline(){
       + '<button class="sm' + (stale ? ' primary' : ' ghost') + '" data-cldismiss="' + c.id + '">dismiss</button></span></div>');
   }
   /* §4 gate health — unified evidence streams (ruled Aug 11 2026): realized
-     outcomes (sparse, attribution-leaning) and shadow outcomes (dense,
+     outcomes (sparse, attribution-leaning) and paper outcomes (dense,
      model-caveated) side by side, natures labeled; a too-tight case needs
      BOTH pointing the same way. */
   const gh = gateHealthAudit();
@@ -7397,7 +7451,7 @@ function renderAuditInline(){
         + sh.filledFull + ' at 100%), net simulated <span class="' + sign(sh.net) + '">' + gp(Math.round(sh.net))
         + '</span> after tax; ' + sh.unfilled + ' would never have filled at the benched price'
         + ' <span class="dim">[simulated — fill-model caveats; a screen, not evidence; median ' + sh.obsMed + '% of horizon observed]</span>'
-      : '<span class="dim">no closed shadow positions for this gate yet [simulated]</span>');
+      : '<span class="dim">no closed paper positions for this gate yet [simulated]</span>');
     const dirs = gateStreamDirs(g, gh.rows);
     const verdict = (dirs.shadow.dir && dirs.realized.dir)
       ? (dirs.shadow.dir === dirs.realized.dir
@@ -7425,7 +7479,7 @@ function renderAuditInline(){
   /* §5 prospecting (user-directed, Aug 11 2026): the slice's YIELD as a
      number, and the per-stratum map that answers which pond regions hold
      edge with a ledger instead of a hunch. Durable counters — they outlive
-     the shadow book's 30-day pruning by design. */
+     the paper book's 30-day pruning by design. */
   secs.push(prospectingInline());
   /* §6 decision log */
   const dl = DB.decisionLog.slice(-50).reverse();
@@ -7453,6 +7507,7 @@ function prospectingInline(){
     a.trips += s.trips || 0; a.net += s.net || 0; return a;
   }, { samp: 0, nm: 0, pass: 0, trips: 0, net: 0 });
   const secs = ['<div class="nexthead"><b>5 · Prospecting</b> — the discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&L is <b>simulated</b> screening data, never evidence.</div>',
+    shadowEpochNote(),
     '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>'];
   if (!tot.samp){
     secs.push('<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
@@ -9210,7 +9265,7 @@ function pendingRulingItems(){
     for (const ev of exceptionProposals()){
       const key = "exc:" + ev.id;
       items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
-        html: '👻 shadow screen ranks a probation candidate: <b>' + esc(itemName(ev.id)) + '</b> — '
+        html: '👻 paper screen ranks a probation candidate: <b>' + esc(itemName(ev.id)) + '</b> — '
           + ev.s.n + ' trips, ' + ev.s.bought + ' filled at ' + shadowPartPct() + '% participation, net ' + gp(Math.round(ev.s.net)) + ' sim vs <b>' + esc(ev.gate) + '</b>'
           + ' <button class="sm" data-excgrant="' + ev.id + '" title="PROBATIONARY EXCEPTION (your ruling): a LIVE half-size test — funds despite the gate at half size, 2× tick floor, one position; '
           + EXC_ADJ_TRIPS + ' real round trips adjudicate on net P&L and adverse markout. The screen only ranks candidates; the gate\'s constant never moves on screening alone.">grant exception</button>' });
@@ -9972,9 +10027,9 @@ const CHECKLISTS = {
     ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
-    ["Read the shadow book", "The screening column: per-gate shadow P&L with fill reality baked in, and the three ROI-regime curves side by side — all simulated, ranking probation candidates for live half-size tests, never evidence:", null, "shadowbook"],
+    ["Read the paper book", "The screening column: per-gate paper P&L with fill reality baked in, and the three ROI-regime curves side by side — all simulated, ranking probation candidates for live half-size tests, never evidence:", null, "shadowbook"],
     ["Check data freshness", "Every background stream reports when it last accrued. Nothing collects while the tab is closed, and a stalled stream looks exactly like a quiet one on a chart — so this says which is which before you read any of the numbers below:", null, "freshness"],
-    ["Read the hours ledger", "Time-structure prospecting: post-tax spread by hour-of-day (market stream, unbiased by when you're awake) against simulated fill rates (shadow stream, biased toward hours you observe). The overnight question answered with data:", null, "hours"],
+    ["Read the hours ledger", "Time-structure prospecting: post-tax spread by hour-of-day (market stream, unbiased by when you're awake) against simulated fill rates (paper stream, biased toward hours you observe). The overnight question answered with data:", null, "hours"],
     ["Read the recipe basis table", "Processing margins on high-volume recipes — a basis breaking wide is both a flip signal on the mispriced leg and a manipulation tell, since pumps distort one leg before the other:", null, "recipes"],
     ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
@@ -10374,7 +10429,7 @@ function homeDeltaLines(){
   const closed = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > since);
   if (closed.length){
     const net = closed.reduce((a, p) => a + (p.net || 0), 0);
-    line("👻 shadow book: " + closed.length + " trip" + (closed.length === 1 ? "" : "s")
+    line("👻 paper book: " + closed.length + " trip" + (closed.length === 1 ? "" : "s")
       + " closed · net " + gp(Math.round(net)) + " (simulated)", "review#ckstep-shadowbook");
   }
   /* A random draw clearing every gate is exactly the event the slice exists
@@ -10435,7 +10490,7 @@ function renderHomeDelta(){
   if (DB.flatSince){
     const n = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > DB.flatSince).length;
     L.unshift({ txt: "▭ book flat since " + new Date(DB.flatSince).toLocaleDateString("en-CA")
-      + " — shadow book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckstep-shadowbook" });
+      + " — paper book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckstep-shadowbook" });
   }
   if (!L.length){
     setHTML(box, first
@@ -10520,7 +10575,7 @@ function renderHomeVitals(){
   setHTML(box,
       vit("Funnel", esc(funnel), "watch#deployPanel",
         "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
-    + vit("Shadow book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
+    + vit("Paper book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
         + ' <span class="dim">(30d, simulated)</span>', "review#ckstep-shadowbook",
         "Counterfactual book — all simulated, a screen ranking probation candidates, not evidence. Click for the weekly review's shadow-book section.")
     + vit("Sleeve", open.length + " position" + (open.length === 1 ? "" : "s") + " · " + esc(rung) + " · " + esc(cat),

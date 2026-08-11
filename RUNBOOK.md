@@ -9,7 +9,7 @@ Work it top to bottom; each step tells you what you'd see and what it means.
 
 **Accrual requires the tab to be open AND visible.** The poll skips entirely while the
 tab is hidden — backgrounded behind another tab, or the window minimized. Nothing
-collects in that state: no shadow fills, no stratum samples, no daily regime snapshots,
+collects in that state: no paper fills, no stratum samples, no daily regime snapshots,
 no gate-health rows. Nothing is *lost*; nothing is *gained* either.
 
 If you want two weeks of data, the tab has to be the foreground tab in a window that
@@ -41,7 +41,7 @@ The panel also surfaces two specific conditions worth knowing on sight:
   a struggling API. Charts, trend gates and the hours ledger are running on cached data.
   Live prices are unaffected. It clears itself; if it keeps re-tripping, the wiki's
   timeseries endpoint is having a bad day.
-- **"N trips resolved UNOBSERVED"** — shadow positions whose horizon expired while the tab
+- **"N trips resolved UNOBSERVED"** — paper positions whose horizon expired while the tab
   was closed. They are held out of every aggregate rather than priced at today's stale
   price. Expect a batch of these after any absence; it is the honest outcome, not a bug.
 
@@ -52,7 +52,7 @@ The panel also surfaces two specific conditions worth knowing on sight:
 ### Cause 1 — the tab wasn't collecting (most likely by far)
 
 **Symptoms:** several scheduled streams stale by roughly the length of your absence;
-charts flat; shadow trip counts barely moved; "book flat since <date>" on Home; a batch of
+charts flat; paper trip counts barely moved; "book flat since <date>" on Home; a batch of
 unobserved trips.
 
 **Confirm:** freshness panel shows the stale ages clustering around when you left.

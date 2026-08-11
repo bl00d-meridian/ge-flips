@@ -82,6 +82,25 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   under their own header in review copy, and keep them out of the rulings-pending count.
   The full ruling flow is reserved for proposals that want to change something.
 
+## Naming: the PAPER book (renamed Aug 11 2026 — user ruling)
+
+The counterfactual book is the **paper book** everywhere: surfaces, tooltips, copy,
+docs, and audit reports from here on. The rename removes a collision with the **Shadow
+Fund** (the Tumeken's Shadow savings target), which keeps its name along with the
+`shadow reserve` setting — those are real capital, not simulation. "Paper" also states
+the ruled epistemic status: screening evidence, never a verdict. The row dot keeps its
+glyph identity (circle-in-circle) but its tooltip and the legend read "Paper screen: …".
+
+Two things deliberately were NOT renamed, so nothing silently breaks:
+- **Persisted keys and code identifiers** (`DB.shadowBook`, `shadowDivLog`,
+  `shadowExceptions`, `shadowEpoch`, `shadowPartPct`, `shadowTick`, `shadowScan`,
+  `shadowDot`, …). Renaming a persisted key would orphan the user's existing store
+  without a migration, and the rename was scoped "where cheap". Read `shadow*` in code
+  as the paper book, except `shadowReserve` / `shadowItem` / `renderShadow`, which are
+  the Shadow Fund.
+- **Historical records.** Prior audit reports and decision-log entries use the old term;
+  they are left as written so past records stay readable and internally consistent.
+
 ## Definitions protocol (metric honesty — user ruling, Aug 10 2026)
 
 When the user asks what a metric measures, the standing rule is **answer first, build

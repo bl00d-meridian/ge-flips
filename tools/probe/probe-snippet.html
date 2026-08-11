@@ -498,7 +498,7 @@
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84a.slice(-600));
     // seed 5 prior days of volume-floor benches — the ledger persistence earns
     // the hearing; BOTH outcome streams agreeing makes the case (ruled Aug 11
-    // 2026): a realized override win + profitable closed shadow fills.
+    // 2026): a realized override win + profitable closed paper fills.
     const dm84 = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     for (let d = 1; d <= 5; d++) for (const id of [9001, 9002, 9003]) DB.gateLog.push({ d: dm84(d), id, g: "volume floor" });
     DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: dm84(2), note: "" }];
@@ -512,7 +512,7 @@
     const dep84b = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
     ok("[R8.4] ledger-backed proposal cites persistence and traces the next stage per admitted item",
        S.depProposalCount === 1 && /ledger persistence/.test(dep84b) && /4\+ of the last 7 days/.test(dep84b)
-       && /Realized overrides make the case and the shadow screen concurs/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
+       && /Realized overrides make the case and the paper screen concurs/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84b.slice(-800));
     // restore fixture volumes and ledgers for the next block
     for (const id of [9001, 9002, 9003])
@@ -725,7 +725,7 @@
     const dep2 = document.querySelector("#depBody").innerHTML;
     ok("proposal indicts the ROI floor with numbers, propose-only",
        /ROI floor<\/b> alone blocks 3 items this refresh, 3 with ledger persistence/.test(dep2)
-       && /Realized overrides make the case and the shadow screen concurs/.test(dep2)
+       && /Realized overrides make the case and the paper screen concurs/.test(dep2)
        && /Propose: sustained-ROI floor 1\.2% → 1\.1%/.test(dep2) && /Your ruling/.test(dep2)
        && /Next stage per admitted item/.test(dep2)
        && /nothing changes without your per-gate ruling/i.test(dep2), dep2);
@@ -2015,7 +2015,7 @@
        JSON.stringify(vCoh.db.cohProps[0]));
     DB.clusters = []; DB.cohProps = []; DB.cohLog = {}; DB.intel = [];
 
-    // ─── §18/§19: SHADOW BOOK + GATE-AUDIT UNIFICATION (ruled Aug 11 2026) ───
+    // ─── §18/§19: PAPER BOOK + GATE-AUDIT UNIFICATION (ruled Aug 11 2026) ───
     DB.shadowBook = []; DB.shadowDivLog = []; DB.gateLog = []; DB.flips = []; DB.positions = [];
     DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
     for (const id of [9001, 9002, 9003]){   // restore canonical market data — earlier die-off blocks degrade it
@@ -2076,7 +2076,7 @@
     // R18.3 — per-gate counterfactual line, quarantine-labeled
     const shAud = shadowAuditInline();
     ok("[R18.3] weekly shadow report: per-gate would-have-filled / would-not with observed-share caveat",
-       /benched by <b>ROI floor<\/b> alone: shadow-traded 2, filled 1/.test(shAud)
+       /benched by <b>ROI floor<\/b> alone: paper-traded 2, filled 1/.test(shAud)
        && /would-not-have-filled 1/.test(shAud) && /unknown, not unfilled/.test(shAud),
        shAud.slice(0, 500));
     ok("[R18.3] regime curves labeled simulated, never comparable to realized",
@@ -2116,7 +2116,7 @@
     renderDeploy(nearPlan);
     let depHTML = document.querySelector("#depBody").innerHTML;
     ok("[R19.2] streams agree → change-proposal cites both, counts as a ruling",
-       /Realized overrides make the case and the shadow screen concurs/.test(depHTML) && /\[real fills/.test(depHTML) && /\[simulated/.test(depHTML)
+       /Realized overrides make the case and the paper screen concurs/.test(depHTML) && /\[real fills/.test(depHTML) && /\[simulated/.test(depHTML)
        && S.depProposalCount === 1,
        JSON.stringify({ count: S.depProposalCount, html: depHTML.slice(depHTML.indexOf("Proposals"), depHTML.indexOf("Proposals") + 600) }));
     DB.flips = [{ id: Date.now(), itemId: 9002, name: "Probe beta", qty: 10, buy: 4400, sell: 4000, date: dstr(2), note: "" }];
@@ -2136,7 +2136,7 @@
     DB.shadowBook = []; DB.shadowDivLog = []; DB.gateLog = []; DB.flips = [];
     S.tab = "routine"; S.mode = "weekly"; renderRoutine();
     ok("[R18.4] the weekly review carries the shadow-book step with the regime curves",
-       /shadow book/i.test(document.querySelector("#ckList").innerHTML)
+       /paper book/i.test(document.querySelector("#ckList").innerHTML)
        && /Regime curves/.test(document.querySelector("#ckList").innerHTML));
 
     // ═══ R20 SURFACE REORG (Aug 11 2026) — tier-1 Home, 4 tabs, click audit ═══
@@ -2192,7 +2192,7 @@
        && !/data-rulesnooze/.test(document.querySelector("#ckList").innerHTML));
     // R20.3 — vitals strip: four tiles, each a click-through
     const vits20 = Array.from(document.querySelectorAll("#homeVitals .vit"));
-    ok("[R20.3] vitals strip renders funnel, shadow book, sleeve, capital tiles",
+    ok("[R20.3] vitals strip renders funnel, paper book, sleeve, capital tiles",
        vits20.length === 4 && vits20.every(v => v.dataset.goto),
        JSON.stringify(vits20.map(v => v.dataset.goto)));
     ok("[R20.3] shadow-book results are one vitals click away (goto review)",
@@ -2204,9 +2204,9 @@
     ok("[R20.5] delta block renders one line per nonzero category, truncated at 6 with +N more",
        dls20.length === 7 && /\+1 more/.test(dls20[6].textContent),
        JSON.stringify(dls20.map(d => d.textContent.slice(0, 60))));
-    ok("[R20.5] the categories cover flags, shadow trips, rungs, regime, catalyst windows",
+    ok("[R20.5] the categories cover flags, paper trips, rungs, regime, catalyst windows",
        /explained/.test(dls20[0].textContent) && /accumulation flag/.test(dls20[1].textContent)
-       && /shadow book: 2 trips closed/.test(dls20[2].textContent) && /rung armed/.test(dls20[3].textContent)
+       && /paper book: 2 trips closed/.test(dls20[2].textContent) && /rung armed/.test(dls20[3].textContent)
        && /regime divergence/.test(dls20[4].textContent) && /catalyst "R20 window": window upcoming → live/.test(dls20[5].textContent),
        JSON.stringify(dls20.map(d => d.textContent.slice(0, 70))));
     S.homeDeltaAll = true; renderHomeDelta();
@@ -2222,7 +2222,7 @@
     ok("[R20.6] setTab(shadow) lands on Review with the weekly checklist + shadow fund",
        S.tab === "review" && document.querySelector("#tab-review").classList.contains("on")
        && document.querySelector("#reviewCkSlot #ckPanel") !== null
-       && /shadow book/i.test(document.querySelector("#ckList").innerHTML));
+       && /paper book/i.test(document.querySelector("#ckList").innerHTML));
     setTab("log");
     ok("[R20.6] setTab(log) lands on Trade ▸ Flip Log (close→prefill flow intact)",
        S.tab === "trade" && S.sub === "log" && document.querySelector("#tab-log").classList.contains("on")
@@ -2298,7 +2298,7 @@
        document.querySelector("#nowBar").innerHTML);
     ok("[R21.5] flat book flips the posture — delta + vitals lead and the standing flat line renders",
        document.querySelector("#tab-home").classList.contains("flat")
-       && /book flat since \d{4}-\d{2}-\d{2} — shadow book accruing, \d+ trips? closed since/.test(document.querySelector("#homeDelta").textContent),
+       && /book flat since \d{4}-\d{2}-\d{2} — paper book accruing, \d+ trips? closed since/.test(document.querySelector("#homeDelta").textContent),
        document.querySelector("#homeDelta").textContent.slice(0, 200));
     // review replaces, never stacks
     DB.flips = ["2026-08-01", "2026-08-02", "2026-08-03"].map((d, i) =>
@@ -2606,7 +2606,7 @@
     ok("[R24.2] the shadow vitals tile is wired to the shadow-book section itself, not the checklist top",
        Array.from(document.querySelectorAll("#homeVitals .vit")).some(v => v.dataset.goto === "review#ckstep-shadowbook"));
 
-    // ═══ R25 SHADOW ↔ ROW INTEGRATION (Aug 11 2026) — route evidence to the decision ═══
+    // ═══ R25 PAPER ↔ ROW INTEGRATION (Aug 11 2026) — route evidence to the decision ═══
     const now25 = Date.now();
     DB.shadowBook = []; DB.shadowExceptions = []; DB.intel = []; DB.anomalyFlags = [];
     const mkShadow = (id, i, state, net, t0, gate) => {
@@ -2623,11 +2623,11 @@
     const s25 = shadowSlice(9002);
     ok("[R25.2] the per-item slice aggregates trips, fills, net, and span from existing collection",
        s25.n === 5 && s25.bought === 5 && s25.net === 40000 && s25.fillRate === 1 && s25.spanD >= 7, JSON.stringify(s25));
-    ok("[R25.2] shadow dot: solid green when shadow-profitable, hollow under 40% fill rate, quarantine-labeled",
+    ok("[R25.2] shadow dot: solid green when paper-profitable, hollow under 40% fill rate, quarantine-labeled",
        /sdot pos/.test(shadowDot(9002)) && /◉/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
        && /◎/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
     ok("[R25.4] the citation puts the counterfactual in the bench sentence — probation candidate when profitable, agreeing when not",
-       /\(shadow screen: 5 trips, would-have-filled 5 at 50% participation, net .+sim — screening: probation candidate/.test(shadowCite(9002))
+       /\(paper screen: 5 trips, would-have-filled 5 at 50% participation, net .+sim — screening: probation candidate/.test(shadowCite(9002))
        && /bench agrees/.test(shadowCite(9004)), shadowCite(9002) + " | " + shadowCite(9004));
     // R25.1 — toxic flow: crafted markout series, 3 marked-out fills, adverse > threshold
     const sellAt25 = now25 - 6 * 3600e3;
@@ -2650,7 +2650,7 @@
     const scanA25 = Array.from(document.querySelectorAll("#scanBody tr")).find(r => /Probe alpha/.test(r.textContent));
     ok("[R25.1] the scanner row for a watched item carries the same toxic-flow flag",
        !!scanA25 && /TOXIC FLOW/.test(scanA25.innerHTML), scanA25 ? "found row" : "no scanner row for alpha");
-    // R25.6 — ANY shadow activity renders a dot; below threshold it says "accruing".
+    // R25.6 — ANY paper activity renders a dot; below threshold it says "accruing".
     // Asserted on COMPUTED VISIBILITY, not DOM presence (user ruling): the whole
     // defect class here is a surface that exists but shows the user nothing.
     const dotVisible = id => {
@@ -2667,12 +2667,12 @@
                                      vis: cs.visibility, opacity: cs.opacity, w: r.width, h: r.height }),
                cls: dot.className, title: dot.title };
     };
-    /* The live machinery opens its own shadow positions for watched items on
+    /* The live machinery opens its own paper positions for watched items on
        every render, so these assert the STATE the dot reports, not exact
        counts the suite does not control. */
     DB.shadowBook = [mkShadow(9001, 500, "filled", 1200, now25 - 2 * 86400e3, "ROI floor")];
     const d1 = dotVisible(9001);
-    ok("[R25.6] ONE closed shadow trip renders a visibly-rendered accruing dot — not silence",
+    ok("[R25.6] ONE closed paper trip renders a visibly-rendered accruing dot — not silence",
        d1.ok && /sdot acc/.test(d1.cls || "") && /ACCRUING/.test(d1.title || "")
        && /\d+ closed, \d+ still open/.test(d1.title || "") && /no verdict until 3 have closed/.test(d1.title || ""),
        d1.why + " :: " + (d1.cls || "") + " :: " + (d1.title || "").slice(0, 160));
@@ -2683,10 +2683,10 @@
       ask: 999999, t: now25, buyQ: 0, sellQ: 0, buyDone: 0, obsMs: 1, lastObs: now25,
       state: "open", regimes: [] }];
     const d2 = dotVisible(9001);
-    ok("[R25.6] an item with only OPEN shadow trips still renders — open activity is activity",
+    ok("[R25.6] an item with only OPEN paper trips still renders — open activity is activity",
        d2.ok && /sdot acc/.test(d2.cls || "") && /0 closed, \d+ still open/.test(d2.title || ""),
        d2.why + " :: " + (d2.title || "").slice(0, 160));
-    ok("[R25.6] absence: an item with NO shadow history renders its reserved slot but no dot in it",
+    ok("[R25.6] absence: an item with NO paper history renders its reserved slot but no dot in it",
        (() => { const html = shadowDot(999999);   // an id the book has never touched
                 return /class="dslot"/.test(html) && !/sdot/.test(html); })(),
        shadowDot(999999));
@@ -2726,7 +2726,7 @@
                 return lg ? JSON.stringify({ sPos: getComputedStyle(lg.querySelector(".sdot.pos")).color,
                                              tOn: getComputedStyle(lg.querySelector(".tdot.on")).color }) : "no legend"; })());
     ok("[R25.7] tooltips name themselves first, so a hover resolves the ambiguity immediately",
-       /^Shadow screen:/.test((() => { const m = shadowDot(9001).match(/title="([^"]*)"/); return m ? m[1] : ""; })())
+       /^Paper screen:/.test((() => { const m = shadowDot(9001).match(/title="([^"]*)"/); return m ? m[1] : ""; })())
        && /^Margin test:/.test((() => { const m = testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: Date.now() }, { tested: true }).match(/title="([^"]*)"/); return m ? m[1] : ""; })()));
     ok("[R25.7] fixed slots: both dots always emit their slot, so a missing dot leaves its space",
        (() => { DB.shadowBook = [];
@@ -2738,7 +2738,7 @@
                 if (!lg || lg.offsetParent === null) return false;
                 const t = lg.textContent;
                 return /◉/.test(t) && /◎/.test(t) && /◌/.test(t) && /●/.test(t) && /○/.test(t)
-                    && /shadow-profitable/.test(t) && /margin test verified/i.test(t)
+                    && /paper-profitable/.test(t) && /margin test verified/i.test(t)
                     && /not good-vs-bad/.test(t); })(),
        (document.querySelector("#dotLegend") || {}).textContent);
     DB.shadowBook = [];
@@ -2758,7 +2758,7 @@
     // R25.3 — the expand view answers "what would have happened" in one tap
     S.wDetail = new Set([9002]); renderWatch();
     const det25 = document.querySelector("#watchBody tr.wdet");
-    ok("[R25.3] the expand view shows the item's shadow history with caveats",
+    ok("[R25.3] the expand view shows the item's paper history with caveats",
        !!det25 && /Shadow/.test(det25.textContent) && /would-not-have-filled/.test(det25.textContent)
        && /all simulated/.test(det25.textContent) && /horizon observed/.test(det25.textContent),
        det25 ? det25.textContent.slice(0, 200) : "no detail");
@@ -2820,7 +2820,7 @@
     S.qualStamp = S.latestAt + "|" + S.hourAt;
     shadowScan(buildPlan());
     const clean25 = DB.shadowBook.filter(p => p.slicePass);
-    ok("[R29.5] a slice item clearing EVERY gate enters the shadow cohort at full eligibility — no bench stamp",
+    ok("[R29.5] a slice item clearing EVERY gate enters the paper cohort at full eligibility — no bench stamp",
        clean25.length > 0 && clean25.every(p => !p.benchedBy && p.slice && p.cleanFind > 0)
        && (DB.strataStats["equip:ring"] || {}).pass > 0,
        JSON.stringify({ n: clean25.length, stats: DB.strataStats["equip:ring"] }));
@@ -2864,7 +2864,7 @@
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     DB.strataStats = {};
 
-    // ═══ R26 SHADOW-BACKED EXCEPTION LANE (Aug 11 2026) — per-item, evidence-gated, ruled ═══
+    // ═══ R26 PAPER-BACKED EXCEPTION LANE (Aug 11 2026) — per-item, evidence-gated, ruled ═══
     exemptIds.add(9320); exemptIds.add(9321);
     for (const id of [9320, 9321]){
       const itx = { i: id, n: "Probe except " + id, l: 25000, m: 0, v: 0, a: 0 };
@@ -2890,7 +2890,7 @@
     setTab("home");
     ok("[R26.1] the proposal rides the rulings digest with its one-tap grant",
        /data-excgrant="9320"/.test(document.querySelector("#homeRulings").innerHTML)
-       && /shadow screen ranks a probation candidate/.test(document.querySelector("#homeRulings").innerHTML));
+       && /paper screen ranks a probation candidate/.test(document.querySelector("#homeRulings").innerHTML));
     document.querySelector('#homeRulings [data-excgrant="9320"]').click();
     ok("[R26.2] one tap grants — decision-logged, probation active",
        DB.shadowExceptions.length === 1 && DB.shadowExceptions[0].status === "active"
@@ -3048,7 +3048,7 @@
        (shadowSlice(9330).regs || []).includes("scanner·T1"), JSON.stringify(shadowSlice(9330).regs));
     const aud28 = shadowAuditInline();
     ok("[R28.2] FILTER OPPORTUNITY COST compares scanner-cohort vs watchlist-cohort net over the same window",
-       /Filter opportunity cost/.test(aud28) && /scanner-cohort shadow trips closed: 1/.test(aud28)
+       /Filter opportunity cost/.test(aud28) && /scanner-cohort paper trips closed: 1/.test(aud28)
        && /scanner·T1 1/.test(aud28) && /vs watchlist-cohort net/.test(aud28)
        && /No filter-opportunity signal/.test(aud28), aud28.slice(0, 1600));
     // R28.4 — one stage per move: scanner evidence nominates admission, never probation
@@ -3099,7 +3099,7 @@
        && open28.filter(p => p.cohort !== "scanner").length === SHADOW_MAX_OPEN - 1,
        JSON.stringify({ open: open28.length, scanner: open28.filter(p => p.cohort === "scanner").length }));
     // ═══ R29.4 DURABLE PROSPECTING LEDGER · R30 HOURS · R31 RECIPE BASIS ═══
-    // R29.4 — the per-stratum ledger must outlive the shadow book's 30d pruning
+    // R29.4 — the per-stratum ledger must outlive the paper book's 30d pruning
     DB.shadowBook = []; DB.strataStats = {};
     /* The record is ALREADY past the retention window when the tick runs, so
        this only passes if the roll happens BEFORE the prune — the ordering is
@@ -3128,7 +3128,7 @@
       DB.shadowBook.push(Object.assign(mk27(9002, 310 + i, i < 3 ? "filled" : "unfilled", i < 3 ? 900 : 0, 0, "volume floor"),
         { t: at3.getTime() }));
     const hl30 = hoursLedger();
-    ok("[R30.1] the hours ledger buckets the market stream (post-tax spread, presence-independent) and the shadow stream by hour",
+    ok("[R30.1] the hours ledger buckets the market stream (post-tax spread, presence-independent) and the paper stream by hour",
        hl30[3].mkt === 5.0 && hl30[3].items === 1 && hl30[3].n === 4 && hl30[3].filled === 3
        && Math.abs(hl30[3].fillRate - 0.75) < 1e-9 && hl30[12].n === 0,
        JSON.stringify({ h3: hl30[3], h12: hl30[12] }));
