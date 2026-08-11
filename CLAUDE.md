@@ -45,6 +45,12 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   is auditing reasoning, not accepting conclusions. The collection layer has consistently
   outrun the display layer in this project: aggregates are cheap to build and expensive to
   use, so the drill-down is part of the feature, not a follow-up to it.
+  **One primitive, not per-surface drill-downs** (Aug 11 2026): `drill(key, face, spec)` in
+  `index.html` is the single implementation — sort, text filter, cohort selection and
+  honest subset disclosure live in it, so a new aggregate inherits the expansion instead of
+  re-earning it. Wrap the number at the point you render it; never hand-roll an expansion.
+  When rows shown are fewer than the number counts, the primitive says so and why — a
+  quietly truncated expansion is the defect, not a detail.
 - **Every allocator-touched entity states where it stands** (user ruling, Aug 11 2026).
   An unexplained state reads as a broken feature even when the machinery underneath is
   correct — the F18 incident: held items passed all gates, appeared in no bucket, and
@@ -81,6 +87,17 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   default posture, not a decision point: flag it "concur-recommended", batch such entries
   under their own header in review copy, and keep them out of the rulings-pending count.
   The full ruling flow is reserved for proposals that want to change something.
+
+## Surface map (Aug 11 2026)
+
+Four tabs — Home, Trade, Sleeve, Review. Trade carries six sub-views: **Plan & Watchlist**,
+**Scanner**, **Flip Log**, and the three pull surfaces added Aug 11 2026 — **Paper Book**
+(regime curves, divergence ledger, per-gate outcomes), **Prospecting** (per-stratum map,
+gap band, hours ledger, recipe basis) and **Gate Health** (two streams per gate, die-off
+episodes, exception lane). The three present no rulings: they are read, not worked, so the
+walk-up attention budget is untouched. The weekly review keeps a one-line summary of each
+with a link through and no longer re-renders them — that consolidation is what paid for
+them under the zero-based complexity budget.
 
 ## Naming: the PAPER book (renamed Aug 11 2026 — user ruling)
 

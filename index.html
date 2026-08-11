@@ -73,6 +73,40 @@ nav.subtabs button{background:#191510;color:var(--dim);border-radius:3px;padding
 nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--gold);border-color:var(--gold-dim)}
 .tsub{display:none}
 .tsub.on{display:block}
+/* ---- decomposition primitive (user ruling, Aug 11 2026) ----
+   "A number that cannot be audited is a number that cannot be ruled on."
+   ONE implementation of the expansion, so every aggregate inherits sort,
+   filter, cohort selection and honest subset disclosure rather than
+   re-earning them. Faces are underlined-dotted so an openable number reads
+   as openable without a second badge. */
+.drillnum{background:none;border:none;border-bottom:1px dotted var(--gold-dim);border-radius:0;padding:0 1px;color:inherit;font:inherit;cursor:pointer;text-align:inherit}
+.drillnum:hover{color:var(--gold);border-bottom-color:var(--gold)}
+.drillnum .dcaret{font-size:8px;color:var(--gold-dim);margin-left:2px;vertical-align:1px}
+.drillnum.on{color:var(--gold);border-bottom-style:solid}
+.drillnum.on .dcaret{color:var(--gold)}
+.drillbox{background:#141109;border:1px solid var(--gold-dim);border-radius:3px;padding:7px 9px;margin:5px 0 7px;font-size:12px;white-space:normal;text-align:left;font-variant-numeric:tabular-nums}
+.drillbox .dhead{color:var(--gold);font-size:11.5px;margin-bottom:4px;letter-spacing:.03em}
+.drillbox .dctl{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:5px}
+.drillbox .dctl input{width:150px}
+.drillbox .dctl select{max-width:170px}
+.drillbox .dtw{overflow-x:auto;-webkit-overflow-scrolling:touch;max-height:340px;overflow-y:auto}
+.drillbox table{font-size:11.5px}
+.drillbox th{position:sticky;top:0;background:#141109;z-index:1}
+.drillbox td,.drillbox th{padding:3px 6px}
+.drillbox .dsub{color:var(--amber);font-size:11.5px;margin-top:4px}
+.drillbox .dnote{color:var(--dim);font-size:11px;margin-top:4px;line-height:1.5}
+.drillbox .dempty{color:var(--dim);padding:4px 0}
+tr.drilltr td{background:#141109;white-space:normal;text-align:left;padding:0 6px;border-bottom:1px solid var(--line)}
+/* three ROI-regime curves, side by side on one shared y-scale */
+.curves{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:8px 0}
+.curve{background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:7px 9px}
+.curve .k{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+.curve .v{font-size:15px;font-variant-numeric:tabular-nums;margin:1px 0 3px}
+.curve svg{display:block;width:100%;height:auto}
+/* two-stream gate tree */
+.gtree{margin:5px 0 9px;padding:6px 9px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--gold-dim);border-radius:3px}
+.gtree .gname{font-size:13px;color:var(--gold)}
+.gtree .gstream{margin-left:12px;font-size:12.5px;margin-top:3px}
 /* home vitals strip: compact, always visible, each tile a click-through */
 .vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:8px;margin-bottom:14px}
 .vit{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 11px;cursor:pointer;transition:.12s}
@@ -362,7 +396,65 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <button data-sub="watch" class="on">Plan &amp; Watchlist</button>
       <button data-sub="scan">Scanner</button>
       <button data-sub="log">Flip Log</button>
+      <button data-sub="paper" title="The paper book: three ROI-regime curves, the divergence ledger, and per-gate simulated outcomes — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
+      <button data-sub="prospect" title="Where the edge lives: the per-stratum map, the gap band's verdict, the hours ledger's two streams, and the recipe basis table — every number opens to its rows.">Prospecting</button>
+      <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
     </nav>
+
+  <!-- ── paper book sub-view (ruled Aug 11 2026: a working surface, not a
+       weekly read; the review keeps a one-line summary linking here) ── -->
+  <div class="tsub" id="tab-paper">
+    <div class="panel" id="paperRegimePanel">
+      <div class="ph"><h2>Paper book — ROI regimes</h2><span class="sub" id="paperRegimeSub"></span></div>
+      <div id="paperRegime"></div>
+    </div>
+    <div class="panel" id="paperGatePanel">
+      <div class="ph"><h2>Per-gate paper outcomes</h2><span class="sub" id="paperGateSub"></span></div>
+      <div id="paperGate"></div>
+    </div>
+    <div class="panel" id="paperCohortPanel">
+      <div class="ph"><h2>Cohorts</h2><span class="sub">watchlist · slice · gap band · scanner — populations never mix in a gate read</span></div>
+      <div id="paperCohort"></div>
+    </div>
+  </div>
+
+  <!-- ── prospecting sub-view: item-space (strata, gap band), time-space
+       (hours ledger), and recipe-space (processing basis) in one place ── -->
+  <div class="tsub" id="tab-prospect">
+    <div class="panel" id="prospectStrataPanel">
+      <div class="ph"><h2>Per-stratum map</h2><span class="sub" id="prospectStrataSub"></span></div>
+      <div id="prospectStrata"></div>
+    </div>
+    <div class="panel" id="prospectGapPanel">
+      <div class="ph"><h2>Gap band 250k–1m</h2><span class="sub">the band between the T2 ceiling and the anomaly scan's floor</span></div>
+      <div id="prospectGap"></div>
+    </div>
+    <div class="panel" id="prospectHoursPanel">
+      <div class="ph"><h2>Hours ledger</h2><span class="sub">market stream (unbiased) vs paper stream (presence-biased)</span></div>
+      <div id="prospectHours"></div>
+    </div>
+    <div class="panel" id="prospectRecipePanel">
+      <div class="ph"><h2>Recipe basis</h2><span class="sub">output at ask net of tax − inputs at bid (the patient convention)</span></div>
+      <div id="prospectRecipe"></div>
+    </div>
+  </div>
+
+  <!-- ── gate health sub-view: two streams per gate, die-off episodes, and
+       the exception lane's standing ── -->
+  <div class="tsub" id="tab-gates">
+    <div class="panel" id="gateStreamPanel">
+      <div class="ph"><h2>Gate health — two streams</h2><span class="sub" id="gateStreamSub"></span></div>
+      <div id="gateStreams"></div>
+    </div>
+    <div class="panel" id="gateDieOffPanel">
+      <div class="ph"><h2>Die-off episodes</h2><span class="sub">the 5m-confirmed die-off tag grading its own track record</span></div>
+      <div id="gateDieOff"></div>
+    </div>
+    <div class="panel" id="gateExcPanel">
+      <div class="ph"><h2>Exception lane</h2><span class="sub" id="gateExcSub"></span></div>
+      <div id="gateExc"></div>
+    </div>
+  </div>
 
   <!-- ── scanner sub-view ── -->
   <div class="tsub" id="tab-scan">
@@ -1430,7 +1522,11 @@ const S = {
   tsFail: 0,            // consecutive /timeseries failures — trips the circuit breaker below
   tsPauseUntil: 0,      // breaker: while set, timeseries fetching is suspended and a banner says so
   loading: false, err: null, tab: "home", sub: "watch",
-  mode: "walkup", planMode: "buy", promoteFor: null
+  mode: "walkup", planMode: "buy", promoteFor: null,
+  /* Decomposition primitive (ruled Aug 11 2026): which aggregates are open,
+     and each one's sort/filter/cohort/row-cap state. Session state by
+     design — an expansion is a reading posture, not a persisted setting. */
+  drillOpen: new Set(), drillUI: new Map()
 };
 
 /* Surface predicates (reorg, Aug 11 2026): four top-level tabs — home,
@@ -1571,6 +1667,198 @@ function ago(ts){
 const sign = n => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
 const today = () => new Date().toLocaleDateString("en-CA");
 const itemName = (id, fallback) => (S.byId.get(id) || {}).n || fallback || ("item " + id);
+
+/* ═══ DECOMPOSITION PRIMITIVE (user ruling, Aug 11 2026) ═══════════════
+   "Every aggregate decomposes to its rows, in one click." This is the ONE
+   implementation of that expansion, so every aggregate the tool renders
+   inherits sort, filter, cohort selection and honest subset disclosure
+   instead of re-earning them — the ruling's own instruction, because the
+   collection layer here has consistently outrun the display layer.
+
+   Usage, wherever a number is rendered:
+     drill(key, faceHtml, {
+       head:      what this number is, in words
+       cols:      [{k, lab, num?, html?, w?}]   num → numeric sort + right align
+       rows:      [{...cells, _txt, _cohort}]   _txt drives the filter box
+       total?:    size of the population the rows were drawn FROM
+       totalNote?: why rows.length < total (stated, never silent)
+       note?:     standing caveat carried into the expansion
+       empty?:    what to say when there are no rows at all
+     })
+   Whenever `total` exceeds the rows supplied, or the row cap hides matches,
+   the box SAYS it is showing a subset and why: an expansion that quietly
+   truncates is precisely the defect the interrogability scan hunts. */
+const DRILLS = new Map();      // key → spec, rebuilt on every render pass
+const DRILL_PAGE = 20;         // rows shown before the "show all" disclosure
+const drillId = k => { let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; return "dbx_" + h.toString(36); };
+function drill(key, faceHtml, spec){
+  DRILLS.set(key, spec);
+  const on = S.drillOpen.has(key);
+  return '<button class="drillnum' + (on ? " on" : "") + '" data-drill="' + esc(key) + '" aria-expanded="' + on + '"'
+    + ' title="' + esc((spec.head || "this number") + " — opens the rows behind it") + '">'
+    + faceHtml + '<span class="dcaret">▾</span></button>';
+}
+function drillUIState(key){
+  let u = S.drillUI.get(key);
+  if (!u){ u = { sort: null, dir: -1, q: "", cohort: "", all: false }; S.drillUI.set(key, u); }
+  return u;
+}
+/* Sort + filter + cohort live HERE, once, so all three views inherit them. */
+function drillView(key){
+  const sp = DRILLS.get(key);
+  if (!sp) return null;
+  const u = drillUIState(key);
+  const all = sp.rows || [];
+  let rows = all.slice();
+  const q = String(u.q || "").trim().toLowerCase();
+  if (q) rows = rows.filter(r => String(r._txt == null ? Object.values(r).join(" ") : r._txt).toLowerCase().indexOf(q) >= 0);
+  if (u.cohort) rows = rows.filter(r => String(r._cohort || "—") === u.cohort);
+  if (u.sort){
+    const col = (sp.cols || []).find(c => c.k === u.sort);
+    /* A cell may render formatted or coloured HTML; `sortk` names the raw
+       numeric mirror on the row so sorting stays honest. */
+    const sk = (col && col.sortk) || u.sort;
+    rows.sort((a, b) => {
+      const x = a[sk], y = b[sk];
+      const c = (col && col.num)
+        ? (Number(x) || 0) - (Number(y) || 0)
+        : String(x == null ? "" : x).localeCompare(String(y == null ? "" : y), undefined, { numeric: true });
+      return c * u.dir;
+    });
+  }
+  return { sp, u, all, rows };
+}
+function drillBoxHTML(key){
+  const v = drillView(key);
+  if (!v) return '<div class="drillbox"><div class="dempty">These rows left memory when the view re-rendered — reopen the number.</div></div>';
+  const { sp, u, all, rows } = v;
+  const cols = sp.cols || [];
+  const shown = u.all ? rows : rows.slice(0, DRILL_PAGE);
+  const cohorts = [...new Set(all.map(r => r._cohort).filter(Boolean))].sort();
+  const bits = ['<div class="dhead">' + esc(sp.head || "the rows behind this number") + '</div>'];
+  /* Controls — the primitive's, not each view's. */
+  const ctl = ['<input data-drillq="' + esc(key) + '" value="' + esc(u.q) + '" placeholder="filter rows…">'];
+  if (cohorts.length > 1)
+    ctl.push('<select data-drillco="' + esc(key) + '"><option value="">all cohorts</option>'
+      + cohorts.map(c => '<option value="' + esc(c) + '"' + (u.cohort === c ? " selected" : "") + '>' + esc(c) + '</option>').join("") + '</select>');
+  ctl.push('<span class="dim">' + rows.length + ' row' + (rows.length === 1 ? "" : "s") + '</span>');
+  bits.push('<div class="dctl">' + ctl.join("") + '</div>');
+  if (!all.length){
+    bits.push('<div class="dempty">' + esc(sp.empty || "No rows behind this number yet — it is a count of nothing, not a hidden population.") + '</div>');
+  } else if (!rows.length){
+    bits.push('<div class="dempty">No rows match this filter. ' + all.length + ' row' + (all.length === 1 ? "" : "s") + ' behind the number in total.</div>');
+  } else {
+    bits.push('<div class="dtw"><table><thead><tr>'
+      + cols.map(c => '<th class="s' + (u.sort === c.k ? " on" : "") + '" data-dsort="' + esc(key) + '" data-dsortk="' + esc(c.k) + '"'
+        + ' title="Sort by ' + esc(c.lab) + '">' + esc(c.lab) + (u.sort === c.k ? (u.dir < 0 ? " ▼" : " ▲") : "") + '</th>').join("")
+      + '</tr></thead><tbody>'
+      + shown.map(r => '<tr>' + cols.map(c => '<td' + (c.num ? '' : ' style="text-align:left"') + '>'
+        + (c.html ? (r[c.k] == null ? "" : r[c.k]) : esc(r[c.k] == null ? "—" : r[c.k])) + '</td>').join("") + '</tr>').join("")
+      + '</tbody></table></div>');
+  }
+  /* Subset disclosure — structural first (rows that do not exist to show),
+     then the row cap. Both stated; neither ever silent. */
+  const subs = [];
+  if (Number.isFinite(sp.total) && sp.total > all.length)
+    subs.push('Showing ' + all.length + ' of ' + sp.total + ' — ' + (sp.totalNote || 'the remainder is not in the store.'));
+  if (shown.length < rows.length)
+    subs.push('Showing the first ' + shown.length + ' of ' + rows.length + ' matching rows.'
+      + ' <button class="sm" data-drillall="' + esc(key) + '">show all ' + rows.length + '</button>');
+  else if (u.all && rows.length > DRILL_PAGE)
+    subs.push('Showing all ' + rows.length + ' rows. <button class="sm ghost" data-drillless="' + esc(key) + '">collapse to ' + DRILL_PAGE + '</button>');
+  if ((u.q || u.cohort) && rows.length < all.length)
+    subs.push('Filtered: ' + (all.length - rows.length) + ' of ' + all.length + ' rows hidden by your filter.');
+  if (subs.length) bits.push('<div class="dsub">' + subs.join(" ") + '</div>');
+  if (sp.note) bits.push('<div class="dnote">' + sp.note + '</div>');
+  return '<div class="drillbox" id="' + drillId(key) + '">' + bits.join("") + '</div>';
+}
+/* The expansion lands in place: a table row gets a full-width sibling row,
+   anything else gets a block sibling — so no caller has to place a slot. */
+function drillHostFor(btn){
+  const tr = btn.closest("tr");
+  if (tr && tr.parentElement && btn.closest("table")){
+    const nr = document.createElement("tr");
+    nr.className = "drilltr";
+    const td = document.createElement("td");
+    td.colSpan = Math.max(1, tr.children.length);
+    nr.appendChild(td);
+    tr.parentElement.insertBefore(nr, tr.nextSibling);
+    return { holder: nr, mount: td };
+  }
+  const anchor = btn.closest("[data-drillrow]") || btn;
+  const d = document.createElement("div");
+  anchor.parentElement.insertBefore(d, anchor.nextSibling);
+  return { holder: d, mount: d };
+}
+const drillBtn = key => $$("[data-drill]").find(b => b.dataset.drill === key) || null;
+function openDrill(key){
+  const btn = drillBtn(key);
+  if (!btn) return;
+  if (document.getElementById(drillId(key))) return;
+  const { holder, mount } = drillHostFor(btn);
+  holder.dataset.drillholder = key;
+  mount.innerHTML = drillBoxHTML(key);
+  btn.classList.add("on"); btn.setAttribute("aria-expanded", "true");
+}
+function closeDrill(key){
+  const holder = $$("[data-drillholder]").find(h => h.dataset.drillholder === key);
+  if (holder) holder.remove();
+  const btn = drillBtn(key);
+  if (btn){ btn.classList.remove("on"); btn.setAttribute("aria-expanded", "false"); }
+}
+function repaintDrill(key){
+  const box = document.getElementById(drillId(key));
+  if (!box) return;
+  box.outerHTML = drillBoxHTML(key);
+}
+/* Re-applied after every render pass: a 60s poll must not close what you
+   opened, and a number that scrolled off keeps its state rather than losing
+   it. Called by renderAll. */
+function paintDrills(){
+  for (const key of [...S.drillOpen]){
+    if (document.getElementById(drillId(key))) continue;
+    if (drillBtn(key)) openDrill(key);
+  }
+}
+document.addEventListener("click", e => {
+  const t = e.target;
+  const b = t.closest && t.closest("[data-drill]");
+  if (b){
+    e.preventDefault(); e.stopPropagation();
+    const key = b.dataset.drill;
+    if (S.drillOpen.has(key)){ S.drillOpen.delete(key); closeDrill(key); }
+    else { S.drillOpen.add(key); openDrill(key); featTouchMark("drill"); }
+    return;
+  }
+  const s = t.closest && t.closest("[data-dsort]");
+  if (s){
+    e.preventDefault(); e.stopPropagation();
+    const key = s.dataset.dsort, k = s.dataset.dsortk;
+    const u = drillUIState(key);
+    if (u.sort === k) u.dir = -u.dir; else { u.sort = k; u.dir = -1; }
+    repaintDrill(key); return;
+  }
+  const a = t.closest && t.closest("[data-drillall]");
+  if (a){ e.preventDefault(); e.stopPropagation(); drillUIState(a.dataset.drillall).all = true; repaintDrill(a.dataset.drillall); return; }
+  const l = t.closest && t.closest("[data-drillless]");
+  if (l){ e.preventDefault(); e.stopPropagation(); drillUIState(l.dataset.drillless).all = false; repaintDrill(l.dataset.drillless); return; }
+}, true);
+document.addEventListener("input", e => {
+  const q = e.target.closest && e.target.closest("[data-drillq]");
+  if (!q) return;
+  const key = q.dataset.drillq, u = drillUIState(key);
+  u.q = q.value; u.all = false;
+  repaintDrill(key);
+  const again = document.querySelector('#' + drillId(key) + ' [data-drillq]');
+  if (again){ again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+});
+document.addEventListener("change", e => {
+  const c = e.target.closest && e.target.closest("[data-drillco]");
+  if (!c) return;
+  const key = c.dataset.drillco, u = drillUIState(key);
+  u.cohort = c.value; u.all = false;
+  repaintDrill(key);
+});
 
 /* ── banners ─────────────────────────────────────────────────── */
 const warns = new Map();
@@ -4998,7 +5286,11 @@ function shadowTick(){
       } else if (now - p.buyDone > H){
         const rem = p.qty - p.sellQ;
         const exitPx = L.low != null ? L.low : p.bid;
-        p.state = "forced-exit"; p.closedAt = now; p.forced = rem;
+        /* exitPx is retained on the record (Aug 11 2026) so the trip's row
+           in a drill-down can show what the forced exit actually paid —
+           an outcome you can't see the price of can't be audited. Records
+           closed before this render "—", never a guessed number. */
+        p.state = "forced-exit"; p.closedAt = now; p.forced = rem; p.exitPx = Math.round(exitPx);
         p.net = p.sellQ * (p.ask - geTax(p.ask, p.itemId))
               + rem * (exitPx - geTax(exitPx, p.itemId))
               - p.qty * p.bid;
@@ -5086,6 +5378,69 @@ function shadowByGate(){
   }
   return byGate;
 }
+/* ═══ PAPER TRIP ROWS — the decomposition of every paper aggregate ═══
+   One row-builder, so a trip reads identically whichever number opened it:
+   the per-gate cell, the regime curve, the stratum map, the hours bucket
+   and the cohort ledger all decompose through here. */
+function paperCohortOf(p){
+  if (p.cohort === "scanner") return "scanner·T" + (p.scanTier || "?");
+  if (p.stratum === "gap") return "gap band";
+  if (p.slice) return p.slicePass ? "slice·clean" : "slice";
+  return "watchlist";
+}
+const PAPER_TRIP_COLS = [
+  { k: "item", lab: "Item" },
+  { k: "opened", lab: "Opened", sortk: "_t", num: 1 },
+  { k: "closed", lab: "Closed", sortk: "_closed", num: 1 },
+  { k: "entry", lab: "Entry (bid)", num: 1, sortk: "_entry" },
+  { k: "exit", lab: "Exit", num: 1, sortk: "_exit" },
+  { k: "qty", lab: "Qty", num: 1, sortk: "_qty" },
+  { k: "tape", lab: "Tape credit (the fill evidence)" },
+  { k: "obs", lab: "Observed", num: 1, sortk: "_obs" },
+  { k: "outcome", lab: "Outcome" },
+  { k: "net", lab: "Net sim", num: 1, sortk: "_net", html: 1 },
+  { k: "regime", lab: "Regime" },
+  { k: "cohort", lab: "Cohort" },
+  { k: "gate", lab: "Benched by" }
+];
+const dtShort = t => t ? new Date(t).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+function paperTripRows(trips){
+  const H = FILLH() * 3600e3;
+  return (trips || []).map(p => {
+    const obs = Math.min(100, Math.round((p.obsMs || 0) / H * 100));
+    const outcome = p.state === "filled" ? "filled both legs"
+      : p.state === "forced-exit" ? "forced exit of " + full(p.forced || 0) + " unsold"
+      : p.state === "unfilled" ? "never filled at the bid"
+      : p.state === "unobserved" ? "unobserved — a hole in the record, not a result"
+      : p.state === "open" ? "still open" : String(p.state);
+    const exitPx = p.state === "forced-exit" ? (p.exitPx != null ? p.exitPx : null) : p.ask;
+    const coh = paperCohortOf(p);
+    const gate = (p.benchedBy && p.benchedBy[0])
+      ? p.benchedBy[0] + (p.gapTxt ? " — " + p.gapTxt : "")
+      : (p.slicePass ? "nothing — a random draw that cleared every gate" : "—");
+    return {
+      item: p.name || itemName(p.itemId),
+      opened: dtShort(p.t), _t: p.t || 0,
+      closed: p.closedAt ? dtShort(p.closedAt) : "—", _closed: p.closedAt || 0,
+      entry: full(p.bid), _entry: p.bid || 0,
+      exit: exitPx != null ? full(exitPx) : "— not retained on this record",
+      _exit: exitPx || 0,
+      qty: full(p.qty), _qty: p.qty || 0,
+      tape: full(p.buyQ || 0) + " of " + full(p.qty) + " bought at " + shadowPartPct() + "% participation"
+        + (p.buyQFull != null ? " · " + full(p.buyQFull) + " at 100%" : " · 100% reading not retained on this record"),
+      obs: obs + "% of horizon", _obs: obs,
+      outcome,
+      net: '<span class="' + sign(p.net || 0) + '">' + gp(Math.round(p.net || 0)) + '</span>', _net: Math.round(p.net || 0),
+      regime: (p.regimes && p.regimes.length) ? p.regimes.join(" + ") : "—",
+      cohort: coh, gate,
+      _cohort: coh,
+      _txt: [p.name || itemName(p.itemId), outcome, coh, gate, (p.regimes || []).join(" ")].join(" ")
+    };
+  });
+}
+const PAPER_NOTE = () => 'Every row here is <b>simulated</b>: the honest-fill model credits a buy only when the tape printed at or below the bid <em>while the tracker was observing</em>, capture-capped and then haircut to '
+  + shadowPartPct() + '% participation, with the 100% reading beside it. <b>Observed</b> is the share of the fill horizon actually watched — an unobserved window is unknown, not unfilled. The sim assumes a book you are not in; thin books change when you post. Screening evidence, never a verdict.';
+
 /* ═══ PAPER ↔ ROW INTEGRATION (ruled Aug 11 2026) ═══
    Route existing evidence to the point of decision — no new collection.
    The per-item slice below is the same closed-trip data the per-gate
@@ -5333,70 +5688,207 @@ function gateStreamDirs(g, ghRows){
   return { shadow, realized };
 }
 
-function shadowAuditInline(){
-  const closed = DB.shadowBook.filter(shadowResolved);
-  const lines = [];
-  if (shadowEpochNote()) lines.push(shadowEpochNote());
-  /* Standing caveat (reweight ruling, Aug 11 2026) — self-impact limitation
-     stated wherever the panel renders. */
-  lines.push('<div class="plan-note">Screening tool, not evidence — the sim assumes a book you\'re not in; thin books change when you post. '
-    + 'This panel\'s output is a ranked shortlist of probation candidates for live half-size tests (the exception lane); realized trips remain the only path to a waiver. '
-    + 'Fills claimed at ' + shadowPartPct() + '% participation of the tape that crossed each price (setting), 100%-participation reading beside it.</div>');
+/* ═══ PAPER BOOK — a first-class Trade sub-view (ruled Aug 11 2026) ═══
+   This was a paragraph inside the weekly review. It is now a working
+   surface whose every number opens to the trips behind it, through the
+   shared decomposition primitive; the review keeps a one-line summary that
+   links here. Three sections: the ROI-regime curves with the divergence
+   ledger, per-gate outcomes, and the cohort ledger (the FILTER question). */
+function paperCaveat(){
+  return '<div class="plan-note">Screening tool, not evidence — the sim assumes a book you\'re not in; thin books change when you post. '
+    + 'This view\'s output is a ranked shortlist of probation candidates for live half-size tests (the exception lane); realized trips remain the only path to a waiver. '
+    + 'Fills claimed at ' + shadowPartPct() + '% participation of the tape that crossed each price (setting), 100%-participation reading beside it.</div>';
+}
+const paperClosed = () => (DB.shadowBook || []).filter(shadowResolved);
+const REGIME_DEFS = () => [
+  { key: "current", col: "cur",   lab: "current (" + GATE.roi + "%)" },
+  { key: "loose",   col: "loose", lab: "loose (" + (GATE.roi * SHADOW_LOOSE).toFixed(1) + "%)" },
+  { key: "tight",   col: "tight", lab: "tight (" + (GATE.roi * SHADOW_TIGHT).toFixed(2) + "%)" }
+];
+/* One shared y-scale across the three curves — three charts side by side on
+   three different scales would be a picture that lies. */
+function curveSVG(vals, lo, hi, w, h){
+  if (!vals.length) return '<div class="dim" style="font-size:11px">no daily readings yet</div>';
+  const span = Math.max(1, hi - lo);
+  const X = i => vals.length === 1 ? w / 2 : i / (vals.length - 1) * w;
+  const Y = v => h - (v - lo) / span * h;
+  const pts = vals.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
+  const zero = (lo < 0 && hi > 0)
+    ? '<line x1="0" y1="' + Y(0).toFixed(1) + '" x2="' + w + '" y2="' + Y(0).toFixed(1) + '" stroke="#3b3226" stroke-width="1"/>'
+    : '';
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="regime equity curve">'
+    + zero + '<polyline fill="none" stroke="#e8b64c" stroke-width="1.5" points="' + pts + '"/></svg>';
+}
+function paperRegimeSection(){
+  const log = (DB.shadowDivLog || []).slice(-31);
+  const closed = paperClosed();
+  const regs = REGIME_DEFS();
+  const vals = regs.flatMap(r => log.map(x => Number(x[r.col]) || 0)).concat([0]);
+  const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  const bits = [];
+  if (shadowEpochNote()) bits.push(shadowEpochNote());
+  bits.push(paperCaveat());
+  bits.push('<div class="note">Three ROI-regime equity curves side by side, on ONE shared scale — the ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&amp;L). '
+    + 'The headline is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger.</div>');
+  bits.push('<div class="curves">' + regs.map(r => {
+    const arr = closed.filter(p => (p.regimes || []).includes(r.key));
+    const net = arr.reduce((a, p) => a + (p.net || 0), 0);
+    const face = '<span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span>';
+    return '<div class="curve" data-drillrow="1"><div class="k">' + esc(r.lab) + '</div><div class="v">'
+      + drill("paper:regime:" + r.key, face, {
+          head: r.lab + " — every closed paper trip whose candidate set this regime contains",
+          cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
+          empty: "No closed trips carry this regime yet — the curve above is the daily ledger, which can hold readings this table no longer has rows for.",
+          note: PAPER_NOTE() + ' The curve is the daily cumulative ledger (31 readings retained); this table is the trips still in the book, which prunes closed trips after 30 days.'
+        })
+      + '</div>' + curveSVG(log.map(x => Number(x[r.col]) || 0), lo, hi, 200, 40)
+      + '<div class="dim" style="font-size:11px;margin-top:3px">' + arr.length + ' closed trip' + (arr.length === 1 ? '' : 's')
+      + ' in the book · ' + log.length + ' daily reading' + (log.length === 1 ? '' : 's') + '</div></div>';
+  }).join("") + '</div>');
+  /* The divergence ledger itself — the persistence rule's raw evidence. */
+  const ledRows = log.slice().reverse().map(x => {
+    const best = [["current", x.cur], ["loose", x.loose], ["tight", x.tight]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0];
+    return { d: x.d, cur: gp(Math.round(x.cur || 0)), _cur: Math.round(x.cur || 0),
+      loose: gp(Math.round(x.loose || 0)), _loose: Math.round(x.loose || 0),
+      tight: gp(Math.round(x.tight || 0)), _tight: Math.round(x.tight || 0),
+      lead: best[0], _txt: x.d + " " + best[0] };
+  });
+  bits.push('<div data-drillrow="1" style="margin-top:6px">Divergence ledger: '
+    + drill("paper:divlog", log.length + ' daily reading' + (log.length === 1 ? '' : 's'), {
+        head: "the daily regime ledger — one row per day the app was open, 31 retained",
+        cols: [{ k: "d", lab: "Date" }, { k: "cur", lab: "Current", num: 1, sortk: "_cur" },
+               { k: "loose", lab: "Loose", num: 1, sortk: "_loose" }, { k: "tight", lab: "Tight", num: 1, sortk: "_tight" },
+               { k: "lead", lab: "Leader" }],
+        rows: ledRows,
+        empty: "No daily readings yet — one row is written per day the app is open.",
+        note: 'Each row is 30-day cumulative SIMULATED net for that regime as of that date. The persistence rule reads the last 7 rows, which are seven <em>readings</em> and not necessarily seven days — after an absence the same seven rows can span a month, and the proposal copy says so when they do.'
+      })
+    + ' behind the 4-of-7 persistence rule.</div>');
+  const evd = shadowRegimeEvidence();
+  bits.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
+    : '<div class="dim" style="margin-top:4px">No persistent regime divergence (4 of 7 readings) — no tuning case from the paper book right now.</div>');
+  return bits.join("");
+}
+function paperGateSection(){
   const byGate = shadowByGate();
-  for (const [g, s] of byGate){
-    lines.push('<div>benched by <b>' + esc(g) + '</b> alone: paper-traded ' + s.n
-      + ', filled ' + s.filled + (s.forced ? ' (+' + s.forced + ' forced-exit)' : '')
-      + ' at ' + shadowPartPct() + '% participation (would also fill ' + s.filledFull + ' at 100%)'
-      + ', net simulated <span class="' + sign(s.net) + '">' + gp(Math.round(s.net)) + '</span> after tax'
-      + ', vs would-not-have-filled ' + s.unfilled
-      + ' <span class="dim">(median ' + s.obsMed + '% of the horizon observed — unobserved windows are unknown, not unfilled)</span></div>');
+  const bits = ['<div class="note">Watchlist + slice cohorts only — the scanner cohort answers the FILTER question on its own ledger, and populations never mix in a gate read. '
+    + 'Every cell opens to the trips behind it: entry and exit, fill or no-fill with the tape evidence, observed share, regime and cohort.</div>'];
+  if (!byGate.size){
+    bits.push('<div class="dim">No closed per-gate paper positions yet — they accrue as benched near-misses age through their horizons.</div>');
+    return bits.join("");
   }
-  if (!byGate.size) lines.push('<div class="dim">No closed per-gate paper positions yet — they accrue as benched near-misses age through their horizons.</div>');
+  const cell = (g, k, face, head, trips, extra) => drill("paper:gate:" + g + ":" + k, face, {
+    head: head, cols: PAPER_TRIP_COLS, rows: paperTripRows(trips),
+    empty: "No trips in this bucket.", note: PAPER_NOTE() + (extra ? " " + extra : "")
+  });
+  const rows = [...byGate.entries()].sort((a, b) => b[1].n - a[1].n).map(([g, s]) => {
+    const fills = s.arr.filter(p => p.state === "filled" || p.state === "forced-exit");
+    const misses = s.arr.filter(p => p.state === "unfilled");
+    const rate = s.n ? Math.round((fills.length / s.n) * 100) : 0;
+    return '<tr><td style="text-align:left">' + esc(g) + '</td>'
+      + '<td>' + cell(g, "n", String(s.n), 'benched by "' + g + '" alone — every closed paper trip it opened', s.arr) + '</td>'
+      + '<td>' + cell(g, "fill", String(fills.length), 'would have filled at ' + shadowPartPct() + '% participation — the conservative reading that drives state and net', fills) + '</td>'
+      + '<td>' + cell(g, "full", String(s.filledFull), 'would also have filled at 100% participation — the same trips read without the haircut', s.arr.filter(shadowFullFilled)) + '</td>'
+      + '<td>' + cell(g, "miss", String(misses.length), 'would-not-have-filled — the bid never got the tape, which IS the data', misses) + '</td>'
+      + '<td>' + cell(g, "rate", rate + "%", 'fill rate — the outcome of each trip that produced it', s.arr) + '</td>'
+      + '<td class="' + sign(s.net) + '">' + cell(g, "net", gp(Math.round(s.net)), 'net simulated after tax — every trip and its contribution', s.arr) + '</td>'
+      + '<td>' + cell(g, "obs", s.obsMed + "%", 'median share of the fill horizon actually observed — unobserved windows are unknown, not unfilled', s.arr,
+          'Sort by Observed to see which verdicts rest on a watched horizon and which rest on a hole.') + '</td></tr>';
+  }).join("");
+  bits.push('<div class="tw"><table id="paperGateTable"><thead><tr>'
+    + '<th>Gate</th><th title="Closed paper trips this gate benched, alone">Benched</th>'
+    + '<th title="Would have filled at the participation haircut — the conservative reading">Would fill</th>'
+    + '<th title="The same trips read at 100% participation of the tape that crossed the price">At 100%</th>'
+    + '<th title="Would-not-have-filled: the bid never got the tape. That is the data, not a gap in it.">Would not</th>'
+    + '<th title="Filled (including forced exits) as a share of closed trips">Fill rate</th>'
+    + '<th title="Simulated net after GE tax across the gate\'s closed trips">Net sim</th>'
+    + '<th title="Median share of the fill horizon observed — unobserved windows are unknown, not unfilled">Observed</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>');
+  bits.push('<div class="dim" style="margin-top:6px">A gate whose benched trips would have filled AND netted positive is a candidate for a proposal — never a change. '
+    + 'The combined verdict needs the realized stream too, which lives in <a href="#" data-goto="gates#gateStreamPanel">Gate Health</a>.</div>');
+  return bits.join("");
+}
+function paperCohortSection(){
+  const closed = paperClosed();
+  const lines = [];
   /* FILTER OPPORTUNITY COST (user-directed, Aug 11 2026): the scanner
      cohort's question is about the PIPELINE — are the filters excluding
-     money — not the gates; populations never mix in the per-gate lines
-     above. Same window for both cohorts: since the earliest scanner-cohort
-     entry, so a young cohort is never compared against 30 days of watchlist
-     history. */
+     money — not the gates; populations never mix in the per-gate table.
+     Same window for both cohorts: since the earliest scanner-cohort entry,
+     so a young cohort is never compared against 30 days of history. */
   const scanClosed = closed.filter(p => p.cohort === "scanner");
   if (scanClosed.length){
-    const t0 = Math.min(...scanClosed.map(p => p.t));
+    const t0 = Math.min.apply(null, scanClosed.map(p => p.t));
     const wlWin = closed.filter(p => p.cohort !== "scanner" && !p.slice && (p.closedAt || p.t) >= t0);
     const sNet = scanClosed.reduce((a, p) => a + (p.net || 0), 0);
     const wNet = wlWin.reduce((a, p) => a + (p.net || 0), 0);
     const winD = Math.max(1, Math.round((Date.now() - t0) / 86400e3));
-    lines.push('<div style="margin-top:6px"><b>Filter opportunity cost</b> — scanner-cohort paper trips closed: ' + scanClosed.length
-      + ' (scanner·T1 ' + scanClosed.filter(p => p.scanTier === 1).length + ' · scanner·T2 ' + scanClosed.filter(p => p.scanTier === 2).length
+    const t1 = scanClosed.filter(p => p.scanTier === 1), t2 = scanClosed.filter(p => p.scanTier === 2);
+    const co = (k, face, head, trips) => drill("paper:cohort:" + k, face, {
+      head: head, cols: PAPER_TRIP_COLS, rows: paperTripRows(trips),
+      empty: "No trips in this cohort.", note: PAPER_NOTE()
+    });
+    lines.push('<div data-drillrow="1"><b>Filter opportunity cost</b> — scanner-cohort paper trips closed: '
+      + co("scan", String(scanClosed.length), "scanner-cohort closed paper trips — items your filters never surfaced", scanClosed)
+      + ' (scanner·T1 ' + co("scanT1", String(t1.length), "scanner·T1 closed paper trips", t1)
+      + ' · scanner·T2 ' + co("scanT2", String(t2.length), "scanner·T2 closed paper trips", t2)
       + '), net <span class="' + sign(sNet) + '">' + gp(Math.round(sNet)) + '</span> sim, vs watchlist-cohort net <span class="' + sign(wNet) + '">'
-      + gp(Math.round(wNet)) + '</span> (' + wlWin.length + ' trip' + (wlWin.length === 1 ? '' : 's') + ') over the same ' + winD + 'd window. '
+      + gp(Math.round(wNet)) + '</span> (' + co("wl", wlWin.length + ' trip' + (wlWin.length === 1 ? '' : 's'),
+          "watchlist-cohort closed paper trips inside the same window", wlWin)
+      + ') over the same ' + winD + 'd window. '
       + (sNet > wNet && scanClosed.length >= 5
         ? 'The screen reads: the scout\'s admission ranking may be leaving better items unwatched — a pipeline finding, not a gate finding. Items with ≥' + SHADOW_SCAN_BOOST_TRIPS
           + ' profitable scanner-cohort trips are evaluated first at the scout\'s unchanged admission bar (attention, not authority).'
         : 'No filter-opportunity signal — the watchlist cohort holds its own against the scanner\'s best unwatched candidates.')
       + ' <span class="dim">[all simulated — screening; cap ' + SHADOW_MAX_OPEN + ' open across cohorts, scanner cohort evicts lowest-score-first]</span></div>');
   } else {
-    lines.push('<div class="dim" style="margin-top:6px"><b>Filter opportunity cost</b> — no closed scanner-cohort trips yet; the cohort accrues as scan cycles pass (top '
+    lines.push('<div class="dim"><b>Filter opportunity cost</b> — no closed scanner-cohort trips yet; the cohort accrues as scan cycles pass (top '
       + SHADOW_SCAN_TOP + ' per tier per cycle, spark fetches on the scout\'s polite budget).</div>');
   }
-  const regRow = (label, key) => {
-    const arr = closed.filter(p => (p.regimes || []).includes(key));
+  /* Every cohort states where it stands, including the ones with nothing in
+     them — an absent row reads as a broken feature (the F18 rule). */
+  const cohorts = ["watchlist", "slice", "slice·clean", "gap band", "scanner·T1", "scanner·T2"];
+  const seen = new Map();
+  for (const p of closed) seen.set(paperCohortOf(p), (seen.get(paperCohortOf(p)) || []).concat([p]));
+  lines.push('<div class="nexthead"><b>Cohort ledger</b> — one line per population, whether or not it has trips.</div>');
+  for (const c of cohorts){
+    const arr = seen.get(c) || [];
     const net = arr.reduce((a, p) => a + (p.net || 0), 0);
-    const spark = DB.shadowDivLog.slice(-14).map(x => x[key === "current" ? "cur" : key]);
-    const lo = Math.min(0, ...spark), hi = Math.max(1, ...spark);
-    const bars = spark.map(v => '<i style="height:' + Math.max(1, Math.round((v - lo) / Math.max(1, hi - lo) * 14)) + 'px"></i>').join("");
-    return '<div>' + label + ': ' + arr.length + ' closed · 30d simulated net <span class="' + sign(net) + '">' + gp(Math.round(net))
-      + '</span> <span class="depspark" style="display:inline-flex;align-items:flex-end;gap:1px;height:14px">' + bars + '</span></div>';
-  };
-  lines.push('<div style="margin-top:6px"><b>Regime curves</b> — ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&L):</div>');
-  lines.push(regRow("current (" + GATE.roi + "%)", "current"));
-  lines.push(regRow("loose (" + (GATE.roi * SHADOW_LOOSE).toFixed(1) + "%)", "loose"));
-  lines.push(regRow("tight (" + (GATE.roi * SHADOW_TIGHT).toFixed(2) + "%)", "tight"));
-  const evd = shadowRegimeEvidence();
-  lines.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
-    : '<div class="dim">No persistent regime divergence (4 of 7 days) — no tuning case from the paper book this week.</div>');
-  return '<div class="inline">' + lines.join("") + '</div>';
+    lines.push('<div data-drillrow="1">' + esc(c) + ' — '
+      + drill("paper:coh:" + c, arr.length + ' closed trip' + (arr.length === 1 ? '' : 's'), {
+          head: c + " — its closed paper trips", cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
+          empty: "This cohort has closed nothing yet. It is empty, not hidden — trips accrue as cycles run.",
+          note: PAPER_NOTE()
+        })
+      + (arr.length ? ', net <span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span> sim' : '')
+      + (arr.length ? '' : ' <span class="dim">— nothing has closed in this cohort yet</span>') + '</div>');
+  }
+  /* Holes are reported, never quietly excluded. */
+  const holes = (DB.shadowBook || []).filter(p => p.state === "unobserved");
+  lines.push('<div data-drillrow="1" style="margin-top:6px">Unobserved holes: '
+    + drill("paper:holes", String(holes.length), {
+        head: "trips whose horizon elapsed while the tab was closed — excluded from every aggregate above",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(holes),
+        empty: "No holes — every trip in the book had its horizon observed.",
+        note: 'A hole in the record is not a result. These are counted and shown here precisely so the aggregates above can honestly exclude them.'
+      })
+    + ' <span class="dim">— counted, excluded from every verdict, and shown here rather than silently dropped.</span></div>');
+  return lines.join("");
 }
-
+/* The weekly review's one-line read of this surface (ruled Aug 11 2026:
+   these are the working surfaces, the review is the periodic read). */
+function paperSummaryLine(){
+  const closed = paperClosed();
+  const gates = shadowByGate();
+  const net = closed.reduce((a, p) => a + (p.net || 0), 0);
+  const evd = shadowRegimeEvidence();
+  return '<div class="inline"><div>' + closed.length + ' closed paper trip' + (closed.length === 1 ? '' : 's')
+    + ' · ' + gates.size + ' gate' + (gates.size === 1 ? '' : 's') + ' with outcomes · net <span class="' + sign(net) + '">'
+    + gp(Math.round(net)) + '</span> simulated · '
+    + (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence')
+    + ' — <a href="#" data-goto="paper#paperRegimePanel">open the paper book →</a></div>'
+    + '<div class="dim">Screening evidence, never a verdict. The working surface carries the three regime curves, the divergence ledger, the per-gate table and every trip behind each number.</div></div>';
+}
 /* ═══ HOURS LEDGER — TIME-STRUCTURE PROSPECTING (user-directed, Aug 11 2026) ═══
    Everything else in this tool samples ITEMS; nothing sampled HOURS. Two
    streams, and the distinction between them is the whole point:
@@ -5415,23 +5907,26 @@ function shadowAuditInline(){
    place. Being awake is expensive; a bigger overnight offer is free. */
 function hoursLedger(){
   const mkt = new Array(24).fill(0), mktN = new Array(24).fill(0);
+  /* srcs keeps WHICH items produced each hour's market reading, so the
+     bucket decomposes to its rows rather than asserting an average. */
+  const srcs = Array.from({ length: 24 }, () => []);
   for (const w of DB.watch){
     const sp = S.spark.get(w.id);
     if (!sp || !sp.roiHour) continue;
     for (let h = 0; h < 24; h++)
-      if (sp.roiHour[h] != null){ mkt[h] += sp.roiHour[h]; mktN[h]++; }
+      if (sp.roiHour[h] != null){ mkt[h] += sp.roiHour[h]; mktN[h]++; srcs[h].push({ id: w.id, name: itemName(w.id), roi: sp.roiHour[h] }); }
   }
   const closed = (DB.shadowBook || []).filter(shadowResolved);
-  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0 }));
+  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0, trips: [] }));
   for (const p of closed){
     const h = new Date(p.t).getHours();
-    sh[h].n++; sh[h].net += (p.net || 0);
+    sh[h].n++; sh[h].net += (p.net || 0); sh[h].trips.push(p);
     if (p.state === "filled" || p.state === "forced-exit") sh[h].filled++;
   }
   const rows = [];
   for (let h = 0; h < 24; h++)
-    rows.push({ h, mkt: mktN[h] ? mkt[h] / mktN[h] : null, items: mktN[h],
-      n: sh[h].n, filled: sh[h].filled, net: sh[h].net,
+    rows.push({ h, mkt: mktN[h] ? mkt[h] / mktN[h] : null, items: mktN[h], srcs: srcs[h],
+      n: sh[h].n, filled: sh[h].filled, net: sh[h].net, trips: sh[h].trips,
       fillRate: sh[h].n ? sh[h].filled / sh[h].n : null });
   return rows;
 }
@@ -5452,23 +5947,55 @@ function hoursLedgerInline(){
               : ' <span class="dim">(shadow: no data — never observed)</span>')).join(" · ") + '</div>');
   const bars = rows.map(r => {
     const v = r.mkt == null ? 0 : Math.max(0, r.mkt);
-    const hgt = Math.max(1, Math.round(v / Math.max(0.01, Math.max(...withMkt.map(x => x.mkt))) * 16));
+    const hgt = Math.max(1, Math.round(v / Math.max(0.01, Math.max.apply(null, withMkt.map(x => x.mkt))) * 16));
     return '<i title="' + hh(r.h) + ' — market ' + (r.mkt == null ? "no data" : r.mkt.toFixed(2) + "%")
       + (r.n ? ' · shadow ' + r.filled + '/' + r.n + ' filled, net ' + gp(Math.round(r.net)) + ' sim' : ' · shadow: no data (never observed)')
       + '" style="height:' + hgt + 'px;opacity:' + (r.n ? 1 : 0.4) + '"></i>';
   }).join("");
   lines.push('<div class="depspark" style="display:flex;align-items:flex-end;gap:2px;height:18px;margin:4px 0">' + bars + '</div>'
     + '<div class="dim">00:00 → 23:00 · faded bars are hours the paper book has never observed (market data still counts)</div>');
+  /* The two streams as a table, each cell opening to the rows behind it —
+     which items produced the market reading, which trips the paper one. */
+  const trs = rows.map(r => {
+    const mktFace = r.mkt == null ? '<span class="dim">no data</span>' : r.mkt.toFixed(2) + "%";
+    const mktCell = r.mkt == null ? mktFace : drill("hours:mkt:" + r.h, mktFace, {
+      head: hh(r.h) + " market stream — the watched items whose hourly series produced this average",
+      cols: [{ k: "name", lab: "Item" }, { k: "roi", lab: "Post-tax spread %", num: 1, sortk: "_roi" }],
+      rows: r.srcs.map(s => ({ name: s.name, roi: s.roi.toFixed(2) + "%", _roi: s.roi, _txt: s.name })),
+      empty: "No watched item has an hourly reading for this hour.",
+      note: 'The market stream is computed from the 168-point hourly series each watched item already fetches, so <b>every hour is equally represented whether or not the tracker was open</b>. It is the unbiased stream, and it makes no claim about whether those spreads are fillable.'
+    });
+    const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n) : '<span class="dim">no data — never observed</span>';
+    const shCell = r.n ? drill("hours:sh:" + r.h, shFace, {
+      head: hh(r.h) + " paper stream — the simulated trips opened in this hour",
+      cols: PAPER_TRIP_COLS, rows: paperTripRows(r.trips),
+      empty: "No paper trips opened in this hour.",
+      note: PAPER_NOTE() + ' This stream accrues only while the tracker is OBSERVING, so it is biased toward the hours you keep it open; an hour with no rows is unobserved, not bad.'
+    }) : shFace;
+    return '<tr><td style="text-align:left">' + hh(r.h) + '</td><td>' + mktCell + '</td><td>' + r.items + '</td>'
+      + '<td>' + shCell + '</td><td class="' + sign(r.net) + '">' + (r.n ? gp(Math.round(r.net)) : "—") + '</td></tr>';
+  }).join("");
+  lines.push('<div class="tw"><table id="hoursTable"><thead><tr><th>Hour</th>'
+    + '<th title="Post-tax spread averaged across watched items — presence-independent, the unbiased stream">Market spread</th>'
+    + '<th title="How many watched items contributed an hourly reading">Items</th>'
+    + '<th title="Simulated fill rate of the paper trips opened in this hour — accrues only while observing">Paper fill rate</th>'
+    + '<th title="Simulated net of the paper trips opened in this hour">Net sim</th></tr></thead><tbody>'
+    + trs + '</tbody></table></div>');
   /* The overnight question, answered only where both streams can speak. */
   const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
   if (night.length){
     const nAvg = night.reduce((a, r) => a + r.mkt, 0) / night.length;
     const nObs = night.reduce((a, r) => a + r.n, 0);
     const nFill = night.reduce((a, r) => a + r.filled, 0);
-    lines.push('<div style="margin-top:4px"><b>Overnight (00:00–06:00)</b>: post-tax spread averages <b>' + nAvg.toFixed(2)
+    const nTrips = night.flatMap(r => r.trips);
+    lines.push('<div data-drillrow="1" style="margin-top:4px"><b>Overnight (00:00–06:00)</b>: post-tax spread averages <b>' + nAvg.toFixed(2)
       + '%</b> vs ' + avg.toFixed(2) + '% all-day — ' + (nAvg > avg * 1.1 ? 'WIDER than your waking hours' : nAvg < avg * 0.9 ? 'narrower than your waking hours' : 'about the same as your waking hours')
       + '. ' + (nObs
-        ? 'Shadow corroboration: ' + nFill + ' of ' + nObs + ' overnight sim trips filled — fillable, not just quoted.'
+        ? 'Shadow corroboration: ' + drill("hours:night", nFill + ' of ' + nObs, {
+            head: "the overnight paper trips behind this corroboration",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows(nTrips),
+            empty: "No overnight paper trips.", note: PAPER_NOTE()
+          }) + ' overnight sim trips filled — fillable, not just quoted.'
         : 'No shadow corroboration: the book has never been observed overnight, so whether those spreads are FILLABLE is unknown, not disproven.')
       + (nAvg > avg * 1.1
         ? ' <b>Reading</b>: this is the case for sizing the standing overnight book heavier — a proposal for your ruling, never applied from here.'
@@ -5591,9 +6118,26 @@ function recipeBasisInline(){
     const base = recipeBaseline(r.k);
     const broken = base && Math.abs(b.m) >= RECIPE_FLAG_X * Math.max(1, base.typical);
     const leg = broken ? recipeLegBreak(r.k, b) : null;
-    rows.push('<div style="margin:2px 0">' + (broken ? '<span class="badge b-risk" title="Basis at or beyond '
+    /* The basis opens to the daily readings it is judged against — the
+       baseline is the whole claim, so it must be auditable. */
+    const log = (DB.recipeLog[r.k] || []).slice().reverse();
+    const legNames = [r.out].concat(r.ins);
+    const face = '<span class="' + sign(b.m) + '">' + gp(Math.round(b.m)) + '</span>';
+    const num = drill("recipe:" + r.k, face, {
+      head: esc(r.out) + " — the daily basis readings behind this number and its baseline",
+      cols: [{ k: "d", lab: "Date" }, { k: "m", lab: "Basis / craft", num: 1, sortk: "_m" }, { k: "legs", lab: "Leg prices (output first)" }],
+      rows: log.map(x => ({ d: x.d, m: gp(Math.round(x.m || 0)), _m: Math.round(x.m || 0),
+        legs: (x.l || []).map((v, i) => (legNames[i] || ("leg " + i)) + " " + full(v)).join(" · "),
+        _txt: x.d })),
+      empty: "No daily readings yet — one row is written per day the app is open with two-sided prices on every leg.",
+      note: 'Today\'s figure is <b>' + gp(Math.round(b.m)) + '</b>/craft (' + gp(Math.round(b.revenue)) + ' output net of tax − '
+        + gp(Math.round(b.cost)) + ' inputs). The baseline a break is measured against is the median ABSOLUTE basis over the prior readings only — '
+        + (base ? gp(Math.round(base.typical)) + ' over ' + base.n + ' readings' : 'still accruing, so nothing can flag yet')
+        + ' — because a recipe\'s own history is the only fair bar: a 500gp basis is normal on one recipe and a scandal on another. Today\'s reading never sets the bar it is judged against.'
+    });
+    rows.push('<div data-drillrow="1" style="margin:2px 0">' + (broken ? '<span class="badge b-risk" title="Basis at or beyond '
         + RECIPE_FLAG_X + '× this recipe\'s own normal spread.">basis break</span> ' : '')
-      + '<b>' + esc(b.name) + '</b> — basis <span class="' + sign(b.m) + '">' + gp(Math.round(b.m)) + '</span>/craft'
+      + '<b>' + esc(b.name) + '</b> — basis ' + num + '/craft'
       + ' <span class="dim">(' + gp(Math.round(b.revenue)) + ' out net of tax − ' + gp(Math.round(b.cost)) + ' in · '
       + esc(r.ins.join(" + ")) + ')</span>'
       + (base ? ' <span class="dim">· normal ' + gp(Math.round(base.typical)) + ' over ' + base.n + ' readings</span>'
@@ -5606,7 +6150,20 @@ function recipeBasisInline(){
   lines.push(rows.join(""));
   const flags = (DB.recipeFlags || []).filter(f => Date.now() - f.at < 7 * 86400e3);
   lines.push(flags.length
-    ? '<div style="margin-top:4px"><b>Breaks this week:</b> ' + flags.map(f => esc(f.name) + ' (' + ago(f.at) + ')').join(" · ") + '</div>'
+    ? '<div data-drillrow="1" style="margin-top:4px"><b>Breaks this week:</b> '
+      + drill("recipe:flags", flags.length + ' break' + (flags.length === 1 ? '' : 's'), {
+          head: "the basis breaks flagged in the last 7 days",
+          cols: [{ k: "name", lab: "Recipe" }, { k: "when", lab: "Flagged", num: 1, sortk: "_at" },
+                 { k: "m", lab: "Basis at flag", num: 1, sortk: "_m" }, { k: "base", lab: "Its normal", num: 1, sortk: "_base" },
+                 { k: "leg", lab: "Widest-moving leg" }],
+          rows: flags.slice().reverse().map(f => ({ name: f.name, when: ago(f.at), _at: f.at,
+            m: gp(f.m), _m: f.m, base: gp(f.base), _base: f.base,
+            leg: f.leg ? f.leg.name + " " + (f.leg.movePct >= 0 ? "+" : "") + f.leg.movePct.toFixed(1) + "% (" + full(f.leg.now) + " vs " + full(f.leg.med) + " typical)" : "not attributable — too little leg history",
+            _txt: f.name + " " + (f.leg ? f.leg.name : "") })),
+          empty: "No breaks in the window.",
+          note: 'Flags dedupe per recipe per 24h and retain 30 days. A break is a flip signal on the mispriced leg AND a manipulation tell — a pump distorts one leg of a recipe before the other. It sizes and caps nothing.'
+        })
+      + ': ' + flags.map(f => esc(f.name) + ' (' + ago(f.at) + ')').join(" · ") + '</div>'
     : '<div class="dim" style="margin-top:4px">No basis breaks in the last 7 days — the recipe legs are tracking each other.</div>');
   return '<div class="inline">' + lines.join("") + '</div>';
 }
@@ -7450,19 +8007,27 @@ function gateHealthAudit(){
   const rows = [];
   for (const [g, m] of gates){
     let ovrTraded = 0, ovrNet = 0, latTraded = 0, latNet = 0;
+    /* Per-item detail rides the same single computation the aggregate uses
+       (ruled Aug 11 2026: every aggregate decomposes to its rows) — one
+       pass, two readers, so a drill-down can never disagree with its own
+       headline. */
+    const items = [];
     for (const [id, d0] of m){
       let ovrN = 0, latN = 0, ovr = 0, lat = 0;
+      const flips = [];
       for (const f of DB.flips){
         if (f.itemId !== id) continue;
         const fd = String(f.date || "");
         if (fd < d0) continue;
-        if (benchDays.has(fd + "|" + id + "|" + g)){ ovr += flipProfit(f); ovrN++; }
-        else { lat += flipProfit(f); latN++; }
+        const isOvr = benchDays.has(fd + "|" + id + "|" + g);
+        if (isOvr){ ovr += flipProfit(f); ovrN++; } else { lat += flipProfit(f); latN++; }
+        flips.push({ f, isOvr, profit: flipProfit(f) });
       }
       if (ovrN){ ovrTraded++; ovrNet += ovr; }
       if (latN){ latTraded++; latNet += lat; }
+      items.push({ id, name: itemName(id), d0, ovrN, ovr, latN, lat, flips });
     }
-    rows.push({ g, benched: m.size, ovrTraded, ovrNet, latTraded, latNet });
+    rows.push({ g, benched: m.size, ovrTraded, ovrNet, latTraded, latNet, items });
   }
   rows.sort((a, b) => b.benched - a.benched);
   let fundedNet = 0, fundedTraded = 0;
@@ -7475,9 +8040,14 @@ function gateHealthAudit(){
      within-hours recoveries argue the confirmation is too twitchy, persistent
      fades earn it trust; that verdict is the user's, never this card's. */
   const dNow = Date.now(), H24 = 24 * 3600e3;
-  const dieOff = { episodes: 0, rec24: 0, faded: 0, watching: 0, recHs: [] };
+  const dieOff = { episodes: 0, rec24: 0, faded: 0, watching: 0, recHs: [], eps: [] };
   for (const e of DB.dieOffLog || []){
     dieOff.episodes++;
+    dieOff.eps.push(Object.assign({
+      bucket: (e.rec != null && e.rec - e.t <= H24) ? "recovered within 24h"
+            : (e.rec == null && dNow - e.t < H24) ? "inside the 24h window now"
+            : "not confirmed recovered in 24h",
+      hrs: e.rec != null ? (e.rec - e.t) / 3600e3 : null }, e));
     if (e.rec != null && e.rec - e.t <= H24){ dieOff.rec24++; dieOff.recHs.push((e.rec - e.t) / 3600e3); }
     else if (e.rec == null && dNow - e.t < H24) dieOff.watching++;
     /* NOT "faded" — "not confirmed recovered" (audit fix, Aug 11 2026).
@@ -7489,7 +8059,270 @@ function gateHealthAudit(){
        names. The bucket keeps the count and the copy drops the claim. */
     else dieOff.faded++;   // not confirmed recovered inside 24h — includes windows nobody observed
   }
-  return { rows, fundedCount: funded.size, fundedTraded, fundedNet, dieOff };
+  /* fundedItems rides the same pass so the funded-lines count opens to its
+     rows like every other aggregate (interrogability scan, Aug 11 2026). */
+  const fundedItems = [];
+  for (const [id, d0] of funded){
+    const fl = DB.flips.filter(f => f.itemId === id && String(f.date || "") >= d0);
+    fundedItems.push({ id, name: itemName(id), d0, n: fl.length,
+      net: fl.reduce((s, f) => s + flipProfit(f), 0),
+      dates: fl.map(f => String(f.date) + " " + gp(Math.round(flipProfit(f)))).join(" · ") });
+  }
+  return { rows, fundedCount: funded.size, fundedTraded, fundedNet, dieOff, fundedItems };
+}
+
+/* ═══ GATE HEALTH — a first-class Trade sub-view (ruled Aug 11 2026) ═══
+   Two streams per gate with their natures labeled, the die-off tag's own
+   track record, and the exception lane's standing. Every count opens to its
+   items and outcomes through the shared decomposition primitive; the weekly
+   review keeps a one-line summary that links here. */
+const GATE_ITEM_COLS = [
+  { k: "name", lab: "Item" },
+  { k: "d0", lab: "First benched" },
+  { k: "n", lab: "Flips", num: 1, sortk: "_n" },
+  { k: "net", lab: "Realized net", num: 1, sortk: "_net", html: 1 },
+  { k: "dates", lab: "Flip dates" }
+];
+function gateItemRows(r, kind){
+  return (r.items || [])
+    .filter(it => kind === "ovr" ? it.ovrN > 0 : kind === "lat" ? it.latN > 0 : true)
+    .map(it => {
+      const n = kind === "ovr" ? it.ovrN : kind === "lat" ? it.latN : (it.ovrN + it.latN);
+      const net = kind === "ovr" ? it.ovr : kind === "lat" ? it.lat : (it.ovr + it.lat);
+      const fl = (it.flips || []).filter(x => kind === "ovr" ? x.isOvr : kind === "lat" ? !x.isOvr : true);
+      return { name: it.name, d0: it.d0, n: n, _n: n,
+        net: '<span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span>', _net: Math.round(net),
+        dates: fl.length ? fl.map(x => String(x.f.date) + " " + gp(Math.round(x.profit))).join(" · ") : "no flips in this stream",
+        _txt: it.name };
+    });
+}
+function gateStreamsSection(){
+  const gh = gateHealthAudit();
+  const shGates = shadowByGate();
+  const secs = ['<div class="note">Benches this week with BOTH streams per gate: <b>realized</b> (actual logged round trips, tax netted — the evidence) and <b>paper</b> (honest fill simulation at '
+    + shadowPartPct() + '% participation — a screen, quarantine-labeled; it assumes a book you\'re not in). Paper profits are a screening rank, never evidence; realized profits alone are attribution-fuzzy; <b>a case needs realized evidence with the screen concurring</b>. '
+    + 'Advisory only: gate constants change on your instruction, never from here (house convention). Every count opens to its items.</div>'];
+  const gateNames = new Set([...gh.rows.map(r => r.g), ...shGates.keys()]);
+  if (!gateNames.size){
+    secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
+    return secs.join("");
+  }
+  for (const g of gateNames){
+    const r = gh.rows.find(x => x.g === g);
+    const sh = shGates.get(g);
+    const realBits = [];
+    if (r && r.ovrTraded)
+      realBits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
+        + drill("gate:ovr:" + g, r.ovrTraded + ' item' + (r.ovrTraded === 1 ? '' : 's'), {
+            head: g + " — the items you traded while this gate was still benching them",
+            cols: GATE_ITEM_COLS, rows: gateItemRows(r, "ovr"),
+            empty: "No overrides.",
+            note: 'This is the ONE clean realized stream for or against a gate: you overruled it and the result is attributable. It is never conflated with "traded after unbenching", which measures re-admission latency only — the gate eventually agreeing with itself is not you being right against it. Day-granular by construction: the ledger is one row per item·gate·day, so an intraday re-admission cannot be told apart from an override.'
+          })
+        + ', net <span class="' + sign(r.ovrNet) + '">' + gp(r.ovrNet) + '</span> — '
+        + (r.ovrNet > 0 ? 'you overruled this gate and won; that is the one honest strike against it'
+                        : 'you overruled this gate and lost — the gate had it right'));
+    if (r && r.latTraded)
+      realBits.push('<b title="Flips dated after the item had cleared the gates again — the market or the data changed and the gate re-admitted it.">traded after unbenching</b> (re-admission latency only): '
+        + drill("gate:lat:" + g, r.latTraded + ' item' + (r.latTraded === 1 ? '' : 's'), {
+            head: g + " — the items that traded after this gate had re-admitted them",
+            cols: GATE_ITEM_COLS, rows: gateItemRows(r, "lat"),
+            empty: "No post-unbench flips.",
+            note: 'Re-admission latency ONLY. These flips happened after the gates cleared the item, so they say how slowly the gate re-admits — not whether the bench-day call was wrong. Reading them as evidence against the gate is the double-count this tool is built to refuse.'
+          })
+        + ', net <span class="' + sign(r.latNet) + '">' + gp(r.latNet) + '</span> — '
+        + 'measures how slowly the gate re-admits, not whether the bench-day call was wrong');
+    const realLine = '├─ <b>realized</b>: ' + (realBits.length ? realBits.join(' · ') + ' <span class="dim">[real fills]</span>'
+      : '<span class="dim">no outcome data — nothing it benched traded afterwards [real fills]</span>');
+    const shLine = '└─ <b>paper</b>: ' + (sh
+      ? 'would-have-filled ' + drill("gate:shfill:" + g, String(sh.filled + sh.forced), {
+            head: g + " — the paper trips that would have filled",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows(sh.arr.filter(p => p.state === "filled" || p.state === "forced-exit")),
+            empty: "None would have filled.", note: PAPER_NOTE()
+          })
+        + ' of ' + drill("gate:shall:" + g, String(sh.n), {
+            head: g + " — every closed paper trip it benched",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows(sh.arr),
+            empty: "No closed paper trips.", note: PAPER_NOTE()
+          })
+        + ' at ' + shadowPartPct() + '% participation ('
+        + drill("gate:shfull:" + g, String(sh.filledFull), {
+            head: g + " — the trips that would also have filled at 100% participation",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows(sh.arr.filter(shadowFullFilled)),
+            empty: "None would have filled even without the haircut.", note: PAPER_NOTE()
+          })
+        + ' at 100%), net simulated <span class="' + sign(sh.net) + '">'
+        + gp(Math.round(sh.net)) + '</span> after tax; '
+        + drill("gate:shmiss:" + g, String(sh.unfilled), {
+            head: g + " — the trips that would never have filled at the benched price",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows(sh.arr.filter(p => p.state === "unfilled")),
+            empty: "None.", note: PAPER_NOTE()
+          })
+        + ' would never have filled at the benched price'
+        + ' <span class="dim">[simulated — fill-model caveats; a screen, not evidence; median ' + sh.obsMed + '% of horizon observed]</span>'
+      : '<span class="dim">no closed paper positions for this gate yet [simulated]</span>');
+    const dirs = gateStreamDirs(g, gh.rows);
+    const verdict = (dirs.shadow.dir && dirs.realized.dir)
+      ? (dirs.shadow.dir === dirs.realized.dir
+        ? '<div class="dim" style="margin-left:12px">streams AGREE (' + dirs.shadow.dir + ') — realized evidence with the screen concurring; any proposal still needs the 4-of-7 bench persistence and traced consequences</div>'
+        : '<div class="plan-note" style="margin-left:12px">⚠ streams DISAGREE — the screen says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
+          + '. Investigate the fill model or the attribution before proposing (your ruling) — disagreement is its own finding, not a tiebreak.</div>')
+      : '';
+    secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + esc(g) + '</b> — benched '
+      + (r ? drill("gate:bench:" + g, r.benched + ' item' + (r.benched === 1 ? '' : 's'), {
+              head: g + " — every item it benched this week, with whatever traded afterwards",
+              cols: GATE_ITEM_COLS, rows: gateItemRows(r, "all"),
+              empty: "No benched items.",
+              note: 'Bench days come from the gate ledger (one row per item·gate·day, 30 days retained). "Flips" counts round trips logged on or after the first bench day; the streams above split them into overrides and post-unbench trades, which are different claims.'
+            })
+          : (sh ? sh.n : 0) + ' item' + ((sh ? sh.n : 0) === 1 ? '' : 's'))
+      + ' this week</div>'
+      + '<div class="gstream">' + realLine + '</div>'
+      + '<div class="gstream">' + shLine + '</div>' + verdict + '</div>');
+  }
+  if (gh.fundedCount)
+    secs.push('<div data-drillrow="1"><b>funded lines</b> — '
+      + drill("gate:funded", gh.fundedCount + ' item' + (gh.fundedCount === 1 ? '' : 's'), {
+          head: "items the gates PASSED this week, and what they did afterwards",
+          cols: [{ k: "name", lab: "Item" }, { k: "d0", lab: "First funded" },
+                 { k: "n", lab: "Flips", num: 1, sortk: "_n" },
+                 { k: "net", lab: "Realized net", num: 1, sortk: "_net", html: 1 },
+                 { k: "dates", lab: "Flip dates" }],
+          rows: (gh.fundedItems || []).map(it => ({ name: it.name, d0: it.d0, n: it.n, _n: it.n,
+            net: '<span class="' + sign(it.net) + '">' + gp(Math.round(it.net)) + '</span>', _net: Math.round(it.net),
+            dates: it.dates || "no round trips logged since", _txt: it.name })),
+          empty: "No funded lines this week.",
+          note: 'The other side of the gate question: if the items the gates PASS lose money, something is too loose. Realized only — this bucket never reads the paper book.'
+        })
+      + ' this week · <span class="dim">'
+      + (gh.fundedTraded ? (gh.fundedNet < 0 ? '⚠ passers losing — possibly too loose somewhere: ' : 'passers netted ')
+        + gp(gh.fundedNet) + ' across ' + gh.fundedTraded + ' traded' : 'no completed round trips yet') + '</span></div>');
+  return secs.join("");
+}
+function gateDieOffSection(){
+  const d0 = gateHealthAudit().dieOff;
+  if (!d0 || !d0.episodes)
+    return '<div class="dim">No die-off episodes in the last 30 days — the volume floor has not benched anything on a 5m-confirmed die-off against a passing 1h book.</div>';
+  const med = medianOf(d0.recHs);
+  const rowsOf = bucket => (d0.eps || []).filter(e => bucket == null || e.bucket === bucket)
+    .slice().reverse().map(e => ({
+      name: itemName(e.id), d: e.d, tagged: dtShort(e.t), _t: e.t,
+      result: e.bucket + (e.hrs != null ? " (" + fmtHrs(e.hrs) + ")" : ""),
+      _hrs: e.hrs == null ? 1e9 : e.hrs, _txt: itemName(e.id) + " " + e.bucket }));
+  const cols = [{ k: "name", lab: "Item" }, { k: "d", lab: "Bench day" },
+                { k: "tagged", lab: "Tagged", num: 1, sortk: "_t" },
+                { k: "result", lab: "24h result", sortk: "_hrs" }];
+  const dd = (k, face, bucket, head, note) => drill("dieoff:" + k, face, {
+    head: head, cols: cols, rows: rowsOf(bucket), empty: "No episodes in this bucket.", note: note });
+  return '<div data-drillrow="1"><b>die-off detected</b> — 5m-confirmed die-off against a passing 1h book; '
+    + dd("all", d0.episodes + ' episode' + (d0.episodes === 1 ? '' : 's'), null,
+        "every die-off episode in the last 30 days and how its 24h window resolved",
+        'The tag builds its own track record so it can be judged like any gate. Nothing here changes the confirmation rule.')
+    + ' in 30d: '
+    + dd("rec", d0.rec24 + ' recovered within 24h', "recovered within 24h",
+        "episodes closed by a confirmed healthy 5m sample inside 24h",
+        'Recovery is closed only by a CONFIRMED healthy 5m sample. Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case.')
+    + (med != null ? ' (median ' + fmtHrs(med) + ')' : '') + ' · '
+    + dd("faded", String(d0.faded), "not confirmed recovered in 24h",
+        "episodes whose 24h window closed without a confirmed recovery — including windows nobody observed",
+        'NOT evidence the gate was right. Recovery needs the app running; an episode whose window elapsed while the tab was closed lands here having proved nothing. Counting that as the tag being RIGHT would be the machine grading its own homework on evidence it never gathered.')
+    + ' <span title="Recovery is closed only by a confirmed healthy 5m sample, which requires the app to be running.">not confirmed recovered in 24h (includes unobserved windows — not proof of a fade)</span> · '
+    + dd("watching", String(d0.watching), "inside the 24h window now",
+        "episodes still inside their 24h watch window", 'Undecided by construction — they have not had their window yet.')
+    + ' inside the window now'
+    + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. The tag builds its own track record — nothing changes from here.</div></div>';
+}
+function gateExcSection(){
+  const exc = DB.shadowExceptions || [];
+  const active = exc.filter(e => e.status === "active"), waived = exc.filter(e => e.status === "waived");
+  const revoked = exc.filter(e => e.status === "revoked");
+  const cands = exceptionProposals();
+  const voids = excVoidBasis();
+  const secs = ['<div class="note">Per-item probes of a gate\'s edges, not a parallel permission system — cap <b>' + EXC_MAX_ACTIVE
+    + '</b> active. The paper book ranks candidates; a grant starts a LIVE half-size probation test; ' + EXC_ADJ_TRIPS
+    + ' realized round trips adjudicate on net P&amp;L and adverse markout. The gate\'s constant never moves on paper evidence. '
+    + 'This surface reports standing only — grants, revocations and re-affirmations are ruled from the bench line, the row\'s expand view, or the rulings digest.</div>'];
+  /* Every entity states where it stands, including the empty buckets. */
+  const excCols = [{ k: "name", lab: "Item" }, { k: "gate", lab: "Gate waived" },
+                   { k: "status", lab: "Standing" }, { k: "when", lab: "Granted", num: 1, sortk: "_at" },
+                   { k: "trips", lab: "Probation trips", num: 1, sortk: "_trips" },
+                   { k: "ev", lab: "Grant evidence (simulated)" }, { k: "outcome", lab: "Realized outcome" }];
+  const excRows = arr => arr.map(e => ({
+    name: itemName(e.id), gate: e.gate,
+    status: e.evidenceVoid ? e.status + " — basis void, re-rule" : e.status,
+    when: ago(e.grantedAt), _at: e.grantedAt || 0,
+    trips: (e.trips || 0) + " of " + EXC_ADJ_TRIPS, _trips: e.trips || 0,
+    ev: e.evidence ? (e.evidence.n + " trips, " + e.evidence.filled + " filled, net " + gp(e.evidence.net) + " sim") : "—",
+    outcome: e.realNet != null
+      ? (gp(e.realNet) + " realized" + (e.mkAdverse != null ? " · adverse markout " + e.mkAdverse.toFixed(1) + " gp/unit" : "") + (e.divergence ? " · divergence recorded" : ""))
+      : "not adjudicated yet",
+    _txt: itemName(e.id) + " " + e.gate + " " + e.status
+  }));
+  const bucket = (k, label, arr, head, note) => '<div data-drillrow="1">' + label + ': '
+    + drill("exc:" + k, arr.length + (arr.length === 1 ? ' item' : ' items'), {
+        head: head, cols: excCols, rows: excRows(arr),
+        empty: "Nothing in this bucket — it is empty, not hidden.", note: note })
+    + (arr.length ? ' — ' + arr.map(e => esc(itemName(e.id))).join(", ") : ' <span class="dim">— none</span>') + '</div>';
+  secs.push(bucket("active", '<b>On probation</b>', active,
+    "granted exceptions currently running their live half-size probation",
+    'Probation terms: half size, a 2× tick-floor safety, one position. ' + EXC_ADJ_TRIPS + ' real round trips adjudicate on net P&L and adverse markout — the screen ranked the candidate, the live test decides.'));
+  secs.push(bucket("waived", '<b>Standing waivers</b>', waived,
+    "items whose probation converted to a standing per-item waiver",
+    'A waiver is per-item and revocable from the row\'s expand view. The gate\'s constant is untouched — two lanes, two evidence standards.'));
+  secs.push(bucket("revoked", '<span class="dim">Revoked</span>', revoked,
+    "exceptions that were revoked, by adjudication or by hand",
+    'A revocation on losing probation trips records a divergence: sim said yes, reality said no. That is fill-model calibration data, kept rather than discarded.'));
+  /* Void-basis records raise their own ruling line elsewhere; here they are
+     named so the state is legible where the lane is read. */
+  if (voids.length)
+    secs.push('<div class="plan-note" data-drillrow="1"><b>Basis void — re-rule</b>: '
+      + drill("exc:void", voids.length + (voids.length === 1 ? ' exception' : ' exceptions'), {
+          head: "exceptions whose grant evidence was discarded with the corrupted paper book",
+          cols: excCols, rows: excRows(voids), empty: "None.",
+          note: 'The purge discarded the paper evidence that grounded these grants. A ruling that survives its own justification must be RE-MADE rather than persist by inertia, so each raises a walk-up ruling line until it is revoked or deliberately re-affirmed. Re-affirming is your call, never the sim\'s — and the decision log distinguishes "re-made on new-epoch evidence" from "re-made on judgment with no evidence yet".'
+        })
+      + ' were granted on evidence the paper purge discarded. Each raises its own walk-up ruling line until you revoke or re-affirm it — '
+      + voids.map(e => esc(itemName(e.id)) + ' (' + esc(e.gate) + ')').join(", ") + '.</div>');
+  /* Candidates the screen currently ranks. */
+  if (excActiveN() >= EXC_MAX_ACTIVE){
+    secs.push('<div class="dim">No candidates render: the lane is at its ' + EXC_MAX_ACTIVE
+      + '-active cap. A waiver or revocation frees a slot.</div>');
+  } else if (!cands.length){
+    secs.push('<div class="dim">No candidates clear the evidence bar right now — ≥' + EXC_MIN_TRIPS + ' closed paper trips, fill rate ≥'
+      + Math.round(EXC_FILLRATE * 100) + '%, paper-profitable, spanning ≥' + EXC_MIN_DAYS
+      + ' days, and no red flags (pump-suspected, blacklisted, or toxic-flow items are barred from the lane entirely).</div>');
+  } else {
+    secs.push('<div class="nexthead"><b>Ranked shortlist</b> — best conservative simulated net first, truncated at the free probation slots. The grant is your press, from the bench line or the rulings digest.</div>');
+    for (const c of cands)
+      secs.push('<div data-drillrow="1">' + esc(itemName(c.id)) + ' — would waive <b>' + esc(c.gate) + '</b> · '
+        + drill("exc:cand:" + c.id, c.s.n + ' closed trips, ' + Math.round(c.s.fillRate * 100) + '% fill, net ' + gp(Math.round(c.s.net)) + ' sim', {
+            head: itemName(c.id) + " — the paper trips behind this candidacy",
+            cols: PAPER_TRIP_COLS, rows: paperTripRows((DB.shadowBook || []).filter(p => p.itemId === c.id && shadowResolved(p) && p.cohort !== "scanner")),
+            empty: "No rows.",
+            note: PAPER_NOTE() + ' Scanner-cohort trips are excluded from this evidence by construction — they nominate an item for scout ADMISSION, never for probation. One stage per move.'
+          })
+        + ' over ' + Math.round(c.s.spanD) + ' days</div>');
+  }
+  return secs.join("");
+}
+/* The weekly review's one-line read of gate health. */
+function gateSummaryLine(){
+  const gh = gateHealthAudit();
+  const shGates = shadowByGate();
+  const names = new Set([...gh.rows.map(r => r.g), ...shGates.keys()]);
+  let agree = 0, disagree = 0;
+  for (const g of names){
+    const d = gateStreamDirs(g, gh.rows);
+    if (d.shadow.dir && d.realized.dir){ if (d.shadow.dir === d.realized.dir) agree++; else disagree++; }
+  }
+  const voids = excVoidBasis().length;
+  return '<div class="inline"><div>' + names.size + ' gate' + (names.size === 1 ? '' : 's') + ' with bench data · '
+    + agree + ' with both streams agreeing · ' + disagree + ' <b>disagreeing</b> · '
+    + gh.dieOff.episodes + ' die-off episode' + (gh.dieOff.episodes === 1 ? '' : 's') + ' in 30d · '
+    + excActiveN() + ' of ' + EXC_MAX_ACTIVE + ' probation slots in use'
+    + (voids ? ' · <b>' + voids + ' exception' + (voids === 1 ? '' : 's') + ' on void basis</b>' : '')
+    + ' — <a href="#" data-goto="gates#gateStreamPanel">open gate health →</a></div>'
+    + '<div class="dim">The working surface carries both streams per gate, the die-off episodes and the exception lane, each opening to its items.</div></div>';
 }
 
 const audBtns = (attr, id) =>
@@ -7552,65 +8385,16 @@ function renderAuditInline(){
       + '<button class="sm ghost" data-clmerge="' + c.id + '">merge…</button>'
       + '<button class="sm' + (stale ? ' primary' : ' ghost') + '" data-cldismiss="' + c.id + '">dismiss</button></span></div>');
   }
-  /* §4 gate health — unified evidence streams (ruled Aug 11 2026): realized
-     outcomes (sparse, attribution-leaning) and paper outcomes (dense,
-     model-caveated) side by side, natures labeled; a too-tight case needs
-     BOTH pointing the same way. */
-  const gh = gateHealthAudit();
-  const shGates = shadowByGate();
-  secs.push('<div class="nexthead"><b>4 · Gate health</b> — benches this week with BOTH streams per gate: realized (actual logged round trips, tax netted — the evidence) and shadow (honest fill simulation at ' + shadowPartPct() + '% participation — a screen, quarantine-labeled; it assumes a book you\'re not in). Shadow profits are a screening rank, never evidence; realized profits alone are attribution-fuzzy; <b>a case needs realized evidence with the screen concurring</b>. Advisory only: gate constants change on your instruction, never from here (house convention).</div>');
-  const gateNames = new Set([...gh.rows.map(r => r.g), ...shGates.keys()]);
-  if (!gateNames.size) secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
-  for (const g of gateNames){
-    const r = gh.rows.find(x => x.g === g);
-    const sh = shGates.get(g);
-    const realBits = [];
-    if (r && r.ovrTraded)
-      realBits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
-        + r.ovrTraded + ' item' + (r.ovrTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.ovrNet) + '">' + gp(r.ovrNet) + '</span> — '
-        + (r.ovrNet > 0 ? 'you overruled this gate and won; that is the one honest strike against it'
-                        : 'you overruled this gate and lost — the gate had it right'));
-    if (r && r.latTraded)
-      realBits.push('<b title="Flips dated after the item had cleared the gates again — the market or the data changed and the gate re-admitted it.">traded after unbenching</b> (re-admission latency only): '
-        + r.latTraded + ' item' + (r.latTraded === 1 ? '' : 's') + ', net <span class="' + sign(r.latNet) + '">' + gp(r.latNet) + '</span> — '
-        + 'measures how slowly the gate re-admits, not whether the bench-day call was wrong');
-    const realLine = '├─ <b>realized</b>: ' + (realBits.length ? realBits.join(' · ') + ' <span class="dim">[real fills]</span>'
-      : '<span class="dim">no outcome data — nothing it benched traded afterwards [real fills]</span>');
-    const shLine = '└─ <b>shadow</b>: ' + (sh
-      ? 'would-have-filled ' + (sh.filled + sh.forced) + ' of ' + sh.n + ' at ' + shadowPartPct() + '% participation ('
-        + sh.filledFull + ' at 100%), net simulated <span class="' + sign(sh.net) + '">' + gp(Math.round(sh.net))
-        + '</span> after tax; ' + sh.unfilled + ' would never have filled at the benched price'
-        + ' <span class="dim">[simulated — fill-model caveats; a screen, not evidence; median ' + sh.obsMed + '% of horizon observed]</span>'
-      : '<span class="dim">no closed paper positions for this gate yet [simulated]</span>');
-    const dirs = gateStreamDirs(g, gh.rows);
-    const verdict = (dirs.shadow.dir && dirs.realized.dir)
-      ? (dirs.shadow.dir === dirs.realized.dir
-        ? '<div class="dim" style="margin-left:12px">streams AGREE (' + dirs.shadow.dir + ') — realized evidence with the screen concurring; any proposal still needs the 4-of-7 bench persistence and traced consequences</div>'
-        : '<div class="plan-note" style="margin-left:12px">⚠ streams DISAGREE — the screen says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
-          + '. Investigate the fill model or the attribution before proposing (your ruling) — disagreement is its own finding, not a tiebreak.</div>')
-      : '';
-    secs.push('<div style="margin:4px 0"><b>' + esc(g) + '</b> — benched ' + (r ? r.benched : (sh ? sh.n : 0)) + ' item' + ((r ? r.benched : sh ? sh.n : 0) === 1 ? '' : 's') + ' this week'
-      + '<div style="margin-left:12px">' + realLine + '</div>'
-      + '<div style="margin-left:12px">' + shLine + '</div>' + verdict + '</div>');
-  }
-  if (gh.dieOff && gh.dieOff.episodes){
-    const d0 = gh.dieOff, med = medianOf(d0.recHs);
-    secs.push('<div><b>die-off detected</b> — 5m-confirmed die-off against a passing 1h book; ' + d0.episodes
-      + ' episode' + (d0.episodes === 1 ? '' : 's') + ' in 30d: ' + d0.rec24 + ' recovered within 24h'
-      + (med != null ? ' (median ' + fmtHrs(med) + ')' : '') + ' · ' + d0.faded
-      + ' <span title="Recovery is closed only by a confirmed healthy 5m sample, which requires the app to be running. Episodes whose 24h window elapsed while the tab was closed land in this bucket having proved nothing — so this is NOT evidence the gate was right.">not confirmed recovered in 24h (includes unobserved windows — not proof of a fade)</span> · '
-      + d0.watching + ' inside the window now'
-      + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. The tag builds its own track record — nothing changes from here.</div></div>');
-  }
-  if (gh.fundedCount)
-    secs.push('<div><b>funded lines</b> — ' + gh.fundedCount + ' item' + (gh.fundedCount === 1 ? '' : 's') + ' this week · <span class="dim">'
-      + (gh.fundedTraded ? (gh.fundedNet < 0 ? '⚠ passers losing — possibly too loose somewhere: ' : 'passers netted ')
-        + gp(gh.fundedNet) + ' across ' + gh.fundedTraded + ' traded' : 'no completed round trips yet') + '</span></div>');
-  /* §5 prospecting (user-directed, Aug 11 2026): the slice's YIELD as a
-     number, and the per-stratum map that answers which pond regions hold
-     edge with a ledger instead of a hunch. Durable counters — they outlive
-     the paper book's 30-day pruning by design. */
-  secs.push(prospectingInline());
+  /* §4 gate health and §5 prospecting MOVED (ruled Aug 11 2026): both are
+     now first-class Trade sub-views where every number opens to its rows.
+     The review keeps a one-line read with a link through — these are
+     working surfaces, and the review is the periodic look, not the
+     workbench. Nothing was deleted; the audit stopped carrying two panels
+     it had outgrown. */
+  secs.push('<div class="nexthead"><b>4 · Gate health</b> — both streams per gate, the die-off record and the exception lane now live on their own surface.</div>');
+  secs.push(gateSummaryLine());
+  secs.push('<div class="nexthead"><b>5 · Prospecting</b> — the per-stratum map, the gap band\'s verdict, the hours ledger and the recipe basis now live on their own surface.</div>');
+  secs.push(prospectSummaryLine());
   /* §6 decision log */
   const dl = DB.decisionLog.slice(-50).reverse();
   secs.push('<div class="nexthead"><b>6 · Decision log</b> — every ruling from this queue, so next quarter you can audit your own audit.</div>');
@@ -7629,6 +8413,24 @@ function renderAuditInline(){
    count of what the slice DID (sampling) or simulated (shadow) — labeled, and
    it admits nothing: a stratum that prospects well argues for a scanner, and
    the scanner is a ruling. */
+/* Per-stratum decomposition helpers. The stratum ledger is DURABLE by
+   design (R29.4) — its counters outlive the paper book's 30-day pruning —
+   so an expansion of "closed trips" can only show the trips still in the
+   book. That is a genuine subset, and the primitive states it rather than
+   quietly showing fewer rows than the number claims. */
+function stratumTrips(k){
+  return (DB.shadowBook || []).filter(p => p.stratum === k && shadowResolved(p));
+}
+function stratumIdRows(k){
+  const s = DB.strataStats[k] || {};
+  return (s.ids || []).map(id => {
+    const c = calc(id);
+    return { name: itemName(id), id: id, price: c && c.buy != null ? full(c.buy) : "—", _price: (c && c.buy) || 0,
+      roi: c && c.roi != null ? c.roi.toFixed(2) + "%" : "—", _roi: (c && c.roi) || 0, _txt: itemName(id) };
+  });
+}
+const STRATUM_ID_COLS = [{ k: "name", lab: "Item" }, { k: "price", lab: "Buy", num: 1, sortk: "_price" },
+                         { k: "roi", lab: "ROI now", num: 1, sortk: "_roi" }];
 function prospectingInline(){
   const keys = Object.keys(DB.strataStats || {});
   const tot = keys.reduce((a, k) => {
@@ -7636,46 +8438,186 @@ function prospectingInline(){
     a.samp += s.samp || 0; a.nm += s.nm || 0; a.pass += s.pass || 0;
     a.trips += s.trips || 0; a.net += s.net || 0; return a;
   }, { samp: 0, nm: 0, pass: 0, trips: 0, net: 0 });
-  const secs = ['<div class="nexthead"><b>5 · Prospecting</b> — the discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&L is <b>simulated</b> screening data, never evidence.</div>',
+  const secs = ['<div class="note">The discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&amp;L is <b>simulated</b> screening data, never evidence. Every number opens to its rows.</div>',
     shadowEpochNote(),
     '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>'];
   if (!tot.samp){
     secs.push('<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
     return secs.join("");
   }
-  secs.push('<div><b>Slice hit rate</b> — ' + tot.samp + ' distinct items sampled · ' + tot.nm
-    + ' single-gate near-miss' + (tot.nm === 1 ? '' : 'es') + ' shadowed · <b>' + tot.pass + ' clean gate-passer'
-    + (tot.pass === 1 ? '' : 's') + ' found</b> · ' + tot.trips + ' slice-cohort trip' + (tot.trips === 1 ? '' : 's')
-    + ' closed, net <span class="' + sign(tot.net) + '">' + gp(Math.round(tot.net)) + '</span> sim'
+  const allIds = keys.flatMap(k => stratumIdRows(k).map(r => Object.assign({ stratum: STRATUM_LAB(k), _cohort: STRATUM_LAB(k) }, r)));
+  const allTrips = keys.flatMap(k => stratumTrips(k));
+  secs.push('<div data-drillrow="1"><b>Slice hit rate</b> — '
+    + drill("prosp:tot:samp", tot.samp + ' distinct items sampled', {
+        head: "every distinct item the slice's gate chain has run on, across all strata",
+        cols: [{ k: "stratum", lab: "Stratum" }].concat(STRATUM_ID_COLS), rows: allIds, total: tot.samp,
+        totalNote: 'the per-stratum id ledgers cap at ' + STRATA_ID_CAP + ' items each; at the cap sampling counts stop rising and the stratum row says so',
+        empty: "Nothing sampled yet.",
+        note: 'Distinct items are the honest denominator — an item re-drawn in a later cycle is not a second test. ' + STRATUM_CAVEAT
+      })
+    + ' · ' + drill("prosp:tot:nm", tot.nm + ' single-gate near-miss' + (tot.nm === 1 ? '' : 'es') + ' shadowed', {
+        head: "the near-miss paper trips the slice opened — one gate away from funding",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(allTrips.filter(p => p.benchedBy && p.benchedBy.length)),
+        total: tot.nm,
+        totalNote: 'the stratum ledger keeps durable COUNTS; the paper book keeps the rows and prunes closed trips after 30 days, so older near-misses have no row left to show',
+        empty: "No near-miss rows remain in the paper book.", note: PAPER_NOTE()
+      })
+    + ' · <b>' + drill("prosp:tot:pass", tot.pass + ' clean gate-passer' + (tot.pass === 1 ? '' : 's') + ' found', {
+        head: "random draws that cleared EVERY gate — the event the slice exists to catch",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(allTrips.filter(p => p.slicePass)),
+        total: tot.pass,
+        totalNote: 'durable counter vs pruned rows — the paper book drops closed trips after 30 days',
+        empty: "No clean-passer rows remain in the paper book.", note: PAPER_NOTE()
+      }) + '</b> · '
+    + drill("prosp:tot:trips", tot.trips + ' slice-cohort trip' + (tot.trips === 1 ? '' : 's') + ' closed', {
+        head: "closed slice-cohort paper trips still in the book",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(allTrips), total: tot.trips,
+        totalNote: 'durable counter vs pruned rows — the ledger outlives the book by design (that is why the counter exists)',
+        empty: "No closed slice trips remain in the book.", note: PAPER_NOTE()
+      })
+    + ', net <span class="' + sign(tot.net) + '">' + gp(Math.round(tot.net)) + '</span> sim'
     + (tot.samp ? ' <span class="dim">(' + (tot.pass / tot.samp * 100).toFixed(2) + '% of random draws clear every gate)</span>' : '') + '</div>');
   /* Per-stratum map, best simulated net first — the quarterly artifact. */
   const rows = keys.map(k => Object.assign({ k }, DB.strataStats[k]))
     .sort((a, b) => (b.net || 0) - (a.net || 0));
-  for (const r of rows){
-    /* A per-stratum verdict IS a finding about a region, so the moment it
-       reads as anything other than "can't say" it carries the tripwire. */
+  const trs = rows.map(r => {
+    const trips = stratumTrips(r.k);
     const edge = r.trips >= 5
       ? (r.net > 0 ? '<b class="pos">prospects</b>' + (r.k === "gap" ? "" : STRATUM_TRIPWIRE)
                    : '<b class="neg">barren so far</b>' + (r.k === "gap" ? "" : STRATUM_TRIPWIRE))
       : '<span class="dim">too few closed trips to say</span>';
-    secs.push('<div style="margin:2px 0">' + esc(STRATUM_LAB(r.k)) + ' — ' + (r.samp || 0) + ' sampled · '
-      + (r.nm || 0) + ' near-miss · ' + (r.pass || 0) + ' clean · ' + (r.trips || 0) + ' closed ('
-      + (r.filled || 0) + ' filled), net <span class="' + sign(r.net || 0) + '">' + gp(Math.round(r.net || 0))
-      + '</span> sim — ' + edge
+    const tripDrill = (key, face, subset, head) => drill("prosp:" + r.k + ":" + key, face, {
+      head: head, cols: PAPER_TRIP_COLS, rows: paperTripRows(subset.rows), total: subset.total,
+      totalNote: 'the stratum ledger is durable and its counters outlive the paper book, which prunes closed trips after 30 days — these are the rows that still exist',
+      empty: "No rows remain in the paper book for this counter.", note: PAPER_NOTE() + ' ' + STRATUM_CAVEAT
+    });
+    return '<tr><td style="text-align:left">' + esc(STRATUM_LAB(r.k)) + '</td>'
+      + '<td>' + drill("prosp:" + r.k + ":samp", String(r.samp || 0), {
+          head: STRATUM_LAB(r.k) + " — the distinct items its gate chain has run on",
+          cols: STRATUM_ID_COLS, rows: stratumIdRows(r.k),
+          empty: "Nothing sampled in this stratum yet.",
+          note: (r.capped ? 'This ledger is at its ' + STRATA_ID_CAP + '-item cap — sampling counts stop rising while outcomes keep accruing. ' : '') + STRATUM_CAVEAT
+        }) + '</td>'
+      + '<td>' + tripDrill("nm", String(r.nm || 0), { rows: trips.filter(p => p.benchedBy && p.benchedBy.length), total: r.nm || 0 },
+          STRATUM_LAB(r.k) + " — its single-gate near-misses (durable count, surviving rows)") + '</td>'
+      + '<td>' + tripDrill("pass", String(r.pass || 0), { rows: trips.filter(p => p.slicePass), total: r.pass || 0 },
+          STRATUM_LAB(r.k) + " — its clean gate-passers (durable count, surviving rows)") + '</td>'
+      + '<td>' + tripDrill("trips", String(r.trips || 0), { rows: trips, total: r.trips || 0 },
+          STRATUM_LAB(r.k) + " — its closed paper trips (durable count, surviving rows)") + '</td>'
+      + '<td>' + tripDrill("filled", String(r.filled || 0),
+          { rows: trips.filter(p => p.state === "filled" || p.state === "forced-exit"), total: r.filled || 0 },
+          STRATUM_LAB(r.k) + " — the trips that would have filled (durable count, surviving rows)") + '</td>'
+      + '<td class="' + sign(r.net || 0) + '">' + tripDrill("net", gp(Math.round(r.net || 0)),
+          { rows: trips, total: r.trips || 0 }, STRATUM_LAB(r.k) + " — the trips behind its simulated net") + '</td>'
+      + '<td style="text-align:left">' + edge
       + (r.capped ? ' <span class="dim">[id ledger at its ' + STRATA_ID_CAP + '-item cap — sampling counts stop rising, outcomes keep accruing]</span>' : '')
-      + '</div>');
-  }
-  /* The gap band's own verdict — the question it was built to settle. */
-  const g = DB.strataStats.gap;
-  secs.push('<div style="margin-top:4px"><b>Gap band 250k–1m</b> — ' + (g && g.samp ? (g.samp + ' sampled · ' + (g.trips || 0)
-      + ' closed, net ' + gp(Math.round(g.net || 0)) + ' sim · ' + (g.pass || 0) + ' clean passer' + ((g.pass || 0) === 1 ? '' : 's')
-      + '. ' + ((g.trips || 0) >= 5
-        ? ((g.net || 0) > 0
-          ? '<b>The band prints.</b> On this evidence it has earned a scanner of its own — a proposal for your ruling; nothing here builds one. <span class="dim">(No classifier caveat on this one: gap-band membership is an exact price range, not a name-pattern guess.)</span>'
-          : '<b>The band is proven empty</b>, not assumed empty — that is the finding, and it is worth as much as the other answer. <span class="dim">(Exact price-range membership — no classifier caveat applies.)</span>')
-        : 'Not enough closed trips to rule either way yet; the band keeps accruing.'))
-    : 'no samples ledgered yet — 5 items per cycle accrue as the scanner runs') + '</div>');
+      + '</td></tr>';
+  }).join("");
+  secs.push('<div class="tw"><table id="strataTable"><thead><tr><th>Stratum</th>'
+    + '<th title="Distinct items the gate chain ran on — a re-draw is not a second test">Sampled</th>'
+    + '<th title="Single-gate near-misses that opened a paper trip">Near-miss</th>'
+    + '<th title="Random draws that cleared every gate">Clean</th>'
+    + '<th title="Closed paper trips credited to this stratum (durable counter)">Closed</th>'
+    + '<th title="Of those, how many would have filled">Filled</th>'
+    + '<th title="Simulated net across its closed trips">Net sim</th><th>Verdict</th></tr></thead><tbody>'
+    + trs + '</tbody></table></div>');
   return secs.join("");
+}
+/* The gap band's own verdict — the question it was built to settle. Its own
+   panel in the Prospecting view, because it is a standing question rather
+   than one row in a map. */
+function gapBandInline(){
+  const g = DB.strataStats.gap;
+  const trips = stratumTrips("gap");
+  const live = (() => { try { return gapBandSample(); } catch(e){ return { pick: [], poolN: 0 }; } })();
+  const secs = ['<div class="note">The band between the T2 scanner ceiling and the anomaly scan\'s &gt;1m floor — watched by nothing but slice luck before this. '
+    + 'Membership is an <b>exact price range</b>, not a name-pattern guess, so the stratum classifier caveat does not apply here and claiming it would overstate the dependency.</div>'];
+  if (!g || !g.samp){
+    secs.push('<div class="dim"><b>Gap band 250k–1m</b> — no gap-band samples ledgered yet; 5 items per cycle accrue as the scanner runs. '
+      + 'This cycle\'s live draw is ' + live.pick.length + ' of ' + live.poolN + ' sanity-passing items in the band.</div>');
+    return secs.join("");
+  }
+  const enough = (g.trips || 0) >= 5;
+  secs.push('<div data-drillrow="1"><b>Gap band 250k–1m</b> — '
+    + drill("gap:samp", (g.samp || 0) + ' sampled', {
+        head: "the distinct gap-band items the gate chain has run on",
+        cols: STRATUM_ID_COLS, rows: stratumIdRows("gap"),
+        empty: "Nothing sampled yet.",
+        note: 'Exact price-range membership — no classifier caveat applies. The band is drawn 5 items per cycle from a seeded shuffle, so coverage accrues rather than repeating.'
+      })
+    + ' · ' + drill("gap:trips", (g.trips || 0) + ' closed', {
+        head: "the gap band's closed paper trips",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(trips), total: g.trips || 0,
+        totalNote: 'the band\'s ledger counters are durable; the paper book prunes closed trips after 30 days, so these are the rows that still exist',
+        empty: "No closed gap-band rows remain in the paper book.", note: PAPER_NOTE()
+      })
+    + ', net <span class="' + sign(g.net || 0) + '">' + gp(Math.round(g.net || 0)) + '</span> sim · '
+    + drill("gap:pass", (g.pass || 0) + ' clean passer' + ((g.pass || 0) === 1 ? '' : 's'), {
+        head: "gap-band draws that cleared every gate",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(trips.filter(p => p.slicePass)), total: g.pass || 0,
+        totalNote: 'durable counter vs pruned rows',
+        empty: "No clean-passer rows remain.", note: PAPER_NOTE()
+      })
+    + '. ' + (enough
+      ? ((g.net || 0) > 0
+        ? '<b>The band prints.</b> On this evidence it has earned a scanner of its own — a proposal for your ruling; nothing here builds one. <span class="dim">(No classifier caveat on this one: gap-band membership is an exact price range, not a name-pattern guess.)</span>'
+        : '<b>The band is proven empty</b>, not assumed empty — that is the finding, and it is worth as much as the other answer. <span class="dim">(Exact price-range membership — no classifier caveat applies.)</span>')
+      : 'Not enough closed trips to rule either way yet; the band keeps accruing.') + '</div>');
+  secs.push('<div class="dim" style="margin-top:4px">This cycle\'s live draw: ' + live.pick.length + ' of ' + live.poolN
+    + ' sanity-passing items in the band — the same seeded sample the scanner renders, so the rows you see are the rows that accrue counterfactuals.</div>');
+  return secs.join("");
+}
+/* One-line reads of the two time/recipe surfaces, for the weekly review. */
+function hoursSummaryLine(){
+  const rows = hoursLedger();
+  const withMkt = rows.filter(r => r.mkt != null);
+  if (!withMkt.length)
+    return '<div class="inline"><div class="dim">No hour-of-day data yet — the ledger fills from the hourly series watchlist items already fetch. <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
+  const avg = withMkt.reduce((a, r) => a + r.mkt, 0) / withMkt.length;
+  const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
+  const nAvg = night.length ? night.reduce((a, r) => a + r.mkt, 0) / night.length : null;
+  const nObs = night.reduce((a, r) => a + r.n, 0);
+  const unobs = rows.filter(r => !r.n).length;
+  return '<div class="inline"><div>All-day post-tax spread <b>' + avg.toFixed(2) + '%</b>'
+    + (nAvg != null ? ' · overnight (00–06) <b>' + nAvg.toFixed(2) + '%</b> — '
+        + (nAvg > avg * 1.1 ? '<b>wider than your waking hours</b>' : nAvg < avg * 0.9 ? 'narrower' : 'about the same')
+        + (nObs ? ' with paper corroboration' : ' with <b>no</b> paper corroboration — unknown, not disproven') : '')
+    + ' · ' + unobs + ' of 24 hours never observed by the paper stream'
+    + ' — <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
+}
+function recipeSummaryLine(){
+  const flags = (DB.recipeFlags || []).filter(f => Date.now() - f.at < 7 * 86400e3);
+  let broken = 0, accruing = 0, live = 0;
+  for (const r of RECIPES){
+    const b = recipeBasis(r);
+    if (b.unresolved || b.noPrice) continue;
+    live++;
+    const base = recipeBaseline(r.k);
+    if (!base) accruing++;
+    else if (Math.abs(b.m) >= RECIPE_FLAG_X * Math.max(1, base.typical)) broken++;
+  }
+  return '<div class="inline"><div>' + live + ' of ' + RECIPES.length + ' recipes priced this cycle · '
+    + (broken ? '<b>' + broken + ' basis break' + (broken === 1 ? '' : 's') + ' standing</b>' : 'no basis breaks standing')
+    + ' · ' + flags.length + ' flagged in the last 7 days · ' + accruing + ' still accruing a baseline'
+    + ' — <a href="#" data-goto="prospect#prospectRecipePanel">open the recipe basis →</a></div></div>';
+}
+/* The weekly review's one-line read of the prospecting surfaces. */
+function prospectSummaryLine(){
+  const keys = Object.keys(DB.strataStats || {});
+  const tot = keys.reduce((a, k) => { const s = DB.strataStats[k];
+    a.samp += s.samp || 0; a.pass += s.pass || 0; a.trips += s.trips || 0; a.net += s.net || 0; return a; },
+    { samp: 0, pass: 0, trips: 0, net: 0 });
+  const best = keys.map(k => ({ k, net: (DB.strataStats[k] || {}).net || 0, trips: (DB.strataStats[k] || {}).trips || 0 }))
+    .filter(x => x.trips >= 5).sort((a, b) => b.net - a.net)[0];
+  const g = DB.strataStats.gap || {};
+  return '<div class="inline"><div>' + tot.samp + ' distinct item' + (tot.samp === 1 ? '' : 's') + ' sampled across '
+    + keys.length + ' stratum' + (keys.length === 1 ? '' : 'a') + ' · ' + tot.pass + ' clean gate-passer' + (tot.pass === 1 ? '' : 's')
+    + ' · ' + tot.trips + ' closed trip' + (tot.trips === 1 ? '' : 's') + ', net <span class="' + sign(tot.net) + '">'
+    + gp(Math.round(tot.net)) + '</span> sim'
+    + (best ? ' · best region so far: <b>' + esc(STRATUM_LAB(best.k)) + '</b>' + STRATUM_TRIPWIRE : ' · no region has enough closed trips to rank yet')
+    + ' · gap band ' + ((g.trips || 0) >= 5 ? ((g.net || 0) > 0 ? '<b>prints</b>' : '<b>proven empty</b>') : 'still accruing')
+    + ' — <a href="#" data-goto="prospect#prospectStrataPanel">open prospecting →</a></div>'
+    + '<div class="dim">The working surface carries the per-stratum map, the gap-band verdict, the hours ledger\'s two streams and the recipe basis table, each opening to its rows.</div></div>';
 }
 
 function auditSeedAction(id, act){
@@ -10173,10 +11115,10 @@ const CHECKLISTS = {
     ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
-    ["Read the paper book", "The screening column: per-gate paper P&L with fill reality baked in, and the three ROI-regime curves side by side — all simulated, ranking probation candidates for live half-size tests, never evidence:", null, "shadowbook"],
+    ["Read the paper book", "One line here; the surface itself is Trade → Paper Book, where every number opens to its trips:", "paper#paperRegimePanel", "shadowbook"],
     ["Check data freshness", "Every background stream reports when it last accrued. Nothing collects while the tab is closed, and a stalled stream looks exactly like a quiet one on a chart — so this says which is which before you read any of the numbers below:", null, "freshness"],
-    ["Read the hours ledger", "Time-structure prospecting: post-tax spread by hour-of-day (market stream, unbiased by when you're awake) against simulated fill rates (paper stream, biased toward hours you observe). The overnight question answered with data:", null, "hours"],
-    ["Read the recipe basis table", "Processing margins on high-volume recipes — a basis breaking wide is both a flip signal on the mispriced leg and a manipulation tell, since pumps distort one leg before the other:", null, "recipes"],
+    ["Read the hours ledger", "One line here; the surface is Trade → Prospecting, where each hour opens to the items and trips behind it:", "prospect#prospectHoursPanel", "hours"],
+    ["Read the recipe basis table", "One line here; the surface is Trade → Prospecting, where each basis opens to its daily readings:", "prospect#prospectRecipePanel", "recipes"],
     ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
@@ -10373,13 +11315,13 @@ function renderRoutine(){
     } else if (s[3] === "attention"){
       inline = attentionGovernanceInline();
     } else if (s[3] === "shadowbook"){
-      inline = shadowAuditInline();
+      inline = paperSummaryLine();
     } else if (s[3] === "freshness"){
       inline = freshnessInline();
     } else if (s[3] === "hours"){
-      inline = hoursLedgerInline();
+      inline = hoursSummaryLine();
     } else if (s[3] === "recipes"){
-      inline = recipeBasisInline();
+      inline = recipeSummaryLine();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -11073,17 +12015,56 @@ function renderNow(){
     + (n.snoozeKey ? '<button class="sm ghost" data-nowsnooze="' + n.snoozeKey + '" title="Not now — hides this nudge for the rest of today. It returns tomorrow if still true.">✕ today</button>' : '');
 }
 
+/* ═══ THE THREE PULL SURFACES (ruled Aug 11 2026) ═══
+   Paper Book, Prospecting and Gate Health render only their own sub-view.
+   They present no decisions — every ruling still happens on the plan, the
+   row, or the digest — so the walk-up attention budget is untouched. */
+function renderPaperView(){
+  const closed = paperClosed();
+  $("#paperRegimeSub").textContent = closed.length + " closed trip" + (closed.length === 1 ? "" : "s")
+    + " · " + ((DB.shadowDivLog || []).length) + " daily reading" + ((DB.shadowDivLog || []).length === 1 ? "" : "s")
+    + " · simulated throughout";
+  $("#paperGateSub").textContent = shadowByGate().size + " gate" + (shadowByGate().size === 1 ? "" : "s")
+    + " with closed outcomes — every cell opens to its trips";
+  setHTML("#paperRegime", paperRegimeSection());
+  setHTML("#paperGate", paperGateSection());
+  setHTML("#paperCohort", paperCohortSection());
+}
+function renderProspectView(){
+  const keys = Object.keys(DB.strataStats || {});
+  $("#prospectStrataSub").textContent = keys.length + " stratum" + (keys.length === 1 ? "" : "a") + " ledgered"
+    + " · durable counters, they outlive the paper book's 30-day pruning";
+  setHTML("#prospectStrata", prospectingInline());
+  setHTML("#prospectGap", gapBandInline());
+  setHTML("#prospectHours", hoursLedgerInline());
+  setHTML("#prospectRecipe", recipeBasisInline());
+}
+function renderGateView(){
+  const gh = gateHealthAudit();
+  $("#gateStreamSub").textContent = gh.rows.length + " gate" + (gh.rows.length === 1 ? "" : "s") + " with benches this week";
+  $("#gateExcSub").textContent = excActiveN() + " of " + EXC_MAX_ACTIVE + " probation slots in use"
+    + (excVoidBasis().length ? " · " + excVoidBasis().length + " on void basis" : "");
+  setHTML("#gateStreams", gateStreamsSection());
+  setHTML("#gateDieOff", gateDieOffSection());
+  setHTML("#gateExc", gateExcSection());
+}
 function renderAll(){
   if (S.tab !== "home") renderHomeVitals();   // the strip is global; Home refreshes it inside its own block pass
   if (S.tab === "home")    renderHome();
   if (S.tab === "trade"){
-    if (S.sub === "scan")     renderScan();
-    else if (S.sub === "log") renderLog();
-    else                      renderWatch();
+    if (S.sub === "scan")          renderScan();
+    else if (S.sub === "log")      renderLog();
+    else if (S.sub === "paper")    renderPaperView();
+    else if (S.sub === "prospect") renderProspectView();
+    else if (S.sub === "gates")    renderGateView();
+    else                           renderWatch();
   }
   if (S.tab === "sleeve"){ renderSleeve(); renderClusters(); }   // baskets live on the Sleeve tab (clusters merge, Aug 2026)
   if (S.tab === "review")  renderReview();
   renderNow();
+  /* Re-apply open expansions LAST: a 60s poll must never close what you
+     opened to read (decomposition primitive, ruled Aug 11 2026). */
+  paintDrills();
 }
 /* One physical checklist panel, mode follows the tab: walk-up on Home,
    weekly on Review. Reparenting beats duplicated IDs and duplicated code. */
@@ -11108,7 +12089,8 @@ function renderReview(){
    carries the current checklist mode. Old goto/prefill paths keep working. */
 function setTab(t, sub){
   let target = t;
-  if (t === "watch" || t === "scan" || t === "log"){ target = "trade"; sub = t; }
+  if (t === "watch" || t === "scan" || t === "log"
+   || t === "paper" || t === "prospect" || t === "gates"){ target = "trade"; sub = t; }
   else if (t === "shadow") target = "review";
   else if (t === "routine") target = S.mode === "weekly" ? "review" : "home";
   S.tab = target;

@@ -198,10 +198,9 @@
        && tr.ovrTraded === 1 && tr.ovrNet === 3120      // 9002 flip dated yd = a day trend was benching it
        && tr.latTraded === 1 && tr.latNet === 3120      // 9004 flip dated today, no bench row today
        && gh.fundedCount === 1 && gh.fundedNet === 3120, JSON.stringify(gh));
-    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
-    const ghHTML = document.querySelector("#ckList").innerHTML;
+    const ghHTML = gateStreamsSection();   // pure renderer — asserting it must not mutate the fixture
     ok("gate health copy labels both buckets", /traded while still benched/.test(ghHTML)
-       && /traded after unbenching/.test(ghHTML) && !/possibly too tight/.test(ghHTML));
+       && /traded after unbenching/.test(ghHTML) && !/possibly too tight/.test(ghHTML), ghHTML.slice(0, 600));
 
     // buildPlan writes the gate ledger
     buildPlan();
@@ -2042,9 +2041,16 @@
        !!sbPick && sbPick.regimes.includes("current") && sbPick.regimes.includes("loose"),
        JSON.stringify(sbPick));
     const sbCount = DB.shadowBook.length;
+    /* Diagnostic carried in the failure extra: the discovery slice draws from
+       a stratum chosen by the price cycle, so a clock-dependent rotation
+       would make this count vary run to run. Naming it here means a flake
+       reports its own cause instead of looking like a dedup bug. */
+    const slice18 = { latestAt: S.latestAt, stratum: currentStratum().k, opened: DB.shadowBook.filter(p => p.slice).length };
     shadowScan(shadowPlan);
     ok("[R18.1] rescan while open opens nothing — one shadow per family",
-       DB.shadowBook.length === sbCount, DB.shadowBook.length + " vs " + sbCount);
+       DB.shadowBook.length === sbCount,
+       DB.shadowBook.length + " vs " + sbCount + " :: before " + JSON.stringify(slice18)
+       + " :: after " + JSON.stringify({ stratum: currentStratum().k, opened: DB.shadowBook.filter(p => p.slice).length }));
     // R18.2 — honest fill sim on a controlled position
     DB.shadowBook = [{ id: 1, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
       qty: 10, bid: 4001, ask: 4399, t: Date.now() - 60e3, buyQ: 0, sellQ: 0, buyDone: 0,
@@ -2073,14 +2079,19 @@
     const sb3 = DB.shadowBook.find(p => p.id === 2);
     ok("[R18.2] an unfillable bid expires at the horizon as would-not-have-filled — that IS the data",
        sb3.state === "unfilled" && sb3.net === 0, JSON.stringify(sb3));
-    // R18.3 — per-gate counterfactual line, quarantine-labeled
-    const shAud = shadowAuditInline();
-    ok("[R18.3] weekly shadow report: per-gate would-have-filled / would-not with observed-share caveat",
-       /benched by <b>ROI floor<\/b> alone: paper-traded 2, filled 1/.test(shAud)
-       && /would-not-have-filled 1/.test(shAud) && /unknown, not unfilled/.test(shAud),
-       shAud.slice(0, 500));
+    // R18.3 — per-gate counterfactual, quarantine-labeled (now the Paper Book
+    // sub-view's table; the weekly review keeps a one-line read — R35)
+    const shAud = paperGateSection();
+    ok("[R18.3] per-gate paper table: would-have-filled / would-not with the observed-share caveat",
+       /id="paperGateTable"/.test(shAud) && />ROI floor</.test(shAud)
+       && /data-drill="paper:gate:ROI floor:n"[^>]*>2</.test(shAud)
+       && /data-drill="paper:gate:ROI floor:fill"[^>]*>1</.test(shAud)
+       && /data-drill="paper:gate:ROI floor:miss"[^>]*>1</.test(shAud)
+       && /unknown, not unfilled/.test(shAud),
+       shAud.slice(0, 900));
     ok("[R18.3] regime curves labeled simulated, never comparable to realized",
-       /all three SIMULATED/.test(shAud) && /never compare to realized/.test(shAud), shAud.slice(500, 1100));
+       /all three SIMULATED/.test(paperRegimeSection()) && /never compare to realized/.test(paperRegimeSection()),
+       paperRegimeSection().slice(0, 1400));
     // R18.4 — divergence ledger feeds the evidence rule at 4-of-7
     const dstr = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
@@ -2102,13 +2113,13 @@
       { id: 4, fam: "b2", itemId: 9003, name: "Probe gamma", qty: 10, bid: 3000, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
         buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 }
     ];
-    const aud19 = renderAuditInline();
+    const aud19 = gateStreamsSection();
     ok("[R19.1] gate health renders both streams, natures labeled",
-       /├─ <b>realized<\/b>:/.test(aud19) && /└─ <b>shadow<\/b>:/.test(aud19)
+       /├─ <b>realized<\/b>:/.test(aud19) && /└─ <b>paper<\/b>:/.test(aud19)
        && /\[real fills\]/.test(aud19) && /\[simulated — fill-model caveats/.test(aud19),
-       aud19.slice(aud19.indexOf("Gate health"), aud19.indexOf("Gate health") + 900));
+       aud19.slice(0, 1200));
     ok("[R19.1] agreement is named as evidence in the row verdict",
-       /streams AGREE \(loosen\)/.test(aud19), aud19.slice(aud19.indexOf("Gate health"), aud19.indexOf("Gate health") + 1400));
+       /streams AGREE \(loosen\)/.test(aud19), aud19.slice(0, 2000));
     // combined verdict in the funnel: agreement → change-proposal citing both
     const nearPlan = { all: [fakeNear(9001, "Probe alpha"), fakeNear(9002, "Probe beta"), fakeNear(9003, "Probe gamma")],
       bench: [], pass: [], picks: [], nextUp: [], qualifying: [], t1Pool: 1e6, t2Pool: 0, deployed: 0 };
@@ -2135,9 +2146,19 @@
        JSON.stringify({ count: S.depProposalCount }));
     DB.shadowBook = []; DB.shadowDivLog = []; DB.gateLog = []; DB.flips = [];
     S.tab = "routine"; S.mode = "weekly"; renderRoutine();
-    ok("[R18.4] the weekly review carries the shadow-book step with the regime curves",
+    ok("[R18.4] the weekly review keeps a one-line paper-book read that links through to the surface (R35)",
        /paper book/i.test(document.querySelector("#ckList").innerHTML)
-       && /Regime curves/.test(document.querySelector("#ckList").innerHTML));
+       && /data-goto="paper#paperRegimePanel"/.test(document.querySelector("#ckList").innerHTML),
+       document.querySelector("#ckList").innerHTML.slice(0, 400));
+    ok("[R18.4] the regime curves live on the Paper Book surface, one shared scale, all three simulated",
+       (() => { const keep = DB.shadowDivLog;
+                DB.shadowDivLog = [3, 2, 1].map(n => ({ d: new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA"),
+                                                        cur: 10e3, loose: 20e3, tight: 5e3 }));
+                const s = paperRegimeSection();
+                DB.shadowDivLog = keep;
+                return /class="curves"/.test(s) && (s.match(/<polyline/g) || []).length === 3
+                    && /ONE shared scale/.test(s) && /all three SIMULATED/.test(s); })(),
+       paperRegimeSection().slice(0, 900));
 
     // ═══ R20 SURFACE REORG (Aug 11 2026) — tier-1 Home, 4 tabs, click audit ═══
     // R20.1 — four top-level tabs; Home is the boot surface (zero clicks)
@@ -2837,7 +2858,8 @@
        && /clean gate-passer/.test(prosp25) && /slice-cohort trip/.test(prosp25),
        prosp25.slice(prosp25.indexOf("Slice hit rate"), prosp25.indexOf("Slice hit rate") + 320));
     ok("[R29.3] the per-stratum map accumulates durably and names each region's verdict",
-       /equipment · ring —/.test(prosp25) && /Gap band 250k–1m/.test(prosp25),
+       /equipment · ring/.test(prosp25) && /id="strataTable"/.test(prosp25)
+       && /Gap band 250k–1m/.test(gapBandInline()),
        prosp25.slice(0, 400));
     // R29.6 — classifier honesty: standing caveat + promotion tripwire
     ok("[R29.6] the per-stratum map carries the standing caveat, with counts derived from the strata table",
@@ -2854,12 +2876,11 @@
     ok("[R29.6] the gap band is exempt and says why — its membership is an exact price range, not a guess",
        (() => { DB.strataStats = { gap: { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6, filled: 5,
                                           net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
-                const p = prospectingInline();
-                const gapLine = p.slice(p.indexOf("Gap band"));
+                const gapLine = gapBandInline();
                 return /The band prints/.test(gapLine)
                     && /exact price range/.test(gapLine)
                     && !/Depends on approximate stratum classification/.test(gapLine); })(),
-       prospectingInline().slice(prospectingInline().indexOf("Gap band"), prospectingInline().indexOf("Gap band") + 420));
+       gapBandInline().slice(0, 900));
     DB.strataStats = {};
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     DB.strataStats = {};
@@ -3021,12 +3042,15 @@
        /screening: probation candidate/.test(shadowCite(9002)) && !/evidence accruing/.test(shadowCite(9002)), shadowCite(9002));
     ok("[R27.1] the row dot labels the screen, not evidence",
        /ranks probation candidates, not evidence/.test(shadowDot(9002)), shadowDot(9002));
-    const shAud27 = shadowAuditInline();
-    ok("[R27.1] the shadow panel carries the standing self-impact caveat",
+    const shAud27 = paperRegimeSection();
+    ok("[R27.1] the paper book carries the standing self-impact caveat",
        /Screening tool, not evidence/.test(shAud27) && /thin books change when you post/.test(shAud27)
-       && /ranked shortlist of probation candidates/.test(shAud27), shAud27.slice(0, 500));
-    ok("[R18.5] the per-gate ledger line reports both participation readings",
-       /at 50% participation \(would also fill \d+ at 100%\)/.test(shAud27), shAud27.slice(0, 1200));
+       && /ranked shortlist of probation candidates/.test(shAud27), shAud27.slice(0, 800));
+    const shGate27 = paperGateSection();
+    ok("[R18.5] the per-gate table reports both participation readings, in its own columns",
+       /would have filled at 50% participation/.test(shGate27)
+       && /would also have filled at 100% participation/.test(shGate27)
+       && /data-drill="paper:gate:ROI floor:full"/.test(shGate27), shGate27.slice(0, 1200));
     // R27.3 — regime divergence: probation slots, never "the regime is right"
     const dst27 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dst27(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
@@ -3076,11 +3100,11 @@
        !!bg28 && bg28.n === 1, JSON.stringify(bg28 && { n: bg28.n }));
     ok("[R28.2] scanner provenance labels the item's book",
        (shadowSlice(9330).regs || []).includes("scanner·T1"), JSON.stringify(shadowSlice(9330).regs));
-    const aud28 = shadowAuditInline();
+    const aud28 = paperCohortSection();
     ok("[R28.2] FILTER OPPORTUNITY COST compares scanner-cohort vs watchlist-cohort net over the same window",
-       /Filter opportunity cost/.test(aud28) && /scanner-cohort paper trips closed: 1/.test(aud28)
-       && /scanner·T1 1/.test(aud28) && /vs watchlist-cohort net/.test(aud28)
-       && /No filter-opportunity signal/.test(aud28), aud28.slice(0, 1600));
+       /Filter opportunity cost/.test(aud28) && /scanner-cohort paper trips closed: <button[^>]*>1</.test(aud28)
+       && /scanner·T1 <button[^>]*>1</.test(aud28) && /vs watchlist-cohort net/.test(aud28)
+       && /No filter-opportunity signal/.test(aud28), aud28.slice(0, 1800));
     // R28.4 — one stage per move: scanner evidence nominates admission, never probation
     DB.shadowBook = [];
     for (let i = 0; i < 5; i++) DB.shadowBook.push(Object.assign(
@@ -3170,7 +3194,7 @@
        hi30.slice(0, 700));
     ok("[R30.2] the overnight question is answered from both streams, with the sizing case stated as a proposal",
        /Overnight \(00:00–06:00\)/.test(hi30) && /WIDER than your waking hours/.test(hi30)
-       && /Shadow corroboration: 3 of 4 overnight sim trips filled/.test(hi30)
+       && /Shadow corroboration: <button[^>]*>3 of 4</.test(hi30)
        && /sizing the standing overnight book heavier/.test(hi30) && /never applied from here/.test(hi30),
        hi30.slice(hi30.indexOf("Overnight"), hi30.indexOf("Overnight") + 500));
     S.spark.set(9001, sp30);
@@ -3247,6 +3271,14 @@
          DB.gateLog.length > 0 && DB.deployLog.length > 0,
          t + " :: " + JSON.stringify({ gate: DB.gateLog.length, deploy: DB.deployLog.length }));
     }
+    for (const sub of ["paper", "prospect", "gates"]){
+      DB.gateLog = []; DB.deployLog = []; DB.shadowBook = []; DB.strataStats = {};
+      setTab("trade", sub);
+      accrueBackground();
+      ok("[R34.1] plan-driven ledgers accrue with the Trade/" + sub + " sub-view active",
+         DB.gateLog.length > 0 && DB.deployLog.length > 0,
+         sub + " :: " + JSON.stringify({ gate: DB.gateLog.length, deploy: DB.deployLog.length }));
+    }
     DB.gateLog = []; DB.deployLog = [];
     S.tab = "review"; S.sub = "log";
     accrueBackground();   // no render call at all
@@ -3319,11 +3351,19 @@
     const surfaces33 = {};
     for (const [label, fn] of [["freshness", freshnessInline], ["prospecting", prospectingInline],
                                ["hours", hoursLedgerInline], ["recipes", recipeBasisInline],
-                               ["shadowbook", shadowAuditInline], ["audit", renderAuditInline],
+                               ["gapband", gapBandInline], ["audit", renderAuditInline],
+                               ["paperRegime", paperRegimeSection], ["paperGate", paperGateSection],
+                               ["paperCohort", paperCohortSection], ["gateStreams", gateStreamsSection],
+                               ["gateDieOff", gateDieOffSection], ["gateExc", gateExcSection],
+                               ["paperSum", paperSummaryLine], ["prospectSum", prospectSummaryLine],
+                               ["gateSum", gateSummaryLine], ["hoursSum", hoursSummaryLine],
+                               ["recipeSum", recipeSummaryLine],
                                ["attention", attentionGovernanceInline], ["intelscore", intelScorecardInline]])
       surfaces33[label] = tryRender(label, fn);
     for (const t of ["home", "trade", "sleeve", "review"])
       tryRender("tab:" + t, () => { setTab(t); renderAll(); return ""; });
+    for (const sub of ["watch", "scan", "log", "paper", "prospect", "gates"])
+      tryRender("trade/" + sub, () => { setTab("trade", sub); renderAll(); return ""; });
     ok("[R33.1] a cold, near-empty store renders every review surface and all four tabs without throwing",
        broke33.length === 0, JSON.stringify(broke33));
     const junk33 = Object.entries(surfaces33)
@@ -3345,6 +3385,275 @@
     setTab("home");
   } catch(e){
     out.push("FAIL freshness/cold-start :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R35 — SHARED DECOMPOSITION PRIMITIVE + THREE TRADE SUB-VIEWS
+       (user ruling, Aug 11 2026: every aggregate opens to its rows in one
+       click, through ONE primitive every surface inherits) ═══ */
+    const now35 = Date.now();
+    DB.shadowBook = []; DB.gateLog = []; DB.flips = []; DB.strataStats = {};
+    DB.dieOffLog = []; DB.shadowExceptions = []; DB.shadowDivLog = []; DB.recipeFlags = [];
+    S.drillOpen = new Set(); S.drillUI = new Map();
+    let seq35 = 1;
+    const mk35 = (id, state, net, ageD, gate, extra) => Object.assign({
+      id: seq35++, fam: "f35:" + seq35, itemId: id, name: itemName(id), qty: 10, bid: 4001, ask: 4399,
+      t: now35 - ageD * 86400e3, buyQ: state === "unfilled" ? 0 : 10, sellQ: state === "filled" ? 10 : 0,
+      buyQFull: state === "unfilled" ? 0 : 10, sellQFull: state === "filled" ? 10 : 0,
+      buyDone: state === "unfilled" ? 0 : 1, obsMs: FILLH() * 3600e3 / 2, lastObs: now35,
+      state: state, closedAt: now35 - (ageD - 1) * 86400e3, net: net,
+      benchedBy: gate ? [gate] : undefined, regimes: ["current"] }, extra || {});
+    for (let i = 0; i < 8; i++) DB.shadowBook.push(mk35(9001, "filled", 1000, 5, "ROI floor"));
+    for (let i = 0; i < 4; i++) DB.shadowBook.push(mk35(9001, "unfilled", 0, 5, "ROI floor"));
+    for (let i = 0; i < 7; i++) DB.shadowBook.push(mk35(9002, "filled", 2000, 4, "ROI floor"));
+    for (let i = 0; i < 6; i++) DB.shadowBook.push(mk35(9002, "unfilled", 0, 4, "ROI floor"));
+    /* Hour-of-day market readings, so the hours table renders for real —
+       an assertion that would pass on an empty panel is not an assertion. */
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    for (const id of [9001, 9002]){
+      const rh = new Array(24).fill(1.2); rh[3] = 4.4; rh[11] = 2.1;
+      S.spark.set(id, Object.assign({}, S.spark.get(id) || {}, { roiHour: rh }));
+    }
+    setTab("trade", "paper"); renderAll();
+
+    // ── R35.1 the primitive: a number opens to its rows in ONE click ──
+    const faceOf = k => Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === k);
+    const clickFace = k => { const b = faceOf(k); if (!b) throw new Error("no drill face for key: " + k); b.click(); };
+    const bFill = faceOf("paper:gate:ROI floor:fill");
+    ok("[R35.1] every per-gate cell renders as an openable face, not a bare number",
+       !!bFill && bFill.textContent.indexOf("15") === 0 && !document.getElementById(drillId("paper:gate:ROI floor:fill")),
+       bFill ? bFill.outerHTML.slice(0, 160) : "no face for the would-fill cell");
+    bFill.click();
+    const box35 = document.getElementById(drillId("paper:gate:ROI floor:fill"));
+    /* getElementsByTagName, not querySelectorAll("tbody tr"): the latter
+       matches the OUTER table's tbody as the ancestor, so it would count the
+       expansion's own header row and read 16 where the truth is 15. */
+    const bodyRows = box => { const tb = box && box.getElementsByTagName("tbody")[0];
+                              return tb ? Array.from(tb.rows) : []; };
+    const rowsIn = box => box ? bodyRows(box).length : -1;
+    ok("[R35.1] one click opens the rows behind the number — and they are VISIBLE, not merely in the DOM",
+       !!box35 && box35.offsetParent !== null && rowsIn(box35) === 15,
+       JSON.stringify({ present: !!box35, visible: !!box35 && box35.offsetParent !== null, rows: rowsIn(box35) }));
+    ok("[R35.1] each row carries the per-trip evidence: entry, exit, the tape credit, observed share, outcome, regime, cohort",
+       /Entry \(bid\)/.test(box35.innerHTML) && /Tape credit/.test(box35.innerHTML)
+       && /bought at 50% participation/.test(box35.innerHTML) && /Observed/.test(box35.innerHTML)
+       && /filled both legs/.test(box35.innerHTML) && /watchlist/.test(box35.innerHTML),
+       box35.innerHTML.slice(box35.innerHTML.indexOf("<tbody"), box35.innerHTML.indexOf("<tbody") + 400));
+    // sort lives in the primitive
+    const th35 = box35.querySelector('[data-dsortk="net"]');
+    th35.click();
+    const netCol = () => bodyRows(document.getElementById(drillId("paper:gate:ROI floor:fill")))
+      .map(tr => tr.children[9].textContent);
+    const desc35 = netCol();
+    document.getElementById(drillId("paper:gate:ROI floor:fill")).querySelector('[data-dsortk="net"]').click();
+    const asc35 = netCol();
+    ok("[R35.1] sort lives in the primitive — one click sorts, a second flips it",
+       desc35[0] !== asc35[0] && desc35.join("|") === asc35.slice().reverse().join("|"),
+       JSON.stringify({ desc: desc35.slice(0, 3), asc: asc35.slice(0, 3) }));
+    // filter lives in the primitive
+    const q35 = document.getElementById(drillId("paper:gate:ROI floor:fill")).querySelector("[data-drillq]");
+    q35.value = "Probe beta";
+    q35.dispatchEvent(new Event("input", { bubbles: true }));
+    const boxF = document.getElementById(drillId("paper:gate:ROI floor:fill"));
+    ok("[R35.1] filter lives in the primitive, and a filtered expansion says how much it is hiding",
+       rowsIn(boxF) === 7 && /8 of 15 rows hidden by your filter/.test(boxF.innerHTML),
+       JSON.stringify({ rows: rowsIn(boxF), sub: (boxF.innerHTML.match(/rows hidden by your filter/) || [])[0] }));
+    q35.value = ""; q35.dispatchEvent(new Event("input", { bubbles: true }));
+    // an expansion survives the 60s re-render — a poll must not close what you opened
+    renderAll();
+    ok("[R35.1] an open expansion survives a re-render — the poll never closes what you opened to read",
+       !!document.getElementById(drillId("paper:gate:ROI floor:fill"))
+       && document.getElementById(drillId("paper:gate:ROI floor:fill")).offsetParent !== null,
+       "reopened after renderAll");
+    clickFace("paper:gate:ROI floor:fill");
+    ok("[R35.1] a second click closes it",
+       !document.getElementById(drillId("paper:gate:ROI floor:fill")));
+
+    // ── R35.2 honest subset disclosure ──
+    clickFace("paper:gate:ROI floor:n");
+    const boxAll = document.getElementById(drillId("paper:gate:ROI floor:n"));
+    ok("[R35.2] an expansion capped at the row limit SAYS it is showing a subset and offers the rest",
+       rowsIn(boxAll) === DRILL_PAGE && /Showing the first 20 of 25 matching rows/.test(boxAll.innerHTML)
+       && !!boxAll.querySelector("[data-drillall]"),
+       JSON.stringify({ rows: rowsIn(boxAll) }));
+    boxAll.querySelector("[data-drillall]").click();
+    ok("[R35.2] show-all reveals every row and says so",
+       rowsIn(document.getElementById(drillId("paper:gate:ROI floor:n"))) === 25
+       && /Showing all 25 rows/.test(document.getElementById(drillId("paper:gate:ROI floor:n")).innerHTML),
+       String(rowsIn(document.getElementById(drillId("paper:gate:ROI floor:n")))));
+    clickFace("paper:gate:ROI floor:n");
+    /* Structural subsets: the stratum ledger's counters are DURABLE and
+       outlive the paper book's 30-day pruning, so its expansions can only
+       show surviving rows. That must be stated, never silently truncated. */
+    DB.strataStats = { "equip:ring": { ids: [9001, 9002], samp: 2, nm: 1, pass: 1, trips: 47, filled: 30,
+                                       net: 90000, first: now35 - 40 * 86400e3, capped: 0 } };
+    DB.shadowBook.push(mk35(9001, "filled", 500, 2, null, { slice: 1, stratum: "equip:ring" }));
+    setTab("trade", "prospect"); renderAll();
+    clickFace("prosp:equip:ring:trips");
+    const boxSub = document.getElementById(drillId("prosp:equip:ring:trips"));
+    const durable35 = (DB.strataStats["equip:ring"] || {}).trips || 0;
+    ok("[R35.2] a durable counter whose rows have been pruned says 'showing N of <counter>' and why",
+       !!boxSub && rowsIn(boxSub) === 1 && durable35 > 1
+       && boxSub.innerHTML.indexOf("Showing 1 of " + durable35) >= 0
+       && /prunes closed trips after 30 days/.test(boxSub.innerHTML),
+       boxSub ? (boxSub.innerHTML.match(/Showing [^<]*/) || [""])[0] + " :: counter " + durable35 : "no box");
+    clickFace("prosp:equip:ring:trips");
+    ok("[R35.2] a counter whose rows are ALL pruned says so in words and still declares the subset — never a blank box",
+       (() => { clickFace("prosp:equip:ring:pass");
+                const b = document.getElementById(drillId("prosp:equip:ring:pass"));
+                const okk = !!b && rowsIn(b) === 0
+                  && /No rows remain in the paper book for this counter/.test(b.innerHTML)
+                  && ((DB.strataStats["equip:ring"] || {}).pass || 0) > 0
+                  && b.innerHTML.indexOf("Showing 0 of " + DB.strataStats["equip:ring"].pass) >= 0;
+                clickFace("prosp:equip:ring:pass");
+                return okk; })(),
+       (() => { clickFace("prosp:equip:ring:pass");
+                const b = document.getElementById(drillId("prosp:equip:ring:pass"));
+                const h = b ? b.innerHTML.slice(0, 400) : "no box";
+                clickFace("prosp:equip:ring:pass"); return h; })());
+
+    // ── R35.3 the Paper Book surface ──
+    setTab("trade", "paper"); renderAll();
+    ok("[R35.3] Paper Book renders three regime curves, the divergence ledger and the per-gate table on its own sub-view",
+       document.querySelectorAll("#paperRegime .curve").length === 3
+       && !!faceOf("paper:divlog") && !!document.querySelector("#paperGate #paperGateTable")
+       && document.querySelector("#tab-paper").offsetParent !== null,
+       String(document.querySelectorAll("#paperRegime .curve").length));
+    /* Forced into the young state rather than guarded with an `||`: a
+       banner assertion that passes when the banner is not due is not an
+       assertion at all. */
+    ok("[R35.3] the accruing-since banner rides the paper surface, per the epoch reset",
+       (() => { const kEp = DB.shadowEpoch, kLog = DB.shadowDivLog, kBook = DB.shadowBook;
+                DB.shadowEpoch = now35 - 2 * 86400e3; DB.shadowDivLog = []; DB.shadowBook = [];
+                const young = shadowEpochYoung();
+                const html = paperRegimeSection();
+                DB.shadowEpoch = kEp; DB.shadowDivLog = kLog; DB.shadowBook = kBook;
+                return young && /Accruing since/.test(html) && /prior data discarded/.test(html); })(),
+       "epoch forced young for the assertion");
+    ok("[R35.3] the cohort ledger states where EVERY population stands, including the empty ones",
+       (() => { const h = document.querySelector("#paperCohort").innerHTML;
+                return /scanner·T1/.test(h) && /gap band/.test(h) && /slice·clean/.test(h)
+                    && /nothing has closed in this cohort yet/.test(h); })(),
+       document.querySelector("#paperCohort").innerHTML.slice(0, 300));
+
+    // ── R35.4 the Prospecting surface ──
+    setTab("trade", "prospect"); renderAll();
+    ok("[R35.4] Prospecting carries the stratum map, the gap-band verdict, the hours ledger and the recipe basis, each on its own panel",
+       !!document.querySelector("#prospectStrata #strataTable")
+       && /Gap band 250k–1m/.test(document.querySelector("#prospectGap").innerHTML)
+       && /Two streams, different natures|No hour-of-day data yet/.test(document.querySelector("#prospectHours").innerHTML)
+       && /output sold at its ask net of tax/.test(document.querySelector("#prospectRecipe").innerHTML));
+    /* No escape hatch here: the fixture SEEDS hour-of-day data above, so
+       "the panel had nothing to render" can never stand in for a pass. */
+    ok("[R35.4] the hours table keeps the two streams distinct and unobserved hours read no data, never bad hour",
+       (() => { const h = document.querySelector("#prospectHours").innerHTML;
+                return /id="hoursTable"/.test(h) && /Market spread/.test(h) && /Paper fill rate/.test(h)
+                    && /no data — never observed/.test(h) && !/No hour-of-day data yet/.test(h); })(),
+       document.querySelector("#prospectHours").innerHTML.slice(0, 400));
+
+    // ── R35.5 the Gate Health surface ──
+    const d35 = n => new Date(now35 - n * 86400e3).toLocaleDateString("en-CA");
+    for (let n = 1; n <= 3; n++) DB.gateLog.push({ d: d35(n), id: 9001, g: "ROI floor" });
+    DB.flips = [{ id: now35, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: d35(2), note: "" }];
+    DB.dieOffLog = [{ d: d35(3), id: 9002, t: now35 - 3 * 86400e3, rec: now35 - 3 * 86400e3 + 2 * 3600e3 },
+                    { d: d35(2), id: 9001, t: now35 - 2 * 86400e3, rec: null }];
+    DB.shadowExceptions = [{ id: 9002, gate: "ROI floor", grantedAt: now35 - 4 * 86400e3, trips: 1, status: "active",
+                             evidence: { n: 6, filled: 5, net: 12000 }, evidenceVoid: 1 }];
+    setTab("trade", "gates"); renderAll();
+    clickFace("gate:ovr:ROI floor");
+    const boxOvr = document.getElementById(drillId("gate:ovr:ROI floor"));
+    ok("[R35.5] the realized override stream opens to its items and their outcomes",
+       !!boxOvr && boxOvr.offsetParent !== null && rowsIn(boxOvr) === 1
+       && /Probe alpha/.test(boxOvr.innerHTML) && /re-admission latency/.test(boxOvr.innerHTML),
+       boxOvr ? boxOvr.innerHTML.slice(0, 240) : "no override box");
+    clickFace("gate:ovr:ROI floor");
+    clickFace("dieoff:all");
+    const boxDie = document.getElementById(drillId("dieoff:all"));
+    ok("[R35.5] die-off episodes open to their items and 24h results, with the unobserved-window caveat intact",
+       !!boxDie && rowsIn(boxDie) === 2 && /recovered within 24h/.test(boxDie.innerHTML)
+       && /Probe beta/.test(boxDie.innerHTML),
+       boxDie ? boxDie.innerHTML.slice(0, 240) : "no die-off box");
+    clickFace("dieoff:all");
+    ok("[R35.5] the exception lane states its standing, and a void-basis grant says so where the lane is read",
+       (() => { const h = document.querySelector("#gateExc").innerHTML;
+                return /On probation/.test(h) && /Standing waivers/.test(h) && /Basis void — re-rule/.test(h)
+                    && /probation slots in use|of 2 probation/.test(document.querySelector("#gateExcSub").textContent); })(),
+       document.querySelector("#gateExc").innerHTML.slice(0, 300));
+    clickFace("exc:void");
+    const boxVoid = document.getElementById(drillId("exc:void"));
+    ok("[R35.5] the void-basis expansion names the item, its gate and the discarded grant evidence",
+       !!boxVoid && rowsIn(boxVoid) === 1 && /basis void, re-rule/.test(boxVoid.innerHTML)
+       && /6 trips, 5 filled/.test(boxVoid.innerHTML),
+       boxVoid ? boxVoid.innerHTML.slice(0, 300) : "no void box");
+    clickFace("exc:void");
+
+    // ── R35.6 scoping, tested by ABSENCE on computed visibility ──
+    const vis35 = id => { const el = document.getElementById(id);
+                          return !!el && el.offsetParent !== null && getComputedStyle(el).display !== "none"; };
+    const subViews = ["tab-paper", "tab-prospect", "tab-gates"];
+    setTab("trade", "gates"); renderAll();
+    ok("[R35.6] on Gate Health, the other two sub-views are not merely inactive — they do not render",
+       vis35("tab-gates") && !vis35("tab-paper") && !vis35("tab-prospect")
+       && !vis35("tab-watch") && !vis35("tab-scan") && !vis35("tab-log"),
+       JSON.stringify(subViews.concat(["tab-watch"]).map(i => i + ":" + vis35(i))));
+    setTab("trade", "paper"); renderAll();
+    ok("[R35.6] on Paper Book, Prospecting and Gate Health are absent",
+       vis35("tab-paper") && !vis35("tab-prospect") && !vis35("tab-gates"),
+       JSON.stringify(subViews.map(i => i + ":" + vis35(i))));
+    setTab("trade", "prospect"); renderAll();
+    ok("[R35.6] on Prospecting, Paper Book and Gate Health are absent",
+       vis35("tab-prospect") && !vis35("tab-paper") && !vis35("tab-gates"),
+       JSON.stringify(subViews.map(i => i + ":" + vis35(i))));
+    setTab("home"); renderAll();
+    ok("[R35.6] none of the three renders on Home — they belong to the Trade tab alone",
+       subViews.every(i => !vis35(i)),
+       JSON.stringify(subViews.map(i => i + ":" + vis35(i))));
+    setTab("review"); renderAll();
+    ok("[R35.6] none of the three renders on Review either — the review links through, it does not carry them",
+       subViews.every(i => !vis35(i)),
+       JSON.stringify(subViews.map(i => i + ":" + vis35(i))));
+    // the sub-tab buttons exist and are reachable in one press
+    ok("[R35.6] the three surfaces are first-class Trade sub-tabs, one press from Plan & Watchlist",
+       ["paper", "prospect", "gates"].every(s =>
+         Array.from(document.querySelectorAll("#tradeSubs button")).some(b => b.dataset.sub === s)),
+       JSON.stringify(Array.from(document.querySelectorAll("#tradeSubs button")).map(b => b.dataset.sub)));
+
+    // ── R35.7 the review keeps a ONE-LINE read that links through ──
+    S.tab = "review"; S.mode = "weekly"; renderRoutine();
+    const ck35 = document.querySelector("#ckList").innerHTML;
+    /* Asserted on the summary functions themselves, not only on the rendered
+       checklist: the step's own "→ open" arrow would otherwise supply the
+       same string and mask a summary that had stopped linking through. */
+    ok("[R35.7] each one-line read carries its OWN link through to the surface it summarises",
+       /data-goto="paper#paperRegimePanel"/.test(paperSummaryLine())
+       && /data-goto="prospect#prospectStrataPanel"/.test(prospectSummaryLine())
+       && /data-goto="gates#gateStreamPanel"/.test(gateSummaryLine())
+       && /data-goto="prospect#prospectHoursPanel"/.test(hoursSummaryLine())
+       && /data-goto="prospect#prospectRecipePanel"/.test(recipeSummaryLine()),
+       paperSummaryLine().slice(0, 200));
+    ok("[R35.7] the weekly review renders those one-line reads, each with its step anchor",
+       /data-goto="paper#paperRegimePanel"/.test(ck35)
+       && /data-goto="prospect#prospectHoursPanel"/.test(ck35)
+       && /data-goto="prospect#prospectRecipePanel"/.test(ck35)
+       && /id="ckstep-shadowbook"/.test(ck35),
+       ck35.slice(0, 300));
+    const aud35 = renderAuditInline();
+    ok("[R35.7] the audit's gate-health and prospecting sections are one-line reads that link through",
+       /data-goto="gates#gateStreamPanel"/.test(aud35) && /data-goto="prospect#prospectStrataPanel"/.test(aud35),
+       aud35.slice(aud35.indexOf("4 · Gate health"), aud35.indexOf("4 · Gate health") + 400));
+    ok("[R35.7] the review does NOT re-render the surfaces it links to — the working tables live on the sub-views",
+       !/id="paperGateTable"/.test(ck35) && !/id="strataTable"/.test(ck35)
+       && !/id="paperGateTable"/.test(aud35) && !/id="strataTable"/.test(aud35)
+       && !/id="hoursTable"/.test(ck35));
+    ok("[R35.7] the walk-up attention budget is untouched: these are pull surfaces with no rulings on them",
+       walkupDecisionCount() <= 7
+       && !/data-drill/.test((() => { S.mode = "walkup"; renderRoutine();
+                                      return document.querySelector("#ckList").innerHTML; })()),
+       String(walkupDecisionCount()));
+    S.mode = "walkup"; setTab("home");
+    DB.shadowBook = []; DB.gateLog = []; DB.flips = []; DB.strataStats = {};
+    DB.dieOffLog = []; DB.shadowExceptions = []; S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL decomposition primitive / trade sub-views :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
