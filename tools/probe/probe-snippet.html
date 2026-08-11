@@ -2077,6 +2077,108 @@
     ok("[R18.4] the weekly review carries the shadow-book step with the regime curves",
        /shadow book/i.test(document.querySelector("#ckList").innerHTML)
        && /Regime curves/.test(document.querySelector("#ckList").innerHTML));
+
+    // ═══ R20 SURFACE REORG (Aug 11 2026) — tier-1 Home, 4 tabs, click audit ═══
+    // R20.1 — four top-level tabs; Home is the boot surface (zero clicks)
+    const tabs20 = Array.from(document.querySelectorAll("#tabs button")).map(b => b.dataset.tab);
+    ok("[R20.1] four top-level tabs: home, trade, sleeve, review",
+       tabs20.join(",") === "home,trade,sleeve,review", tabs20.join(","));
+    ok("[R20.1] home is the default-on tab in the markup — NOW actions cost zero clicks",
+       document.querySelector("#tabs button.on").dataset.tab === "home"
+       && !!document.querySelector("#tab-home") && document.querySelector("#tab-home").classList.contains("on"));
+
+    // Seed a full home state: pending ruling, prior-visit clock + snapshot,
+    // and one delta in every category (7 lines total, so the cap bites).
+    const now20 = Date.now();
+    DB.intel = [{ id: "r20-p", type: "demand-context", confidence: "hinted", title: "R20 pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/r20" }],
+      validUntil: inDays(10), importedAt: now20 - 86400e3, status: "pending", teeth: 0, outcome: null }];
+    DB.rulingSnooze = {}; DB.rulingsCap = 5;
+    DB.lastBriefImportAt = now20 - 3600e3; DB.briefRemindDismissKey = "";
+    DB.prevOpenAt = now20 - 3600e3;
+    DB.homeSnapPrev = { armed: [], div: { loose: 0, tight: 0 }, catStates: { 7301: "upcoming" }, brief: "fresh" };
+    DB.flagArchive = [{ itemId: 9003, name: "Probe gamma", flagAt: now20 - 7200e3, storyId: "s1",
+      storyType: "demand-context", storyConf: "hinted", peakToFlagD: 2, retracePct: 5, at: now20 - 60e3 }];
+    DB.anomalyFlags = [{ id: 7290, itemId: 9002, name: "Probe beta", at: now20 - 60e3, d: today(),
+      strength: 7, rise14p: 20, rise14v: 150 }];
+    /* regimes carried on the closed trips: shadowTick recomputes today's
+       divergence entry from these on the vitals' plan read, so the ledger
+       must EARN its 200k-loose reading rather than being hand-seeded. */
+    DB.shadowBook = [
+      { id: 20, fam: "x1", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 120e3 },
+      { id: 21, fam: "x2", itemId: 9003, name: "Probe gamma", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
+        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 80e3 }];
+    DB.shadowDivLog = [];
+    DB.catalysts = [{ id: 7301, name: "R20 window", windowStart: inDays(-1), windowEnd: inDays(3),
+      items: [], clusters: [], notes: "", src: "manual", createdAt: now20 }];
+    S.latest[9052] = { high: 990, low: 951, highTime: nowS - 60, lowTime: nowS - 120 };
+    DB.sleeve = [{ id: 920, itemId: 9052, name: "Probe rungs", qty: 100, basis: 1000, enteredAt: now20,
+      catalyst: { name: "R20 window", windowStart: inDays(-1), windowEnd: inDays(3) }, thesis: "t", invalidation: "i",
+      ladder: [{ kind: "price", trigger: 1000, frac: 50 }], phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null }];
+    S.homeDeltaAll = false;
+    S.tab = "home"; renderHome();
+    // R20.2 — a pending ruling is actionable in ONE click: the digest line
+    // (with its inline actions and snooze) renders on the zero-click surface
+    const rulHTML20 = document.querySelector("#homeRulings").innerHTML;
+    ok("[R20.2] rulings digest renders on Home with inline actions — 1 click per ruling",
+       /data-rulesnooze/.test(rulHTML20) && /data-intelrat/.test(rulHTML20), rulHTML20.slice(0, 300));
+    ok("[R20.2] the walk-up checklist points at the digest instead of duplicating it",
+       /digest sits at the top/i.test(document.querySelector("#ckList").innerHTML)
+       && !/data-rulesnooze/.test(document.querySelector("#ckList").innerHTML));
+    // R20.3 — vitals strip: four tiles, each a click-through
+    const vits20 = Array.from(document.querySelectorAll("#homeVitals .vit"));
+    ok("[R20.3] vitals strip renders funnel, shadow book, sleeve, capital tiles",
+       vits20.length === 4 && vits20.every(v => v.dataset.goto),
+       JSON.stringify(vits20.map(v => v.dataset.goto)));
+    ok("[R20.3] shadow-book results are one vitals click away (goto review)",
+       vits20.some(v => /^review/.test(v.dataset.goto) && /simulated/.test(v.innerHTML)));
+    ok("[R20.3] funnel tile reads pass · funded · deployed",
+       vits20.some(v => /pass · \d+ funded · \d+% deployed/.test(v.textContent)), vits20[0].textContent);
+    // R20.5 — the delta block: every category one line, cap 6 + overflow counted
+    const dls20 = Array.from(document.querySelectorAll("#homeDelta .dl"));
+    ok("[R20.5] delta block renders one line per nonzero category, truncated at 6 with +N more",
+       dls20.length === 7 && /\+1 more/.test(dls20[6].textContent),
+       JSON.stringify(dls20.map(d => d.textContent.slice(0, 60))));
+    ok("[R20.5] the categories cover flags, shadow trips, rungs, regime, catalyst windows",
+       /explained/.test(dls20[0].textContent) && /accumulation flag/.test(dls20[1].textContent)
+       && /shadow book: 2 trips closed/.test(dls20[2].textContent) && /rung armed/.test(dls20[3].textContent)
+       && /regime divergence/.test(dls20[4].textContent) && /catalyst "R20 window": window upcoming → live/.test(dls20[5].textContent),
+       JSON.stringify(dls20.map(d => d.textContent.slice(0, 70))));
+    S.homeDeltaAll = true; renderHomeDelta();
+    const dlsAll20 = Array.from(document.querySelectorAll("#homeDelta .dl"));
+    ok("[R20.5] +N more expands to the full list (briefing-state line included)",
+       dlsAll20.length === 7 && /briefing state: fresh → tape-question/.test(dlsAll20[6].textContent),
+       JSON.stringify(dlsAll20.map(d => d.textContent.slice(0, 60))));
+    ok("[R20.4] the walk-up attention budget line renders on Home (≤7 still binds)",
+       /walk-up attention: \d+ decisions? of ≤7 budgeted/.test(document.querySelector("#briefRemind").innerHTML),
+       document.querySelector("#briefRemind").innerHTML.slice(0, 300));
+    // R20.6 — legacy tab names alias into the new surfaces (goto/prefill paths)
+    setTab("shadow");
+    ok("[R20.6] setTab(shadow) lands on Review with the weekly checklist + shadow fund",
+       S.tab === "review" && document.querySelector("#tab-review").classList.contains("on")
+       && document.querySelector("#reviewCkSlot #ckPanel") !== null
+       && /shadow book/i.test(document.querySelector("#ckList").innerHTML));
+    setTab("log");
+    ok("[R20.6] setTab(log) lands on Trade ▸ Flip Log (close→prefill flow intact)",
+       S.tab === "trade" && S.sub === "log" && document.querySelector("#tab-log").classList.contains("on")
+       && document.querySelector("#tab-trade").classList.contains("on"));
+    setTab("scan");
+    ok("[R20.6] setTab(scan) lands on Trade ▸ Scanner",
+       S.tab === "trade" && S.sub === "scan" && document.querySelector("#tab-scan").classList.contains("on"));
+    S.mode = "walkup"; setTab("routine");
+    ok("[R20.6] setTab(routine) follows the checklist mode home (walk-up) — panel reparents back",
+       S.tab === "home" && document.querySelector("#homeCkSlot #ckPanel") !== null);
+    // R20.7 — tier check: 30d usage vs click depth, contradiction flagged
+    DB.featTouch = { "panel:beyondNet": { first: now20 - 5 * 86400e3, last: now20 - 2 * 86400e3 } };
+    const tc20 = tierContradictions();
+    ok("[R20.7] a 3-click surface used inside 30d is flagged as a tier contradiction",
+       tc20.length === 1 && /panel:beyondNet/.test(tc20[0])
+       && /Tier check/.test(attentionGovernanceInline()) && /contradicts the tier assignment/.test(attentionGovernanceInline()),
+       JSON.stringify(tc20));
+    DB.featTouch = { "tab:trade/watch": { first: now20 - 5 * 86400e3, last: now20 - 86400e3 } };
+    ok("[R20.7] usage matching the tiers renders the clean line, never silence",
+       tierContradictions().length === 0 && /tiers match usage/.test(attentionGovernanceInline()));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

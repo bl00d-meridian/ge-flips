@@ -9,10 +9,16 @@ everything client-side. Prices come live from the
 (polled no faster than 60s, with backoff).
 
 **Your data never leaves your browser.** Flips, watchlist, bank value and settings live in
-`localStorage` on each device. Use Export/Import JSON (Flip Log tab) to move data between devices
-or back it up — the log is the only irreplaceable part.
+`localStorage` on each device. Use Export/Import JSON (Trade ▸ Flip Log) to move data between
+devices or back it up — the log is the only irreplaceable part.
 
 ## What's inside
+
+Four surfaces — **Home** (NOW bar, rulings digest, what-changed-since-last-visit, vitals strip,
+walk-up checklist), **Trade** (plan & watchlist, scanner, flip log), **Sleeve** (catalyst
+positions, calendar, baskets, intelligence queue), **Review** (weekly checklist, gate health,
+shadow ledger, audits, shadow fund) — arranged so what needs action is zero clicks away and
+everything else is at most one level down:
 
 - **Scanner** — post-tax margins over the whole market, gated on the thin side of the order book,
   with crowding ranks
@@ -42,9 +48,11 @@ or back it up — the log is the only irreplaceable part.
   stats while netting them from the snapshot dots. Weekly review adds markouts (post-fill price
   drift, with toxic-flow flags), spread-capture vs drift decomposition (directional tags),
   a touch-timing heatmap, capital velocity, and a one-line friction log that exports as markdown
-- **Routine** — morning / evening / weekly checklists with the live plan inlined
+- **Checklists** — the walk-up flow lives on Home with the live plan inlined; the weekly review
+  lives on the Review tab
 - **Shadow fund** — progress toward Tumeken's Shadow at its live price, secondary targets, and
-  long-term holds tracked against a baseline with an exit thesis per item
+  long-term holds tracked against a baseline with an exit thesis per item (Review tab, with the
+  headline on Home's vitals strip)
 - **Explainers everywhere** — a trading glossary, tap-to-explain tooltips on mobile, and per-item
   "what does this become in-game" notes that explain where the daily volume comes from
 

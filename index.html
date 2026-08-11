@@ -67,6 +67,21 @@ nav.tabs button{
 nav.tabs button.on{background:var(--panel);color:var(--gold);border-color:var(--line);border-bottom:1px solid var(--panel)}
 section.tab{display:none;padding-top:16px}
 section.tab.on{display:block}
+/* trade sub-views: one level down from a surface that earns its position */
+nav.subtabs{display:flex;gap:2px;margin:0 0 14px;flex-wrap:wrap}
+nav.subtabs button{background:#191510;color:var(--dim);border-radius:3px;padding:5px 12px;font-size:12.5px}
+nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--gold);border-color:var(--gold-dim)}
+.tsub{display:none}
+.tsub.on{display:block}
+/* home vitals strip: compact, always visible, each tile a click-through */
+.vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:8px;margin-bottom:14px}
+.vit{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 11px;cursor:pointer;transition:.12s}
+.vit:hover{border-color:var(--gold-dim)}
+.vit .k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.vit .v{font-size:12.5px;margin-top:3px;font-variant-numeric:tabular-nums;line-height:1.5}
+/* what-changed delta lines */
+#homeDelta .dl{padding:3px 0;font-size:12.5px;border-bottom:1px solid #262017;font-variant-numeric:tabular-nums}
+#homeDelta .dl:last-child{border-bottom:none}
 
 /* ---- panels ---- */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin-bottom:14px}
@@ -274,16 +289,53 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <div id="nowBar" class="nowbar"></div>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="watch" class="on">Watchlist</button>
+    <button data-tab="home" class="on">Home</button>
+    <button data-tab="trade">Trade</button>
     <button data-tab="sleeve">Sleeve</button>
-    <button data-tab="routine">Routine</button>
-    <button data-tab="log">Flip Log</button>
-    <button data-tab="shadow">Shadow Fund</button>
-    <button data-tab="scan">Scanner</button>
+    <button data-tab="review">Review</button>
   </nav>
 
-  <!-- ═══════════ SCANNER ═══════════ -->
-  <section class="tab" id="tab-scan">
+  <!-- ═══════════ HOME — the tier-1 surface (reorg, Aug 11 2026) ═══════════
+       One screen, zero clicks: NOW bar (above, global) → rulings digest →
+       what changed since the last visit → vitals strip → walk-up checklist.
+       Everything else is one click down from a surface that earns its spot. -->
+  <section class="tab on" id="tab-home">
+    <div class="panel" id="homeRulingsPanel">
+      <div class="ph"><h2>Rulings pending</h2><span class="sub" id="homeRulSub"></span></div>
+      <div id="homeRulings"></div>
+    </div>
+    <div class="panel" id="homeDeltaPanel">
+      <div class="ph"><h2>What changed</h2><span class="sub" id="homeDeltaSub"></span></div>
+      <div id="homeDelta"></div>
+    </div>
+    <div class="vitals" id="homeVitals"></div>
+    <div id="homeCkSlot">
+      <div class="panel" id="ckPanel">
+        <div class="ph"><h2 id="ckHead">Walk-up routine</h2><span class="sub" id="ckDate"></span>
+          <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <span id="modeExtras" style="display:flex;align-items:center"></span>
+            <button class="sm" id="ckReset">Reset today</button>
+          </span>
+        </div>
+        <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
+        <div id="briefRemind"></div>
+        <h3 id="ckTitle" style="margin-bottom:8px"></h3>
+        <ul class="ck" id="ckList"></ul>
+        <div class="note" id="ckFoot" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TRADE — plan & watchlist, scanner, flip log ═══════════ -->
+  <section class="tab" id="tab-trade">
+    <nav class="subtabs" id="tradeSubs">
+      <button data-sub="watch" class="on">Plan &amp; Watchlist</button>
+      <button data-sub="scan">Scanner</button>
+      <button data-sub="log">Flip Log</button>
+    </nav>
+
+  <!-- ── scanner sub-view ── -->
+  <div class="tsub" id="tab-scan">
     <div class="panel">
       <div class="ph"><h2>Filters</h2><span class="sub" id="fPresetState"></span>
         <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -348,10 +400,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </details>
     </div>
 
-  </section>
+  </div>
 
-  <!-- ═══════════ WATCHLIST ═══════════ -->
-  <section class="tab on" id="tab-watch">
+  <!-- ── plan & watchlist sub-view (default) ── -->
+  <div class="tsub on" id="tab-watch">
     <div class="panel">
       <div class="ph"><h2 id="planTitle">Today's Plan</h2><span class="sub" id="planSub"></span>
         <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -514,6 +566,111 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div id="depBody"></div>
     </div>
 
+  </div>
+
+  <!-- ═══════════ FLIP LOG ═══════════ -->
+  <div class="tsub" id="tab-log">
+    <div class="panel">
+      <div class="ph"><h2>Log a completed round trip</h2><span class="sub">Every one, including the duds</span></div>
+      <div class="row">
+        <div class="ac" id="acLog" style="max-width:250px"><input placeholder="Item…"></div>
+        <label class="f">Qty<input type="number" id="lQty" value="1" min="1" style="width:80px"></label>
+        <label class="f"><span>Buy each <i class="est-tag hide" id="tagBuy">est.</i></span><input type="number" id="lBuy" style="width:104px"></label>
+        <label class="f"><span>Sell each <i class="est-tag hide" id="tagSell">est.</i></span><input type="number" id="lSell" style="width:104px"></label>
+        <button class="sm" id="lRefresh" title="Re-pull live prices into any field still marked est.">↻ prices</button>
+        <span id="lFresh" class="note" style="align-self:center"></span>
+        <label class="f">Date<input type="date" id="lDate" style="width:140px"></label>
+        <label class="f">Note<input id="lNote" placeholder="optional" style="width:150px"></label>
+        <button class="primary" id="lAdd">+ Log flip</button>
+        <span id="lPreview" class="note" style="align-self:center"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Results</h2>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span id="exportChip" class="note"></span>
+          <label class="f">Min / touch<input type="number" id="lMins" value="10" min="1" style="width:64px" title="How long one GE touch honestly takes, door to door — opening the app, walking to the booth, placing or collecting. Feeds every gp-per-minute figure, so keep it honest rather than flattering."></label>
+          <button class="sm" id="lExport">⭳ Export JSON</button>
+          <button class="sm" id="lImport">⭱ Import JSON</button>
+          <input type="file" id="lFile" accept="application/json,.json" class="hide">
+        </span>
+      </div>
+      <div class="stats" id="logStats"></div>
+    </div>
+
+    <div class="panel" id="eqPanel">
+      <div class="ph"><h3>Equity curve</h3>
+        <span class="sub" id="eqSub" style="margin-left:auto"></span>
+      </div>
+      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. Divides realized profit by walk-up sessions — one visit services every offer at once, so flips don't each get charged their own touches. Sessions are stamped from real activity (a 2h quiet gap starts a new one; pre-tracking days count as two); minutes-per-visit is a simple default you can edit in the log header and on the Walk-up list. Compare it against just playing content you enjoy."></div>
+      <div id="eqChart"></div>
+      <div id="eqBars"></div>
+      <div class="stats" id="eqStats" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Game gp — bank changes that aren't flips</h3>
+        <span class="sub" title="Supplies bought, drops sold, deaths — anything that moves the bank without being a flip. Logging it here keeps flipping P/L pure: these entries are netted out of the bank dots on the equity curve, and the stack the plan sizes against stays accurate.">supplies bought, drops sold — keeps flipping P/L pure</span>
+      </div>
+      <div class="row">
+        <label class="f">Amount (gp)<input type="number" id="gAmt" min="0" style="width:130px"></label>
+        <label class="f">What<input id="gNote" placeholder="e.g. prayer pots ×300" style="width:200px"></label>
+        <label class="f">Date<input type="date" id="gDate" style="width:140px"></label>
+        <button class="sm" id="gSpend" title="gp that left the bank for gameplay — supplies, gear, deaths">− Spent</button>
+        <button class="sm" id="gGain" title="gp that entered the bank from gameplay — drops sold, clue loot, quest rewards">+ Gained</button>
+        <span class="note" id="gSum" style="align-self:center"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Date</th><th>Δ gp</th><th>What</th><th></th></tr></thead>
+        <tbody id="gameBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel" id="tierPanel">
+      <div class="ph"><h3>Tier comparison — does the edge scale? (weekly review)</h3>
+        <span class="sub" id="tierVerdict" style="margin-left:auto"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Tier</th>
+          <th title="Σ qty × buy × measured slot-hours ÷ 24, from timed flips — the gp-days this tier actually occupied">gp-days deployed</th>
+          <th>Realized profit</th>
+          <th title="Profit per gp-day deployed — the truest rate on the capital itself. Needs timed flips.">Velocity</th>
+          <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift — needs flips placed through the plan">Capture %</th>
+          <th class="sec" title="Average +30m markout per unit across the tier's timed flips (+ favorable, − adverse)">Avg markout</th>
+          <th class="sec">Slot-hours</th><th>Flips</th></tr></thead>
+        <tbody id="tierBody"></tbody>
+      </table></div>
+      <div class="note" id="tierNote" style="margin-top:8px"></div>
+      <div class="note" id="discLine" style="margin-top:6px"></div>
+    </div>
+
+    <div class="panel" id="byItemPanel">
+      <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
+        <span class="sub" id="worstNote" style="margin-left:auto"></span>
+      </div>
+      <div class="note" id="timingBox" style="margin-bottom:8px"></div>
+      <div class="tw"><table>
+        <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th>
+        <th title="Profit ÷ (flips × 2 handlings) — a RELATIVE rank for comparing items, not a time rate. The real attention rate divides by touch sessions and lives on the equity panel, since one sitting services many flips at once">gp / touch</th>
+        <th title="Measured from the position lifecycle: profit ÷ hours the flip actually occupied a GE slot">gp / slot-h</th>
+        <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th>
+        <th class="sec" title="Where the price went ~30m after your fills, per unit (+ favorable, − adverse), from timed flips against the 7-day series. Consistently negative = informed flow is picking your quotes off">Markout</th>
+        <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift while holding. Below 50% means the gp came from the market moving, not from market making — luck, not edge">Capture %</th>
+        <th></th></tr></thead>
+        <tbody id="logByItem"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>All flips</h3></div>
+      <div class="tw"><table>
+        <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Buy</th><th>Sell</th><th class="sec">Tax</th><th>Profit</th><th class="sec">ROI %</th><th class="sec">Note</th><th></th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
   </section>
 
   <!-- ═══════════ THESIS SLEEVE ═══════════ -->
@@ -673,130 +830,14 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     </div>
   </section>
 
-  <!-- ═══════════ FLIP LOG ═══════════ -->
-  <section class="tab" id="tab-log">
-    <div class="panel">
-      <div class="ph"><h2>Log a completed round trip</h2><span class="sub">Every one, including the duds</span></div>
-      <div class="row">
-        <div class="ac" id="acLog" style="max-width:250px"><input placeholder="Item…"></div>
-        <label class="f">Qty<input type="number" id="lQty" value="1" min="1" style="width:80px"></label>
-        <label class="f"><span>Buy each <i class="est-tag hide" id="tagBuy">est.</i></span><input type="number" id="lBuy" style="width:104px"></label>
-        <label class="f"><span>Sell each <i class="est-tag hide" id="tagSell">est.</i></span><input type="number" id="lSell" style="width:104px"></label>
-        <button class="sm" id="lRefresh" title="Re-pull live prices into any field still marked est.">↻ prices</button>
-        <span id="lFresh" class="note" style="align-self:center"></span>
-        <label class="f">Date<input type="date" id="lDate" style="width:140px"></label>
-        <label class="f">Note<input id="lNote" placeholder="optional" style="width:150px"></label>
-        <button class="primary" id="lAdd">+ Log flip</button>
-        <span id="lPreview" class="note" style="align-self:center"></span>
-      </div>
-    </div>
 
-    <div class="panel">
-      <div class="ph"><h2>Results</h2>
-        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span id="exportChip" class="note"></span>
-          <label class="f">Min / touch<input type="number" id="lMins" value="10" min="1" style="width:64px" title="How long one GE touch honestly takes, door to door — opening the app, walking to the booth, placing or collecting. Feeds every gp-per-minute figure, so keep it honest rather than flattering."></label>
-          <button class="sm" id="lExport">⭳ Export JSON</button>
-          <button class="sm" id="lImport">⭱ Import JSON</button>
-          <input type="file" id="lFile" accept="application/json,.json" class="hide">
-        </span>
-      </div>
-      <div class="stats" id="logStats"></div>
-    </div>
 
-    <div class="panel" id="eqPanel">
-      <div class="ph"><h3>Equity curve</h3>
-        <span class="sub" id="eqSub" style="margin-left:auto"></span>
-      </div>
-      <div class="eqhero" id="eqHero" title="The house metric: what a minute of GE attention actually pays. Divides realized profit by walk-up sessions — one visit services every offer at once, so flips don't each get charged their own touches. Sessions are stamped from real activity (a 2h quiet gap starts a new one; pre-tracking days count as two); minutes-per-visit is a simple default you can edit in the log header and on the Walk-up list. Compare it against just playing content you enjoy."></div>
-      <div id="eqChart"></div>
-      <div id="eqBars"></div>
-      <div class="stats" id="eqStats" style="margin-top:10px"></div>
-    </div>
-
-    <div class="panel">
-      <div class="ph"><h3>Game gp — bank changes that aren't flips</h3>
-        <span class="sub" title="Supplies bought, drops sold, deaths — anything that moves the bank without being a flip. Logging it here keeps flipping P/L pure: these entries are netted out of the bank dots on the equity curve, and the stack the plan sizes against stays accurate.">supplies bought, drops sold — keeps flipping P/L pure</span>
-      </div>
-      <div class="row">
-        <label class="f">Amount (gp)<input type="number" id="gAmt" min="0" style="width:130px"></label>
-        <label class="f">What<input id="gNote" placeholder="e.g. prayer pots ×300" style="width:200px"></label>
-        <label class="f">Date<input type="date" id="gDate" style="width:140px"></label>
-        <button class="sm" id="gSpend" title="gp that left the bank for gameplay — supplies, gear, deaths">− Spent</button>
-        <button class="sm" id="gGain" title="gp that entered the bank from gameplay — drops sold, clue loot, quest rewards">+ Gained</button>
-        <span class="note" id="gSum" style="align-self:center"></span>
-      </div>
-      <div class="tw"><table>
-        <thead><tr><th>Date</th><th>Δ gp</th><th>What</th><th></th></tr></thead>
-        <tbody id="gameBody"></tbody>
-      </table></div>
-    </div>
-
-    <div class="panel" id="tierPanel">
-      <div class="ph"><h3>Tier comparison — does the edge scale? (weekly review)</h3>
-        <span class="sub" id="tierVerdict" style="margin-left:auto"></span>
-      </div>
-      <div class="tw"><table>
-        <thead><tr><th>Tier</th>
-          <th title="Σ qty × buy × measured slot-hours ÷ 24, from timed flips — the gp-days this tier actually occupied">gp-days deployed</th>
-          <th>Realized profit</th>
-          <th title="Profit per gp-day deployed — the truest rate on the capital itself. Needs timed flips.">Velocity</th>
-          <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift — needs flips placed through the plan">Capture %</th>
-          <th class="sec" title="Average +30m markout per unit across the tier's timed flips (+ favorable, − adverse)">Avg markout</th>
-          <th class="sec">Slot-hours</th><th>Flips</th></tr></thead>
-        <tbody id="tierBody"></tbody>
-      </table></div>
-      <div class="note" id="tierNote" style="margin-top:8px"></div>
-      <div class="note" id="discLine" style="margin-top:6px"></div>
-    </div>
-
-    <div class="panel" id="byItemPanel">
-      <div class="ph"><h3>Per item — gp per touch (§5 weekly review)</h3>
-        <span class="sub" id="worstNote" style="margin-left:auto"></span>
-      </div>
-      <div class="note" id="timingBox" style="margin-bottom:8px"></div>
-      <div class="tw"><table>
-        <thead><tr><th>Item</th><th>Flips</th><th class="sec">Qty</th><th>Profit</th><th class="sec">Avg / flip</th>
-        <th title="Profit ÷ (flips × 2 handlings) — a RELATIVE rank for comparing items, not a time rate. The real attention rate divides by touch sessions and lives on the equity panel, since one sitting services many flips at once">gp / touch</th>
-        <th title="Measured from the position lifecycle: profit ÷ hours the flip actually occupied a GE slot">gp / slot-h</th>
-        <th class="sec" title="Average measured fill times: buy leg + sell leg">Fill b+s</th><th class="sec">ROI %</th>
-        <th class="sec" title="Where the price went ~30m after your fills, per unit (+ favorable, − adverse), from timed flips against the 7-day series. Consistently negative = informed flow is picking your quotes off">Markout</th>
-        <th class="sec" title="Share of profit that came from the spread quoted at entry vs price drift while holding. Below 50% means the gp came from the market moving, not from market making — luck, not edge">Capture %</th>
-        <th></th></tr></thead>
-        <tbody id="logByItem"></tbody>
-      </table></div>
-    </div>
-
-    <div class="panel">
-      <div class="ph"><h3>All flips</h3></div>
-      <div class="tw"><table>
-        <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Buy</th><th>Sell</th><th class="sec">Tax</th><th>Profit</th><th class="sec">ROI %</th><th class="sec">Note</th><th></th></tr></thead>
-        <tbody id="logBody"></tbody>
-      </table></div>
-    </div>
-  </section>
-
-  <!-- ═══════════ ROUTINE ═══════════ -->
-  <section class="tab" id="tab-routine">
-    <div class="panel">
-      <div class="ph"><h2>Walk-up routine</h2><span class="sub" id="ckDate"></span>
-        <span style="margin-left:auto"><button class="sm" id="ckReset">Reset today</button></span>
-      </div>
-      <div class="row" style="margin-bottom:12px">
-        <button class="primary" id="mWalk">🚶 Walk-up</button>
-        <button id="mWeekly">📓 Review</button>
-        <span id="modeExtras" style="margin-left:auto;display:flex;align-items:center"></span>
-      </div>
-      <div class="bar thin" style="margin-bottom:12px"><i id="ckBar" style="width:0"></i></div>
-      <div id="briefRemind"></div>
-      <h3 id="ckTitle" style="margin-bottom:8px"></h3>
-      <ul class="ck" id="ckList"></ul>
-      <div class="note" id="ckFoot" style="margin-top:10px"></div>
-    </div>
-  </section>
-
-  <!-- ═══════════ SHADOW FUND ═══════════ -->
-  <section class="tab" id="tab-shadow">
+  <!-- ═══════════ REVIEW — weekly checklist + shadow fund ═══════════
+       The weekly review checklist reparents here from Home (one physical
+       panel, mode follows the tab); the shadow-fund panels live below it. -->
+  <section class="tab" id="tab-review">
+    <div id="reviewCkSlot"></div>
+    <div id="tab-shadow">
     <div class="panel">
       <div class="ph"><h2>Shadow fund</h2><span class="sub" id="shadowSub">live price from /latest</span></div>
       <div class="bar" style="height:30px"><i id="shBar" style="width:0"></i><span id="shBarTxt"></span></div>
@@ -839,6 +880,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <th class="sec" title="How many flips at your recent average profit-per-flip still separate you from this target">Flips @ current avg</th><th></th></tr></thead>
         <tbody id="tgtBody"></tbody>
       </table></div>
+    </div>
     </div>
   </section>
 
@@ -1085,6 +1127,10 @@ let DB = {
   rulingsCap: 5,      // max rulings-pending lines per walk-up — overflow counted, never silently hidden
   briefRemindDismissKey: "",  // which briefing-reminder occurrence was dismissed — returns on the next trigger
   nudgeSnooze: {},    // NOW-bar nudge key → "YYYY-MM-DD" snoozed-for date — a dismissed nudge rests for the day, never forever
+  lastOpenAt: 0,      // visit tracking (reorg Aug 11 2026): last-activity stamp; a 2h quiet gap rolls the visit
+  prevOpenAt: 0,      // when the PREVIOUS visit ended — the WHAT CHANGED block's "since" clock
+  homeSnap: null,     // end-of-visit state snapshot {armed,div,catStates,brief}, restamped while live data is in
+  homeSnapPrev: null, // the last visit's closing snapshot — the delta baseline for stateless signals
   checks: { date:"", walkup:[], weekly:[] }
 };
 function load(){
@@ -1215,6 +1261,28 @@ function load(){
       DB.netWidenV1 = 1;
     }
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
+    /* One-time (surface reorg, Aug 11 2026): feature-touch keys follow their
+       surfaces to the new names, else the 90-day dormancy report would
+       falsely accuse live surfaces whose old keys simply stopped being
+       written. Stamps merge (earliest first, latest last). The removed
+       mode buttons' keys are dropped — the buttons no longer exist. */
+    if (!DB.reorgV1){
+      const KEYMAP = { "tab:watch": "tab:trade/watch", "tab:scan": "tab:trade/scan",
+        "tab:log": "tab:trade/log", "tab:shadow": "tab:review", "tab:routine": "tab:home" };
+      const ft = DB.featTouch || {};
+      for (const [oldK, newK] of Object.entries(KEYMAP)){
+        const v = ft[oldK];
+        if (!v) continue;
+        const t = ft[newK];
+        ft[newK] = t ? { first: Math.min(t.first, v.first), last: Math.max(t.last, v.last) } : v;
+        delete ft[oldK];
+      }
+      delete ft["btn:mWalk"]; delete ft["btn:mWeekly"];
+      DB.decisionLog.push({ t: Date.now(), d: today(), kind: "settings",
+        subject: "surface reorganization", action: "6 tabs → 4 (Home/Trade/Sleeve/Review)",
+        reason: "user-directed: tier-1 Home (NOW, rulings digest, what-changed, vitals) with the walk-up folded in; Watchlist/Scanner/Flip Log become Trade sub-views; Shadow Fund joins Review; nothing deleted, everything ≤1 level down; feature-touch keys migrated to the new surface names" });
+      DB.reorgV1 = 1;
+    }
   } catch(e){ console.warn("state load failed", e); }
 }
 
@@ -1268,9 +1336,22 @@ const S = {
   vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
-  loading: false, err: null, tab: "watch",
+  loading: false, err: null, tab: "home", sub: "watch",
   mode: "walkup", planMode: "buy", promoteFor: null
 };
+
+/* Surface predicates (reorg, Aug 11 2026): four top-level tabs — home,
+   trade (watch/scan/log sub-views), sleeve, review. setTab still accepts the
+   old tab names as aliases so every historical goto/prefill path lands; the
+   probe suite's legacy S.tab="routine" fixtures are honored by onCk. */
+const onWatch = () => S.tab === "trade" && S.sub === "watch";
+const onScan  = () => S.tab === "trade" && S.sub === "scan";
+const onLog   = () => S.tab === "trade" && S.sub === "log";
+const onCk    = () => S.tab === "home" || S.tab === "review" || S.tab === "routine";
+const onShadowFund = () => S.tab === "review" || S.tab === "shadow";
+/* Re-render whichever checklist surface is showing; on Home that includes
+   the tier-1 blocks (rulings digest, delta, vitals) above the checklist. */
+function rerenderCk(){ if (S.tab === "home") renderHome(); else if (onCk()) renderRoutine(); }
 
 /* ── helpers ─────────────────────────────────────────────────── */
 const $  = s => document.querySelector(s);
@@ -4855,7 +4936,7 @@ async function runScout(force){
         + (added.length && removed.length ? " · " : "")
         + (removed.length ? "−" + removed.length + " (" + removed.slice(0,3).join(", ") + (removed.length>3?"…":"") + ")" : "");
       save();
-      if (S.tab === "watch"){ renderWatch(); fillSparks(); }
+      if (onWatch()){ renderWatch(); fillSparks(); }
     }
   } catch(e){ console.warn("scout pipeline", e); }
   finally { S.scoutBusy = false; }
@@ -5021,14 +5102,14 @@ function blkAdd(id){
     DB.blacklist.push(id); save();
     toast(itemName(id) + " blacklisted — never scout-admitted, never funded, never quoted. Remove it yourself when you change your mind.");
   }
-  renderWatch(); renderBlacklist(); if (S.tab === "scan") renderScan();
+  renderWatch(); renderBlacklist(); if (onScan()) renderScan();
 }
 function blkRemove(id){
   DB.blacklist = (DB.blacklist || []).filter(x => x !== id);
   save();
   toast(itemName(id) + " removed from the blacklist — eligible for gates, scout and funding again.",
         () => { DB.blacklist.push(id); save(); renderWatch(); renderBlacklist(); });
-  renderWatch(); renderBlacklist(); if (S.tab === "scan") renderScan();
+  renderWatch(); renderBlacklist(); if (onScan()) renderScan();
 }
 
 /* Scout journal — the "what changed while I wasn't looking" answer. Entries
@@ -5312,11 +5393,11 @@ async function fillSparks(force){
       const c = S.spark.get(id);
       if (c && Date.now() - c.at < SPARK_TTL) continue;
       try { await sparkFor(id); } catch(e){ /* one bad series shouldn't stop the rest */ }
-      if (++since >= 5){ since = 0; if (S.tab === "watch") renderWatch(); }
+      if (++since >= 5){ since = 0; if (onWatch()) renderWatch(); }
       await new Promise(r => setTimeout(r, 250));
     }
-    if (S.tab === "watch") renderWatch();
-    if (S.tab === "shadow") renderHolds();
+    if (onWatch()) renderWatch();
+    if (onShadowFund()) renderHolds();
   } finally { sparkBusy = false; }
 }
 
@@ -5708,7 +5789,7 @@ function confirmCand(candId){
   c.status = "confirmed";
   logDecision("cluster", name, "confirm", (c.story || c.status) + " · " + c.members.length + " members");
   save(); renderWatch();
-  if (S.tab === "routine") renderRoutine();
+  rerenderCk();
   toast("Cluster \"" + name + "\" confirmed — combined exposure now caps at "
     + (DB.clusterCapPct != null ? DB.clusterCapPct : 15) + "% of working capital.");
 }
@@ -5727,7 +5808,7 @@ function mergeCand(candId){
   c.status = "merged";
   logDecision("cluster", cl.name, "merge", added + " members folded in from candidate \"" + (c.name || c.story || c.sig) + "\"");
   save(); renderWatch();
-  if (S.tab === "routine") renderRoutine();
+  rerenderCk();
   toast(added + " item" + (added === 1 ? "" : "s") + " merged into \"" + cl.name + "\" — the cluster cap now covers them.");
 }
 
@@ -5738,9 +5819,9 @@ function dismissCand(candId){
   c.status = "dismissed"; c.dismissedAt = Date.now();
   logDecision("cluster", c.name || c.story || c.sig, "dismiss", "was " + prev);
   save(); renderClusters();
-  if (S.tab === "routine") renderRoutine();
+  rerenderCk();
   toast("Candidate dismissed — the queue won't raise this set again.",
-        () => { c.status = prev; delete c.dismissedAt; save(); renderClusters(); if (S.tab === "routine") renderRoutine(); });
+        () => { c.status = prev; delete c.dismissedAt; save(); renderClusters(); rerenderCk(); });
 }
 
 function dissolveCluster(clId){
@@ -5787,7 +5868,7 @@ document.addEventListener("click", e => {
     cl.members.splice(at, 1);
     /* Refresh the ledger and, when this cluster's detail is open, the detail
        too — its matrix/decay/manage sections all just changed membership. */
-    const refresh = () => { renderClusters(); if (S.cluDetailId === cid) openClusterDetail(cid); if (S.tab === "watch") renderWatch(); };
+    const refresh = () => { renderClusters(); if (S.cluDetailId === cid) openClusterDetail(cid); if (onWatch()) renderWatch(); };
     save(); refresh();
     toast(itemName(iid) + " removed from \"" + cl.name + "\".",
           () => { cl.members.splice(at, 0, iid); save(); refresh(); });
@@ -6284,8 +6365,8 @@ function recordSleeveExit(posId, rungIdx){
   pos.soldQty = (pos.soldQty || 0) + qty;
   if (sleeveRemQty(pos) === 0) pos.closedAt = Date.now();
   save(); renderSleeve();
-  if (S.tab === "watch") renderPlan();
-  if (S.tab === "routine") renderRoutine();
+  if (onWatch()) renderPlan();
+  rerenderCk();
   toast("Sleeve exit recorded: " + full(qty) + " at " + full(px)
     + (net != null ? " — realized " + gp(net) + " net of tax vs cost." : " — no cost basis recorded, so P&L stays unknown.")
     + (pos.closedAt ? " Position closed; its budget is freed." : "")
@@ -6576,7 +6657,7 @@ document.addEventListener("click", e => {
       toast("Catalyst phase flagged: " + SLV_PHASE_LABEL[phase] + ". Any phase rung it satisfies is now armed.");
     }
     save(); renderSleeve();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
     return;
   }
   const hl = t.closest("[data-slvhealth]");
@@ -6586,7 +6667,7 @@ document.addEventListener("click", e => {
     if (!pos) return;
     pos.health = state; pos.healthAt = Date.now();
     save();
-    if (S.tab === "routine") renderRoutine(); else renderSleeve();
+    if (onCk()) rerenderCk(); else renderSleeve();
     return;
   }
   const dr = t.closest("[data-slvdrop]");
@@ -7055,7 +7136,7 @@ document.addEventListener("click", e => {
     f.dismissed = Date.now();
     logDecision("anomaly", f.name, "dismiss flag", "tape-question reminder silenced for this flag — pump defenses unaffected");
     save(); renderSleeve();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
     toast("Flag dismissed — the tape-question reminder drops it. Any pump defense on " + f.name + " stands until its warning record is dismissed.");
     return;
   }
@@ -7486,6 +7567,28 @@ function intelScorecardInline(){
     : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';
 }
 
+/* Click-depth audit (reorg Aug 11 2026): tier assignments vs the last 30
+   days of actual feature touches. The usage ledger lives in this browser's
+   featTouch instrumentation, so the check ships as machinery and renders
+   with the dormancy report — where the data contradicts the stated
+   priorities, the contradiction is flagged, never silently resolved. */
+const SURFACE_DEPTH = {
+  "tab:home": 0, "tab:routine": 0,
+  "tab:trade": 1, "tab:trade/watch": 1, "tab:watch": 1, "tab:sleeve": 1, "tab:review": 1, "tab:shadow": 1,
+  "tab:trade/scan": 2, "tab:scan": 2, "tab:trade/log": 2, "tab:log": 2,
+  "panel:planBench": 2, "panel:famDebug": 2, "panel:blkBox": 2, "panel:scoutLogBox": 2, "panel:cluQueueBox": 2,
+  "panel:beyondNet": 3
+};
+function tierContradictions(){
+  const out = [], nowMs = Date.now();
+  for (const [k, v] of Object.entries(DB.featTouch || {})){
+    if (!v || !v.last || nowMs - v.last > 30 * 86400e3) continue;
+    const d = SURFACE_DEPTH[k];
+    if (d != null && d > 2) out.push(k + " (" + d + " clicks, last used " + ago(v.last) + ")");
+  }
+  return out;
+}
+
 /* Complexity-governance report (ruled Aug 10 2026): walk-up attention trend
    against the ≤7 budget, and 90-day feature dormancy. Proposals only — a
    demotion happens when the user rules it, in a tooling session. */
@@ -7503,6 +7606,12 @@ function attentionGovernanceInline(){
       + (peak > 7 ? ' <span class="badge b-risk">budget breached — something must displace, not stack</span>' : ' <span class="badge b-tax">within budget</span>')
       + '</div>');
   } else lines.push('<div class="dim">No walk-up load readings yet — the count records on each walk-up render.</div>');
+  const tc = tierContradictions();
+  if (tc.length)
+    lines.push('<div><b>Tier check</b> — used in the last 30 days but 3+ clicks deep (usage contradicts the tier assignment; propose a promotion rather than silently following either): '
+      + esc(tc.join(" · ")) + '</div>');
+  else if (Object.keys(DB.featTouch || {}).length)
+    lines.push('<div class="dim">Tier check: every surface touched in the last 30 days sits ≤2 clicks from a fresh open — tiers match usage.</div>');
   const nowMs = Date.now();
   const dormant = Object.entries(DB.featTouch || {})
     .filter(([k, v]) => v && v.last && nowMs - v.last > 90 * 86400e3 && nowMs - (v.first || v.last) > 90 * 86400e3)
@@ -7565,7 +7674,7 @@ document.addEventListener("click", e => {
     const effect = activateIntel(r);
     logDecision("intel", r.title, "ratify", effect + " · " + r.confidence + ", until " + r.validUntil);
     save(); renderSleeve();
-    if (S.tab === "watch") renderWatch();
+    if (onWatch()) renderWatch();
     toast("Ratified — " + effect + ".");
     return;
   }
@@ -7586,7 +7695,7 @@ document.addEventListener("click", e => {
     const effect = activateIntel(r);
     logDecision("intel", r.title, "edit-ratify", (edits.join("; ") || "ratified unchanged") + " · " + effect);
     save(); renderSleeve();
-    if (S.tab === "watch") renderWatch();
+    if (onWatch()) renderWatch();
     toast("Edited and ratified — " + effect + ".");
     return;
   }
@@ -7621,7 +7730,7 @@ document.addEventListener("click", e => {
         "corr decayed < 0.25 for 4 straight readings — " + p.note);
     }
     p.status = "dismissed"; p.ruledAt = Date.now(); p.applied = 1;
-    save(); renderClusters(); if (S.tab === "routine") renderRoutine(); updatePendBadge();
+    save(); renderClusters(); rerenderCk(); updatePendBadge();
     toast(p.kind === "add" ? "Admitted to ⬡ " + cl.name + " — exposure cap now counts it." : "Removed from ⬡ " + cl.name + ".");
     return;
   }
@@ -7640,7 +7749,7 @@ document.addEventListener("click", e => {
       + (p.kind === "add" && lastC != null
         ? " (corr ≥ " + (lastC + COH_RES_DELTA).toFixed(2) + " held for " + COH_RES_HITS + " of " + COH_WINDOWS + " readings; dismissed at " + lastC.toFixed(2) + ")"
         : "; drops have no resurface path (ruled)"));
-    save(); renderClusters(); if (S.tab === "routine") renderRoutine(); updatePendBadge();
+    save(); renderClusters(); rerenderCk(); updatePendBadge();
     toast("Dismissed — remembered per basket:item. The weekly readings keep accruing regardless.",
           () => { p.status = "pending"; delete p.ruledAt; save(); renderClusters(); });
     return;
@@ -7653,7 +7762,7 @@ document.addEventListener("click", e => {
     logDecision("intel", r.title, r.teeth ? "teeth-on" : "teeth-off",
       r.teeth ? "0.5× sizing haircut on affected items until expiry (my ruling)" : "haircut removed");
     save(); renderSleeve();
-    if (S.tab === "watch") renderWatch();
+    if (onWatch()) renderWatch();
     toast(r.teeth ? "Haircut ON — affected plan lines size down 0.5× until " + r.validUntil + ", reason shown inline."
                   : "Haircut removed — lines size normally again.");
     return;
@@ -7666,7 +7775,7 @@ document.addEventListener("click", e => {
     r.outcome = outcome; r.outcomeAt = Date.now();
     logDecision("intel", r.title, "grade", "window passed — call was " + outcome);
     save();
-    if (S.tab === "routine") renderRoutine(); else renderSleeve();
+    if (onCk()) rerenderCk(); else renderSleeve();
     return;
   }
 });
@@ -7750,14 +7859,14 @@ function pendingRulingItems(){
       const key = "aud:seed:" + a.id;
       items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
         html: '🔍 seed audit: <b>' + esc(itemName(a.id)) + '</b> recommends ' + esc(a.rec)
-          + ' — <a href="#" data-goto="routine">rule it in the review\'s audit</a>' });
+          + ' — <a href="#" data-goto="review">rule it in the review\'s audit</a>' });
     }
     const zz = sibAudit();
     for (const r of (zz.rows || []).filter(x => x.zombie && !audRuledInfo("sib:" + x.id))){
       const key = "aud:sib:" + r.id;
       items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
         html: '🔍 sibling audit: <b>' + esc(itemName(r.id)) + '</b> flagged zombie watcher'
-          + ' — <a href="#" data-goto="routine">rule it in the review\'s audit</a>' });
+          + ' — <a href="#" data-goto="review">rule it in the review\'s audit</a>' });
     }
   } catch(e){ /* advisory only */ }
   if (S.depProposalCount > 0){
@@ -7984,7 +8093,7 @@ document.addEventListener("click", e => {
     if (!DB.rulingSnooze) DB.rulingSnooze = {};
     DB.rulingSnooze[sn.dataset.rulesnooze] = Date.now() + 3 * 86400e3;
     save();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
     updatePendBadge();
     toast("Snoozed 3 days — it returns unless ruled in its own queue first.");
     return;
@@ -7993,7 +8102,7 @@ document.addEventListener("click", e => {
   if (bd){
     DB.briefRemindDismissKey = bd.dataset.briefdismiss;
     save();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
     toast("Dismissed for this occurrence — the reminder returns on the next trigger (a new flag on the tape, a catalyst window, next update Wednesday, or staleness).");
     return;
   }
@@ -8015,7 +8124,7 @@ document.addEventListener("change", e => {
     DB.rulingsCap = Math.min(10, Math.max(1, clampNum(rc.value, 5)));
     rc.value = DB.rulingsCap;
     save();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
   }
 });
 
@@ -8518,7 +8627,7 @@ function rollChecklistDate(){
   if (DB.checks.date !== today()){
     DB.checks = { date: today(), walkup: DB.checks.walkup || [], weekly: [] };
     save();
-    if (S.tab === "routine") renderRoutine();
+    rerenderCk();
   }
 }
 
@@ -8642,7 +8751,11 @@ function renderRoutine(){
       inline = '<div class="inline">' + (lines.length ? lines.join("")
         : '<div class="dim">No confirmed baskets — correlated positions are currently treated as independent bets. The Item baskets panel (Sleeve tab, under the calendar) collects candidates.</div>') + '</div>';
     } else if (s[3] === "rulings"){
-      inline = rulingsInline();
+      /* The digest itself renders at the top of Home (tier-1, zero clicks) —
+         this step is the checklist's pointer to it, not a second copy. */
+      inline = S.tab === "home"
+        ? '<div class="inline"><div class="dim">The RULINGS PENDING digest sits at the top of this page — ratify, dismiss, or snooze there.</div></div>'
+        : rulingsInline();
     } else if (s[3] === "sleeve"){
       inline = sleeveWeeklyInline();
     } else if (s[3] === "intelscore"){
@@ -8675,16 +8788,245 @@ function renderRoutine(){
       + '<span style="flex:1"><span class="t">'+esc(s[0])+'</span><span class="d">'+esc(s[1])
       + (s[2] ? ' <a href="#" data-goto="'+s[2]+'">→ open</a>' : '') + '</span>' + inline + '</span></li>';
   }).join("");
-  $$("#tab-routine .row button").forEach(b => b.classList.toggle("primary",
-    (b.id === "mWalk" && m === "walkup") || (b.id === "mWeekly" && m === "weekly")));
+  $("#ckHead").textContent = m === "walkup" ? "Walk-up routine" : "Weekly review";
   $("#modeExtras").innerHTML = (m === "walkup")
-    ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on the Flip Log tab — keep it honest rather than flattering.">Min / touch'
+    ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on Trade ▸ Flip Log — keep it honest rather than flattering.">Min / touch'
       + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
       + '<label class="f" style="margin-left:8px" title="Max rulings-pending lines shown per walk-up — overflow is counted out loud, never hidden silently. Target: under two added minutes.">Rulings cap'
       + '<input type="number" data-rulecap min="1" max="10" value="' + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + '" style="width:52px"></label>'
     : "";
   renderNow();
 }
+
+/* ═══════════ HOME — tier-1 blocks (reorg, Aug 11 2026) ═══════════
+   Composition change, not a feature: no new data, no new mechanisms — the
+   delta block and vitals read stores that already exist, every tile is a
+   click-through, and nothing here acts on anything. */
+
+/* Visit tracking: a visit rolls after a 2h quiet gap — the same convention
+   as touch sessions. The end-of-last-visit snapshot becomes the baseline
+   the WHAT CHANGED block diffs against. Attention state only — deliberately
+   not exported (a restored log starts its delta clock fresh). */
+const VISIT_GAP_MS = 2 * 3600e3;
+function rollVisit(){
+  const now = Date.now();
+  if (now - (DB.lastOpenAt || 0) > VISIT_GAP_MS){
+    DB.prevOpenAt = DB.lastOpenAt || 0;
+    DB.homeSnapPrev = DB.homeSnap || null;
+    S.homeDeltaAll = false;
+  }
+  DB.lastOpenAt = now;
+  save();
+}
+const catWinState = c => {
+  if (!c.windowStart || !c.windowEnd) return "undated";
+  const t = today();
+  return t < c.windowStart ? "upcoming" : t > c.windowEnd ? "passed" : "live";
+};
+function homeSnapNow(){
+  const armed = [];
+  try { for (const c of sleeveRungCards()) armed.push(c.pos.id + ":" + c.i); } catch(e){}
+  const dv = (DB.shadowDivLog || []).slice(-1)[0] || null;
+  const catStates = {};
+  for (const c of (DB.catalysts || [])) catStates[c.id] = catWinState(c);
+  let brief = "fresh";
+  try { const b = briefReminderInfo(); if (b) brief = b.kind; } catch(e){}
+  return { armed,
+    div: dv ? { loose: Math.round(dv.loose - dv.cur), tight: Math.round(dv.tight - dv.cur) } : null,
+    catStates, brief };
+}
+/* Restamped on every render tick while live data is in (write-skipped when
+   unchanged) — what survives to the next visit is this visit's closing state. */
+function stampHomeSnap(){
+  if (!S.latestAt) return;   // an offline boot must not blank the baseline
+  const s = homeSnapNow();
+  if (JSON.stringify(s) === JSON.stringify(DB.homeSnap || null)) return;
+  DB.homeSnap = s;
+  save();
+}
+
+/* The delta lines: timestamped stores diff against the previous visit's
+   clock; stateless signals (rungs, regimes, windows, briefing state) diff
+   against its closing snapshot. Only nonzero deltas ever render. */
+function homeDeltaLines(){
+  const since = DB.prevOpenAt || 0;
+  if (!since) return null;   // first tracked visit — the caller says so
+  const snap = DB.homeSnapPrev;
+  const L = [];
+  const line = (txt, goto) => L.push({ txt, goto });
+  const expl = (DB.flagArchive || []).filter(f => (f.at || 0) > since);
+  if (expl.length) line("🏷 " + expl.length + " flag" + (expl.length === 1 ? "" : "s")
+    + " explained by the analyst: " + expl.map(f => f.name).join(", "), "sleeve#anomPanel");
+  const promoted = new Set();
+  for (const r of (DB.intel || []))
+    if (r.type === "promotion-warning" && r.status !== "dismissed") (r.items || []).forEach(i => promoted.add(i));
+  const pumps = [];
+  for (const id of promoted){
+    let pf = null;
+    try { pf = suspectedPump(id); } catch(e){}
+    if (pf && pf.firstSeen > since) pumps.push(itemName(id));
+  }
+  if (pumps.length) line("⚠ escalated to SUSPECTED PUMP: " + pumps.join(", "), "sleeve#intelPanel");
+  const freshFlags = (DB.anomalyFlags || []).filter(f => (f.at || 0) > since && !f.dismissed)
+    .map(f => f.name).filter(n => !pumps.includes(n));
+  if (freshFlags.length) line("⚑ " + freshFlags.length + " new accumulation flag"
+    + (freshFlags.length === 1 ? "" : "s") + ": " + freshFlags.join(", "), "sleeve#anomPanel");
+  const closed = (DB.shadowBook || []).filter(p => p.state !== "open" && (p.closedAt || 0) > since);
+  if (closed.length){
+    const net = closed.reduce((a, p) => a + (p.net || 0), 0);
+    line("👻 shadow book: " + closed.length + " trip" + (closed.length === 1 ? "" : "s")
+      + " closed · net " + gp(Math.round(net)) + " (simulated)", "review#ckPanel");
+  }
+  if (snap){
+    const prevArmed = new Set(snap.armed || []);
+    try {
+      for (const c of sleeveRungCards())
+        if (!prevArmed.has(c.pos.id + ":" + c.i))
+          line("⚑ sleeve rung armed: " + itemName(c.pos.itemId, c.pos.name) + " — rung " + (c.i + 1), "sleeve#sleevePanel");
+    } catch(e){}
+    const dv = (DB.shadowDivLog || []).slice(-1)[0];
+    if (dv && snap.div){
+      const cur = { loose: Math.round(dv.loose - dv.cur), tight: Math.round(dv.tight - dv.cur) };
+      const leadOf = d => Math.abs(d.loose || 0) >= Math.abs(d.tight || 0) ? "loose" : "tight";
+      const l0 = leadOf(snap.div), l1 = leadOf(cur);
+      const moved = cur[l1] - (snap.div[l1] || 0);
+      if (l0 !== l1 || Math.abs(moved) >= 100e3)
+        line("👻 regime divergence: " + l1 + " now " + (cur[l1] >= 0 ? "+" : "−") + gp(Math.abs(cur[l1]))
+          + " vs current, was " + l0 + " " + ((snap.div[l0] || 0) >= 0 ? "+" : "−") + gp(Math.abs(snap.div[l0] || 0))
+          + " (30d, simulated)", "review#ckPanel");
+    }
+    for (const c of (DB.catalysts || [])){
+      const was = (snap.catStates || {})[c.id], is = catWinState(c);
+      if (was && was !== is) line("📅 catalyst \"" + c.name + "\": window " + was + " → " + is, "sleeve#catPanel");
+    }
+    let brief = "fresh";
+    try { const b = briefReminderInfo(); if (b) brief = b.kind; } catch(e){}
+    if (snap.brief !== brief){
+      const label = k => k === "fresh" ? "fresh" : k === "tape" ? "tape-question" : k === "catwin" ? "catalyst-window"
+        : k === "wed" ? "update-Wednesday" : "stale";
+      line("📡 briefing state: " + label(snap.brief) + " → " + label(brief), null);
+    }
+  }
+  return L;
+}
+const HOME_DELTA_CAP = 6;   // mobile parity: truncate with +N more, never hide silently
+function renderHomeDelta(){
+  const box = $("#homeDelta");
+  if (!box) return;
+  $("#homeDeltaSub").textContent = DB.prevOpenAt ? "since your last visit — " + ago(DB.prevOpenAt) : "";
+  const L = homeDeltaLines();
+  if (L === null){
+    box.innerHTML = '<div class="dim">First visit with the delta tracker — changes accrue from now.</div>';
+    return;
+  }
+  if (!L.length){
+    box.innerHTML = '<div class="dim">Nothing moved since your last visit — only nonzero deltas ever render here.</div>';
+    return;
+  }
+  const show = S.homeDeltaAll ? L : L.slice(0, HOME_DELTA_CAP);
+  box.innerHTML = show.map(d => '<div class="dl"'
+      + (d.goto ? ' data-goto="' + d.goto + '" style="cursor:pointer"' : '') + '>' + esc(d.txt) + '</div>').join("")
+    + (L.length > HOME_DELTA_CAP && !S.homeDeltaAll
+      ? '<div class="dl dim" data-deltamore="1" style="cursor:pointer">+' + (L.length - HOME_DELTA_CAP) + ' more…</div>' : "");
+}
+
+/* Vitals: four compact always-visible tiles, each a click-through to its
+   full surface. The plan read here is the SAME read the old default tab did
+   — renderDeploy keeps stamping the funnel ledger and driving the shadow
+   book from Home, so sitting on the tier-1 surface starves nothing. */
+function renderHomeVitals(){
+  const box = $("#homeVitals");
+  if (!box) return;
+  let P = null;
+  try { P = buildPlan(); renderDeploy(P); } catch(e){}
+  const pool = P ? (P.t1Pool || 0) + (P.t2Pool || 0) : 0;
+  const funnel = P
+    ? P.pass.length + " pass · " + P.picks.length + " funded · "
+      + (pool > 0 ? Math.round(P.deployed / pool * 100) : 0) + "% deployed"
+    : "no data yet";
+  const sb = DB.shadowBook || [];
+  const sbOpen = sb.filter(p => p.state === "open").length;
+  const sbClosed = sb.length - sbOpen;
+  const dv = (DB.shadowDivLog || []).slice(-1)[0];
+  let lead = "no divergence data";
+  if (dv){
+    const dl = Math.round(dv.loose - dv.cur), dt = Math.round(dv.tight - dv.cur);
+    const pick = Math.abs(dl) >= Math.abs(dt) ? ["loose", dl] : ["tight", dt];
+    lead = pick[0] + " " + (pick[1] >= 0 ? "+" : "−") + gp(Math.abs(pick[1])) + " vs current";
+  }
+  const open = sleeveOpenPositions();
+  let rung = "no price rungs";
+  let bestR = null;
+  for (const p of open){
+    const guide = sleeveGuidePrice(p.itemId);
+    for (const r of (p.ladder || [])){
+      if (r.filledAt || r.kind !== "price" || !(r.trigger > 0) || guide == null) continue;
+      const d = Math.abs(guide - r.trigger) / r.trigger * 100;
+      if (bestR === null || d < bestR) bestR = d;
+    }
+  }
+  let armedN = 0;
+  try { armedN = sleeveRungCards().length; } catch(e){}
+  if (armedN) rung = armedN + " rung" + (armedN === 1 ? "" : "s") + " ARMED";
+  else if (bestR != null) rung = "nearest rung " + bestR.toFixed(1) + "% away";
+  const cats = (DB.catalysts || []).slice();
+  for (const p of open)
+    if (p.catalyst && p.catalyst.windowStart)
+      cats.push({ name: p.catalyst.name, windowStart: p.catalyst.windowStart, windowEnd: p.catalyst.windowEnd });
+  let bestCat = null;
+  for (const c of cats){
+    const st = catWinState(c);
+    if (st === "live"){
+      const dLeft = Math.max(0, Math.ceil((Date.parse(c.windowEnd + "T23:59:59") - Date.now()) / 86400e3));
+      if (!bestCat || bestCat.pri > 0 || dLeft < bestCat.d) bestCat = { txt: c.name + " LIVE, closes " + dLeft + "d", pri: 0, d: dLeft };
+    } else if (st === "upcoming"){
+      const dIn = Math.ceil((Date.parse(c.windowStart + "T00:00:00") - Date.now()) / 86400e3);
+      if (!bestCat || (bestCat.pri > 0 && dIn < bestCat.d)) bestCat = { txt: c.name + " in " + dIn + "d", pri: 1, d: dIn };
+    }
+  }
+  const cat = bestCat ? bestCat.txt : "no catalyst window";
+  const have = stack();
+  const work = Math.max(0, have - (DB.shadowReserve || 0));
+  /* The Shadow-fund progress headline rides the capital tile (its full bars
+     live on Review) — the tile answers "how far along is the purchase". */
+  let fund = "";
+  try {
+    const it = shadowItem(), px = it ? livePrice(it.i) : null;
+    if (px) fund = " · fund " + Math.min(100, have / px * 100).toFixed(1) + "%";
+  } catch(e){}
+  const vit = (k, v, goto, title) =>
+    '<div class="vit" data-goto="' + goto + '" title="' + esc(title) + '"><div class="k">' + k
+    + '</div><div class="v">' + v + '</div></div>';
+  box.innerHTML =
+      vit("Funnel", esc(funnel), "watch#deployPanel",
+        "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
+    + vit("Shadow book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
+        + ' <span class="dim">(30d, simulated)</span>', "review#ckPanel",
+        "Counterfactual book — all simulated, informs gate proposals and nothing else. Click for the weekly review's shadow-book section.")
+    + vit("Sleeve", open.length + " position" + (open.length === 1 ? "" : "s") + " · " + esc(rung) + " · " + esc(cat),
+        "sleeve#sleevePanel",
+        "Catalyst positions: nearest exit rung and nearest catalyst window. Click for the sleeve.")
+    + vit("Capital", "working " + gp(work) + " · reserve " + gp(DB.reserve || 0)
+        + " · shadow " + gp(Math.min(DB.shadowReserve || 0, have)) + esc(fund), "review#tab-shadow",
+        "What the allocator sizes against, the named reserves it never touches, and Shadow-purchase progress. Click for the full fund bars on Review.");
+}
+function renderHomeRulings(){
+  let n = 0;
+  try { n = pendingRulingItems().filter(x => !x.snoozed).length; } catch(e){}
+  $("#homeRulSub").textContent = n
+    ? n + " pending — capped at " + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + " lines, nothing blocks"
+    : "";
+  $("#homeRulings").innerHTML = rulingsInline();
+}
+function renderHomeBlocks(){
+  renderHomeVitals();     // the plan read runs first so the funnel ruling line below is fresh
+  renderHomeRulings();
+  renderHomeDelta();
+}
+document.addEventListener("click", e => {
+  const dm = e.target.closest("[data-deltamore]");
+  if (dm){ S.homeDeltaAll = true; renderHomeDelta(); }
+});
 
 /* ═══════════ SHADOW FUND ═══════════ */
 const SHADOW_NAME = "tumeken's shadow (uncharged)";
@@ -8747,7 +9089,7 @@ function renderShadow(){
     ['<span title="What the flip allocator actually sizes against: stack minus the shadow reserve. Tier budgets are carved from this.">Working capital</span>',
       gp(Math.max(0, have - (DB.shadowReserve||0)))],
     ["Profit since stamp", '<span class="'+sign(profitSince)+'">'+gp(profitSince)+'</span>'],
-    ['<span title="Non-flip bank changes (Game gp panel, Flip Log tab) since the stamp — counted into the fund total but never into flipping stats.">Game gp since stamp</span>',
+    ['<span title="Non-flip bank changes (Game gp panel, Trade ▸ Flip Log) since the stamp — counted into the fund total but never into flipping stats.">Game gp since stamp</span>',
       gSince ? '<span class="'+sign(gSince)+'">'+(gSince > 0 ? '+' : '')+gp(gSince)+'</span>' : '<span class="dim v sm">none</span>'],
     ["Fund total", gp(have)],
     ["Still needed", need != null ? gp(need) : "—"],
@@ -8927,6 +9269,7 @@ function nextMove(){
   return { msg: "Nothing needs you. Offers work while the app is closed — that's the whole design.", tab: null, idle: true };
 }
 function renderNow(){
+  try { stampHomeSnap(); } catch(e){}   // the WHAT CHANGED baseline rides every render tick
   updatePendBadge();   // header badge with the pending-rulings count, every tab
   const n = nextMove();
   $("#nowBar").className = "nowbar" + (n.idle ? " idle" : "");
@@ -8936,22 +9279,59 @@ function renderNow(){
 }
 
 function renderAll(){
-  if (S.tab === "scan")    renderScan();
-  if (S.tab === "watch")   renderWatch();
+  if (S.tab === "home")    renderHome();
+  if (S.tab === "trade"){
+    if (S.sub === "scan")     renderScan();
+    else if (S.sub === "log") renderLog();
+    else                      renderWatch();
+  }
   if (S.tab === "sleeve"){ renderSleeve(); renderClusters(); }   // baskets live on the Sleeve tab (clusters merge, Aug 2026)
-  if (S.tab === "log")     renderLog();
-  if (S.tab === "routine") renderRoutine();
-  if (S.tab === "shadow")  renderShadow();
+  if (S.tab === "review")  renderReview();
   renderNow();
 }
-function setTab(t){
-  S.tab = t;
-  featTouchMark("tab:" + t);
-  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-  $$("section.tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + t));
-  renderAll();
-  if (t === "watch" || t === "shadow") fillSparks();
+/* One physical checklist panel, mode follows the tab: walk-up on Home,
+   weekly on Review. Reparenting beats duplicated IDs and duplicated code. */
+function moveCkPanel(){
+  const p = $("#ckPanel"), slot = S.tab === "review" ? $("#reviewCkSlot") : $("#homeCkSlot");
+  if (p && slot && p.parentElement !== slot) slot.appendChild(p);
 }
+function renderHome(){
+  S.mode = "walkup";
+  moveCkPanel();
+  renderHomeBlocks();
+  renderRoutine();
+}
+function renderReview(){
+  S.mode = "weekly";
+  moveCkPanel();
+  renderRoutine();
+  renderShadow();
+}
+/* setTab accepts the four new tabs AND every legacy name — watch/scan/log
+   land on the Trade sub-view, shadow on Review, routine on whichever surface
+   carries the current checklist mode. Old goto/prefill paths keep working. */
+function setTab(t, sub){
+  let target = t;
+  if (t === "watch" || t === "scan" || t === "log"){ target = "trade"; sub = t; }
+  else if (t === "shadow") target = "review";
+  else if (t === "routine") target = S.mode === "weekly" ? "review" : "home";
+  S.tab = target;
+  if (target === "trade") S.sub = sub || S.sub || "watch";
+  if (target === "home") S.mode = "walkup";
+  if (target === "review") S.mode = "weekly";
+  moveCkPanel();
+  featTouchMark("tab:" + target + (target === "trade" ? "/" + S.sub : ""));
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === target));
+  $$("section.tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + target));
+  $$("#tradeSubs button").forEach(b => b.classList.toggle("on", b.dataset.sub === S.sub));
+  $$("#tab-trade .tsub").forEach(s => s.classList.toggle("on", s.id === "tab-" + S.sub));
+  renderAll();
+  if (onWatch() || S.tab === "review") fillSparks();
+}
+$("#tradeSubs").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  setTab("trade", b.dataset.sub);
+};
 
 /* ── feature-touch instrumentation (complexity governance, ruled Aug 10
    2026): which surfaces actually get used, per 30 days rolling into the
@@ -9052,7 +9432,7 @@ $("#nowBar").addEventListener("click", e => {
 });
 setInterval(renderNow, 60e3);   // time-of-day transitions flip the suggestion without a reload
 $("#refresh").onclick = () => { failCount = 0; refresh(); };
-$("#pendBadge").onclick = () => { S.mode = "walkup"; setTab("routine"); };
+$("#pendBadge").onclick = () => setTab("home");   // the digest is Home's first block
 $("#planMode").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   S.planMode = b.dataset.pm; renderPlan();
@@ -9612,7 +9992,7 @@ function addFriction(text, ctx){
   save();
   return true;
 }
-const fricCtx = () => S.tab + (S.tab === "routine" ? "/" + S.mode : "");
+const fricCtx = () => S.tab + (S.tab === "trade" ? "/" + S.sub : onCk() ? "/" + S.mode : "");
 $("#fricBtn").onclick = () => {
   const row = $("#fricRow");
   row.classList.toggle("hide");
@@ -9624,7 +10004,7 @@ document.addEventListener("keydown", e => {
   if (!isFooter && !isStep) return;
   if (e.key === "Escape" && isFooter){ $("#fricRow").classList.add("hide"); e.target.value = ""; return; }
   if (e.key !== "Enter") return;
-  if (addFriction(e.target.value, isStep ? "routine/" + S.mode : fricCtx())){
+  if (addFriction(e.target.value, isStep ? "checklist/" + S.mode : fricCtx())){
     e.target.value = "";
     if (isFooter) $("#fricRow").classList.add("hide");
     toast("Noted — it'll be in the weekly review.");
@@ -10094,8 +10474,8 @@ function validateImport(d){
           sort: (d.sort && typeof d.sort === "object") ? d.sort : {k:"roi",dir:-1} } };
 }
 
-$("#mWalk").onclick   = () => { S.mode = "walkup"; renderRoutine(); };
-$("#mWeekly").onclick = () => { S.mode = "weekly"; renderRoutine(); };
+/* Mode buttons are gone (reorg Aug 11 2026): the walk-up checklist IS Home,
+   the weekly review IS the Review tab — the tabs are the mode switch. */
 $("#ckReset").onclick  = () => { DB.checks[S.mode] = []; save(); renderRoutine(); };
 
 $("#shBank").addEventListener("change", e => {
@@ -10168,6 +10548,7 @@ $("#planCopy").onclick = async () => {
 
 /* ═══════════ boot ═══════════ */
 load();
+rollVisit();   // the WHAT CHANGED clock: a 2h quiet gap rolls the visit
 paintFilters(); paintSortHeads();
 $("#shBank").value = DB.bank || "";
 $("#lMins").value = DB.minsPerTouch || 10;
