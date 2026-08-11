@@ -18,6 +18,10 @@ Then execute its "Run procedure" section end to end:
    a sourced record, or an explicit "no public story found — flag remains unexplained"
    line in the BRIEF's mandatory **Flags addressed** section.
 2. Determine the window: date of the newest file in `briefings/` (default: last 7 days).
+   **Lookback floor:** when flags are pending, extend context back to the oldest active
+   flag's firstSeen **minus 14 days** and check the game-updates history across that
+   whole span — a hearing whose context starts after the likely cause finds only
+   silence (the Jul 22 Summer Sweep-Up miss is the named incident).
 3. Sweep the sources via WebFetch/WebSearch, politely, citing every URL you rely on.
 4. Draft typed records; enforce every standing rule; resolve item ids via the mapping
    endpoint; run the 30-day priced-in check per record.

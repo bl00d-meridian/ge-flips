@@ -243,7 +243,13 @@ remains unexplained."
 1. Read `briefings/flags-pending.json` if it exists (standing rule 9) — the flags it
    names are questions this run must answer, by name, before anything else is drafted.
 2. Sweep the sources above for the window since the last brief (check `briefings/` for
-   the previous date; default 7 days).
+   the previous date; default 7 days). **Lookback floor (user ruling, Aug 10 2026):**
+   when flags are pending, the sweep's context must extend back to cover the **oldest
+   active flag's firstSeen date minus 14 days** — check the game-updates history across
+   that whole span, not just the news window. The named incident: the 22 Jul 2026
+   Summer Sweep-Up shipped gear buffs that explained half the Aug 10 flag cluster, and
+   two sweeps missed it because their context started Jul 29. A flags hearing that
+   starts after the likely cause finds only silence.
 3. Draft candidate records; kill anything without a source; run the priced-in check on
    every record with items; resolve item ids via the mapping endpoint (exact names).
 4. Reconcile against the existing calendar/intel history: updates, not duplicates.
