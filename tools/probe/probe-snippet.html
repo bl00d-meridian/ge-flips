@@ -2294,15 +2294,30 @@
     ok("[R22.1] the first tap on the collapse control responds",
        /dismissed for this visit/.test(document.querySelector("#ckList").innerHTML));
     DB.ckDismissAt = 0;
-    // R22.2 — vitals global; digest/delta/checklist Home-scoped
+    // R22.2 — scoping is tested by ABSENCE (regression lesson, Aug 11 2026):
+    // querySelector finds hidden elements, so the old existence assertions
+    // passed while an ID-specificity CSS bug (#tab-home{display:flex} beating
+    // section.tab{display:none}) rendered Home's blocks on every tab.
+    // offsetParent is null under a display:none ancestor — visibility truth.
+    const vis22 = sel => { const el = document.querySelector(sel); return !!el && el.offsetParent !== null; };
     setTab("watch");
-    ok("[R22.2] the vitals strip is global — outside the Home section, live on Trade",
-       !document.querySelector("#tab-home #homeVitals")
-       && document.querySelectorAll("#homeVitals .vit").length === 4
+    ok("[R22.2] Trade renders NONE of the Home blocks — digest, delta, checklist all invisible",
+       getComputedStyle(document.querySelector("#tab-home")).display === "none"
+       && !vis22("#homeRulingsPanel") && !vis22("#homeDeltaPanel") && !vis22("#ckPanel"),
+       JSON.stringify({ home: getComputedStyle(document.querySelector("#tab-home")).display,
+         dig: vis22("#homeRulingsPanel"), del: vis22("#homeDeltaPanel"), ck: vis22("#ckPanel") }));
+    ok("[R22.2] Trade still gets the global NOW bar and vitals strip, then its own content",
+       vis22("#nowBar") && vis22("#homeVitals") && document.querySelectorAll("#homeVitals .vit").length === 4
        && document.querySelector("#tab-trade").classList.contains("on"));
-    ok("[R22.2] rulings digest, delta block, and checklist are Home-scoped",
-       !!document.querySelector("#tab-home #homeRulingsPanel") && !!document.querySelector("#tab-home #homeDeltaPanel")
-       && !!document.querySelector("#homeCkSlot #ckPanel"));
+    setTab("sleeve");
+    ok("[R22.2] Sleeve: no Home blocks, vitals present",
+       !vis22("#homeRulingsPanel") && !vis22("#homeDeltaPanel") && !vis22("#ckPanel") && vis22("#homeVitals"));
+    setTab("review");
+    ok("[R22.2] Review: digest and delta stay Home-only; the weekly checklist IS this tab's own content",
+       !vis22("#homeRulingsPanel") && !vis22("#homeDeltaPanel") && vis22("#ckPanel") && vis22("#homeVitals"));
+    setTab("home");
+    ok("[R22.2] Home renders all of its blocks",
+       vis22("#homeRulingsPanel") && vis22("#homeDeltaPanel") && vis22("#ckPanel") && vis22("#homeVitals"));
     // R22.3 — ruling from the Home digest lands visibly, badge included
     DB.intel = [{ id: "r22-p", type: "demand-context", confidence: "hinted", title: "R22 pending",
       thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/r22" }],
@@ -2387,6 +2402,23 @@
     S.wFilter = ""; DB.intel = []; DB.anomalyFlags = [];
     delete w22.tBuy; delete w22.tSell; delete w22.tAt;
     renderWatch();
+    // R22.8 — minimized checklist = ONE line total: header, section title,
+    // bar, and attention line all fold in; only the summary row renders
+    DB.positions = []; DB.sleeve = []; DB.clusterCands = []; DB.cohProps = []; S.depProposalCount = 0;
+    DB.ckPref = ""; DB.ckDismissAt = 0; DB.reviewEngagedAt = 0; S.ckExpandOverride = false;
+    DB.lastReviewAt = Date.now(); DB.lastBriefImportAt = Date.now(); DB.briefRemindDismissKey = "";
+    setTab("home");
+    ok("[R22.8] the minimized checklist is ONE line — no header, no title, no attention line, one summary row",
+       (ph => !!ph && ph.style.display === "none")(document.querySelector("#ckPanel .ph"))
+       && document.querySelector("#ckTitle").style.display === "none"
+       && document.querySelector("#briefRemind").innerHTML === ""
+       && document.querySelectorAll("#ckList li").length === 1
+       && /auto-minimized/.test(document.querySelector("#ckList").textContent),
+       JSON.stringify({ ph: (document.querySelector("#ckPanel .ph") || {}).style,
+         brief: document.querySelector("#briefRemind").innerHTML.slice(0, 120),
+         lis: document.querySelectorAll("#ckList li").length }));
+    ok("[R22.8] the attention reading survives in the summary tooltip, not as a stacked line",
+       /walk-up attention: \d+ of ≤7/.test(document.querySelector("#ckList li .d").title));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

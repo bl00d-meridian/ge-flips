@@ -137,7 +137,13 @@ bash tools/probe/run.sh   # exit 0 = PROBE-PASS
 ```
 
 Run the suite after any nontrivial change to `index.html`, and extend
-`tools/probe/probe-snippet.html` alongside new features. Ruled requirements live in
+`tools/probe/probe-snippet.html` alongside new features.
+**Scoping rules are tested by absence** (user ruling, Aug 11 2026): a rule about
+where something renders is only verified by asserting where it must NOT appear —
+existence assertions (`querySelector` finds hidden elements) passed for a full day
+while a CSS specificity bug rendered Home's blocks on every tab. Assert computed
+visibility (`offsetParent`, `getComputedStyle`) on the surfaces that must be clean,
+and prove new detectors by running them against the original defect once. Ruled requirements live in
 [REQUIREMENTS.md](REQUIREMENTS.md) with stable IDs; probe assertions carry `[R#]` tags
 and the report's `===REQS===` section cross-references them — when adding a gated
 feature, add its requirement row and a tagged assertion together, never one without

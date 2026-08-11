@@ -89,8 +89,12 @@ tr.wdet td{background:#221c13;white-space:normal;text-align:left}
 .wdetbox{padding:4px 6px;font-size:12.5px;line-height:1.6;border-left:2px solid var(--gold-dim)}
 .wdetbox .memchip{margin:0 4px 0 0}
 /* flat-book posture: WHAT CHANGED leads when nothing is working (the vitals
-   strip is global, above the tabs, in every posture) */
-#tab-home{display:flex;flex-direction:column}
+   strip is global, above the tabs, in every posture).
+   REGRESSION LESSON (Aug 11 2026): this selector was `#tab-home` — an ID
+   outranks `section.tab{display:none}`, so Home rendered on EVERY tab. The
+   .on guard keeps the flex layout without overriding the tab gate; the probe
+   now asserts ABSENCE off-Home, which is the only test a scoping rule has. */
+#tab-home.on{display:flex;flex-direction:column}
 #tab-home.flat #homeDeltaPanel{order:-1}
 
 /* ---- panels ---- */
@@ -8848,13 +8852,17 @@ function renderRoutine(){
      decisions this surface presents, log the daily reading for the weekly
      trend, and say so inline. The ≤7 budget is probe-asserted; a feature
      that would breach it must displace something, not stack. */
-  let attnLine = "";
+  let attnLine = "", attnN = null;
   if (m === "walkup"){
     const n = walkupDecisionCount();
+    attnN = n;
     const wl = DB.walkupLoad.find(x => x.d === today());
     if (wl) wl.n = Math.max(wl.n, n); else { DB.walkupLoad.push({ d: today(), n }); save(); }
     DB.walkupLoad = DB.walkupLoad.filter(x => (Date.now() - Date.parse(x.d + "T00:00:00")) < 31 * 86400e3);
-    attnLine = '<div class="dim" style="margin-bottom:6px" title="Distinct decisions this walk-up presents (ruling lines shown + briefing reminder). Budget ≤ 7, probe-asserted; the weekly review reports the trend.">walk-up attention: '
+    /* Minimized = ONE line total (ruled Aug 11 2026): the attention reading
+       still records above, but it renders in the summary line's tooltip
+       instead of stacking its own line under a collapsed checklist. */
+    attnLine = min ? "" : '<div class="dim" style="margin-bottom:6px" title="Distinct decisions this walk-up presents (ruling lines shown + briefing reminder). Budget ≤ 7, probe-asserted; the weekly review reports the trend.">walk-up attention: '
       + n + ' decision' + (n === 1 ? '' : 's') + ' of ≤7 budgeted</div>';
   }
   /* Review-due renders as ONE line, never a second checklist — starting it
@@ -8869,18 +8877,23 @@ function renderRoutine(){
       + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
     : "") + attnLine);
+  /* Minimized = ONE line total (ruled Aug 11 2026): the panel header, the
+     section title, and the attention line all hide with the steps — only
+     the summary line (and any genuinely active cue, like an elevated
+     briefing reminder) renders. */
+  const ph = $("#ckPanel .ph");
+  if (ph) ph.style.display = min ? "none" : "";
+  $("#ckTitle").style.display = min ? "none" : "";
   $("#ckBar").parentElement.style.display = min ? "none" : "";
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   if (min){
-    /* One-line summary, one tap to expand. The NOW bar, rulings digest,
-       WHAT CHANGED, and vitals render above regardless — only the guided
-       steps collapse. */
     const reason = min === "auto"
       ? "auto-minimized: no open positions, no armed rungs, no pending rulings — nothing to walk through"
       : min === "visit" ? "dismissed for this visit — returns next visit"
       : "minimized (standing preference)";
     setHTML("#ckList", '<li style="cursor:default"><span style="flex:1"><span class="t">' + esc(list.title)
-      + '</span><span class="d">' + done.length + ' of ' + list.steps.length + ' steps done · ' + reason + '</span></span>'
+      + '</span><span class="d" title="' + (attnN != null ? 'walk-up attention: ' + attnN + ' of ≤7 budgeted · ' : '')
+      + 'Reset today lives in the expanded header.">' + done.length + ' of ' + list.steps.length + ' steps done · ' + reason + '</span></span>'
       + '<button class="sm" id="ckExpand" title="Expand the checklist for this view.">expand</button>'
       + (min === "pref" ? ' <button class="sm ghost" id="ckPrefPin" title="Clear the standing minimize preference — the checklist renders expanded by default again.">pin open</button>' : '')
       + '</li>');
