@@ -32,6 +32,13 @@
     DB.reviewEngagedAt = 0; DB.ckPref = ""; DB.ckDismissAt = 0; DB.flatSince = 0;
     DB.visitStartAt = Date.now(); S.ckExpandOverride = false; S.mode = "walkup";
     DB.shadowExceptions = [];   // exception-lane rulings persist — a prior run's must not leak in
+    /* CADENCE (Aug 11 2026): the touch schedule makes every horizon a function
+       of the wall clock, which would make every allocator expectation below
+       drift with the hour the suite happens to run. An EXPLICITLY EMPTY
+       schedule is a real setting meaning "I keep no cadence", and it restores
+       the single global horizon these fixtures were written against. The
+       cadence block sets a real schedule and asserts against it. */
+    DB.touchWindows = []; DB.fillHorizonH = 4;
     DB.strataStats = {}; DB.recipeLog = {}; DB.recipeFlags = [];   // prospecting ledgers are durable by design — a prior run's must not leak in either
     /* Sustained qualification: freeze streak upkeep (the suite controls
        DB.qual by hand) and pre-qualify the core fixture items so allocator
@@ -2146,9 +2153,9 @@
     const shAud = paperGateSection();
     ok("[R18.3] per-gate paper table: would-have-filled / would-not with the observed-share caveat",
        /id="paperGateTable"/.test(shAud) && />ROI floor</.test(shAud)
-       && /data-drill="paper:gate:ROI floor:n"[^>]*>2</.test(shAud)
-       && /data-drill="paper:gate:ROI floor:fill"[^>]*>1</.test(shAud)
-       && /data-drill="paper:gate:ROI floor:miss"[^>]*>1</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · daytime:n"[^>]*>2</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · daytime:fill"[^>]*>1</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · daytime:miss"[^>]*>1</.test(shAud)
        && /unknown, not unfilled/.test(shAud),
        shAud.slice(0, 900));
     ok("[R18.3] regime curves labeled simulated, never comparable to realized",
@@ -3140,7 +3147,7 @@
     ok("[R18.5] the per-gate table reports both participation readings, in its own columns",
        /would have filled at 50% participation/.test(shGate27)
        && /would also have filled at 100% participation/.test(shGate27)
-       && /data-drill="paper:gate:ROI floor:full"/.test(shGate27), shGate27.slice(0, 1200));
+       && /data-drill="paper:gate:ROI floor · daytime:full"/.test(shGate27), shGate27.slice(0, 1200));
     // R27.3 — regime divergence: probation slots, never "the regime is right"
     const dst27 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dst27(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
@@ -3461,12 +3468,12 @@
     // ── R35.1 the primitive: a number opens to its rows in ONE click ──
     const faceOf = k => Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === k);
     const clickFace = k => { const b = faceOf(k); if (!b) throw new Error("no drill face for key: " + k); b.click(); };
-    const bFill = faceOf("paper:gate:ROI floor:fill");
+    const bFill = faceOf("paper:gate:ROI floor · daytime:fill");
     ok("[R35.1] every per-gate cell renders as an openable face, not a bare number",
-       !!bFill && bFill.textContent.indexOf("15") === 0 && !document.getElementById(drillId("paper:gate:ROI floor:fill")),
+       !!bFill && bFill.textContent.indexOf("15") === 0 && !document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")),
        bFill ? bFill.outerHTML.slice(0, 160) : "no face for the would-fill cell");
     bFill.click();
-    const box35 = document.getElementById(drillId("paper:gate:ROI floor:fill"));
+    const box35 = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"));
     /* getElementsByTagName, not querySelectorAll("tbody tr"): the latter
        matches the OUTER table's tbody as the ancestor, so it would count the
        expansion's own header row and read 16 where the truth is 15. */
@@ -3484,19 +3491,19 @@
     // sort lives in the primitive
     const th35 = box35.querySelector('[data-dsortk="net"]');
     th35.click();
-    const netCol = () => bodyRows(document.getElementById(drillId("paper:gate:ROI floor:fill")))
+    const netCol = () => bodyRows(document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")))
       .map(tr => tr.children[9].textContent);
     const desc35 = netCol();
-    document.getElementById(drillId("paper:gate:ROI floor:fill")).querySelector('[data-dsortk="net"]').click();
+    document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).querySelector('[data-dsortk="net"]').click();
     const asc35 = netCol();
     ok("[R35.1] sort lives in the primitive — one click sorts, a second flips it",
        desc35[0] !== asc35[0] && desc35.join("|") === asc35.slice().reverse().join("|"),
        JSON.stringify({ desc: desc35.slice(0, 3), asc: asc35.slice(0, 3) }));
     // filter lives in the primitive
-    const q35 = document.getElementById(drillId("paper:gate:ROI floor:fill")).querySelector("[data-drillq]");
+    const q35 = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).querySelector("[data-drillq]");
     q35.value = "Probe beta";
     q35.dispatchEvent(new Event("input", { bubbles: true }));
-    const boxF = document.getElementById(drillId("paper:gate:ROI floor:fill"));
+    const boxF = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"));
     ok("[R35.1] filter lives in the primitive, and a filtered expansion says how much it is hiding",
        rowsIn(boxF) === 7 && /8 of 15 rows hidden by your filter/.test(boxF.innerHTML),
        JSON.stringify({ rows: rowsIn(boxF), sub: (boxF.innerHTML.match(/rows hidden by your filter/) || [])[0] }));
@@ -3504,26 +3511,26 @@
     // an expansion survives the 60s re-render — a poll must not close what you opened
     renderAll();
     ok("[R35.1] an open expansion survives a re-render — the poll never closes what you opened to read",
-       !!document.getElementById(drillId("paper:gate:ROI floor:fill"))
-       && document.getElementById(drillId("paper:gate:ROI floor:fill")).offsetParent !== null,
+       !!document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"))
+       && document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).offsetParent !== null,
        "reopened after renderAll");
-    clickFace("paper:gate:ROI floor:fill");
+    clickFace("paper:gate:ROI floor · daytime:fill");
     ok("[R35.1] a second click closes it",
-       !document.getElementById(drillId("paper:gate:ROI floor:fill")));
+       !document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")));
 
     // ── R35.2 honest subset disclosure ──
-    clickFace("paper:gate:ROI floor:n");
-    const boxAll = document.getElementById(drillId("paper:gate:ROI floor:n"));
+    clickFace("paper:gate:ROI floor · daytime:n");
+    const boxAll = document.getElementById(drillId("paper:gate:ROI floor · daytime:n"));
     ok("[R35.2] an expansion capped at the row limit SAYS it is showing a subset and offers the rest",
        rowsIn(boxAll) === DRILL_PAGE && /Showing the first 20 of 25 matching rows/.test(boxAll.innerHTML)
        && !!boxAll.querySelector("[data-drillall]"),
        JSON.stringify({ rows: rowsIn(boxAll) }));
     boxAll.querySelector("[data-drillall]").click();
     ok("[R35.2] show-all reveals every row and says so",
-       rowsIn(document.getElementById(drillId("paper:gate:ROI floor:n"))) === 25
-       && /Showing all 25 rows/.test(document.getElementById(drillId("paper:gate:ROI floor:n")).innerHTML),
-       String(rowsIn(document.getElementById(drillId("paper:gate:ROI floor:n")))));
-    clickFace("paper:gate:ROI floor:n");
+       rowsIn(document.getElementById(drillId("paper:gate:ROI floor · daytime:n"))) === 25
+       && /Showing all 25 rows/.test(document.getElementById(drillId("paper:gate:ROI floor · daytime:n")).innerHTML),
+       String(rowsIn(document.getElementById(drillId("paper:gate:ROI floor · daytime:n")))));
+    clickFace("paper:gate:ROI floor · daytime:n");
     /* Structural subsets: the stratum ledger's counters are DURABLE and
        outlive the paper book's 30-day pruning, so its expansions can only
        show surviving rows. That must be stated, never silently truncated. */
@@ -3822,14 +3829,14 @@
        JSON.stringify({ n: g37.n, thin: g37.thin, filled: g37.filled, net: g37.net }));
     const gs37 = paperGateSection();
     ok("[R37.1] the per-gate table states the excluded count and opens it to the excluded trips",
-       /data-drill="paper:gate:ROI floor:thin"[^>]*>3</.test(gs37) && /Excluded<\/span><\/th>/.test(gs37),
+       /data-drill="paper:gate:ROI floor · daytime:thin"[^>]*>3</.test(gs37) && /Excluded<\/span><\/th>/.test(gs37),
        gs37.slice(gs37.indexOf("<tbody"), gs37.indexOf("<tbody") + 400));
     setTab("trade", "paper"); renderAll();
     /* Guarded, not asserted through: a missing face must fail THIS assertion
        by name rather than throwing and taking the rest of the block with it. */
-    const bThin = Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === "paper:gate:ROI floor:thin");
+    const bThin = Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === "paper:gate:ROI floor · daytime:thin");
     if (bThin) bThin.click();
-    const boxThin = bThin ? document.getElementById(drillId("paper:gate:ROI floor:thin")) : null;
+    const boxThin = bThin ? document.getElementById(drillId("paper:gate:ROI floor · daytime:thin")) : null;
     const tb37 = boxThin && boxThin.getElementsByTagName("tbody")[0];
     ok("[R37.2] excluded trips stay VISIBLE and openable — recorded, not discarded",
        !!boxThin && boxThin.offsetParent !== null && tb37 && tb37.rows.length === 3
@@ -3840,7 +3847,7 @@
        open to its rows like any other number rather than being a bare figure
        the operator has to take on trust. */
     ok("[R37.2] every excluded count opens to the trips behind it — on the gate tree, the cohort ledger and the hours table",
-       /data-drill="thin:gate:ROI floor"/.test(gateStreamsSection())
+       /data-drill="thin:gate:ROI floor · daytime"/.test(gateStreamsSection())
        && (() => { DB.shadowBook = [mk37(9001, "filled", 100, 0.02, null, {})];
                    const c = paperCohortSection();
                    DB.shadowBook = [];
@@ -4185,6 +4192,151 @@
     glPopClose();
   } catch(e){
     out.push("FAIL glossary popovers :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R40 — FOUR-TOUCH CADENCE (user ruling, Aug 11 2026) ═══
+       Per-touch horizons, the overnight sit as a first-class strategy, and
+       the reconstruction backstop. The schedule is INJECTED relative to a
+       known clock position throughout, per the standing rule about
+       clock-dependent assertions. */
+    const keepSched = DB.touchWindows, keepMins = DB.touchMins, keepFH = DB.fillHorizonH;
+    const hNow40 = (() => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; })();
+    const mk40 = h => ((h % 24) + 24) % 24;
+    const sched40 = () => [mk40(hNow40 + 5), mk40(hNow40 + 10), mk40(hNow40 + 15), mk40(hNow40 + 20)].sort((a, b) => a - b);
+    DB.touchWindows = sched40();
+    DB.touchMins = [6, 6, 6, 10];
+    ok("[R40.1] the schedule is a setting and the horizon is the gap to the NEXT touch",
+       scheduleOn() && Math.abs(planHorizonH() - gapHoursAt(Date.now())) < 1e-9
+       && planHorizonH() > 0 && planHorizonH() <= 24,
+       JSON.stringify({ windows: touchWindows().map(x => Math.round(x * 100) / 100), gap: planHorizonH() }));
+    const gaps40 = touchGaps();
+    ok("[R40.1] the gaps are derived from the schedule and sum to a day",
+       gaps40.length === 4 && Math.abs(gaps40.reduce((a, g) => a + g.h, 0) - 24) < 0.05,
+       JSON.stringify(gaps40.map(g => g.h)));
+    ok("[R40.1] an EMPTY schedule is a real setting — no cadence kept, single fallback horizon",
+       (() => { DB.touchWindows = []; DB.fillHorizonH = 4;
+                const off = !scheduleOn() && planHorizonH() === 4 && touchGaps().length === 0;
+                DB.touchWindows = sched40();
+                return off; })(),
+       "empty schedule falls back");
+    const w40 = touchWindows();
+    const afterFirst = (() => { const d = new Date();
+      d.setHours(Math.floor(w40[0]), Math.round((w40[0] % 1) * 60) + 1, 0, 0);
+      return d.getTime(); })();
+    ok("[R40.1] a missed touch stretches the following horizon on its own — nothing to reset",
+       gapHoursAt(afterFirst) > 4 && gapHoursAt(afterFirst) <= 24,
+       "gap after the first window: " + gapHoursAt(afterFirst).toFixed(2) + "h");
+    ok("[R40.2] an item the current gap must bench, which the longest sit would fund, says so",
+       (() => { const g = longestGap();
+                const q = qualifiesLaterAt(planHorizonH() + (g.h - planHorizonH()) / 2);
+                return !!q && /qualifies at the/.test(q.txt) && /needs ~/.test(q.txt); })(),
+       (() => { const g = longestGap();
+                const q = qualifiesLaterAt(planHorizonH() + (g.h - planHorizonH()) / 2);
+                return q ? q.txt : "no routing line"; })());
+    ok("[R40.2] and stays silent when the current gap already covers it, or nothing covers it",
+       qualifiesLaterAt(Math.max(0.1, planHorizonH() - 0.5)) === null
+       && qualifiesLaterAt(48) === null,
+       "silent both ways");
+    ok("[R40.3] a leg stamps its horizon and ages against that, not the current gap",
+       legHorizonH({ hzH: 9.5 }) === 9.5 && legHorizonH({}) === Math.max(1, DB.fillHorizonH || 4),
+       "stamped vs legacy fallback");
+    ok("[R40.3] buy-limit windows follow the applicable gap — the audit's 2x daytime overstatement",
+       limitWindowsFor(5) === 1 && limitWindowsFor(9.5) === 2 && limitWindowsFor(4) === 1,
+       JSON.stringify([limitWindowsFor(5), limitWindowsFor(9.5)]));
+    const dayMs40 = 86400e3;
+    ok("[R40.4] seasoning spans a CALENDAR DAY — four touches cannot buy same-day qualification",
+       !qualSpanned({ firstAt: Date.now() - 6 * 3600e3, lastAt: Date.now() })
+       && qualSpanned({ firstAt: Date.now() - dayMs40, lastAt: Date.now() }),
+       "same-day rejected, rollover accepted");
+    ok("[R40.4] and counts at most one pass per TOUCH",
+       (() => { const t0 = Date.now();
+                const justAfter = t0 + 60e3;
+                const pastNext = nextTouchAt(t0).at + 60e3;
+                return !qualGapCleared(t0, justAfter) && qualGapCleared(t0, pastNext); })(),
+       "one pass per touch");
+    DB.shadowBook = []; S.drillOpen = new Set(); S.drillUI = new Map();
+    const mk40t = (hz, grade, net) => ({ id: 40000 + DB.shadowBook.length, fam: "f40:" + DB.shadowBook.length,
+      itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001, ask: 4399,
+      t: Date.now() - 2 * dayMs40, hzH: hz, grade: grade,
+      buyQ: 10, sellQ: 10, buyQFull: 10, buyDone: 1, obsMs: hz * 3600e3 * 0.9, obsLive: grade === "live" ? 1 : 0,
+      reconMs: grade === "live" ? 0 : 1, lastObs: Date.now(), state: "filled",
+      closedAt: Date.now() - dayMs40, net: net, benchedBy: ["ROI floor"], regimes: [] });
+    DB.shadowBook.push(mk40t(5, "live", 1000), mk40t(5, "live", 1000),
+                       mk40t(9.5, "reconstructed", 50000), mk40t(9.5, "live", 50000));
+    const split40 = shadowByGate(true);
+    ok("[R40.5] the per-gate map GROUPS by horizon shape — a 5h experiment is not a 9.5h one",
+       split40.size === 2 && [...split40.keys()].some(k => /daytime/.test(k))
+       && [...split40.keys()].some(k => /overnight/.test(k)),
+       JSON.stringify([...split40.keys()]));
+    ok("[R40.5] and the verdict machinery still reads the gate-keyed map, ungrouped",
+       shadowByGate().size === 1 && !!shadowByGate().get("ROI floor"),
+       JSON.stringify([...shadowByGate().keys()]));
+    const pgs40 = paperGateSection();
+    ok("[R40.5] each row names its shape and stamps the evidence grade behind it",
+       /overnight<\/span>/.test(pgs40) && /daytime<\/span>/.test(pgs40)
+       && /1 live, 1 reconstructed|1 reconstructed, 1 live/.test(pgs40),
+       pgs40.slice(pgs40.indexOf("<tbody"), pgs40.indexOf("<tbody") + 500));
+    ok("[R40.5] a finding resting ONLY on reconstructed evidence says so",
+       /exists only in reconstructed evidence/.test(evidenceNote([mk40t(9.5, "reconstructed", 1)])),
+       evidenceNote([mk40t(9.5, "reconstructed", 1)]));
+    ok("[R40.5] every trip row carries its own horizon and grade",
+       (() => { const r = paperTripRows([mk40t(9.5, "reconstructed", 1)])[0];
+                return /overnight/.test(r.shape) && /reconstructed/.test(r.grade); })(),
+       JSON.stringify(paperTripRows([mk40t(9.5, "reconstructed", 1)])[0].shape));
+    ok("[R40.6] the observation floor measures against the TRIP's horizon, not a global",
+       Math.abs(shadowObsShare({ obsMs: 3600e3, hzH: 4 }) - 0.25) < 1e-9
+       && Math.abs(shadowObsShare({ obsMs: 3600e3, hzH: 9.5 }) - (1 / 9.5)) < 1e-9
+       && shadowCounts({ state: "filled", obsMs: 3600e3, hzH: 4 })
+       && !shadowCounts({ state: "filled", obsMs: 3600e3, hzH: 9.5 }),
+       "4h trip clears at 1h observed; 9.5h trip does not");
+    const pts40 = [];
+    const base40 = Date.now() - 6 * 3600e3;
+    for (let i = 0; i < 24; i++) pts40.push({ t: base40 + i * 5 * 60e3, lo: 3990, hi: 4500, lv: 5000, hv: 5000 });
+    const trip40 = { id: 41000, fam: "f41", itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001, ask: 4399,
+      t: base40, hzH: 9.5, grade: "live", buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0,
+      obsMs: 0, obsLive: 1, lastObs: base40, state: "open", benchedBy: ["ROI floor"], regimes: [] };
+    const covered40 = reconReplay(trip40, pts40, base40, Date.now());
+    ok("[R40.7] reconstruction replays the SAME fill model over 5m buckets and closes the trip",
+       trip40.state === "filled" && trip40.buyQ === 10 && trip40.sellQ === 10 && trip40.net > 0,
+       JSON.stringify({ state: trip40.state, buyQ: trip40.buyQ, net: trip40.net }));
+    /* Coverage stops when the trip does — a closed trip's later buckets are
+       not part of its life. Asserted both ways: a trip that closes on the
+       first bucket is credited that bucket only, and one that stays open is
+       credited every bucket the series actually had. */
+    ok("[R40.7] coverage stops when the trip closes — later buckets are not its life",
+       covered40 === 5 * 60e3,
+       "covered " + (covered40 / 60e3) + " min, closed on the first bucket");
+    const openTrip40 = { id: 41001, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 100,
+      buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
+    const cov2 = reconReplay(openTrip40, pts40, base40, Date.now());
+    ok("[R40.7] observation credit is SERIES COVERAGE — every bucket with data, for a trip still open",
+       cov2 === 24 * 5 * 60e3 && openTrip40.state === "open",
+       "covered " + (cov2 / 60e3) + " min from 24 buckets");
+    ok("[R40.7] a bucket the series has no data for credits nothing",
+       reconReplay({ id: 1, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 9.5,
+                     buyQ: 0, sellQ: 0, buyDone: 0, state: "open" }, [], base40, Date.now()) === 0,
+       "no buckets, no credit");
+    ok("[R40.7] the recovery log is an EVENT — WHAT CHANGED reports the outage",
+       (() => { DB.reconLog = [{ at: Date.now(), trips: 3, spanH: 6.2, items: 2, closed: 1 }];
+                DB.prevOpenAt = Date.now() - 3600e3;
+                const dl = homeDeltaLines() || [];
+                DB.reconLog = [];
+                return dl.some(l => /recovered 3 trips across a/.test(l.txt)); })(),
+       "outage surfaces in WHAT CHANGED");
+    ok("[R40.8] attention minutes are charged per touch, with the evening touch costing more",
+       (() => { const m = touchMins(); return m.length === 4 && m[3] === 10 && m[0] === 6; })(),
+       JSON.stringify(touchMins()));
+    ok("[R40.8] the equity panel shows gp/day BESIDE gp/minute, and states the denominator change",
+       (() => { renderEquity();
+                const h = document.querySelector("#eqHero").innerHTML;
+                return /gp per day/.test(h) && /attention-minutes/.test(h)
+                    && /Denominator changed/.test(h) && /cadence/.test(h); })(),
+       document.querySelector("#eqHero").innerHTML.slice(0, 220));
+    DB.shadowBook = []; DB.reconLog = [];
+    DB.touchWindows = keepSched; DB.touchMins = keepMins; DB.fillHorizonH = keepFH;
+    S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL cadence :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

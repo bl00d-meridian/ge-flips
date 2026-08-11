@@ -306,3 +306,40 @@ the other.
 - The site deploys via GitHub Pages from `main` — pushing `main` is publishing.
 - The flip log lives only in the user's browser localStorage; nothing in this repo ever
   contains user trading data.
+
+## Cadence: four touches, per-touch horizons (user ruling, Aug 11 2026)
+
+The day is not uniform and neither are the horizons. `DB.touchWindows` (four editable
+hours-of-day, default 07:00 / 12:00 / 17:00 / 21:30) gives gaps of **5.0 / 5.0 / 4.5 /
+9.5h**, and **every placement sizes and prices for the gap until the NEXT touch**. There
+is no global fill horizon any more: `FILLH()` *is* the schedule's gap, and
+`DB.fillHorizonH` survives only as the fallback for an explicitly empty schedule ("no
+cadence kept").
+
+- **Two strategies fall out by construction, not by instruction.** A daytime placement can
+  only fund what fills in ~5h, so it favours fast cyclers; the evening placement has ~9.5h
+  and can carry the slower, thicker items a short gap must bench. The bench line says so —
+  "qualifies at the evening touch — needs ~7h" — because an item that would fund tonight is
+  information the old single-horizon plan simply lost.
+- **A leg ages against the horizon it was PLACED under** (`hzH` stamped on positions, quote
+  records and paper trips). A leg placed at the evening touch is mid-sit at 05:00, not
+  stale. Never retro-apply a horizon change to an open leg.
+- **Absence-tolerant by construction**: everything derives from "now → next window", so a
+  missed touch means the next window is further away and the following horizon stretches.
+  Nothing to reset.
+- **Horizon shape and evidence grade are GROUPING dimensions, not filters.** A finding that
+  holds at 5h and not at 9.5h is a *horizon* finding, not a gate finding, and a filter
+  defaults to hiding exactly that. `shadowByGate()` stays keyed by gate for the verdict
+  machinery and takes a flag for the split view, so the two can never disagree.
+- **Reconstruction is a backstop, not a substitute.** After an observation gap each open
+  trip's 5m series is replayed under the live fill rules; observation credit is SERIES
+  COVERAGE (a bucket with data is five observed minutes, a bucket without credits nothing),
+  provenance is stamped live/reconstructed/mixed, and an aggregate resting only on
+  reconstructed evidence says so. Forced exits price at the series value AT the horizon —
+  the proper fix for the defect that caused the epoch reset, and correct on a perfect host
+  too.
+- **Cadence is not edge.** Gates, floors, reserve and budgets are untouched by a schedule
+  change, and the walk-up attention budget still binds at ≤ 7.
+- When a metric's denominator changes because the cadence changed, **show both sides**: the
+  equity panel reports gp/day beside gp/attention-minute and states the change in place, so
+  a fall in the rate is not read as a fall in the trading.

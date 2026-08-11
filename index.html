@@ -571,7 +571,9 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="row" style="margin-bottom:10px">
         <label class="f">Offers<input type="number" id="szSlots" min="1" max="8" style="width:58px"></label>
         <label class="f">Day horizon (h)<input type="number" id="szH" min="4" max="16" style="width:64px"></label>
-        <label class="f" title="How long a buy leg is allowed to take. Positions are sized so the bid fills inside this window; anything that can't is benched as a predicted slow fill. A bid still working past it is stale — the market moved, not you.">Fill horizon (h)<input type="number" id="szFill" min="1" max="12" style="width:64px"></label>
+        <label class="f" title="FALLBACK ONLY while a touch schedule is set: the live horizon is the gap to your next touch. Clear the schedule below to fall back to this single global horizon.">Fill horizon (h) — fallback<input type="number" id="szFill" min="1" max="12" style="width:64px"></label>
+        <label class="f" title="TOUCH SCHEDULE (ruled Aug 11 2026): the hours you actually sit down, comma-separated (24h, decimals allowed — 21.5 is 21:30). Every horizon derives from the gaps between them: each touch's placements size and price for the time until the NEXT touch. Leave EMPTY to keep no cadence and use the single fallback horizon above.">Touch schedule<input id="szTouch" placeholder="7, 12, 17, 21.5" style="width:150px"></label>
+        <label class="f" title="Minutes of attention each touch costs, in the same order as the schedule. The evening touch places patient capital and does the logging, so it costs more. Feeds gp-per-attention-minute.">Minutes / touch<input id="szTouchMin" placeholder="6, 6, 6, 10" style="width:110px"></label>
         <label class="f" title="Minimum post-tax margin in ticks (1 tick = 1 gp). Below this, one tick of adverse move eats too much of the edge — the cheap-item trap.">Tick floor<input type="number" id="szTick" min="1" max="100" style="width:56px"></label>
         <label class="f" title="Scanner's minimum unit price. Sub-400gp items rarely clear the tick floor — raise or lower deliberately.">Min unit (gp)<input type="number" id="szMinPx" min="0" step="50" style="width:80px"></label>
         <label class="f" title="Inventory mode never quotes its bid and ask closer than this many ticks — quoting tighter trades against yourself after tax.">Quote width<input type="number" id="szQuote" min="1" max="20" style="width:56px"></label>
@@ -583,8 +585,9 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <label class="f" title="No plan line may exceed this share of an item's 1h unit volume — bigger than this and the offer IS the market. Bench reason: would move the market.">Part. cap %<input type="number" id="szPart" min="1" max="100" style="width:56px"></label>
         <label class="f" title="Shadow-book fill conservatism: a simulated leg claims at most this share of the tape volume that crossed its price, on top of the capture cap. The ledger reports both readings (filled at this participation / would also fill at 100%), and probation proposals cite the conservative one. The sim assumes a book you're not in — screening tool, not evidence.">Shadow part. %<input type="number" id="szShadPart" min="10" max="100" style="width:56px"></label>
         <label class="f" title="A line's expected gp per full cycle (judged at full, unramped size) must clear this or it isn't worth a slot. 0 = automatic: 0.1% of the tier pools.">Min gp/cycle<input type="number" id="szMinExp" min="0" step="10000" style="width:90px"></label>
+        <span class="note" style="align-self:center;max-width:520px" id="szTouchNote"></span>
         <span class="note" style="align-self:center;max-width:520px">
-          Buy legs are sized to fill inside the <b>fill horizon</b> (flow × 15% capture × hours);
+          Buy legs are sized to fill inside <b>this touch's horizon</b> — the gap to your next touch (flow × 15% capture × hours);
           buy limits still roll every 4h across the day horizon while offers stand.
           Reserves are never allocated: incidentals float here, the shadow reserve in full.
           Offers keeps one GE slot free for game-content buys.
@@ -1205,7 +1208,10 @@ let DB = {
   watchCap: 25,       // scout tops the list up to this size
   slots: 7,           // offers per morning touch — the 8th GE slot stays free for game-content buys
   horizonH: 10,       // hours the offers sit before the evening touch
-  fillHorizonH: 4,    // hours a buy leg is allowed to take — sizing and the slow-fill gates use this
+  fillHorizonH: 4,    // FALLBACK ONLY since the cadence build (Aug 11 2026): the live horizon is the gap to the next touch (see touchWindows). Kept for a store whose schedule is unusable
+  touchWindows: [7, 12, 17, 21.5],   // TOUCH SCHEDULE (ruled Aug 11 2026): hours-of-day, editable. Every horizon — sizing, the fill gate, stale-buy clocks, paper-trip lifecycles — derives from the gaps between these
+  touchMins: [6, 6, 6, 10],          // minutes of attention per touch, per window: the evening one places patient capital and does the logging, so it costs more
+  reconLog: [],       // paper-book recovery passes [{at,trips,spanH,items,closed}] — an outage is an event, surfaced in WHAT CHANGED, not inferred from a thin ledger a week later
   reserve: 3_000_000, // gp held back for incidentals, never allocated
   shadowReserve: 300_000_000, // named capital for the Shadow purchase — outside ALL allocator math, recallable by hand
   t1Budget: 60_000_000,       // tier-1 (400–5k consumables) allocation ceiling, carved from working capital
@@ -2097,6 +2103,11 @@ async function doRefresh(opts = {}){
     await Promise.all(jobs);
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
+    /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
+       caught up across the gap before "now" is applied to it, or the tick
+       would price an expired horizon at today's tape — the defect that
+       caused the epoch reset. Awaited, and self-throttled inside. */
+    try { S.reconLast = await shadowRecover(); } catch(e){}
     shadowTick();   // paper book observes every refresh — fills only accrue while watching
     accrueBackground();   // plan-driven ledgers ride the POLL, not a render path — tab-independent by construction
     runScout();
@@ -2258,7 +2269,45 @@ function lastWalkupAt(){
   return best;
 }
 /* Days flipped before session-tracking existed count as two sessions each —
-   the schedule was always two-touch, so that's the honest historical guess. */
+   the schedule was two-touch until the Aug 11 2026 cadence change, so that
+   remains the honest guess for those days — it is not a claim about now. */
+/* Minutes of attention per touch, per window (ruled Aug 11 2026): the
+   evening touch places patient capital and does the logging, so it costs
+   more than a daytime check-in. */
+function touchMins(){
+  const ws = touchWindows();
+  const raw = Array.isArray(DB.touchMins) ? DB.touchMins : [];
+  return ws.map((w, i) => Math.max(1, Number(raw[i]) || (i === ws.length - 1 ? 10 : 6)));
+}
+/* Which scheduled window a timestamp belongs to — the one most recently
+   passed, so a touch at 12:04 is charged the lunch window's minutes. */
+function touchIdxFor(ts){
+  const ws = touchWindows();
+  if (!ws.length) return -1;
+  const d = new Date(ts), h = d.getHours() + d.getMinutes() / 60;
+  let idx = ws.length - 1;
+  for (let i = 0; i < ws.length; i++) if (h >= ws[i]) idx = i;
+  return idx;
+}
+/* Total attention spent, in minutes: each stamped touch charged at its own
+   window's rate. Untracked historical days keep the old two-touch guess at
+   the legacy per-visit default, because that is what those days actually were. */
+function attentionMinutes(){
+  const mins = touchMins();
+  const legacy = Math.max(1, DB.minsPerTouch || 10);
+  let total = 0;
+  const tracked = new Set();
+  for (const t of DB.touchLog || []){
+    tracked.add(t.d);
+    const i = t.t != null ? touchIdxFor(t.t) : -1;
+    total += (i >= 0 && mins[i]) ? mins[i] : legacy;
+  }
+  for (const f of DB.flips){
+    const d = String(f.date || "").slice(0, 10);
+    if (d && !tracked.has(d)){ tracked.add(d); total += 2 * legacy; }
+  }
+  return total;
+}
 function touchSessions(){
   const tracked = new Set(DB.touchLog.map(t => t.d));
   const untracked = new Set();
@@ -2645,7 +2694,118 @@ const GATE = { roi:1.2, trendSoft:-5, trendWarn:-3, falling:-8, volPerQty:4,
                taxMult:3,        // per-unit margin must clear 3× the per-unit tax (plus the tick floor below)
                capture:0.15 };   // share of one side's flow a standing offer can realistically capture
 
-const FILLH = () => Math.max(1, DB.fillHorizonH || 4);
+/* ═══ TOUCH SCHEDULE — PER-TOUCH HORIZONS (user ruling, Aug 11 2026) ═══════
+   The day is not uniform and neither are the horizons. Four touches with a
+   mixed shape — coffee, lunch, afternoon, evening — give three daytime gaps
+   of about five hours and one overnight sit of nine or ten. Every placement
+   sizes and prices for the gap until the NEXT touch, which the schedule
+   already knows, instead of one global constant.
+
+   This makes TWO STRATEGIES fall out by construction rather than by
+   instruction: a daytime placement can only fund what fills in ~5h, so it
+   favours fast cyclers; the evening placement has ~10h and can carry the
+   slower, thicker items a short gap has to bench. An item benched by a
+   daytime horizon that WOULD fund tonight is information the plan now says
+   out loud instead of losing.
+
+   ABSENCE-TOLERANT by construction: everything derives from "now → the next
+   scheduled window", so a missed touch simply means the next window is
+   further away and the following horizon stretches. Nothing to reset.
+
+   The schedule is a SETTING (`DB.touchWindows`, hours-of-day). The old
+   global `DB.fillHorizonH` survives only as the fallback for a store whose
+   schedule is unusable, and as the floor under a pathologically short gap. */
+const TOUCH_DEFAULT = [7, 12, 17, 21.5];
+/* An EXPLICITLY EMPTY schedule is a real setting, not a broken one: it means
+   "I do not keep a cadence", and the tool falls back to the single global
+   fill horizon it used before this build. Everything below reads
+   `scheduleOn()` rather than assuming four windows exist. */
+const scheduleOn = () => touchWindows().length >= 2;
+function touchWindows(){
+  if (Array.isArray(DB.touchWindows) && DB.touchWindows.length === 0) return [];
+  const raw = Array.isArray(DB.touchWindows) ? DB.touchWindows : TOUCH_DEFAULT;
+  const ws = [...new Set(raw.map(h => Math.max(0, Math.min(23.99, Number(h))))
+    .filter(h => Number.isFinite(h)))].sort((a, b) => a - b);
+  return ws.length >= 2 ? ws : TOUCH_DEFAULT.slice();
+}
+const touchLabel = h => String(Math.floor(h)).padStart(2, "0") + ":"
+  + String(Math.round((h - Math.floor(h)) * 60)).padStart(2, "0");
+/* Names are derived from position, not hardcoded: the last window of the day
+   is the evening one because it is the one the overnight gap follows. */
+function touchName(i){
+  const ws = touchWindows();
+  if (i === ws.length - 1) return "evening touch";
+  return ["morning touch", "midday touch", "afternoon touch", "late touch"][i] || ("touch " + (i + 1));
+}
+/* The next scheduled window strictly after ts, as a timestamp. */
+function nextTouchAt(ts){
+  const ws = touchWindows();
+  if (!ws.length) return { at: ts + Math.max(1, DB.fillHorizonH || 4) * 3600e3, idx: 0 };
+  const d = new Date(ts);
+  const hNow = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  for (const w of ws){
+    if (w > hNow + 1e-6){
+      const t = new Date(d); t.setHours(Math.floor(w), Math.round((w % 1) * 60), 0, 0);
+      return { at: t.getTime(), idx: ws.indexOf(w) };
+    }
+  }
+  const t = new Date(d); t.setDate(t.getDate() + 1);
+  t.setHours(Math.floor(ws[0]), Math.round((ws[0] % 1) * 60), 0, 0);
+  return { at: t.getTime(), idx: 0 };
+}
+/* THE primitive: hours from ts until the next touch. Floored at 1h so a
+   placement made a minute before a touch is not sized for nothing, and
+   capped at 24h so a broken schedule cannot produce a runaway size. */
+function gapHoursAt(ts){
+  if (!scheduleOn()) return Math.max(1, DB.fillHorizonH || 4);   // no cadence kept: the old global horizon
+  const n = nextTouchAt(ts);
+  return Math.max(1, Math.min(24, (n.at - ts) / 3600e3));
+}
+/* The horizon a placement made NOW would run against — what sizing, the
+   fill-horizon gate and the fill forecast all read. */
+const planHorizonH = () => gapHoursAt(Date.now());
+/* Every gap in the schedule, longest first — the overnight sit is the head. */
+function touchGaps(){
+  const ws = touchWindows();
+  if (!ws.length) return [];
+  const out = [];
+  for (let i = 0; i < ws.length; i++){
+    const nxt = ws[(i + 1) % ws.length];
+    const h = i === ws.length - 1 ? (24 - ws[i] + nxt) : (nxt - ws[i]);
+    out.push({ i, from: ws[i], to: nxt, h: Math.round(h * 100) / 100, name: touchName(i) });
+  }
+  return out;
+}
+const longestGap = () => touchGaps().slice().sort((a, b) => b.h - a.h)[0];
+/* A leg stamps the horizon that applied when it was PLACED and ages against
+   that — a leg placed at the evening touch is not stale at 5am, it is
+   mid-horizon. Records written before this feature fall back to the old
+   global, which is exactly what they were aged against at the time. */
+const legHorizonH = rec => {
+  const h = rec && Number(rec.hzH);
+  return Number.isFinite(h) && h > 0 ? h : Math.max(1, DB.fillHorizonH || 4);
+};
+/* THE LINE THIS FEATURE EXISTS FOR: an item the current gap has to bench,
+   which the overnight sit would fund. Returns null when the current horizon
+   already covers it, so the caller can say nothing. */
+function qualifiesLaterAt(estH){
+  if (!Number.isFinite(estH) || !scheduleOn()) return null;
+  const now = planHorizonH();
+  if (estH <= now) return null;
+  const g = longestGap();
+  if (!g || estH > g.h) return null;
+  return { needH: estH, gap: g,
+    txt: "qualifies at the " + g.name + " — needs ~" + fmtHrs(estH)
+       + ", and that sit is " + fmtHrs(g.h) + " (this gap is only " + fmtHrs(now) + ")" };
+}
+/* FILLH is now the SCHEDULE'S gap, not a global constant (ruled Aug 11
+   2026). Every caller that asks "how long does this placement get" gets the
+   time until the next touch. `DB.fillHorizonH` survives only as the fallback
+   for a store whose schedule is unusable — it is no longer the primary input,
+   and the settings panel says so. Callers that need a SPECIFIC leg's horizon
+   use legHorizonH(record) instead, because a leg ages against the horizon it
+   was placed under. */
+const FILLH = () => planHorizonH();
 const TICKF = () => Math.max(1, DB.tickFloor || 15);      // margin floor in ticks (1 tick = 1 gp)
 /* Tax-exempt items get half the floor: the floor's main job is stopping the
    margin≈tax bleed on scratch exits, and with zero tax a scratch exit costs
@@ -2760,7 +2920,14 @@ function momentum(c, sp){
    is hours × hourly flow × capture share — not one hour's worth. Buy limits
    roll every 4h and a standing offer resumes filling on its own, so the limit
    cap scales with the number of windows in the horizon. */
-const limitWindows = () => Math.max(1, Math.floor((DB.horizonH || 10) / 4));
+/* Buy limits roll every 4h while an offer stands, so the number of windows
+   a placement can use is set by ITS OWN gap — not by a global day horizon
+   (audit finding 6a, Aug 11 2026). At the old constant every line was sized
+   as if two windows were available; a 5h daytime placement only ever gets
+   one, which overstated daytime sizing on buy-limit-bound items by up to 2×.
+   Callers pricing a specific leg pass that leg's horizon. */
+const limitWindowsFor = h => Math.max(1, Math.floor(Math.max(1, h) / 4));
+const limitWindows = () => limitWindowsFor(planHorizonH());
 
 /* The margin the plan believes: your tested spread if you have one, else the
    CONSERVATIVE of live and 1h-average. A live spread above the sustained one
@@ -3363,7 +3530,7 @@ function mmVerdict(id){
                           || (mk.avg2h != null && -mk.avg2h > mx * marginPU)))
     lacks.push("toxic flow — adverse markout exceeds " + mx + "× the realized margin");
   const sh = slowHistory(id);
-  if (sh) lacks.push("median buy fill " + fmtHrs(sh.med) + ", past the " + FILLH() + "h horizon");
+  if (sh) lacks.push("median buy fill " + fmtHrs(sh.med) + ", past this touch's " + fmtHrs(planHorizonH()) + " horizon");
   const qmf = fl.filter(f => Number.isFinite(f.qm));
   if (qmf.length >= 3){
     const capGp = qmf.reduce((s, f) => s + f.qm * f.qty, 0);
@@ -3620,7 +3787,7 @@ function candidateFor(w){
              + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid");
     chk(!!sh, "fill history",
       !sh ? "" : "historically slow fills — median " + fmtHrs(sh.med) + " buy leg across " + sh.hist.length
-             + " timed flips (" + sh.hist.map(fmtHrs).join(", ") + "); a fresh fill under " + FILLH() + "h unbenches it");
+             + " timed flips (" + sh.hist.map(fmtHrs).join(", ") + "); a fresh fill under " + fmtHrs(planHorizonH()) + " unbenches it");
     /* NB: moderate imbalance and 30–60 min book-skew only TAG (see whyTag) —
        volSide sizing already prices asymmetric flow; benching it twice was
        the same double-count as the old slow-fill gate. */
@@ -3716,7 +3883,25 @@ function applyFamilyRule(pass, bench){
    by construction (the span check stays explicit anyway). Exemptions are
    measurement or the user's own diligence, stated inline on the plan:
    a completed logged round trip in 30d, or a fresh margin test. */
+/* SEASONING, RE-EXPRESSED (user ruling, Aug 11 2026 — not rescaled).
+   The rule bought two things: "the edge is sustained across sessions" AND
+   "nothing gets capital on a single day's data". At four touches the old
+   "3 passes spanning ≥2h, one per hour" bought only the first — four touches
+   in a day would have qualified an item the same afternoon. Stated properly:
+   THREE passes, AT MOST ONE PER TOUCH, SPANNING AT LEAST ONE CALENDAR DAY.
+   The span is a date rollover rather than a duration, so it cannot be
+   satisfied by a long evening. */
 const QUAL_PASSES = 3, QUAL_SPAN_MS = 2 * 3600e3, QUAL_GAP_MS = 3600e3;
+/* One pass per TOUCH: a scheduled window must have passed since the last
+   counted pass. With no schedule kept, the old one-per-hour rule stands. */
+const qualGapCleared = (lastAt, now) => scheduleOn()
+  ? nextTouchAt(lastAt).at <= now
+  : (now - lastAt) >= QUAL_GAP_MS;
+/* The span is a CALENDAR-DAY rollover — four touches must not buy same-day
+   qualification. Without a schedule the old 2h duration stands. */
+const qualSpanned = q => scheduleOn()
+  ? new Date(q.firstAt).toLocaleDateString("en-CA") !== new Date(q.lastAt).toLocaleDateString("en-CA")
+  : (q.lastAt - q.firstAt) >= QUAL_SPAN_MS;
 const QUAL_GAP_MAX = 12 * 3600e3;   // beyond this the gap is a closed tab, not an observation interval — see updateQualStreaks
 function qualExemption(id, c){
   if (c && c.tested) return "margin-tested by you — your diligence outranks the clock";
@@ -3727,7 +3912,7 @@ function qualExemption(id, c){
 function qualState(id){
   const q = DB.qual[id];
   const n = q ? q.n : 0;
-  const qualified = !!q && q.n >= QUAL_PASSES && q.lastAt - q.firstAt >= QUAL_SPAN_MS;
+  const qualified = !!q && q.n >= QUAL_PASSES && qualSpanned(q);
   let eta = null;
   if (!qualified){
     const now = Date.now();
@@ -3752,7 +3937,7 @@ function updateQualStreaks(all){
     }
     const q = DB.qual[x.id];
     if (!q){ DB.qual[x.id] = { n: 1, firstAt: now, lastAt: now }; dirty = true; }
-    else if (now - q.lastAt >= QUAL_GAP_MS){
+    else if (qualGapCleared(q.lastAt, now)){
       /* A gap is not a pass (audit fix, Aug 11 2026). The streak claims
          "counted full-gate passes spanning ≥2h" as proof the edge is
          SUSTAINED; before this, a five-day closed tab handed an item its next
@@ -3826,7 +4011,10 @@ function buildPlan(){
 
   const st = workingStack(), avail = Math.max(0, st - committed());
   const targetSlots = Math.max(1, Math.min(8, DB.slots || 7));
-  const H = DB.horizonH || 10;
+  /* The day horizon is now derived: a placement rolls buy-limit windows
+     across ITS OWN gap (limitWindowsFor), and this remains only as the
+     legacy per-day figure for stores with no cadence kept. */
+  const H = scheduleOn() ? planHorizonH() : (DB.horizonH || 10);
   /* Deployable = free WORKING capital minus the incidentals reserve. The
      shadow reserve never entered `st`, so it cannot be invaded from here. */
   const deployable = Math.max(0, avail - (DB.reserve || 0));
@@ -3942,9 +4130,16 @@ function buildPlan(){
       /* Predicted-slow-fill bench: when the fill horizon is what shrank this
          below worth-a-slot, the honest reason is the fill forecast. */
       if ((tooSmall || cap <= 0) && !ramped && byLiquidity < x.qty && !full_ && !blockedSeed && !blockedT2 && !blockedCluster){
-        bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estFillH(x.qty, x.c)) + " for the planned "
-          + full(x.qty) + " — only " + full(byLiquidity) + " fit the " + FILLH() + "h fill horizon"
-          + (byLiquidity > 0 ? ", not worth a slot" : "") });
+        /* THE ROUTING LINE (ruled Aug 11 2026). A benched item that would
+           fund tonight is information the old single-horizon plan simply
+           lost. Fast cyclers carry the day; patient, wider-margin items fund
+           at the evening touch — and the bench line says which this is. */
+        const estH = estFillH(x.qty, x.c);
+        const later = qualifiesLaterAt(estH);
+        bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estH) + " for the planned "
+          + full(x.qty) + " — only " + full(byLiquidity) + " fit this touch's " + fmtHrs(planHorizonH()) + " horizon"
+          + (byLiquidity > 0 ? ", not worth a slot" : "")
+          + (later ? " — " + later.txt : ""), laterTouch: later || undefined });
         continue;
       }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
@@ -4121,7 +4316,7 @@ function whyTag(x){
     bits.push("slow-fill flag — the full " + full(x.c.limit) + " limit outruns the book, but this buy is sized to "
       + (q != null ? full(q) : "liquidity") + (fillH != null
         ? " (~" + (fillH < 1 ? Math.max(1, Math.round(fillH * 60)) + "m" : fillH.toFixed(1) + "h")
-          + " to fill at a " + Math.round(GATE.capture * 100) + "% capture rate, inside the " + (DB.horizonH || 10) + "h horizon)"
+          + " to fill at a " + Math.round(GATE.capture * 100) + "% capture rate, inside this touch's " + fmtHrs(planHorizonH()) + " horizon)"
         : "") + ", so the flag is priced in, not ignored");
   }
   if (x.c.margin1h != null && x.c.margin > 0 && x.c.margin1h < x.c.margin * 0.7 && !x.c.tested)
@@ -4285,9 +4480,13 @@ function fixSellQty(pid){
 function staleBuyInfo(p){
   if (posStage(p) !== "buying") return null;
   const now = Date.now(), ageH = (now - p.placedAt) / 3600e3;
-  const slot = ts => { const d = new Date(ts); return d.toLocaleDateString("en-CA") + (d.getHours() >= 15 ? "pm" : "am"); };
-  const crossed = slot(p.placedAt) !== slot(now);
-  return (ageH > FILLH() || crossed) ? { ageH, crossed } : null;
+  /* A leg is stale when it has outlived ITS OWN horizon (the gap in force
+     when it was placed), or when a scheduled touch has passed since — the
+     boundary comes from the schedule now, never a hardcoded 15:00 am/pm
+     split, which was a literal two-touch convention (audit finding 6b). */
+  const hz = legHorizonH(p);
+  const crossed = nextTouchAt(p.placedAt).at <= now;
+  return (ageH > hz || crossed) ? { ageH, crossed, hz } : null;
 }
 function staleBuyBadge(p){
   const sb = staleBuyInfo(p);
@@ -4295,7 +4494,7 @@ function staleBuyBadge(p){
   const fmtH = h => h < 1 ? Math.round(h * 60) + "m" : h.toFixed(1) + "h";
   const fs = fillStats(p.itemId);
   return ' <span class="badge b-risk" title="Unfilled for ' + fmtH(sb.ageH)
-    + (sb.crossed ? ", into the next touch" : ", past the " + FILLH() + "h fill horizon")
+    + (sb.crossed ? ", into the next touch" : ", past its " + fmtHrs(sb.hz) + " horizon")
     + (fs && fs.n ? ". Your measured buy fills on this item average " + fmtH(fs.avgBuyH)
         + " across " + fs.n + " timed flip" + (fs.n === 1 ? "" : "s") + " — this bid is far outside that." : ".")
     + " A late fill on a stale bid means the price moved down through it — adverse selection, not patience rewarded. Cancel and re-test."
@@ -4421,18 +4620,21 @@ const invQuoteText = q => q.err
    clocks as position legs (staleBuyInfo / sellAgeInfo). */
 function quoteLegAge(qp){
   const ageH = (Date.now() - qp.t) / 3600e3;
-  const slot = ts => { const d = new Date(ts); return d.toLocaleDateString("en-CA") + (d.getHours() >= 15 ? "pm" : "am"); };
-  const crossed = slot(qp.t) !== slot(Date.now());
-  return { ageH, crossed,
-           buyStale: (qp.buyQty > qp.buyFilled) && (ageH > FILLH() || crossed),
-           sellRung: (qp.sellQty > qp.sellFilled) ? (ageH >= 2 * FILLH() ? 2 : ageH >= FILLH() ? 1 : 0) : 0 };
+  /* Same schedule-derived boundary, and the aging ladder measures against
+     the leg's OWN horizon: a leg placed at the evening touch is not stale at
+     05:00, it is mid-sit. */
+  const hz = legHorizonH(qp);
+  const crossed = nextTouchAt(qp.t).at <= Date.now();
+  return { ageH, crossed, hz,
+           buyStale: (qp.buyQty > qp.buyFilled) && (ageH > hz || crossed),
+           sellRung: (qp.sellQty > qp.sellFilled) ? (ageH >= 2 * hz ? 2 : ageH >= hz ? 1 : 0) : 0 };
 }
 function placeQuote(id){
   const w = DB.watch.find(x => x.id === id);
   if (!w || !(w.invTarget > 0)) return null;
   const q = invQuote(w);
   if (q.err || (!(q.sellQty > 0) && !(q.buyQty > 0))) return null;
-  w.quotePlaced = { t: Date.now(), bid: q.bid, ask: q.ask,
+  w.quotePlaced = { t: Date.now(), hzH: Math.round(planHorizonH() * 100) / 100, bid: q.bid, ask: q.ask,
                     sellQty: q.sellQty, buyQty: q.buyQty, sellFilled: 0, buyFilled: 0 };
   markTouch(); save();
   return w.quotePlaced;
@@ -4485,8 +4687,9 @@ function recordInvSellFill(id, qty){
 function sellAgeInfo(p){
   if (posStage(p) !== "selling") return null;
   const ageH = (Date.now() - (p.stageAt || p.placedAt)) / 3600e3;
-  if (ageH >= 2 * FILLH()) return { ageH, rung: 2 };
-  if (ageH >= FILLH())     return { ageH, rung: 1 };
+  const hzL = legHorizonH(p);
+  if (ageH >= 2 * hzL) return { ageH, rung: 2, hz: hzL };
+  if (ageH >= hzL)     return { ageH, rung: 1, hz: hzL };
   return null;
 }
 function repriceSell(pid, undercut){
@@ -4708,7 +4911,7 @@ function renderPlan(P0){
         + ' · ' + leg('BUY', qp.buyQty, qp.buyFilled, bRem, qp.bid)
         + (la.sellRung === 2 ? ' · <span class="neg">sell leg 2× past the fill horizon — undercut &amp; exit: cancel in-game, relist 1 tick under the instabuy (aging-ladder rung 2)</span>'
          : la.sellRung === 1 ? ' · <span class="neg">sell leg past the fill horizon — reprice to the current instabuy (aging-ladder rung 1)</span>' : '')
-        + (la.buyStale ? ' · <span class="neg">buy leg stale — ' + (la.crossed ? 'hanging into the next touch' : 'past the ' + FILLH() + 'h fill horizon')
+        + (la.buyStale ? ' · <span class="neg">buy leg stale — ' + (la.crossed ? 'hanging into the next touch' : 'past its ' + fmtHrs(la.hz) + ' horizon')
             + '; a late fill means the price came down through the bid. Cancel and re-quote (stale-buy rule)</span>' : '')
         + '</div></div>'
         + '<span class="plan-actions">'
@@ -4808,7 +5011,8 @@ function renderPlan(P0){
   let qualHTML = "";
   if (qualifying.length){
     qualHTML = '<div class="nexthead"><b>Qualifying</b> — passed the gates, seasoning before funding: '
-      + QUAL_PASSES + ' counted passes spanning ≥2h; a failed pass resets. A fresh margin test or a logged round trip waives it.</div>'
+      + QUAL_PASSES + (scheduleOn() ? ' counted passes, at most one per touch, spanning ≥1 calendar day' : ' counted passes spanning ≥2h')
+      + '; a failed pass resets. A fresh margin test or a logged round trip waives it.</div>'
       + qualifying.map(x => {
           n++;
           const eta = x.qual.eta ? new Date(x.qual.eta) : null;
@@ -4963,9 +5167,9 @@ function relocNote(adm){
   const bits = adm.slice(0, 3).map(x => {
     const u = Math.floor((x.volGate || 0) * GATE.capture * FILLH());
     return x.name + ": " + (u < 1
-      ? "relocates to the predicted-slow-fill bench (0 of " + full(x.qty) + " fit the " + FILLH() + "h horizon) — no capacity created"
+      ? "relocates to the predicted-slow-fill bench (0 of " + full(x.qty) + " fit this touch's " + fmtHrs(planHorizonH()) + " horizon) — no capacity created"
       : u < x.qty
-      ? "funds at reduced size (" + full(u) + " of the planned " + full(x.qty) + " fit the " + FILLH() + "h horizon)"
+      ? "funds at reduced size (" + full(u) + " of the planned " + full(x.qty) + " fit this touch's " + fmtHrs(planHorizonH()) + " horizon)"
       : "funds at planned size (" + full(x.qty) + " fits the horizon)");
   });
   return "Next stage per admitted item: " + bits.join("; ")
@@ -5048,7 +5252,7 @@ const shadowResolved = p => p.state !== "open" && p.state !== "unobserved";
    result at all. Three states, three names: counted, insufficient
    observation, unobserved hole. */
 const SHADOW_MIN_OBS = 0.25;
-const shadowObsShare = p => Math.min(1, (p.obsMs || 0) / Math.max(1, FILLH() * 3600e3));
+const shadowObsShare = p => Math.min(1, (p.obsMs || 0) / Math.max(1, legHorizonH(p) * 3600e3));
 const shadowObsPct = p => Math.round(shadowObsShare(p) * 100);
 const shadowThin = p => shadowResolved(p) && shadowObsShare(p) < SHADOW_MIN_OBS;
 /* The predicate every VERDICT reads. `shadowResolved` still means "closed";
@@ -5107,7 +5311,8 @@ function shadowScan(P){
     if (!c || c.buy == null || c.sell == null) return;
     DB.shadowBook.push(Object.assign({ id: now + DB.shadowBook.length, fam, itemId: x.id,
       name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
-      t: now, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta));
+      t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live",
+      buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta));
     recent.add(fam); room--;
   };
   const eRof = x => {
@@ -5250,7 +5455,8 @@ async function scannerShadowScan(){
         }
         DB.shadowBook.push({ id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
           itemId: x.id, name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
-          t: now, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
+          t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live",
+          buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
           benchedBy: nearMiss ? [fl[0].g] : undefined,
           gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "", regimes: [] });
@@ -5263,13 +5469,167 @@ async function scannerShadowScan(){
 /* Fill sim + lifecycle, every data refresh. Buy leg: horizon from open;
    sell leg: horizon from buy completion, unsold remainder force-exits at the
    then-current instasell — the undercut-to-exit rule, simulated. */
+/* ═══ PAPER-BOOK RECONSTRUCTION (user ruling, Aug 11 2026) ═══════════════
+   The host runs foreground around the clock, so most nights are live. This
+   covers the rest — reboots, a power cut on a dead battery, a crash, sleep,
+   a closed tab — so that the always-on setup stops being load-bearing.
+
+   On the first poll after an observation gap, each open trip's own 5m series
+   is fetched once and the fill model is REPLAYED over the gap under exactly
+   the live rules: the tape must have printed at or below the bid, credit is
+   volume-weighted, capture-capped, then participation-haircut.
+
+   Two honesty rules the ruling fixes in place:
+   • Observation credit is SERIES COVERAGE. A 5m bucket that exists is an
+     observed five minutes; a bucket the API has no data for is not observed
+     at all. We never credit a span merely because we asked about it.
+   • Provenance is stamped — live / reconstructed / mixed. The model is the
+     same, the epistemics are not: reconstruction reads 5m buckets after the
+     fact and cannot see intra-bucket sequencing, so a finding that exists
+     only in reconstructed evidence has to say so.
+   Spans older than the 5m series' retention are reachable by neither route
+   and keep the "unobservable by construction" state. */
+const RECON_GAP_MIN_MS = 10 * 60e3;     // shorter than this is ordinary poll jitter, not a gap
+const RECON_MAX_FETCH = 12;             // per recovery pass — politeness, same budget shape as the scout
+const RECON_SPACING_MS = 250;
+const M5_MS = 5 * 60e3;
+const recon5mCache = new Map();         // itemId → { at, pts:[{t,lo,hi,lv,hv}] }
+/* One 5m series per item, ~30h of buckets. Cached briefly: several open trips
+   on the same item must not each pay a request. */
+async function recon5m(id){
+  const c = recon5mCache.get(id);
+  if (c && Date.now() - c.at < 4 * 60e3) return c.pts;
+  const d = await getJSON("/timeseries?id=" + id + "&timestep=5m");
+  const pts = (d.data || []).map(p => ({
+    t: p.timestamp * 1000,
+    lo: Number.isFinite(p.avgLowPrice) ? p.avgLowPrice : null,
+    hi: Number.isFinite(p.avgHighPrice) ? p.avgHighPrice : null,
+    lv: p.lowPriceVolume || 0, hv: p.highPriceVolume || 0
+  }));
+  recon5mCache.set(id, { at: Date.now(), pts });
+  return pts;
+}
+/* The series value at a moment — used to price a forced exit AT its horizon
+   rather than at the moment we happened to notice. Null when the series
+   cannot reach that far back, and the caller then says the price is approximate. */
+function seriesPxAt(id, ts){
+  const c = recon5mCache.get(id);
+  const pts = c && c.pts;
+  if (!pts || !pts.length) return null;
+  if (ts < pts[0].t - M5_MS || ts > pts[pts.length - 1].t + 2 * M5_MS) return null;
+  let best = null, bestD = Infinity;
+  for (const p of pts){
+    const d = Math.abs(p.t - ts);
+    if (d < bestD && p.lo != null){ bestD = d; best = p; }
+  }
+  return best && bestD <= 2 * M5_MS ? best.lo : null;
+}
+/* Replay ONE trip across [from, to] using its own 5m buckets. Mutates the
+   trip exactly as the live tick would, and returns the milliseconds of the
+   span the series could actually account for. */
+function reconReplay(p, pts, from, to){
+  const H = legHorizonH(p) * 3600e3;
+  let covered = 0;
+  for (const b of pts){
+    if (b.t < from || b.t > to) continue;
+    covered += M5_MS;
+    if (p.state !== "open") break;
+    const bt = b.t;
+    if (!p.buyDone){
+      if (b.lo != null && b.lo <= p.bid && b.lv > 0){
+        const tape = Math.max(1, Math.floor(b.lv * GATE.capture));
+        p.buyQFull = Math.min(p.qty, (p.buyQFull != null ? p.buyQFull : p.buyQ) + tape);
+        p.buyQ = Math.min(p.qty, p.buyQ + Math.max(1, Math.floor(tape * shadowPart())));
+      }
+      if (p.buyQ >= p.qty) p.buyDone = bt;
+      else if (bt - p.t > H){
+        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = bt; }
+        else { p.state = "unfilled"; p.closedAt = bt; p.net = 0; break; }
+      }
+    }
+    if (p.buyDone && p.state === "open"){
+      if (b.hi != null && b.hi >= p.ask && b.hv > 0){
+        const tape = Math.max(1, Math.floor(b.hv * GATE.capture));
+        p.sellQFull = Math.min(p.qty, (p.sellQFull != null ? p.sellQFull : p.sellQ) + tape);
+        p.sellQ = Math.min(p.qty, p.sellQ + Math.max(1, Math.floor(tape * shadowPart())));
+      }
+      if (p.sellQ >= p.qty){
+        p.state = "filled"; p.closedAt = bt;
+        p.net = p.qty * (p.ask - geTax(p.ask, p.itemId)) - p.qty * p.bid;
+        break;
+      }
+      if (bt - p.buyDone > H){
+        const rem = p.qty - p.sellQ;
+        const exitPx = b.lo != null ? b.lo : p.bid;   // the series value AT the horizon
+        p.state = "forced-exit"; p.closedAt = bt; p.forced = rem; p.exitPx = Math.round(exitPx);
+        p.net = p.sellQ * (p.ask - geTax(p.ask, p.itemId))
+              + rem * (exitPx - geTax(exitPx, p.itemId)) - p.qty * p.bid;
+        break;
+      }
+    }
+  }
+  return covered;
+}
+/* The recovery pass. Runs from the poll, before the live tick, so a trip is
+   caught up before "now" is applied to it. */
+async function shadowRecover(){
+  if (S.reconBusy) return null;
+  const now = Date.now();
+  const open = shadowOpen();
+  if (!open.length) return null;
+  /* The gap is measured per trip: each carries its own lastObs. */
+  const stale = open.filter(p => now - (p.lastObs || now) > RECON_GAP_MIN_MS)
+    .sort((a, b) => (a.lastObs || 0) - (b.lastObs || 0));
+  if (!stale.length) return null;
+  S.reconBusy = true;
+  const ids = [...new Set(stale.map(p => p.itemId))].slice(0, RECON_MAX_FETCH);
+  const done = [], gapMsAll = [];
+  try {
+    for (const id of ids){
+      let pts = null;
+      try { pts = await recon5m(id); } catch(e){ continue; }
+      await new Promise(r => setTimeout(r, RECON_SPACING_MS));
+      if (!pts || !pts.length) continue;
+      const oldest = pts[0].t;
+      for (const p of stale.filter(x => x.itemId === id)){
+        const from = p.lastObs || p.t;
+        gapMsAll.push(now - from);
+        /* Beyond the series' retention there is nothing to replay: that span
+           stays unobservable by construction, and the trip keeps whatever
+           credit it already had. */
+        const replayFrom = Math.max(from, oldest);
+        const covered = reconReplay(p, pts, replayFrom, now);
+        if (covered > 0){
+          p.obsMs = (p.obsMs || 0) + covered;
+          p.reconMs = (p.reconMs || 0) + covered;
+          p.grade = p.grade === "reconstructed" || !p.obsLive ? "reconstructed" : "mixed";
+          done.push(p);
+        }
+        if (replayFrom > from) p.reconGapMs = (p.reconGapMs || 0) + (replayFrom - from);
+        p.lastObs = now;
+      }
+    }
+  } finally { S.reconBusy = false; }
+  if (!done.length) return null;
+  const span = Math.max.apply(null, gapMsAll.concat([0]));
+  const rec = { at: now, trips: done.length, spanH: Math.round(span / 3600e3 * 10) / 10,
+    items: ids.length, closed: done.filter(p => p.state !== "open").length };
+  DB.reconLog = (DB.reconLog || []).filter(x => now - x.at < 30 * 86400e3).concat([rec]).slice(-40);
+  save();
+  return rec;
+}
 function shadowTick(){
-  const now = Date.now(), H = FILLH() * 3600e3;
+  const now = Date.now();
   let changed = false;
   for (const p of shadowOpen()){
+    /* Each trip runs against the horizon it was OPENED under — never
+       retro-applied (ruled Aug 11 2026). Legacy records without a stamp fall
+       back to the old global, which is what they actually ran against. */
+    const H = legHorizonH(p) * 3600e3;
     const L = S.latest[p.itemId];
     const dt = Math.min(Math.max(0, now - (p.lastObs || now)), SHADOW_OBS_CAP);
     p.obsMs += dt; p.lastObs = now;
+    if (dt > 0){ p.obsLive = (p.obsLive || 0) + dt; if (p.reconMs) p.grade = "mixed"; else p.grade = "live"; }
     if (!L){ continue; }
     const m5 = S.min5[p.itemId] || {};
     if (!p.buyDone){
@@ -5317,7 +5677,16 @@ function shadowTick(){
         changed = true;
       } else if (now - p.buyDone > H){
         const rem = p.qty - p.sellQ;
-        const exitPx = L.low != null ? L.low : p.bid;
+        /* FORCED EXIT PRICES AT THE HORIZON, not at the moment we noticed
+           (ruled Aug 11 2026 — the proper fix for the defect that caused the
+           epoch reset). Booking today's instasell for a horizon that expired
+           hours ago records days of price drift as simulated P&L. The series
+           value at the horizon is the honest exit; only if the series cannot
+           reach back that far do we fall back, and then we say so. */
+        const hzAt = p.buyDone + H;
+        const sv = seriesPxAt(p.itemId, hzAt);
+        const exitPx = sv != null ? sv : (L.low != null ? L.low : p.bid);
+        if (sv == null) p.exitApprox = 1;
         /* exitPx is retained on the record (Aug 11 2026) so the trip's row
            in a drill-down can show what the forced exit actually paid —
            an outcome you can't see the price of can't be audited. Records
@@ -5399,13 +5768,36 @@ function shadowRegimeEvidence(){
    the three regime curves side by side. */
 /* Per-gate closed paper outcomes — one computation, shared by the shadow
    report and the unified gate-health view. */
-function shadowByGate(){
+/* Horizon shape and evidence grade are GROUPING dimensions, not filters
+   (ruled Aug 11 2026): the 5h-vs-9.5h split is the point of the four-touch
+   shape, and a filter defaults to hiding it. A finding that holds at one
+   horizon and not the other is a HORIZON finding, not a gate finding.
+   "overnight" is any trip whose own horizon reaches at least the longest
+   scheduled gap less an hour's slack; everything else is daytime. */
+const OVERNIGHT_MIN_H = () => { const g = longestGap(); return g ? Math.max(2, g.h - 1) : 8; };
+const shapeOf = p => legHorizonH(p) >= OVERNIGHT_MIN_H() ? "overnight" : "daytime";
+const gradeOf = p => p.grade === "reconstructed" ? "reconstructed" : p.grade === "mixed" ? "mixed" : "live";
+/* One line of provenance for any aggregate built from a set of trips. */
+function evidenceNote(arr){
+  if (!arr || !arr.length) return "";
+  const g = { live: 0, reconstructed: 0, mixed: 0 };
+  for (const p of arr) g[gradeOf(p)]++;
+  const bits = Object.entries(g).filter(([, n]) => n).map(([k, n]) => n + " " + k);
+  const only = g.reconstructed && !g.live && !g.mixed;
+  return ' <span class="dim" title="Reconstruction replays the same fill model over 5m buckets after the fact, so it cannot see intra-bucket sequencing.">['
+    + bits.join(", ") + (only ? " — this finding exists only in reconstructed evidence" : "") + ']</span>';
+}
+/* Keyed by GATE by default — every verdict consumer reads it that way. Pass
+   true for the SHAPE-SPLIT view: one bucket per gate·horizon, which is what
+   the per-gate table and the gate-health tree render, because blending a 5h
+   experiment with a 9.5h one hides the distinction the schedule creates. */
+function shadowByGate(byShape){
   const byGate = new Map();
   /* Watchlist + slice cohorts only — the scanner cohort answers the FILTER
      question on its own ledger line; populations never mix in a gate read. */
   for (const p of DB.shadowBook.filter(p => shadowResolved(p) && p.benchedBy && p.benchedBy.length && p.cohort !== "scanner")){
-    const g = p.benchedBy[0];
-    if (!byGate.has(g)) byGate.set(g, { arr: [], thinArr: [] });
+    const g = byShape ? p.benchedBy[0] + " · " + shapeOf(p) : p.benchedBy[0];
+    if (!byGate.has(g)) byGate.set(g, { arr: [], thinArr: [], gate: p.benchedBy[0], shape: byShape ? shapeOf(p) : null });
     /* Observed-share floor (ruled Aug 11 2026): thin trips stay on the
        record and stay openable, but no verdict number is built from them. */
     (shadowCounts(p) ? byGate.get(g).arr : byGate.get(g).thinArr).push(p);
@@ -5445,13 +5837,16 @@ const PAPER_TRIP_COLS = [
   { k: "net", lab: "Net sim", num: 1, sortk: "_net", html: 1 },
   { k: "regime", lab: "Regime" },
   { k: "cohort", lab: "Cohort", html: 1 },
+  { k: "shape", lab: "Horizon" },
+  { k: "grade", lab: "Evidence" },
   { k: "gate", lab: "Benched by" }
 ];
 const dtShort = t => t ? new Date(t).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 function paperTripRows(trips){
-  const H = FILLH() * 3600e3;
   return (trips || []).map(p => {
-    const obs = Math.min(100, Math.round((p.obsMs || 0) / H * 100));
+    /* Per-trip, never the plan's current gap: a 9.5h overnight trip and a 5h
+       daytime one are different denominators. */
+    const obs = Math.round(shadowObsShare(p) * 100);
     const outcome = p.state === "filled" ? "filled both legs"
       : p.state === "forced-exit" ? "forced exit of " + full(p.forced || 0) + " unsold"
       : p.state === "unfilled" ? "never filled at the bid"
@@ -5477,6 +5872,8 @@ function paperTripRows(trips){
       net: '<span class="' + sign(p.net || 0) + '">' + gp(Math.round(p.net || 0)) + '</span>', _net: Math.round(p.net || 0),
       regime: (p.regimes && p.regimes.length) ? p.regimes.join(" + ") : "—",
       cohort: glTerm("paper-cohort", esc(coh)), gate,
+      shape: shapeOf(p) + " (" + fmtHrs(legHorizonH(p)) + ")",
+      grade: gradeOf(p) + (p.exitApprox ? " · exit price approximate" : ""),
       _cohort: coh,
       _txt: [p.name || itemName(p.itemId), outcome, coh, gate, (p.regimes || []).join(" ")].join(" ")
     };
@@ -5734,8 +6131,8 @@ function adjudicateExceptions(){
    BOTH streams pointing the same way. Realized direction reads ONLY the
    traded-while-benched (override) stream, per the definitions protocol —
    re-admission latency is never evidence against a gate. */
-function gateStreamDirs(g, ghRows){
-  const sh = shadowByGate().get(g);
+function gateStreamDirs(g, ghRows, shBucket){
+  const sh = shBucket !== undefined ? shBucket : shadowByGate().get(g);
   const shadow = (!sh || (sh.filled + sh.forced) < 2)
     ? { dir: null, txt: "paper screen: insufficient closed outcomes" }
     : { dir: sh.net > 0 ? "loosen" : "keep",
@@ -5838,7 +6235,7 @@ function paperRegimeSection(){
   return bits.join("");
 }
 function paperGateSection(){
-  const byGate = shadowByGate();
+  const byGate = shadowByGate(true);
   const bits = ['<div class="note">Watchlist + slice cohorts only — the scanner cohort answers the FILTER question on its own ledger, and populations never mix in a gate read. '
     + 'Every cell opens to the trips behind it: entry and exit, fill or no-fill with the tape evidence, observed share, regime and cohort.</div>'];
   if (!byGate.size){
@@ -5853,7 +6250,9 @@ function paperGateSection(){
     const fills = s.arr.filter(p => p.state === "filled" || p.state === "forced-exit");
     const misses = s.arr.filter(p => p.state === "unfilled");
     const rate = s.n ? Math.round((fills.length / s.n) * 100) : 0;
-    return '<tr><td style="text-align:left">' + gateChip(g) + '</td>'
+    return '<tr><td style="text-align:left">' + gateChip(s.gate || g)
+      + ' <span class="badge ' + (s.shape === "overnight" ? "b-seed" : "b-ok") + '" title="Trips that ran under an overnight horizon are a different experiment from daytime ones — a finding true at one and not the other is a HORIZON finding, not a gate finding.">'
+      + esc(s.shape || "daytime") + '</span>' + evidenceNote(s.arr) + '</td>'
       + '<td>' + cell(g, "n", String(s.n), 'benched by "' + g + '" alone — every closed paper trip it opened', s.arr) + '</td>'
       + '<td>' + cell(g, "fill", String(fills.length), 'would have filled at ' + shadowPartPct() + '% participation — the conservative reading that drives state and net', fills) + '</td>'
       + '<td>' + cell(g, "full", String(s.filledFull), 'would also have filled at 100% participation — the same trips read without the haircut', s.arr.filter(shadowFullFilled)) + '</td>'
@@ -6961,7 +7360,8 @@ function planStatusInfo(id, P){
     why: P.nextUp[nuIdx].why + shadowCite(id) + ". Passes every gate — it auto-promotes at the next recompute when the binding resource frees; the promote button only jumps the ORDER." };
   const q = P && P.qualifying.find(x => x.id === id);
   if (q) return { key: "qualifying", cls: "b-seed", label: "qualifying " + q.qual.n + "/" + QUAL_PASSES,
-    why: "Seasoning: " + q.qual.n + "/" + QUAL_PASSES + " sustained full-gate passes spanning 2h+ before first funding"
+    why: "Seasoning: " + q.qual.n + "/" + QUAL_PASSES + " sustained full-gate passes"
+      + (scheduleOn() ? ", at most one per touch, spanning at least one calendar day" : " spanning 2h+") + " before first funding"
       + (q.qual.eta ? " — qualifies ~" + new Date(q.qual.eta).toTimeString().slice(0, 5) + " if it holds" : "")
       + ". A fresh margin test funds it now." };
   const b = P && P.bench.find(x => x.id === id);
@@ -8155,7 +8555,7 @@ function gateItemRows(r, kind){
 }
 function gateStreamsSection(){
   const gh = gateHealthAudit();
-  const shGates = shadowByGate();
+  const shGates = shadowByGate(true);
   const secs = ['<div class="note">Benches this week with BOTH streams per gate: <b>realized</b> (actual logged round trips, tax netted — the evidence) and <b>paper</b> (honest fill simulation at '
     + shadowPartPct() + '% participation — a screen, quarantine-labeled; it assumes a book you\'re not in). Paper profits are a screening rank, never evidence; realized profits alone are attribution-fuzzy; <b>a case needs realized evidence with the screen concurring</b>. '
     + 'Advisory only: gate constants change on your instruction, never from here (house convention). Every count opens to its items.</div>'];
@@ -8165,8 +8565,12 @@ function gateStreamsSection(){
     return secs.join("");
   }
   for (const g of gateNames){
-    const r = gh.rows.find(x => x.g === g);
     const sh = shGates.get(g);
+    /* The key may be "gate · shape"; the REALIZED stream has no horizon
+       dimension (a real fill happened when it happened), so it resolves by
+       gate name and is reported against each shape row it belongs to. */
+    const gateOnly = sh && sh.gate ? sh.gate : g;
+    const r = gh.rows.find(x => x.g === gateOnly);
     const realBits = [];
     if (r && r.ovrTraded)
       realBits.push('<b title="Flips dated a day this gate was actively benching the item — you went around the gate. Day-granular: an intraday re-admission can\'t be told apart from an override.">traded while still benched</b> (your override — clean evidence): '
@@ -8219,14 +8623,17 @@ function gateStreamsSection(){
         + thinNote(sh.thin, "gate:" + g, sh.thinArr)
         + ' <span class="dim">[simulated — fill-model caveats; a screen, not evidence; median ' + sh.obsMed + '% of horizon observed]</span>'
       : '<span class="dim">no closed paper positions for this gate yet [simulated]</span>');
-    const dirs = gateStreamDirs(g, gh.rows);
+    const dirs = gateStreamDirs(gateOnly, gh.rows, sh);
     const verdict = (dirs.shadow.dir && dirs.realized.dir)
       ? (dirs.shadow.dir === dirs.realized.dir
         ? '<div class="dim" style="margin-left:12px">streams AGREE (' + dirs.shadow.dir + ') — realized evidence with the screen concurring; any proposal still needs the 4-of-7 bench persistence and traced consequences</div>'
         : '<div class="plan-note" style="margin-left:12px">⚠ streams DISAGREE — the screen says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
           + '. Investigate the fill model or the attribution before proposing (your ruling) — disagreement is its own finding, not a tiebreak.</div>')
       : '';
-    secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + gateChip(g) + '</b> — benched '
+    const shTrips = sh ? sh.arr : [];
+    secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + gateChip((sh && sh.gate) || g) + '</b>'
+      + (sh && sh.shape ? ' <span class="badge ' + (sh.shape === "overnight" ? "b-seed" : "b-ok") + '">' + esc(sh.shape) + '</span>' : '')
+      + evidenceNote(shTrips) + ' — benched '
       + (r ? drill("gate:bench:" + g, r.benched + ' item' + (r.benched === 1 ? '' : 's'), {
               head: g + " — every item it benched this week, with whatever traded afterwards",
               cols: GATE_ITEM_COLS, rows: gateItemRows(r, "all"),
@@ -10742,7 +11149,11 @@ function renderLog(){
       (() => { const tf = DB.flips.filter(f => Number.isFinite(f.bh) && Number.isFinite(f.sh));
         if (!tf.length) return '<span class="dim v sm">needs timed flips</span>';
         const days = new Set(tf.map(f => String(f.date||"").slice(0,10))).size || 1;
-        const availH = days * Math.max(1, DB.slots || 6) * Math.max(4, DB.horizonH || 10);
+        /* Offer-standing hours per day come from the SCHEDULE now: offers
+           stand across every gap, so the day's capacity is the sum of them
+           (24h with a cadence kept), not a single "day horizon" constant. */
+        const dayH = scheduleOn() ? touchGaps().reduce((a2, g) => a2 + g.h, 0) : Math.max(4, DB.horizonH || 10);
+        const availH = days * Math.max(1, DB.slots || 6) * dayH;
         const usedH = tf.reduce((a,f) => a + f.bh + f.sh, 0);
         return '<span>'+Math.max(0, Math.round((availH - usedH)/days))+'h</span><span class="v sm dim"> /day</span>'; })()],
     ["Best", best ? '<span class="pos v sm">'+esc(itemName(best.itemId,best.name))+'</span><br><span class="pos">'+gp(flipProfit(best))+'</span>' : "—"],
@@ -10889,13 +11300,29 @@ function renderEquity(){
      seven-minute sitting services every offer at once, so charging each flip
      its own touches understated the rate ~5×. */
   const total = realized(), sessions = touchSessions();
-  const mins = Math.max(1, DB.minsPerTouch || 10);
+  const attMin = attentionMinutes();
+  /* TWO HEADLINES, not one (ruled Aug 11 2026). The cadence change moves
+     these in OPPOSITE directions — four touches roughly doubles the
+     attention denominator while raising daily throughput — so showing only
+     the rate would read as a regression that is really a change of
+     bookkeeping. Both, side by side, or neither is honest. */
+  const dayCount = new Set(DB.flips.map(f => String(f.date || "").slice(0, 10)).filter(Boolean)).size;
+  const perDay = dayCount ? total / dayCount : null;
   $("#eqHero").innerHTML =
-      '<div class="k">Couch-Minute Sharpe — gp per minute of attention</div>'
-    + '<div class="v">' + (sessions ? gp(Math.round(total / (sessions * mins))) + ' gp / min' : '—') + '</div>'
-    + '<div class="f num">' + (sessions
-        ? gp(total) + ' realized ÷ (' + sessions + ' touch session' + (sessions === 1 ? '' : 's') + ' × ' + mins + ' min each)'
-        : 'log a round trip and this becomes the only number that matters') + '</div>';
+      '<div class="k">' + glTerm("met-gptouch", "Couch-Minute Sharpe") + ' — gp per minute of attention</div>'
+    + '<div class="v">' + (attMin ? gp(Math.round(total / attMin)) + ' gp / min' : '—') + '</div>'
+    + '<div class="f num">' + (attMin
+        ? gp(total) + ' realized ÷ ' + Math.round(attMin) + ' attention-minutes across ' + sessions + ' touch'
+          + (sessions === 1 ? '' : 'es') + (scheduleOn() ? ' (per-touch minutes: ' + touchMins().join(" / ") + ')' : '')
+        : 'log a round trip and this becomes the only number that matters') + '</div>'
+    + '<div class="k" style="margin-top:8px">gp per day — the throughput side</div>'
+    + '<div class="v">' + (perDay != null ? gp(Math.round(perDay)) + ' gp / day' : '—') + '</div>'
+    + '<div class="f num">' + (perDay != null
+        ? gp(total) + ' realized ÷ ' + dayCount + ' day' + (dayCount === 1 ? '' : 's') + ' with logged flips'
+        : 'no logged days yet') + '</div>'
+    + '<div class="note" style="margin-top:6px">Denominator changed <b>Aug 11 2026 — cadence</b>: attention is now counted per touch '
+    + '(four a day instead of two), so the rate above is divided by roughly twice as many minutes as it used to be. '
+    + 'A fall here with gp/day flat or rising is the bookkeeping changing, not the trading.</div>';
 
   $("#eqSub").innerHTML = days.length
     ? '<span title="The line is cumulative realized profit, after tax, from every logged flip. Blue dots are your daily bank snapshots with game gp (the ledger below) netted out, re-based so the first one sits on the line — remaining drift is gp the flip log can\'t account for.">'
@@ -10953,7 +11380,7 @@ function renderTiming(){
     const c = cells[i];
     if (!c.n){ bars += '<rect x="' + (i * bw).toFixed(1) + '" y="' + (h - 3) + '" width="' + (bw - 1).toFixed(1) + '" height="3" fill="var(--line)"><title>' + i + ':00 — no timed flips placed</title></rect>'; continue; }
     const avg = c.sum / c.n;
-    const col = avg <= 1 ? "var(--green)" : avg <= FILLH() ? "var(--amber)" : "var(--red)";
+    const col = avg <= 1 ? "var(--green)" : avg <= planHorizonH() ? "var(--amber)" : "var(--red)";
     const bh2 = Math.min(h - 2, 4 + (c.n / total) * 4 * (h - 8));   // height ∝ share of flips, floor 4px
     bars += '<rect x="' + (i * bw).toFixed(1) + '" y="' + (h - bh2).toFixed(1) + '" width="' + (bw - 1).toFixed(1)
           + '" height="' + bh2.toFixed(1) + '" rx="1" fill="' + col + '" title="' + i + ':00 — avg buy fill ' + avg.toFixed(1) + 'h over ' + c.n + ' flip' + (c.n === 1 ? '' : 's') + '">'
@@ -10961,10 +11388,29 @@ function renderTiming(){
   }
   const good = cells.map((c, i) => ({ i, n: c.n, avg: c.n ? c.sum / c.n : Infinity }))
                     .filter(x => x.n >= 2).sort((a, b) => a.avg - b.avg).slice(0, 2);
-  box.innerHTML = '<b>Touch timing</b> (placement hour vs buy fill speed — green ≤1h, amber ≤' + FILLH() + 'h, red slower): '
+  box.innerHTML = '<b>Touch timing</b> (placement hour vs buy fill speed — green ≤1h, amber ≤' + fmtHrs(planHorizonH()) + ', red slower): '
     + '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" style="vertical-align:middle">' + bars + '</svg> '
     + '<span class="dim">0h→23h</span>'
-    + (good.length ? ' · fastest fills from offers placed around <b>' + good.map(x => x.i + ':00 (' + x.avg.toFixed(1) + 'h avg)').join('</b> and <b>') + '</b> — aim the touches there' : '')
+    + (scheduleOn()
+        ? (() => { /* The question changed with the schedule (ruled Aug 11 2026): not
+                      "when should I touch" — the windows are fixed — but "which of MY
+                      windows is most productive, and what should each one carry". */
+             const ws = touchWindows();
+             const per = ws.map((w, i) => {
+               const lo = Math.floor(w), hi = Math.floor(ws[(i + 1) % ws.length]);
+               let n2 = 0, sum = 0;
+               for (let k = 0; k < 24; k++){
+                 const inWin = lo < hi ? (k >= lo && k < hi) : (k >= lo || k < hi);
+                 if (inWin && cells[k].n){ n2 += cells[k].n; sum += cells[k].sum; }
+               }
+               return { name: touchName(i), at: touchLabel(w), n: n2, avg: n2 ? sum / n2 : null };
+             }).filter(x => x.n);
+             if (!per.length) return ' · <span class="dim">no timed flips inside a scheduled window yet</span>';
+             const best = per.slice().sort((a2, b2) => a2.avg - b2.avg)[0];
+             return ' · your windows: ' + per.map(x => '<b>' + esc(x.at) + '</b> ' + x.avg.toFixed(1) + 'h (' + x.n + ')').join(' · ')
+               + ' — fastest fills come from the <b>' + esc(best.name) + '</b>';
+           })()
+        : (good.length ? ' · fastest fills from offers placed around <b>' + good.map(x => x.i + ':00 (' + x.avg.toFixed(1) + 'h avg)').join('</b> and <b>') + '</b> — aim the touches there' : ''))
     + ' <span class="dim">· ' + total + ' timed flips, hours approximate</span>';
 }
 
@@ -12351,6 +12797,14 @@ function homeDeltaLines(){
   for (const p of finds.slice(0, 2))
     line("🎣 discovery slice found a clean gate-passer: " + itemName(p.itemId, p.name)
       + " (" + STRATUM_LAB(p.stratum) + ") — unwatched, passed every gate on a random draw", "scan#beyondNet");
+  const recs = (DB.reconLog || []).filter(r => r.at > since);
+  if (recs.length){
+    const trips = recs.reduce((a2, r) => a2 + r.trips, 0);
+    const span = Math.max.apply(null, recs.map(r => r.spanH));
+    line("🛠 paper book recovered " + trips + " trip" + (trips === 1 ? "" : "s") + " across a "
+      + fmtHrs(span) + " observation gap — replayed from 5m buckets, stamped reconstructed",
+      "paper#paperCohortPanel");
+  }
   if (finds.length > 2)
     line("🎣 +" + (finds.length - 2) + " more clean gate-passers from the slice", "scan#beyondNet");
   if (snap){
@@ -13061,7 +13515,11 @@ document.addEventListener("click", e => {
   const place = t.closest("[data-place]");
   if (place){
     const id = +place.dataset.place, qty = +place.dataset.q, buy = +place.dataset.b;
-    const rec = { id: Date.now(), itemId: id, name: itemName(id), qty, buy, placedAt: Date.now(), stage: "buying" };
+    /* hzH stamps the horizon in force at placement (ruled Aug 11 2026):
+       the leg ages against the gap it was placed into, so an evening leg is
+       mid-sit at 05:00 rather than long stale. */
+    const rec = { id: Date.now(), itemId: id, name: itemName(id), qty, buy, placedAt: Date.now(),
+                  hzH: Math.round(planHorizonH() * 100) / 100, stage: "buying" };
     /* quoted spread at entry, for the capture-vs-drift decomposition later */
     const cq = calc(id);
     if (cq && cq.margin != null) rec.qm = cq.margin;
@@ -14016,6 +14474,11 @@ function validateImport(d){
           partCapPct: Math.min(100, Math.max(1, num(d.partCapPct) != null ? num(d.partCapPct) : 10)),
           shadowPartPct: Math.min(100, Math.max(10, num(d.shadowPartPct) != null ? num(d.shadowPartPct) : 50)),
           fillHorizonH: Math.min(12, Math.max(1, num(d.fillHorizonH) || 4)),
+          touchWindows: Array.isArray(d.touchWindows)
+            ? d.touchWindows.map(h => Math.max(0, Math.min(23.99, num(h) || 0))).slice(0, 8) : TOUCH_DEFAULT.slice(),
+          touchMins: Array.isArray(d.touchMins)
+            ? d.touchMins.map(m => Math.max(1, Math.min(120, num(m) || 6))).slice(0, 8) : [6, 6, 6, 10],
+          reconLog: (Array.isArray(d.reconLog) ? d.reconLog : []).filter(r => r && num(r.at) > 0).slice(-40),
           tickFloor: Math.min(100, Math.max(1, num(d.tickFloor) || 15)),
           quoteTicks: Math.min(20, Math.max(1, num(d.quoteTicks) || 3)),
           markoutX: Math.min(5, Math.max(0.1, num(d.markoutX) || 0.5)),
@@ -14222,6 +14685,31 @@ $("#gDate").value = today();
 $("#szSlots").value = DB.slots || 7;
 $("#szH").value = DB.horizonH || 10;
 $("#szFill").value = DB.fillHorizonH || 4;
+/* The schedule is a plain comma list — four editable window times, and
+   everything (sizing, gates, stale clocks, paper lifecycles, seasoning,
+   attention minutes) derives from the gaps between them. An empty box is a
+   real setting: no cadence kept, single global horizon. */
+const paintTouch = () => {
+  $("#szTouch").value = (Array.isArray(DB.touchWindows) ? DB.touchWindows : TOUCH_DEFAULT).join(", ");
+  $("#szTouchMin").value = (Array.isArray(DB.touchMins) ? DB.touchMins : []).join(", ");
+  const g = touchGaps();
+  $("#szTouchNote").innerHTML = g.length
+    ? "Gaps: " + g.map(x => "<b>" + touchLabel(x.from) + "→" + touchLabel(x.to) + "</b> " + fmtHrs(x.h)).join(" · ")
+      + " — this touch's horizon is <b>" + fmtHrs(planHorizonH()) + "</b>, next touch "
+      + touchLabel(touchWindows()[nextTouchAt(Date.now()).idx])
+      + ". A missed touch stretches the following horizon on its own."
+    : "No cadence kept — every placement uses the single fallback horizon of " + fmtHrs(planHorizonH()) + ".";
+};
+const parseList = v => String(v || "").split(/[,\s]+/).map(x => parseFloat(x)).filter(x => Number.isFinite(x));
+$("#szTouch").onchange = () => {
+  DB.touchWindows = parseList($("#szTouch").value).map(h => Math.max(0, Math.min(23.99, h)));
+  save(); paintTouch(); renderAll();
+};
+$("#szTouchMin").onchange = () => {
+  DB.touchMins = parseList($("#szTouchMin").value).map(m => Math.max(1, Math.round(m)));
+  save(); paintTouch(); renderAll();
+};
+paintTouch();
 $("#szTick").value = DB.tickFloor || 15;
 $("#szMinPx").value = DB.filtersT1.min != null ? DB.filtersT1.min : 400;
 $("#szQuote").value = DB.quoteTicks || 3;
