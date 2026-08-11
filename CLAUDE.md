@@ -184,7 +184,16 @@ defects**.
    Write-only data and read-never surfaces are findings.
 3. **Redundancy scan:** concepts implemented twice under different names (cluster
    baskets vs catalyst item-links was exactly this) — propose merges.
-4. **Interrogability scan** (user ruling, Aug 11 2026): for every aggregate, statistic,
+4. **Glossary-coverage scan** (user ruling, Aug 11 2026): every term, badge, tag,
+   indicator, metric, gate name, record type and status string the tool renders is
+   checked against the glossary. **A term rendered without an entry is a finding.** The
+   glossary is a data structure (`GLOSSARY` in `index.html`), so the scan is mechanical:
+   gate names are checked against `gateName()`'s own returns, and each entry must carry
+   all three fields. Findings also include an entry whose "what it should change for
+   you" line is missing, and one that hedges to "nothing directly" without naming the
+   decision it is context for — that hedge marks a **deletion candidate**, and surfacing
+   those while writing is part of the scan's job.
+5. **Interrogability scan** (user ruling, Aug 11 2026): for every aggregate, statistic,
    verdict, score, or summary the tool renders, check that it opens to its constituent
    rows in one click — which items, which events, with the per-item evidence behind the
    number. Findings are: any number that cannot be opened; any expansion showing a subset
@@ -193,7 +202,7 @@ defects**.
    would teach more than the conclusion does. **This is distinct from the orphan scan** —
    a surface can be fully connected, reading real data and feeding real decisions, and
    still be opaque. Connected-but-unauditable is a finding.
-5. **Output:** a findings report with proposed restructurings, ruled like everything
+6. **Output:** a findings report with proposed restructurings, ruled like everything
    else. No findings is a valid result and says so.
 
 ## Verification
@@ -255,6 +264,25 @@ unproven, and "it passes" is not evidence that it *can* fail. This applies to ev
 assertion, not only to detectors written for a known bug — the R29.4 case was a detector
 written for a defect that still slipped through, because the fixture was built so the
 defect could not express itself.
+
+### Every user-visible term ships with its glossary entry (user ruling, Aug 11 2026)
+
+Same discipline as REQUIREMENTS.md rows: **a new term, badge, tag, indicator, metric,
+gate name, record type or status string ships with its glossary entry in the SAME
+commit** — never one without the other. The glossary is the `GLOSSARY` data structure in
+`index.html`, grouped by area; an entry states three things and the third is the one that
+makes it a glossary rather than a dictionary:
+
+- **what** it means, **from** what produces it, and **do** — what decision it should
+  change for the user. Where the honest answer is "nothing directly", the entry says so
+  *and names the decision it is context for*. A term that changes no decision and is
+  context for none is a **deletion candidate**, and writing the entry is how those get
+  found.
+- Known caveats ride the entry, not a footnote: paper-book quarantine status, stratum
+  approximation, markout attribution lean, observed-share limits.
+- Gate names are registered by listing them in their family entry's `names` array, which
+  is what makes them tappable from a bench reason; `[R38.2]` asserts every name
+  `gateName()` can return has a home, so an unglossed gate fails the suite.
 
 Ruled requirements live in
 [REQUIREMENTS.md](REQUIREMENTS.md) with stable IDs; probe assertions carry `[R#]` tags

@@ -723,7 +723,7 @@
     // snapshot-only pile renders as a concur-recommended observation — gate
     // constants change on ledger evidence, never single-refresh advocacy.
     ok("snapshot ROI pile renders as observation, not proposal", S.depProposalCount === 0
-       && /never snapshot advocacy/.test(dep) && /ROI floor<\/b> blocks 3 items this refresh/.test(dep), dep);
+       && /never snapshot advocacy/.test(dep) && /ROI floor<\/span><\/b> blocks 3 items this refresh/.test(dep), dep);
     // seed multi-day ledger persistence + BOTH agreeing outcome streams
     // (ruled Aug 11 2026) → the numbered proposal emits, propose-only
     const dmR = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
@@ -738,7 +738,7 @@
     renderWatch();
     const dep2 = document.querySelector("#depBody").innerHTML;
     ok("proposal indicts the ROI floor with numbers, propose-only",
-       /ROI floor<\/b> alone blocks 3 items this refresh, 3 with ledger persistence/.test(dep2)
+       /ROI floor<\/span><\/b> alone blocks 3 items this refresh, 3 with ledger persistence/.test(dep2)
        && /Realized overrides make the case and the paper screen concurs/.test(dep2)
        && /Propose: sustained-ROI floor 1\.2% → 1\.1%/.test(dep2) && /Your ruling/.test(dep2)
        && /Next stage per admitted item/.test(dep2)
@@ -2283,7 +2283,15 @@
        JSON.stringify(vits20.map(v => v.dataset.goto)));
     ok("[R20.3] funnel tile reads pass · funded · deployed",
        vits20.some(v => /pass · \d+ funded · \d+% deployed/.test(v.textContent)), vits20[0].textContent);
-    // R20.5 — the delta block: every category one line, cap 6 + overflow counted
+    /* R20.5 — the delta block: every category one line, cap 6 + overflow
+       counted. The fixture must OWN every category it asserts on: the
+       discovery slice stamps `cleanFind` on whatever the current stratum
+       happened to draw, and the stratum rotates with the price cycle, so
+       leaving those in made this assertion test rotation timing rather than
+       truncation — the same clock-dependence ruled on for [R18.1]. The slice
+       line has its own assertion under [R29.5]; here it is cleared. */
+    for (const p of DB.shadowBook) delete p.cleanFind;
+    renderHome();
     const dls20 = Array.from(document.querySelectorAll("#homeDelta .dl"));
     ok("[R20.5] delta block renders one line per nonzero category, truncated at 6 with +N more",
        dls20.length === 7 && /\+1 more/.test(dls20[6].textContent),
@@ -3878,6 +3886,119 @@
     S.drillOpen = new Set(); S.drillUI = new Map();
   } catch(e){
     out.push("FAIL observed-share floor :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R38 — GLOSSARY COVERAGE (user-directed audit, Aug 11 2026) ═══
+       The glossary is data, so coverage is checkable rather than asserted by
+       eye. These are the checks that make the maintenance rule ("a new
+       user-visible term ships with its entry in the same commit") mean
+       something. */
+    setTab("home"); renderAll();
+    const glAllEntries = GLOSSARY.flatMap(g => (g.entries || []).map(e => Object.assign({ grp: g.g }, e)));
+    ok("[R38.1] the glossary is grouped and covers the areas the tool renders",
+       GLOSSARY.length >= 6 && glAllEntries.length >= 60
+       && ["gates", "paper", "sleeve", "prospecting", "indicators", "metrics", "governance"]
+            .every(g => GLOSSARY.some(x => x.g === g)),
+       JSON.stringify({ groups: GLOSSARY.map(g => g.g), entries: glAllEntries.length }));
+    ok("[R38.1] every entry carries what it means, what produces it, AND what decision it should change",
+       glAllEntries.every(e => e.id && e.term && e.what && e.from && e.do),
+       JSON.stringify(glAllEntries.filter(e => !(e.what && e.from && e.do)).map(e => e.id)));
+    ok("[R38.1] entry ids are unique — a duplicate would make a term link land on the wrong entry",
+       new Set(glAllEntries.map(e => e.id)).size === glAllEntries.length,
+       JSON.stringify(glAllEntries.map(e => e.id).filter((x, i, a) => a.indexOf(x) !== i)));
+    /* COVERAGE: every gate name gateName() can return must have a family
+       entry. Derived from the function's own source, so adding a gate the
+       glossary does not cover fails here rather than shipping unexplained. */
+    const gateNames38 = [...new Set((gateName.toString().match(/return "([^"]+)"/g) || [])
+      .map(s => s.replace(/^return "|"$/g, "")))].filter(g => g !== "plan gate" || true);
+    const missing38 = gateNames38.filter(g => !glEntryFor(g));
+    ok("[R38.2] every gate name a bench reason can render has a glossary family entry",
+       missing38.length === 0,
+       JSON.stringify({ checked: gateNames38.length, missing: missing38 }));
+    ok("[R38.2] the ledger-only gate labels are covered too",
+       ["die-off detected", "seasoning"].every(g => !!glEntryFor(g)),
+       JSON.stringify(["die-off detected", "seasoning"].map(g => g + ":" + glEntryFor(g))));
+    /* The link works end to end: a bench reason's gate name lands on its
+       entry, visibly — the same standard every deep link is held to. */
+    const gc38 = gateChip("ROI floor");
+    ok("[R38.3] a gate name in a bench reason renders as a tappable reference to its family entry",
+       /data-gl="gate-price"/.test(gc38) && />ROI floor</.test(gc38), gc38);
+    const host38 = document.createElement("div");
+    host38.innerHTML = gc38;
+    document.body.appendChild(host38);
+    host38.querySelector("[data-gl]").click();
+    const ent38 = document.getElementById("gl-gate-price");
+    ok("[R38.3] the tap opens the group and lands on the entry, VISIBLY — not merely present in the DOM",
+       !!ent38 && ent38.offsetParent !== null && getComputedStyle(ent38).display !== "none"
+       && document.getElementById("glgrp-gates").open,
+       JSON.stringify({ present: !!ent38, visible: !!ent38 && ent38.offsetParent !== null }));
+    host38.remove();
+    ok("[R38.3] a collapsed group hides its entries — the index stays navigable at this size",
+       /* Measured, not inferred: a child of a CLOSED <details> is unslotted
+          rather than display:none, so it can still report a display value
+          and an offsetParent. Its painted box is what the user actually
+          sees, and that is zero. */
+       /* Measured on the GROUP's painted box, not the entry's. Chromium
+          collapses a closed <details> via content-visibility on its slot, so
+          the hidden children keep a display value, an offsetParent AND a
+          non-zero rect — every per-element visibility check lies here. What
+          cannot lie is the container: a closed group paints its summary line
+          and nothing else, an open one paints its entries. Also asserted via
+          checkVisibility() where the engine provides it. */
+       (() => { const openGrp = document.getElementById("glgrp-gates");    // opened by the tap above
+                const shutGrp = document.getElementById("glgrp-metrics");  // never opened
+                if (!openGrp || !shutGrp || shutGrp.open) return false;
+                const shutEnt = document.getElementById("gl-met-markout");
+                const hidden = shutEnt.checkVisibility
+                  ? !shutEnt.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
+                  : true;
+                return openGrp.getBoundingClientRect().height > 120
+                    && shutGrp.getBoundingClientRect().height < 60
+                    && hidden; })(),
+       (() => { const o = document.getElementById("glgrp-gates"), c = document.getElementById("glgrp-metrics");
+                const e = document.getElementById("gl-met-markout");
+                return JSON.stringify({ openGrpH: o && o.getBoundingClientRect().height,
+                  shutGrpH: c && c.getBoundingClientRect().height,
+                  entVisible: e && e.checkVisibility ? e.checkVisibility({ contentVisibilityAuto: true }) : "n/a" }); })());
+    /* The two stale claims the audit found are fixed, and the entry now
+       states the auto-apply carve-out. */
+    const basket38 = glAllEntries.find(e => e.id === "sleeve-basket");
+    ok("[R38.4] the Item basket entry no longer claims its P&L is reported in the review",
+       !/reported per basket in\s+the review|P&L is reported per basket in the review/.test(basket38.do + basket38.what)
+       && /Sleeve tab/.test(basket38.do),
+       basket38.do);
+    ok("[R38.4] and it states the auto-apply carve-out instead of the superseded 'never caps until you ratify'",
+       /ADDS now apply automatically/.test(basket38.caveat || "")
+       && /DROPS/.test(basket38.caveat || "") && /exposure cap/.test(basket38.caveat || ""),
+       basket38.caveat);
+    /* Caveat carry: the four known-limitation terms name their limitation. */
+    const byId38 = id => glAllEntries.find(e => e.id === id);
+    ok("[R38.5] terms with known caveats carry them at the point of reading",
+       /Renamed from/.test(byId38("paper-book").caveat || "")
+       && /name-pattern|approximation/i.test(byId38("prosp-stratum").caveat || "")
+       && /Attribution leans/i.test(byId38("met-markout").caveat || "")
+       && /unknown, not unfilled/i.test(byId38("paper-observed").caveat || ""),
+       JSON.stringify(["paper-book", "prosp-stratum", "met-markout", "paper-observed"]
+         .map(i => i + ":" + !!(byId38(i).caveat))));
+    /* Honesty: entries whose decision line is "nothing directly" must name
+       the decision they are context FOR, per the ruling — otherwise they are
+       deletion candidates hiding behind a hedge. */
+    const hedged38 = glAllEntries.filter(e => /nothing directly/i.test(e.do));
+    ok("[R38.6] every 'nothing directly' entry names the decision it is context for",
+       hedged38.length > 0 && hedged38.every(e => /context for|it is context/i.test(e.do)),
+       JSON.stringify(hedged38.map(e => e.id)));
+    /* The find box narrows without losing the grouping. */
+    document.querySelector("#glFind").value = "markout";
+    document.querySelector("#glFind").dispatchEvent(new Event("input", { bubbles: true }));
+    ok("[R38.7] the find box filters entries and keeps the groups it matched",
+       document.querySelectorAll("#glBody .glent").length > 0
+       && document.querySelectorAll("#glBody .glent").length < glAllEntries.length
+       && /markout/i.test(document.querySelector("#glBody").textContent),
+       String(document.querySelectorAll("#glBody .glent").length));
+    document.querySelector("#glFind").value = "";
+    document.querySelector("#glFind").dispatchEvent(new Event("input", { bubbles: true }));
+  } catch(e){
+    out.push("FAIL glossary coverage :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

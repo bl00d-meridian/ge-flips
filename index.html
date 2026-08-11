@@ -103,6 +103,22 @@ tr.drilltr td{background:#141109;white-space:normal;text-align:left;padding:0 6p
 .curve .k{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
 .curve .v{font-size:15px;font-variant-numeric:tabular-nums;margin:1px 0 3px}
 .curve svg{display:block;width:100%;height:auto}
+/* ---- glossary (rebuilt Aug 11 2026) ---- */
+.glgrp{border-top:1px solid var(--line);padding:4px 0}
+.glgrp:first-child{border-top:none}
+.glgrp>summary{cursor:pointer;padding:6px 0;font-size:13px;color:var(--text);user-select:none}
+.glgrp>summary:hover{color:var(--gold)}
+.glnote{margin:2px 0 8px;padding-left:10px;border-left:2px solid var(--line)}
+.glent{padding:8px 10px;margin:0 0 8px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;font-size:12.5px;line-height:1.55}
+.glent .glterm{color:var(--gold);font-weight:600;font-size:13px}
+.glent .glnames{margin:3px 0 4px}
+.glent .glwhat{margin-top:3px;color:var(--text)}
+.glent .glfrom{margin-top:4px;color:var(--dim)}
+.glent .gldo{margin-top:4px;color:var(--text);border-left:2px solid var(--gold-dim);padding-left:8px}
+.glent .glcav{margin-top:4px;color:var(--amber);font-size:12px}
+/* a gate name in a bench reason is tappable to its family entry */
+.glref{border-bottom:1px dotted var(--gold-dim);cursor:pointer}
+.glref:hover{color:var(--gold);border-bottom-color:var(--gold)}
 /* two-stream gate tree */
 .gtree{margin:5px 0 9px;padding:6px 9px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--gold-dim);border-radius:3px}
 .gtree .gname{font-size:13px;color:var(--gold)}
@@ -1038,75 +1054,22 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     </div>
   </section>
 
-  <div class="panel">
-    <details>
-      <summary style="cursor:pointer;padding:2px 0"><h3 style="display:inline">📖 Trading glossary — how to read all of this</h3>
-        <span class="dim"> — and on the phone, tap any badge or column header for its explanation</span></summary>
-      <div class="note" style="line-height:1.55">
-        <p><b>Patient vs instant offers.</b> The GE matches by price. Offer <em>above</em> the going rate and you
-        buy instantly at the best available price; offer <em>at or below</em> it and you join a queue and wait.
-        Every flip here is two <em>patient</em> offers: buy at the low, sell at the high. Instant trades are only
-        for margin tests and emergency exits — they pay the spread instead of earning it.</p>
-        <p><b>Buy / Sell columns.</b> "Buy" is what patient buyers are currently paying (the wiki's low /
-        "instasell"); "Sell" is what patient sellers are receiving (the high / "instabuy"). The gap between them,
-        minus tax, is the whole business.</p>
-        <p><b>Margin, ROI.</b> Margin = sell − buy − tax, per unit, for one full round trip. ROI is that margin
-        divided by the buy price: the return on the gp you tie up. 1–2% per cycle compounds fast because a cycle
-        is hours, not months.</p>
-        <p><b>Margin test.</b> Live prices can be two unrelated trades. To learn the real spread: instant-buy one
-        unit (offer ~5% above the shown sell — the fill is the true sell side), instant-sell it back (~5% below
-        the shown buy — the fill is the true buy side). The unit loses the spread + tax; that's the fee for real
-        numbers. Either offer sitting over ~5 minutes is a fail in itself. Tests expire after 16h.</p>
-        <p><b>Buy limit.</b> Each item caps how much you can buy per rolling 4-hour window (e.g. 25,000 runes).
-        The window rolls while your offer stands, so an offer sitting all day buys several windows' worth.</p>
-        <p><b>Slots.</b> You get 8 GE offer slots. The plan commits 7 so one is always free for buying gear or
-        supplies without cancelling a flip. An idle committed slot earns exactly zero.</p>
-        <p><b>One-third rule.</b> Never put more than a third of your stack into one item — one bad market can't
-        take out the whole bankroll, and smaller positions exit faster.</p>
-        <p><b>Thin-side volume.</b> An item trades on two sides (people buying, people selling). Your fills move
-        at the pace of the <em>quieter</em> side, so all sizing and gating here uses that number, not the total.</p>
-        <p><b>Crowded.</b> Top-100 by 24h volume means every flipping tool recommends it, and competition has
-        squeezed the spread to the tax floor. Volume there is safety, not profit — the edge lives in the
-        mid-liquidity items nobody's tool ranks.</p>
-        <p><b>Trend / catching a knife.</b> A wide margin on a falling chart usually means the price is on its
-        way through your buy price. Flat charts are what you want; the plan benches anything drifting worse than
-        −5% over 7 days.</p>
-        <p><b>Caution: seeds & pump vehicles.</b> Cheap, high-volume, storable items (seeds, impling jars,
-        ensouled heads, nests) are the classic targets for price manipulation. They flip great — until the pump
-        ends. The plan half-sizes them and allows one slot per category until your own log proves an item out
-        (3 profitable flips in 14 days).</p>
-        <p><b>Item baskets.</b> Items that move on one story — wilderness gear, raid supplies, clue rewards —
-        are a single bet wearing several names, and the family rule can't see it (different production lines,
-        same patch note). A basket attached to a calendar catalyst is that catalyst's item basket; one with no
-        catalyst is a standing basket kept for exposure caps and update-day blast-radius warnings. Tag members
-        yourself, or confirm what the weekly co-movement scan (daily returns net of the all-item average),
-        shared rare wiki categories, and the built-in seed list propose. A <em>confirmed</em> basket's combined
-        exposure is capped at a share of working capital by the allocator, its P&L is reported per basket in
-        the review, and the Wednesday update-day advisory names its members. Candidates — suspected, dormant,
-        or seeded — never cap anything until you ratify them. Baskets live on the Sleeve tab, under the
-        calendar (formerly their own Clusters tab).</p>
-        <p><b>Undercut to exit.</b> A sell that won't fill: relist it 1 gp under the current low sell price and
-        take the small loss. Hoping is how a 2% edge becomes a 10% hole.</p>
-        <p><b>Capture rate & horizons.</b> Sizing assumes a standing offer captures ~15% of the item's flow —
-        you're one buyer among many, not the whole market. Buy legs are sized to fill inside the <em>fill
-        horizon</em> (default 4h); buy limits keep rolling every 4h across the full <em>day horizon</em> while
-        offers stand. The reserve is gp the plan never touches.</p>
-        <p><b>Tax-multiple rule.</b> Margin must clear <em>3× the per-unit tax</em> and <em>15 ticks</em>. When
-        margin ≈ tax, even a scratch exit (selling at your own buy price) loses the entire tax — the Tarromin
-        shape. At 3×, giving back two-thirds of the edge still exits positive.</p>
-        <p><b>Ticks.</b> Prices move in 1 gp steps, so a 4 gp margin is four ticks of room: one tick of adverse
-        move erases a quarter of the edge. This is why cheap items lose with healthy-looking ROI % — the floor
-        here is 15 ticks and the scanner defaults to 400+ gp items.</p>
-        <p><b>Adverse selection (stale bids).</b> A bid that fills hours after placing usually fills because the
-        price moved <em>down through it</em>, not because patience paid. That's why unfilled buys are flagged
-        "cancel — market moved" after the fill horizon, and why late fills aren't a win.</p>
-        <p><b>gp / slot-hour.</b> Profit divided by the hours a flip actually occupied a slot — the truest
-        measure of what deserves your 7 slots, and what the plan learns from your log.</p>
-        <p><b>What's this item even for?</b> Hover or tap any item's name for what it ultimately becomes
-        in-game and why it has the daily volume it does — consistent volume always has a consumption engine
-        behind it (XP grinds, PvM burn, teleports, prayer). The ↗ next to watchlist names opens the wiki page.</p>
-      </div>
-    </details>
+  <!-- ═══ GLOSSARY (rebuilt Aug 11 2026 — user-directed audit) ═══
+       Grouped, collapsible, and generated from the GLOSSARY data structure
+       below rather than hand-written prose, so a probe can enumerate the
+       entries and check coverage against what the tool actually renders. -->
+  <div class="panel" id="glossaryPanel">
+    <div class="ph"><h3>📖 Glossary — every term this tool renders</h3>
+      <span class="sub" id="glSub"></span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <input id="glFind" placeholder="find a term…" style="width:150px">
+        <button class="sm ghost" id="glAll" title="Expand every group at once.">expand all</button>
+      </span>
+    </div>
+    <div class="note" style="margin-bottom:8px">Every entry says <b>what it means</b>, <b>what produces it</b>, and
+      <b>what decision it should change for you</b> — the last line is the point; a dictionary that stops at the
+      definition makes you do the translation every time. Tap any gate name in a bench reason to land on its entry.</div>
+    <div id="glBody"></div>
   </div>
 
   <div class="panel">
@@ -5871,7 +5834,7 @@ function paperGateSection(){
     const fills = s.arr.filter(p => p.state === "filled" || p.state === "forced-exit");
     const misses = s.arr.filter(p => p.state === "unfilled");
     const rate = s.n ? Math.round((fills.length / s.n) * 100) : 0;
-    return '<tr><td style="text-align:left">' + esc(g) + '</td>'
+    return '<tr><td style="text-align:left">' + gateChip(g) + '</td>'
       + '<td>' + cell(g, "n", String(s.n), 'benched by "' + g + '" alone — every closed paper trip it opened', s.arr) + '</td>'
       + '<td>' + cell(g, "fill", String(fills.length), 'would have filled at ' + shadowPartPct() + '% participation — the conservative reading that drives state and net', fills) + '</td>'
       + '<td>' + cell(g, "full", String(s.filledFull), 'would also have filled at 100% participation — the same trips read without the haircut', s.arr.filter(shadowFullFilled)) + '</td>'
@@ -6438,7 +6401,7 @@ function renderDeploy(plan){
     const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4);
     const shorts = arr.slice(0, 3).map(x => x.name + ": " + (x.fails[0].short || "miss"));
     if (!persistItems.length){
-      props.push({ concur: true, html: '<b>' + esc(g) + '</b> blocks ' + arr.length + ' items this refresh ('
+      props.push({ concur: true, html: '<b>' + gateChip(g) + '</b> blocks ' + arr.length + ' items this refresh ('
         + esc(shorts.join("; ")) + ') — but none carry multi-day ledger persistence, and gate constants change on'
         + ' gate-health ledger evidence, never snapshot advocacy (your ruling). No change proposed — the ledger will make the case if it holds.' });
       continue;
@@ -6447,7 +6410,7 @@ function renderDeploy(plan){
        HEARING; the too-tight case itself needs shadow AND realized agreeing.
        Disagreement is its own finding; an incomplete pair keeps accruing. */
     const dirs = gateStreamDirs(g);
-    const persistTxt = '<b>' + esc(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
+    const persistTxt = '<b>' + gateChip(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
       + persistItems.length + ' with ledger persistence — benched by it on 4+ of the last 7 days: '
       + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7) + "/7d)").join("; "))
       + ' — ' + esc(shorts.join("; ")) + '. ';
@@ -7122,7 +7085,7 @@ function gateTag(id){
   const chartPend = (cand.fails || []).some(f => f.g === "chart still loading");
   if (!fl.length && chartPend)
     return '<span class="badge b-warn" title="Every price gate passes; trend and momentum need the 7-day series, which only watchlist items fetch — +watch to load it.">gates pending chart</span>';
-  if (!fl.length) return '<span class="badge b-warn" title="' + esc(cand.failed) + '">' + esc(gateName(cand.failed) || "benched") + '</span>';
+  if (!fl.length) return '<span class="badge b-warn" title="' + esc(cand.failed) + '">' + gateChip(gateName(cand.failed) || "benched") + '</span>';
   return '<span class="badge b-warn" title="' + esc(fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · "))
     + (chartPend ? " · chart still loading for the remaining gates" : "") + '">fails ' + fl.length + ' gate' + (fl.length === 1 ? '' : 's') + '</span>';
 }
@@ -8244,7 +8207,7 @@ function gateStreamsSection(){
         : '<div class="plan-note" style="margin-left:12px">⚠ streams DISAGREE — the screen says ' + dirs.shadow.dir + ', realized says ' + dirs.realized.dir
           + '. Investigate the fill model or the attribution before proposing (your ruling) — disagreement is its own finding, not a tiebreak.</div>')
       : '';
-    secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + esc(g) + '</b> — benched '
+    secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + gateChip(g) + '</b> — benched '
       + (r ? drill("gate:bench:" + g, r.benched + ' item' + (r.benched === 1 ? '' : 's'), {
               head: g + " — every item it benched this week, with whatever traded afterwards",
               cols: GATE_ITEM_COLS, rows: gateItemRows(r, "all"),
@@ -11176,6 +11139,608 @@ function logPreview(){
         : (marks.buy || marks.sell) ? ' <span class="est-tag">est.</span>' : '');
 }
 
+/* ═══════════ GLOSSARY (rebuilt Aug 11 2026 — user-directed audit) ═══════════
+   Data, not prose, for three reasons: the probe can enumerate entries and
+   assert COVERAGE against what the tool actually renders; gate names can link
+   from a bench reason straight to their family entry; and the maintenance
+   rule ("a new user-visible term ships with its glossary entry in the same
+   commit") has something mechanical to check.
+
+   Every entry carries three fields, and the third is the one that makes this
+   a glossary rather than a dictionary:
+     what  — what the term means
+     from  — what produces it, so you know which machinery to distrust
+     do    — what decision it should change FOR YOU. Where the honest answer
+             is "nothing directly", it says so and names the decision it is
+             context for. A term that changes no decision and is context for
+             none is a deletion candidate, and saying so in the entry is how
+             those get found.
+   Optional `caveat` carries a known limitation to the point of reading:
+   paper-book quarantine, stratum approximation, markout attribution lean,
+   observed-share limits. */
+const GLOSSARY = [
+{ g: "gates", title: "Gates — why a candidate gets benched",
+  note: "The plan runs every watched item through a chain of gates in a fixed order and reports the FIRST one that "
+      + "rejects it. Gate names below are the exact strings the bench reasons and the gate ledger use; tap one in a "
+      + "bench reason anywhere in the tool to land here. A bench is never a verdict on the item forever — it is a "
+      + "verdict on this item at this price with this book, re-run every refresh.",
+  entries: [
+  { id: "gate-price", term: "Price-and-spread gates", names: ["ROI floor", "margin floor (ticks / 3× tax)"],
+    what: "The two gates that ask whether the edge is big enough to survive its own costs. <b>ROI floor</b> rejects "
+        + "sustained post-tax margin ÷ buy price below the floor (default 1.2%). <b>Margin floor</b> rejects a margin "
+        + "under 3× the per-unit GE tax or under 15 ticks, whichever binds — when margin ≈ tax, a scratch exit at your "
+        + "own buy price loses the entire tax, and 4 gp of margin is four ticks of room before a quarter of the edge is gone.",
+    from: "Computed from the live instasell/instabuy pair and the 1h averages, net of tax. \"Sustained\" means it also "
+        + "holds on the 1h-averaged rebuild, so a single lucky print cannot pass an item.",
+    do: "Nothing on a single bench — this is the gate doing its job. What earns your attention is the same item benched "
+        + "here on 4+ of the last 7 days: that is a persistence signal, and the deployment funnel raises it as a proposal "
+        + "with numbers. Then the question is whether YOUR floor is too tight, not whether this item is special." },
+  { id: "gate-liquidity", term: "Liquidity gates", names: ["volume floor", "book skew", "flow imbalance", "volume trend", "die-off detected", "sizing"],
+    what: "The gates that ask whether you can actually get in and out. <b>Volume floor</b> gates on the THIN side of the "
+        + "book (under 5k gp a unit count, at 5k+ a gp-flow floor). <b>Book skew</b> and <b>flow imbalance</b> reject a "
+        + "one-sided book — plenty of one side, nobody on the other. <b>Volume trend</b> catches liquidity draining away "
+        + "over days. <b>Die-off detected</b> is the sharp version: a 5m-confirmed collapse against a 1h book that still "
+        + "looks healthy. <b>Sizing</b> fires when the allocator cannot build a position at all (no buy limit, or it "
+        + "clamps to zero).",
+    from: "The 5m, 1h and 24h volume feeds. The die-off tag needs two consecutive confirming refreshes before it fires.",
+    do: "Treat a liquidity bench as the most trustworthy kind — a spread you cannot exit is not a spread. On <b>die-off "
+        + "detected</b> specifically, check its track record in Trade → Gate Health: if episodes routinely recover within "
+        + "hours, the 2-refresh confirmation is too twitchy and that is a revisit case you should raise." },
+  { id: "gate-chart", term: "Chart and momentum gates", names: ["trend", "momentum", "no history", "chart still loading"],
+    what: "<b>Trend</b> benches anything drifting worse than −5% over 7 days; <b>momentum</b> is the falling-knife case, "
+        + "a fast move through your intended buy. A wide margin on a falling chart usually means the price is on its way "
+        + "through your bid. <b>No history</b> and <b>chart still loading</b> are not rejections at all — they mean the "
+        + "7-day series has not arrived, so the chart gates could not be asked.",
+    from: "The 168-point hourly series each watched item fetches.",
+    do: "On trend/momentum: leave it alone, and do not read the wide margin as opportunity. On <b>chart still loading</b> "
+        + "the only correct action is to wait a refresh — unknown is not failing, which is why these are excluded from the "
+        + "single-gate near-miss test the paper book uses." },
+  { id: "gate-history", term: "Your-own-history gates", names: ["proven-loser bench", "fill history", "drift bench", "seasoning"],
+    what: "Gates that read your log rather than the market. <b>Proven-loser bench</b> holds an item that has lost you "
+        + "money often enough to have earned probation. <b>Fill history</b> benches items whose real fills have been slow. "
+        + "<b>Drift bench</b> catches sit-unsafe items when your gaps between walk-ups run long. <b>Seasoning</b> is the "
+        + "newcomer rule: a first-time passer must pass 3 times over 2 hours before it funds.",
+    from: "Your flip log, your quote timings, and your walk-up stamps — not the market feed.",
+    do: "Nothing for <b>seasoning</b> in particular: a QUALIFYING n/3 row is not asking you for anything. It funds itself "
+        + "when the streak holds, and a fresh margin test funds it immediately if you want it sooner. For the others, the "
+        + "item is telling you something your own history already knows." },
+  { id: "gate-mandate", term: "Mandate and ownership gates", names: ["blacklist", "family overlap", "untiered", "inventory mode owns this item", "ignored by you", "would move the market"],
+    what: "Gates about who owns the item rather than whether it is good. <b>Blacklist</b> is your permanent no. "
+        + "<b>Family overlap</b> keeps one position per item family — the highest-scoring member wins and the bench reason "
+        + "names it. <b>Untiered</b> means it falls outside the T1/T2 bands the allocator funds. <b>Inventory mode owns "
+        + "this item</b> means the market-making quote cycle already has both legs — one item, one mandate. <b>Would move "
+        + "the market</b> caps your intended size against daily volume.",
+    from: "Your settings and your own presses. Nothing here reads the market feed.",
+    do: "These are the only benches you can clear directly: change the tier on the row, clear the mm buffer, or lift the "
+        + "blacklist entry. Note that <b>no automated path</b> touches the blacklist — not the scout, not the paper book, "
+        + "not a margin test — so if an item is blacklisted, only you can change that.",
+    caveat: "\"Ignored by you\" resets with tomorrow's plan; blacklist it if you mean permanence." },
+  { id: "gate-data", term: "Data-availability gates", names: ["no live price", "plan gate"],
+    what: "<b>No live price</b> means the item has no two-sided quote this cycle. <b>Plan gate</b> is the catch-all label "
+        + "for a bench the name-mapper does not recognise — if you ever see it, the reason text beside it is authoritative.",
+    from: "The /latest bulk feed.",
+    do: "Nothing directly — it is context for reading the funnel. A pile of these means a data problem, not a market one; "
+        + "check Trade → Prospecting's freshness read before trusting any other number on the screen." }
+]},
+
+{ g: "paper", title: "The paper book — screening evidence, never a verdict",
+  note: "A simulation that trades the candidates you did NOT fund, so the gates can be judged by what they cost. Every "
+      + "number in it is simulated. It ranks candidates for live half-size tests; it never proves anything on its own, "
+      + "because the sim assumes a book you are not in and thin books change the moment you post.",
+  entries: [
+  { id: "paper-book", term: "Paper book", aka: "paper screen, formerly the shadow book",
+    what: "The counterfactual ledger. When an item is benched by exactly one gate, the tool opens a simulated position at "
+        + "an honest entry (the instasell plus one tick) and runs it through the same fill horizon a real offer would face.",
+    from: "Opened by the poll from the plan's near-misses, the discovery slice, the gap band and the scanner cohort.",
+    do: "Read it to decide what deserves a LIVE half-size test through the exception lane, never to decide whether a gate "
+        + "is wrong. A gate moves only on realized evidence with the screen concurring.",
+    caveat: "Renamed from \"shadow book\" in Aug 2026 to stop it colliding with the Shadow Fund (real capital). Persisted "
+          + "keys still read <code>shadow*</code> in code and exports; that is the same thing." },
+  { id: "paper-participation", term: "Participation haircut", aka: "at 50% participation, the 100% reading",
+    what: "A simulated buy is credited only when the tape actually printed at or below your bid, capture-capped, and then "
+        + "cut to your participation setting (default 50%) — because you are one buyer among many, not the whole market. "
+        + "The 100% reading is reported beside it: the same trip with no haircut.",
+    from: "The 5m volume feed, while the tracker is observing.",
+    do: "Compare the two readings before you act on any paper number. If a gate only looks too tight at 100% "
+        + "participation, it is not too tight — it is too tight for a market you would have to be the whole of." },
+  { id: "paper-observed", term: "Observed share", aka: "median N% of horizon observed",
+    what: "The fraction of a trip's fill horizon the tracker was actually open and watching. Fills accrue only while "
+        + "observing, so a trip with a low observed share had most of its life happen off-camera.",
+    from: "Accumulated per trip on each poll, capped per interval so a long sleep cannot count as observation.",
+    do: "Sort any paper drill-down by Observed before you trust it. A verdict resting on a barely-watched horizon is a "
+        + "verdict resting on a hole.",
+    caveat: "An unobserved window is UNKNOWN, not unfilled — the tool never scores a hole as a failure." },
+  { id: "paper-insufficient", term: "Insufficient observation", aka: "excluded, under 25% of the horizon",
+    what: "A trip that opened and closed inside a single observation window. It is tape coincidence rather than a test of "
+        + "patient-fill behaviour, so it is excluded from every verdict — gate tuning, regime curves, per-stratum "
+        + "verdicts, the row dot, hours fill rates and exception-lane evidence — while staying on the record and openable.",
+    from: "The observed-share floor, 25% of the fill horizon (your ruling, Aug 2026).",
+    do: "Nothing directly — it is context for reading any paper aggregate honestly. What it should change is your "
+        + "SUSPICION when an excluded count is large next to a small counted one: that gate's screen has barely been "
+        + "tested, whatever the headline says." },
+  { id: "paper-unobserved", term: "Unobserved hole", aka: "state: unobserved",
+    what: "A trip whose whole horizon elapsed while the tab was closed. Distinct from insufficient observation: this one "
+        + "was never a result at all, so it is excluded and counted separately.",
+    from: "The lifecycle tick, when a position's horizon has passed but nothing was ever watched.",
+    do: "Nothing directly — context for the paper book's honesty. A run of holes means the book is thin because you were "
+        + "away, not because the market was quiet." },
+  { id: "paper-fill", term: "Would-have-filled / would-not-have-filled",
+    what: "The two outcomes of a closed paper trip. \"Would not have filled\" means the tape never reached your bid — the "
+        + "margin existed and the fill did not.",
+    from: "The honest-fill model, at your participation setting.",
+    do: "This is the number that keeps you honest about benched items: a gate that benched things which would never have "
+        + "filled anyway cost you nothing, however fat their paper margins look." },
+  { id: "paper-forced", term: "Forced exit",
+    what: "A simulated position that bought but could not sell inside its horizon is exited at the then-current instasell "
+        + "— the undercut-to-exit rule, simulated. Its exit price is retained on the record.",
+    from: "The lifecycle tick at horizon expiry.",
+    do: "Nothing directly — context for reading net figures. A gate whose paper profit comes mostly from forced exits is "
+        + "reporting price drift, not market-making." },
+  { id: "paper-regime", term: "ROI regimes and the divergence ledger", aka: "current / loose / tight",
+    what: "The same candidate set run at three ROI floors — yours, one notch looser, one notch tighter — with a daily "
+        + "cumulative net for each. The divergence ledger is one row per day the app was open.",
+    from: "The paper book, filtered by regime membership; snapshotted daily.",
+    do: "Only act when a divergence PERSISTS: 4 of the last 7 readings. Even then it reads \"this regime's candidates "
+        + "earned probation slots\", never \"this regime is right\" — the floor moves on your ruling alone.",
+    caveat: "Seven readings are seven days only if the app was open on seven days; the copy says so when it was not." },
+  { id: "paper-cohort", term: "Cohorts", aka: "watchlist, slice, slice·clean, gap band, scanner·T1/T2",
+    what: "Which population a paper trip came from. Watchlist trips answer \"are my gates too tight\"; scanner trips "
+        + "answer a different question — \"are my FILTERS excluding money\"; slice and gap-band trips come from random "
+        + "structural sampling.",
+    from: "Stamped when the position opens.",
+    do: "Never read a scanner-cohort result as a gate finding — it is a pipeline finding, and it can only nominate an "
+        + "item for the scout's attention at its unchanged admission bar. The funnel moves one stage per ruling." },
+  { id: "paper-filtercost", term: "Filter opportunity cost",
+    what: "Scanner-cohort simulated net against watchlist-cohort net over the same window (since the earliest scanner "
+        + "entry, so a young cohort is never compared against 30 days of history).",
+    from: "The scanner cohort, top 8 per tier per cycle.",
+    do: "If the scanner cohort out-earns the watchlist across 5+ closed trips, the finding is that your SCOUT'S ADMISSION "
+        + "RANKING may be leaving better items unwatched — a pipeline conversation, not a gate one." },
+  { id: "paper-exception", term: "Exception lane", aka: "probation, standing waiver",
+    what: "A per-item waiver of one named gate, granted by you on paper screening, that starts a LIVE half-size test: "
+        + "half size, a 2× tick-floor safety, one position, for 3 real round trips. Those trips adjudicate on net P&L and "
+        + "adverse markout. Winning converts it to a standing per-item waiver; losing revokes it and records the "
+        + "divergence as fill-model calibration data.",
+    from: "Proposed when an item clears ≥5 closed paper trips, ≥60% fill rate, positive net, spanning ≥7 days, with no "
+        + "red flags (pump-suspected, blacklisted, toxic-flow). Capped at 2 active.",
+    do: "This is the only path from paper evidence to real size, and it is a press. The gate's constant never moves from "
+        + "here — two lanes, two evidence standards." },
+  { id: "paper-void", term: "Basis void — re-rule",
+    what: "A granted exception whose supporting paper evidence was discarded when the book was purged. The ruling stands "
+        + "until you re-make it.",
+    from: "The Aug 2026 paper purge (a force-exit defect had been booking price drift as simulated profit).",
+    do: "Revoke it, or re-affirm it. The decision log records which case it was — re-made ON new-epoch evidence that "
+        + "independently clears the bar, or re-made on your judgment with no evidence yet. Those are different claims and "
+        + "the record keeps them apart." }
+]},
+{ g: "sleeve", title: "Sleeve, catalysts and baskets — the thesis side",
+  note: "Everything here is a bet on a story with a date, judged at exit rather than at the mark. Sleeve gp never blends "
+      + "into a flipping metric: no shared velocity, no sleeve profit in the couch-minute maths.",
+  entries: [
+  { id: "sleeve-pos", term: "Thesis sleeve", aka: "sleeve position",
+    what: "A held position entered for a named catalyst, with a mandatory exit ladder and an invalidation condition. "
+        + "Disjoint from the flip allocator: its budget is carved out and neither pool ever reads the other.",
+    from: "Your entry form, which refuses to save without item, quantity, cost basis, named catalyst and window, a "
+        + "one-sentence thesis, a ladder of at least two rungs, and an invalidation.",
+    do: "Judge these at exit, never at the mark. The mark is deliberately de-emphasised because a thesis position that is "
+        + "down before its catalyst has not failed yet." },
+  { id: "sleeve-catalyst", term: "Catalyst window", aka: "upcoming, live, passed",
+    what: "The dated event a thesis rests on, with a start and end. \"Live\" means the window is open now.",
+    from: "The catalyst calendar, plus any catalyst attached to a sleeve position.",
+    do: "A window going LIVE is the cue to check your ladder, not to add. A window that PASSED with the thesis unresolved "
+        + "is the strongest invalidation signal the tool can give you." },
+  { id: "sleeve-rung", term: "Exit ladder and rungs", aka: "rung ARMED",
+    what: "The pre-committed exit plan: each rung has a trigger (a price, a date, or a catalyst phase you flag) and a "
+        + "fraction of the original position. A rung ARMS when its trigger comes within range, and the tool raises a SELL "
+        + "card with the quantity already computed.",
+    from: "Your ladder, checked against the current exit-guidance price every refresh.",
+    do: "Execute the armed rung in-game and confirm the fill. Editing a ladder is allowed but decision-logged with a "
+        + "required reason — because moving your own exit under pressure is the failure mode ladders exist to prevent." },
+  { id: "sleeve-health", term: "Thesis health", aka: "intact / watch / broken",
+    what: "A hand-set light on each open sleeve position. Never inferred from price.",
+    from: "Your press, on the Sleeve tab beneath the positions.",
+    do: "Set it honestly and let it drive the next review's attention. It is deliberately not computed: a position down "
+        + "20% on an intact thesis and one down 5% on a broken one need opposite actions, and only you know which is which." },
+  { id: "sleeve-invalidation", term: "Invalidation",
+    what: "The condition, written at entry, that means the thesis is wrong rather than early.",
+    from: "Mandatory on the entry form.",
+    do: "When it triggers, exit — that is the entire purpose of having written it down before you were in the position." },
+  { id: "sleeve-legacy", term: "Legacy position",
+    what: "A hold migrated into the sleeve that was already funded before the sleeve existed. Excluded from the sleeve "
+        + "budget and from the concurrency count.",
+    from: "The one-time migration.",
+    do: "Nothing directly — context for reading the budget line, so \"committed\" never looks wrong to you." },
+  { id: "sleeve-entrywatch", term: "Entry watch", aka: "DISCOUNTED, RAMPING",
+    what: "A candidate's price against its own 90-day baseline as its catalyst approaches. DISCOUNTED means it is cheap "
+        + "into the window; RAMPING means the move has already started.",
+    from: "The candidate engine, from 90 days of daily prices.",
+    do: "DISCOUNTED is the entry case. RAMPING is the warning that you are late and buying someone else's thesis." },
+  { id: "sleeve-accum", term: "Accumulation signature / anomaly flag",
+    what: "A sustained price-and-volume rise over 2–3 weeks in an item over 1m gp with no linked catalyst — flagged as "
+        + "\"reason unknown — no thesis, no position\".",
+    from: "The weekly anomaly scan, capped at 5 flags a week by strength.",
+    do: "Do not trade it. It is a question for the analyst briefing, and the flag exists so an unexplained move is on the "
+        + "record rather than rationalised later." },
+  { id: "sleeve-laggard", term: "Cluster crossover / laggard",
+    what: "A catalyst-linked basket moves and one member does not — flagged as \"same thesis, unpriced member\".",
+    from: "The crossover check across confirmed basket members.",
+    do: "Investigate the laggard as a candidate. Statistical members are excluded from this logic by design — a "
+        + "correlation with no story cannot support a relative-value read." },
+  { id: "sleeve-intel", term: "Intel record", aka: "confidence tier, VALID-UNTIL, ratified",
+    what: "A typed record imported from the analyst briefing: a thesis, its sources, a confidence tier, the item ids it "
+        + "touches, a direction, and an expiry. Nothing acts until you ratify it.",
+    from: "<code>intelligence.json</code>, hand-carried in. No source, no record.",
+    do: "Ratify, edit-then-ratify, or dismiss. A ratified record can tag plan lines advisorily and optionally half-size "
+        + "them; it can never bench or resize by default.",
+    caveat: "Dismissals are remembered and absorb same-type variants; a record resurfaces only on material change." },
+  { id: "sleeve-basket", term: "Item basket", aka: "cluster, ⬡",
+    what: "Items that move on one story — wilderness gear, raid supplies, clue rewards — treated as a single bet for "
+        + "exposure purposes. A basket attached to a catalyst is that catalyst's basket; one without is a standing basket "
+        + "kept for exposure caps and update-day blast-radius warnings.",
+    from: "Your tagging, the weekly co-movement scan, shared rare wiki categories, and the built-in seed list. Baskets "
+        + "live on the Sleeve tab, under the calendar.",
+    do: "Confirm a basket when the story is real. A confirmed basket's combined exposure is capped by the allocator, and "
+        + "the Wednesday update-day advisory names its members. Its P&L is reported per basket on the Sleeve tab.",
+    caveat: "Membership ADDS now apply automatically at their evidence bar (Aug 2026 ruling) and are listed in the "
+          + "review's \"Applied automatically\" block; membership DROPS and whole-basket candidates still wait for your "
+          + "press, because a drop loosens an exposure cap and that can free capital the cap was withholding." },
+  { id: "sleeve-member", term: "Thesis vs statistical member", aka: "[S]",
+    what: "A THESIS member has a named story linking it to the basket. A STATISTICAL member was admitted on co-movement "
+        + "alone — it counts toward the exposure cap, because risk is risk, but it is excluded from entry-watch "
+        + "narratives and laggard logic, because there is no claimed driver to reason from.",
+    from: "The coherence scan; the classification is stamped at admission.",
+    do: "Watch the share. Statistical members cap at 40% of a basket, and a basket over that line is flagged \"thesis "
+        + "diluted\" — it has become a correlation cluster describing the past rather than a bet on a story." },
+  { id: "sleeve-coherence", term: "Excess correlation / coherence reading",
+    what: "Correlation of daily returns NET of the all-item average — the market-wide tide subtracted — measured against "
+        + "the basket's composite, one reading a week.",
+    from: "31 days of daily prices per watched item.",
+    do: "Nothing on a single reading, which is the whole point: adds need > 0.5 in 3 of 4 readings and drops need < 0.25 "
+        + "for 4 straight. Persistence, not snapshots, because chasing raw co-movement admits coincidences." }
+]},
+
+{ g: "prospecting", title: "Prospecting — where the edge might be that you are not looking",
+  note: "Everything else in the tool watches the items you chose. These surfaces sample the parts of the market and the "
+      + "parts of the day you did not.",
+  entries: [
+  { id: "prosp-slice", term: "Discovery slice", aka: "clean gate-passer",
+    what: "A small random draw of unwatched items run through the full gate chain every cycle. An item that clears EVERY "
+        + "gate on a random draw is a clean gate-passer — the event the slice exists to catch.",
+    from: "A seeded shuffle of one stratum per price cycle, plus the gap band.",
+    do: "A clean gate-passer is worth a look on its own merits — it surfaces in WHAT CHANGED by name. The hit rate is "
+        + "worth more: it tells you what fraction of the whole market your filters would accept." },
+  { id: "prosp-stratum", term: "Stratum / per-stratum map",
+    what: "A named region of the item universe — equipment by slot, F2P-only, skilling outputs by skill, quest-locked, "
+        + "holiday/rare-adjacent, sub-400gp bulk, and the price bands. The slice rotates through them on the price cycle "
+        + "so small regions get sampled on a clock instead of never.",
+    from: "Item names matched against patterns, except F2P (the mapping's own members flag) and the price bands.",
+    do: "Read the map quarterly, not weekly: a region that \"prospects\" is an argument for building a scanner for it, "
+        + "which is a proposal for you to rule on.",
+    caveat: "19 of 21 strata are NAME-PATTERN approximations — directional, not a census. Any proposal citing a "
+          + "per-stratum finding carries that warning to the point of decision." },
+  { id: "prosp-gap", term: "Gap band 250k–1m",
+    what: "The price band between the T2 scanner's ceiling and the anomaly scan's floor — watched by nothing but slice "
+        + "luck before it got its own sampler.",
+    from: "5 items per cycle, gate-verdicted exactly like the slice.",
+    do: "If it prints, it has earned a scanner of its own — a proposal for your ruling. If it does not, the gap is PROVEN "
+        + "empty rather than assumed empty, which is worth as much as the other answer.",
+    caveat: "Exempt from the stratum classifier caveat: membership here is an exact price range, not a name guess." },
+  { id: "prosp-hours", term: "Hours ledger", aka: "market stream vs paper stream",
+    what: "Two readings of the day. The MARKET stream is post-tax spread by hour-of-day from the 7-day hourly series — "
+        + "every hour equally represented whether or not you were awake, so it is the unbiased one. The PAPER stream is "
+        + "simulated fill rate by the hour a trip opened, and it only accrues while the tracker is open.",
+    from: "The hourly series each watched item already fetches; no extra requests.",
+    do: "The finding it exists to catch: fat, fillable overnight spreads argue for sizing your standing overnight book "
+        + "heavier — offers work unattended, and a bigger overnight offer is free while being awake is expensive.",
+    caveat: "Hours you never observed read \"no data\", never \"bad hour\". Unobserved is unknown." },
+  { id: "prosp-scanner", term: "Scanner tiers", aka: "T1, T2",
+    what: "Two independent screens with their own filter state: T1 covers roughly 400–8k gp with a unit-volume floor, T2 "
+        + "covers 5k–250k with a gp-flow floor on the thin side, because unit counts understate mid-tier liquidity.",
+    from: "The full item mapping, filtered live.",
+    do: "Promote from here into the watchlist deliberately — the scanner shows what passes filters, the watchlist is what "
+        + "you have committed attention to. They are different commitments." }
+]},
+{ g: "indicators", title: "Indicators — the dots, chips and row states",
+  note: "SHAPE carries identity and COLOUR carries state within that identity; the two families never share a colour "
+      + "meaning. Each dot keeps a fixed slot, so a missing dot leaves its space rather than letting its neighbour slide "
+      + "into it. Tap any badge on a phone for its explanation.",
+  entries: [
+  { id: "ind-testdot", term: "Margin-test dot", aka: "● verified, ○ expired",
+    what: "A plain circle in neutral steel showing whether this item's margin test is fresh. Neutral on purpose: "
+        + "verified-versus-stale is not good-versus-bad.",
+    from: "Your recorded margin test; tests expire after 16 hours.",
+    do: "An expired dot on something you are about to fund means re-test before you size it — the shown spread may be two "
+        + "unrelated trades." },
+  { id: "ind-paperdot", term: "Paper dot", aka: "◉ verdict, ◎ fills missing, ◌ accruing",
+    what: "A circle-within-a-circle carrying the paper book's read on this row. Solid green: paper-profitable. Solid red: "
+        + "paper-losing. Hollow (◎): the margin exists but the fill rate is under 40% — the spread is real and you would "
+        + "not have got it. Dim (◌): activity exists but fewer than 3 trips have closed and counted, so there is no "
+        + "verdict yet.",
+    from: "That item's closed paper trips, excluding any under the observed-share floor.",
+    do: "◉ green is a candidate for the exception lane, not a reason to fund. ◎ hollow is the most useful one: it says "
+        + "the gate benching this item is not costing you what the margin suggests." },
+  { id: "ind-status", term: "Row status", aka: "funded, NEXT UP, qualifying, benched, live position",
+    what: "Where the allocator has put this row. FUNDED is in the plan; NEXT UP is the queue behind a binding constraint, "
+        + "with the constraint named; QUALIFYING is seasoning; BENCHED names its gate; LIVE POSITION means capital is "
+        + "already committed.",
+    from: "The plan build, every refresh.",
+    do: "Read the reason, not just the state. NEXT UP with \"basket at limit\" and NEXT UP with \"T2 budget exhausted\" "
+        + "call for completely different responses, and only one of them is about the item." },
+  { id: "ind-caution", term: "Caution chips", aka: "⚠ thin, ⚠ quiet hour, ⚠ falling, ⚠ crowded, ⚠ seed-class, ⚠ pump, ⚠ die-off, ⚠ too big, ⚠ exit liq",
+    what: "Advisory amber marks that do not bench anything by themselves. ⚠ thin: little depth on the slow side. ⚠ quiet "
+        + "hour: this hour is unusually slow for this item. ⚠ falling: recent drift down. ⚠ crowded: top-100 by 24h volume, "
+        + "where every flipping tool recommends it and the spread is squeezed to the tax floor. ⚠ seed-class: a classic "
+        + "manipulation vehicle (seeds, jars, ensouled heads, nests). ⚠ pump: an active suspected pump. ⚠ die-off: the "
+        + "volume-collapse tag. ⚠ too big / ⚠ exit liq: your intended size is large against daily volume.",
+    from: "Live market shape plus your own log.",
+    do: "One chip is information; two on the same row is a size decision. ⚠ pump specifically never relaxes on recent "
+        + "wins — wins during a pump are the bait — and lifts only when you dismiss the warning." },
+  { id: "ind-clamp", term: "⅓-clamp and basket-near-cap chips",
+    what: "⅓-clamp means the one-third rule cut this position: never more than a third of the stack in one item. Basket "
+        + "near cap means this item's basket is close to its combined exposure ceiling.",
+    from: "The allocator, after all other sizing.",
+    do: "Nothing — the clamp already happened and the plan line states it. It is context for why a good item got a small "
+        + "number, so you do not go around the sizing by hand." },
+  { id: "ind-probation", term: "⚠ probation", aka: "proven-loser",
+    what: "An item your own log has shown losing, held under a stricter bar until it proves itself out — 3 profitable "
+        + "flips in 14 days.",
+    from: "Your flip log.",
+    do: "Let it run its probation. This is the one gate that is purely about your realized results, so overriding it is "
+        + "overriding yourself." },
+  { id: "ind-toxic", term: "Toxic flow",
+    what: "Marked-out fills where the price moves against you after you trade by more than a set fraction of your margin "
+        + "— informed traders picking your quotes off.",
+    from: "At least 3 marked-out fills; one bad markout is noise.",
+    do: "Stop quoting it, or widen. Profit that does not survive its own markouts is not profit you can scale.",
+    caveat: "Markout attribution leans: it cannot distinguish \"you were picked off\" from \"the whole market moved\", so "
+          + "read it as a flag to investigate rather than a verdict." },
+  { id: "ind-tested", term: "tested (fresh) / untested",
+    what: "Whether this row has a live margin test behind its numbers.",
+    from: "Your recorded tests.",
+    do: "Test anything new before you size it. The shown spread can be two unrelated trades; the test is the only thing "
+        + "that makes it one book." },
+  { id: "ind-drill", term: "Openable numbers", aka: "the dotted underline, ▾",
+    what: "Any number with a dotted underline opens to the rows that produced it — which items, which events, with the "
+        + "per-row evidence. Sort, filter and cohort selection live inside the expansion.",
+    from: "One shared primitive, so every aggregate inherits it.",
+    do: "Open the number before you rule on it. If an expansion shows fewer rows than the number claims, it says so and "
+        + "why — a subset is always declared, never silently truncated." }
+]},
+
+{ g: "metrics", title: "Metrics — the numbers and exactly what they measure",
+  note: "House standard: realized quantities only. Actual logged round trips, tax netted; no counterfactual fills, no "
+      + "price drift counted as missed profit. Where a number is simulated it says so on the surface.",
+  entries: [
+  { id: "met-margin", term: "Margin and ROI",
+    what: "Margin is sell − buy − tax per unit for one full round trip. ROI is that margin divided by the buy price — the "
+        + "return on the gp you tie up per cycle. 1–2% compounds fast because a cycle is hours, not months.",
+    from: "The live instasell/instabuy pair, net of GE tax.",
+    do: "Rank by ROI when capital is the constraint and by margin per unit when slots are. They disagree more often than "
+        + "you would expect." },
+  { id: "met-tax", term: "GE tax",
+    what: "2% of the sale price, deducted when the sell fills, rounded down per item, capped at 5m per item, with some "
+        + "items exempt. Already subtracted everywhere the tool says \"net\".",
+    from: "The in-game rule, implemented exactly.",
+    do: "Nothing directly — it is context for the tax-multiple rule, which is where it bites." },
+  { id: "met-taxmult", term: "Tax-multiple rule / ticks",
+    what: "Margin must clear 3× the per-unit tax and 15 ticks. When margin ≈ tax, a scratch exit at your own buy price "
+        + "loses the whole tax. Prices move in 1 gp steps, so a 4 gp margin is four ticks of room.",
+    from: "The margin floor gate.",
+    do: "Do not hand-override this one. At 3×, giving back two-thirds of the edge still exits positive; below it, one "
+        + "tick of adverse movement takes a quarter of your edge." },
+  { id: "met-thinside", term: "Thin-side volume / gp-flow",
+    what: "Units per hour on the QUIETER side of the book. A round trip needs sellers to buy from and buyers to sell to, "
+        + "so summing both sides overstates liquidity roughly 2×. Under 5k gp the floor is a unit count; at 5k+ it is "
+        + "thin-side units × price per hour, because unit counts understate mid-tier liquidity.",
+    from: "The 1h volume feed, both sides.",
+    do: "This is the number that decides how big you can be. Your fills can never be faster than the slow side." },
+  { id: "met-imbalance", term: "Imbalance / Bal",
+    what: "Share of volume on the side that sells into you. 0.50 is balanced.",
+    from: "The 1h volume feed.",
+    do: "Far from 0.50 means one leg will hang. Read it before you commit both legs of a quote cycle." },
+  { id: "met-capture", term: "Capture rate and horizons",
+    what: "Sizing assumes a standing offer captures about 15% of an item's flow — you are one participant, not the market. "
+        + "Buy legs are sized to fill inside the FILL HORIZON (default 4h); buy limits keep rolling every 4h across the "
+        + "DAY HORIZON while offers stand.",
+    from: "Your settings, applied by the allocator.",
+    do: "Nothing per-item — it is context for why a high-volume item still gets a modest size." },
+  { id: "met-buylimit", term: "Buy limit",
+    what: "The most of an item you can buy per rolling 4-hour window. The window rolls while your offer stands, so an "
+        + "offer sitting all day buys several windows' worth.",
+    from: "The item mapping.",
+    do: "Read \"profit / limit\" — margin × limit — as the ceiling one window can earn on this item. It is the honest cap "
+        + "on how much any single item can matter." },
+  { id: "met-markout", term: "Markout", aka: "+30m, +2h",
+    what: "Where the price went after your fill. Negative means the market moved against you right after you traded.",
+    from: "Your timed flips against the 7-day series; needs flips timed through the position lifecycle.",
+    do: "Compare it to your margin per unit. Adverse markout eating a large fraction of your edge is the toxic-flow case.",
+    caveat: "Attribution leans — it cannot separate being picked off from a market-wide move." },
+  { id: "met-capturepct", term: "Capture %",
+    what: "How much of the quoted spread your realized fills actually captured.",
+    from: "Flips placed from the plan, which records the entry quote.",
+    do: "Low capture with healthy margins means your quotes are not where you think they are — a repricing habit problem, "
+        + "not an item problem." },
+  { id: "met-gptouch", term: "gp per touch and gp / slot-hour",
+    what: "Profit per interaction, and profit per hour a flip actually occupied a GE slot. Slot-hour is the truer rank "
+        + "once fills are timed, because it prices the thing that is actually scarce.",
+    from: "Your flip log, with timings where available.",
+    do: "Rank the per-item table by slot-hour and cut the bottom. That is the whole point of the weekly review." },
+  { id: "met-slots", term: "Slots and the one-third rule",
+    what: "You get 8 GE offer slots; the plan commits 7 so one is always free for gear or supplies. The one-third rule "
+        + "caps any single item at a third of the stack.",
+    from: "Your settings and the allocator.",
+    do: "An idle committed slot earns exactly zero — if a line has not filled by its horizon, the plan is telling you to "
+        + "cancel and redeploy, not to wait." },
+  { id: "met-adverse", term: "Adverse selection / stale bids",
+    what: "A bid that fills hours after placing usually fills because the price came DOWN through it, not because "
+        + "patience paid.",
+    from: "The fill horizon versus actual fill timing.",
+    do: "Cancel unfilled buys past the horizon rather than letting them sit. A late fill is not a win." },
+  { id: "met-undercut", term: "Undercut to exit / the aging ladder",
+    what: "A sell that will not fill: past 1× the fill horizon, reprice to instabuy; past 2×, undercut a tick and take "
+        + "the small loss.",
+    from: "Per-offer aging from placement.",
+    do: "Follow it mechanically. Hoping is how a 2% edge becomes a 10% hole, and capital in a hopeful ask earns zero." },
+  { id: "met-datage", term: "Data age",
+    what: "Time since each side last actually traded. Old prints mean the shown price may be fiction.",
+    from: "The /latest feed's per-side timestamps.",
+    do: "Distrust any margin on a stale side before you size it — that is what the margin test is for." },
+  { id: "met-score", term: "Allocator score",
+    what: "The internal ranking the plan sorts candidates by, blending expected profit against how safely a position can "
+        + "sit unattended.",
+    from: "The plan build.",
+    do: "Nothing directly — it is context for the plan's ORDER. What should change your decisions is the stated reason on "
+        + "each line, not its rank." }
+]},
+
+{ g: "governance", title: "How the tool governs itself — rulings, records and its own honesty",
+  note: "This group is the seventh, deliberately: these terms did not fit the six subject areas, and burying the record "
+      + "of what the tool did without asking inside \"metrics\" would hide exactly the thing that most needs finding.",
+  entries: [
+  { id: "gov-propose", term: "Proposes and prefills; never acts",
+    what: "The standing rule the whole tool is built to. No flip is logged, no offer placed, no watchlist commitment made "
+        + "without an explicit press.",
+    from: "The product constitution.",
+    do: "Trust the surfaces to be advisory. If something ever changes capital without your press, that is a defect, not a "
+        + "feature you missed." },
+  { id: "gov-auto", term: "Applied automatically",
+    what: "The narrow set of changes that no longer wait for a ruling: coherence membership ADDS, and the seed and "
+        + "sibling audits' KEEP / RETIRE / PRUNE calls. Each cleared its existing evidence bar; what changed is who "
+        + "presses, not what qualifies.",
+    from: "The poll, and logged with an <code>auto</code> stamp that distinguishes it from your press.",
+    do: "Read the review's \"Applied automatically\" block and undo anything you disagree with — an add from the basket's "
+        + "thesis detail, a retired lineage by re-seeding.",
+    caveat: "Membership DROPS deliberately still queue: an add tightens an exposure cap (restraint), a drop loosens one "
+          + "and can free capital the cap was withholding, which is deployment — and deployment never auto-applies." },
+  { id: "gov-rulings", term: "Rulings pending / the digest",
+    what: "One line per thing awaiting your decision, across every queue — briefing proposals, basket candidates, sleeve "
+        + "rungs, funnel proposals, audits. Capped, and nothing blocks execution.",
+    from: "Every queue, collected at the top of Home.",
+    do: "Ratify, dismiss or snooze inline. Money first: it deliberately sits after execution in the walk-up." },
+  { id: "gov-concur", term: "Concur-recommended",
+    what: "A proposal arguing FOR keeping an existing rule against softer data. That is the correct default posture, not "
+        + "a decision point, so it is batched under its own header and kept out of the pending count.",
+    from: "The deployment funnel's proposal engine.",
+    do: "Nothing — read it if you are curious why a rule held. The full ruling flow is reserved for proposals that want "
+        + "to change something." },
+  { id: "gov-decisionlog", term: "Decision log",
+    what: "Every ruling from every queue, with its reason, so next quarter you can audit your own audit.",
+    from: "Every confirm, modify, dismiss and auto-application.",
+    do: "Nothing weekly — it is context. Its value is quarterly, when you are asking whether your rulings have been "
+        + "consistent." },
+  { id: "gov-freshness", term: "Data freshness", aka: "scheduled vs event-driven streams",
+    what: "When each background stream last accrued. SCHEDULED streams are flagged stale against their own cadence; "
+        + "EVENT-DRIVEN streams never are, because silence there is data rather than a fault.",
+    from: "Every ledger's own last-write stamp.",
+    do: "Read it FIRST after any long absence. Nothing accrues while the tab is closed, and a stalled stream looks "
+        + "exactly like a quiet market on a chart — this is the surface that tells you which you are looking at." },
+  { id: "gov-attention", term: "Walk-up attention budget",
+    what: "The count of distinct decisions the walk-up presents, against a ceiling of 7. Instrumented and probe-asserted, "
+        + "not aspirational.",
+    from: "The walk-up render, one reading per day you walk up.",
+    do: "Nothing directly — it is context, and a constraint on what I am allowed to add. A new surface that would breach "
+        + "the budget has to displace something rather than stack." },
+  { id: "gov-dormancy", term: "Dormancy report",
+    what: "Features untouched for 90+ days, proposed for demotion — collapsed behind a disclosure, never deleted. Code is "
+        + "cheap; screen space and mental inventory are not.",
+    from: "Touch instrumentation on panels, buttons and settings. On demand, from the Review tab.",
+    do: "Run it quarterly and ratify the demotions. It is the mechanism that catches surfaces you stopped using — "
+        + "including, on its last run, several that had gone unread for a week." },
+  { id: "gov-friction", term: "Friction note", aka: "open, exported, handled",
+    what: "A one-line complaint captured where it happened. Open notes render; copying them as markdown stamps them "
+        + "EXPORTED; handled or swept notes move to a collapsed disclosure.",
+    from: "The ✎ note friction button, timestamped with where you were.",
+    do: "Write them without editing yourself. A clean review leaves this section saying \"no open friction notes\" rather "
+        + "than re-showing history." },
+  { id: "gov-handoff", term: "The human carries the file",
+    what: "Where the browser and the repo cannot reach each other, you move the file: <code>intelligence.json</code> in, "
+        + "<code>flags-pending.json</code> out.",
+    from: "Architecture, not a workaround.",
+    do: "Carry the file. This is deliberate — there is no sync infrastructure to fix." },
+  { id: "gov-export", term: "Export the log",
+    what: "The full store as JSON. Your flip log exists only in this browser's localStorage.",
+    from: "The export button on the Flip Log tab.",
+    do: "Export at every review. Nothing else in the world has this data." }
+]}
+];
+/* Gate name → family entry. Built FROM the entries' own `names` arrays, so a
+   gate can never drift out of the map: adding a name to an entry is what
+   registers it, and the probe asserts every name `gateName()` can return has
+   a home here. */
+const GL_GATE_MAP = (() => {
+  const m = new Map();
+  for (const grp of GLOSSARY)
+    for (const e of grp.entries || [])
+      for (const n of e.names || []) m.set(n, e.id);
+  return m;
+})();
+const glEntryFor = term => GL_GATE_MAP.get(term) || null;
+/* Wrap a rendered gate name so it lands on its family entry. Used wherever a
+   bench reason names a gate; falls back to plain text for anything unmapped,
+   because a dead link is worse than no link. */
+function gateChip(g){
+  const id = glEntryFor(g);
+  return id
+    ? '<span class="glref" data-gl="' + id + '" title="What this gate is, and what it should change for you.">' + esc(g) + '</span>'
+    : esc(g);
+}
+function renderGlossary(){
+  const box = $("#glBody");
+  if (!box) return;
+  const n = GLOSSARY.reduce((a, grp) => a + (grp.entries || []).length, 0);
+  const sub = $("#glSub");
+  if (sub) sub.textContent = n + " entries in " + GLOSSARY.length + " groups";
+  const q = String((($("#glFind") || {}).value) || "").trim().toLowerCase();
+  const hit = e => !q || (e.term + " " + (e.aka || "") + " " + (e.names || []).join(" ") + " "
+    + e.what + " " + e.from + " " + e.do + " " + (e.caveat || "")).toLowerCase().indexOf(q) >= 0;
+  box.innerHTML = GLOSSARY.map(grp => {
+    const es = (grp.entries || []).filter(hit);
+    if (!es.length) return "";
+    return '<details class="glgrp" id="glgrp-' + esc(grp.g) + '"' + (q || S.glAll ? " open" : "") + '>'
+      + '<summary><b>' + esc(grp.title) + '</b> <span class="dim">— ' + es.length
+      + (q ? " matching" : "") + ' entr' + (es.length === 1 ? "y" : "ies") + '</span></summary>'
+      + (grp.note ? '<div class="note glnote">' + grp.note + '</div>' : '')
+      + es.map(e => '<div class="glent" id="gl-' + esc(e.id) + '">'
+          + '<div class="glterm">' + esc(e.term)
+          + (e.aka ? ' <span class="dim">— also: ' + esc(e.aka) + '</span>' : '') + '</div>'
+          + (e.names ? '<div class="glnames">' + e.names.map(x => '<span class="memchip">' + esc(x) + '</span>').join("") + '</div>' : '')
+          + '<div class="glwhat">' + e.what + '</div>'
+          + '<div class="glfrom"><b>Produced by:</b> ' + e.from + '</div>'
+          + '<div class="gldo"><b>What it should change for you:</b> ' + e.do + '</div>'
+          + (e.caveat ? '<div class="glcav"><b>Known caveat:</b> ' + e.caveat + '</div>' : '')
+        + '</div>').join("")
+      + '</details>';
+  }).join("") || '<div class="dim">No entry matches that.</div>';
+}
+/* A term tap opens its group, scrolls to the entry and flashes it — the same
+   landing standard every deep link in the tool is held to. */
+function glGoto(id){
+  const grp = GLOSSARY.find(g => (g.entries || []).some(e => e.id === id));
+  if (!grp) return;
+  const d = document.getElementById("glgrp-" + grp.g);
+  if (d) d.open = true;
+  requestAnimationFrame(() => {
+    const el = document.getElementById("gl-" + id);
+    if (!el) return;
+    let pad = 10;
+    for (const c of [document.querySelector("header"), document.getElementById("homeVitals")]){
+      if (!c) continue;
+      const p = getComputedStyle(c).position;
+      if (p === "sticky" || p === "fixed") pad += c.getBoundingClientRect().height;
+    }
+    el.style.scrollMarginTop = Math.ceil(pad) + "px";
+    el.scrollIntoView({ block: "start" });
+    el.classList.add("landed");
+    setTimeout(() => el.classList.remove("landed"), 1600);
+  });
+}
+document.addEventListener("click", e => {
+  const r = e.target.closest && e.target.closest("[data-gl]");
+  if (!r) return;
+  e.preventDefault(); e.stopPropagation();
+  featTouchMark("glossary");
+  glGoto(r.dataset.gl);
+}, true);
 /* ═══════════ ROUTINE ═══════════ */
 /* One WALK-UP list, generated from live state — it does not know or care how
    long you were gone. Order = what you physically do at the GE. */
@@ -12129,6 +12694,7 @@ function renderAll(){
   }
   if (S.tab === "sleeve"){ renderSleeve(); renderClusters(); }   // baskets live on the Sleeve tab (clusters merge, Aug 2026)
   if (S.tab === "review")  renderReview();
+  renderGlossary();        // global panel, below the tabs — one render, every surface
   renderNow();
   /* Re-apply open expansions LAST: a 60s poll must never close what you
      opened to read (decomposition primitive, ruled Aug 11 2026). */
@@ -12178,6 +12744,8 @@ function setTab(t, sub){
   renderAll();
   if (onWatch() || S.tab === "review") fillSparks();
 }
+$("#glFind").oninput = () => renderGlossary();
+$("#glAll").onclick = () => { S.glAll = !S.glAll; $("#glAll").textContent = S.glAll ? "collapse all" : "expand all"; renderGlossary(); };
 $("#attnRun").onclick = () => {
   S.attnRan = true;
   setHTML("#attnBody", attentionGovernanceInline());
