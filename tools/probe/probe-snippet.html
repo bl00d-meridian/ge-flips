@@ -21,6 +21,11 @@
     DB.reserve = 3e6; DB.t1Budget = 100e6; DB.t2Budget = 50e6; DB.slots = 7;
     DB.minExpectGp = 0; DB.clusterCapPct = 8; DB.lastCoScanAt = Date.now();
     DB.touchLog = [{d: today(), m: "walkup", t: Date.now()}];
+    /* Context-aware checklist state (R21): the probe profile's localStorage
+       persists across runs, so a prior run's review engagement or collapse
+       preference would leak into this one — neutralize it up front. */
+    DB.reviewEngagedAt = 0; DB.ckPref = ""; DB.ckDismissAt = 0; DB.flatSince = 0;
+    DB.visitStartAt = Date.now(); S.ckExpandOverride = false; S.mode = "walkup";
     /* Sustained qualification: freeze streak upkeep (the suite controls
        DB.qual by hand) and pre-qualify the core fixture items so allocator
        tests exercise the allocator, not the seasoning clock. */
@@ -1694,6 +1699,7 @@
       validUntil: inDays(2), importedAt: Date.now(), status: "pending", teeth: 0, outcome: null }));
     DB.lastBriefImportAt = Date.now() - 9 * 86400e3;   // stale → reminder line renders
     DB.briefRemindDismissKey = "";
+    DB.lastReviewAt = Date.now();   // review NOT due — its ready-line decision is asserted in R21.6
     const wdc = walkupDecisionCount();
     ok("[R13.1] seeded overload (9 pending + stale reminder) presents ≤7 decisions",
        wdc <= 7 && wdc === 6, "count=" + wdc);
@@ -2095,6 +2101,9 @@
       validUntil: inDays(10), importedAt: now20 - 86400e3, status: "pending", teeth: 0, outcome: null }];
     DB.rulingSnooze = {}; DB.rulingsCap = 5;
     DB.lastBriefImportAt = now20 - 3600e3; DB.briefRemindDismissKey = "";
+    /* an active book — the R21 flat-posture line gets its own fixture */
+    DB.positions = [{ id: 30, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, placedAt: now20, stage: "buying" }];
+    DB.flatSince = 0;
     DB.prevOpenAt = now20 - 3600e3;
     DB.homeSnapPrev = { armed: [], div: { loose: 0, tight: 0 }, catStates: { 7301: "upcoming" }, brief: "fresh" };
     DB.flagArchive = [{ itemId: 9003, name: "Probe gamma", flagAt: now20 - 7200e3, storyId: "s1",
@@ -2179,6 +2188,89 @@
     DB.featTouch = { "tab:trade/watch": { first: now20 - 5 * 86400e3, last: now20 - 86400e3 } };
     ok("[R20.7] usage matching the tiers renders the clean line, never silence",
        tierContradictions().length === 0 && /tiers match usage/.test(attentionGovernanceInline()));
+
+    // ═══ R21 WALK-UP CONTEXT AWARENESS (Aug 11 2026) — the checklist adapts to operating state ═══
+    // fixture: active book + one pending ruling → expanded walk-up with controls
+    const now21 = Date.now();
+    DB.positions = [{ id: 40, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, placedAt: now21, stage: "buying" }];
+    DB.intel = [{ id: "r21-p", type: "demand-context", confidence: "hinted", title: "R21 pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/r21" }],
+      validUntil: inDays(10), importedAt: now21 - 86400e3, status: "pending", teeth: 0, outcome: null }];
+    DB.sleeve = []; DB.clusterCands = []; DB.cohProps = []; S.depProposalCount = 0;
+    DB.seedAt = {}; DB.sibBorn = {}; DB.audRuled = {};   // audit queues empty — the only pending ruling is the intel record
+    DB.ckPref = ""; DB.ckDismissAt = 0; DB.reviewEngagedAt = 0; S.ckExpandOverride = false;
+    DB.visitStartAt = now21 - 60e3;
+    DB.lastReviewAt = now21; DB.lastBriefImportAt = now21; DB.briefRemindDismissKey = "";
+    DB.anomalyFlags = []; DB.catalysts = []; DB.rampFlags = [];
+    S.tab = "home"; S.mode = "walkup"; renderHome();
+    ok("[R21.1] an active book renders the expanded walk-up with one-tap collapse controls",
+       !!document.querySelector("#ckDismiss") && !!document.querySelector("#ckList li[data-step]"));
+    document.querySelector("#ckDismiss").click();
+    ok("[R21.1] one tap dismisses for THIS visit — one-line summary, no steps",
+       /dismissed for this visit/.test(document.querySelector("#ckList").innerHTML)
+       && !document.querySelector("#ckList li[data-step]"));
+    ok("[R21.1] NOW bar, rulings digest, and vitals render regardless of the collapse",
+       document.querySelector("#nowBar").innerHTML !== ""
+       && /data-rulesnooze/.test(document.querySelector("#homeRulings").innerHTML)
+       && document.querySelectorAll("#homeVitals .vit").length === 4);
+    DB.visitStartAt = now21;   // the next visit rolls in — dismissal was keyed to the old one
+    renderHome();
+    ok("[R21.1] a per-visit dismissal returns next visit on its own",
+       !!document.querySelector("#ckList li[data-step]"));
+    document.querySelector("#ckPrefMin").click();
+    ok("[R21.2] the standing preference minimizes to a one-liner with expand + pin-open",
+       /minimized \(standing preference\)/.test(document.querySelector("#ckList").innerHTML)
+       && !!document.querySelector("#ckExpand") && !!document.querySelector("#ckPrefPin"));
+    DB.visitStartAt = now21 + 1; renderHome();
+    ok("[R21.2] the preference persists across visits",
+       /standing preference/.test(document.querySelector("#ckList").innerHTML));
+    document.querySelector("#ckExpand").click();
+    ok("[R21.2] expand is one tap (per view — the preference stands)",
+       !!document.querySelector("#ckList li[data-step]") && DB.ckPref === "min");
+    S.ckExpandOverride = false; renderHome();
+    document.querySelector("#ckPrefPin").click();
+    ok("[R21.2] pin open clears the standing preference",
+       DB.ckPref === "" && !!document.querySelector("#ckList li[data-step]"));
+    // auto-minimize + flat posture: empty book, no rungs, no rulings
+    DB.positions = []; DB.intel = []; DB.flips = [];
+    S.ckExpandOverride = false; DB.flatSince = 0;
+    renderHome();
+    ok("[R21.3] zero positions + zero rungs + zero rulings auto-minimizes without being asked",
+       /auto-minimized: no open positions, no armed rungs, no pending rulings/.test(document.querySelector("#ckList").innerHTML)
+       && !document.querySelector("#ckList li[data-step]"));
+    ok("[R21.3] the NOW line never points into a walkthrough that isn't rendering",
+       !/Walk-up · step/.test(document.querySelector("#nowBar").innerHTML),
+       document.querySelector("#nowBar").innerHTML);
+    ok("[R21.5] flat book flips the posture — delta + vitals lead and the standing flat line renders",
+       document.querySelector("#tab-home").classList.contains("flat")
+       && /book flat since \d{4}-\d{2}-\d{2} — shadow book accruing, \d+ trips? closed since/.test(document.querySelector("#homeDelta").textContent),
+       document.querySelector("#homeDelta").textContent.slice(0, 200));
+    // review replaces, never stacks
+    DB.flips = ["2026-08-01", "2026-08-02", "2026-08-03"].map((d, i) =>
+      ({ id: 500 + i, itemId: 9001, name: "Probe alpha", qty: 1, buy: 4000, sell: 4400, date: d, note: "" }));
+    DB.lastReviewAt = now21 - 4 * 86400e3;
+    DB.positions = [{ id: 41, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, placedAt: now21, stage: "buying" }];
+    DB.ckDismissAt = 0; S.ckExpandOverride = false;
+    renderHome();
+    ok("[R21.4] review-due renders as ONE line — the walk-up stays the only checklist",
+       !!document.querySelector("#reviewStart")
+       && /weekly review ready — 3 days of data/.test(document.querySelector("#briefRemind").innerHTML)
+       && /Walk-up — whenever/.test(document.querySelector("#ckTitle").textContent)
+       && document.querySelectorAll("ul.ck").length === 1);
+    ok("[R21.6] the review-ready line counts against the ≤7 attention budget",
+       walkupDecisionCount() === 1, "count=" + walkupDecisionCount());
+    document.querySelector("#reviewStart").click();
+    ok("[R21.4] one tap engages the review — it REPLACES the visit's checklist, execution rides as step zero",
+       S.mode === "weekly" && /Review — every few days/.test(document.querySelector("#ckTitle").textContent)
+       && /Service the book first/.test(document.querySelector("#ckList").innerHTML)
+       && !document.querySelector("#reviewStart")
+       && document.querySelectorAll("ul.ck").length === 1);
+    ok("[R21.4] the NOW bar follows the engaged review, not the walk-up",
+       /Review · step 1/.test(document.querySelector("#nowBar").innerHTML),
+       document.querySelector("#nowBar").innerHTML);
+    document.querySelector("#ckList li[data-step]").click();
+    ok("[R21.4] review interaction stamps the visit (lastReviewAt)",
+       Date.now() - DB.lastReviewAt < 10e3);
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

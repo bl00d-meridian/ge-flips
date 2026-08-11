@@ -82,6 +82,10 @@ nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--go
 /* what-changed delta lines */
 #homeDelta .dl{padding:3px 0;font-size:12.5px;border-bottom:1px solid #262017;font-variant-numeric:tabular-nums}
 #homeDelta .dl:last-child{border-bottom:none}
+/* flat-book posture: WHAT CHANGED and vitals lead when nothing is working */
+#tab-home{display:flex;flex-direction:column}
+#tab-home.flat #homeDeltaPanel{order:-2}
+#tab-home.flat #homeVitals{order:-1}
 
 /* ---- panels ---- */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin-bottom:14px}
@@ -1131,6 +1135,11 @@ let DB = {
   prevOpenAt: 0,      // when the PREVIOUS visit ended — the WHAT CHANGED block's "since" clock
   homeSnap: null,     // end-of-visit state snapshot {armed,div,catStates,brief}, restamped while live data is in
   homeSnapPrev: null, // the last visit's closing snapshot — the delta baseline for stateless signals
+  visitStartAt: 0,    // stable id of the CURRENT visit (stamped only when the visit rolls) — per-visit state keys off it
+  flatSince: 0,       // ms the book went flat (no positions, no standing quote legs); 0 while anything is working
+  ckPref: "",         // "" = normal, "min" = checklist minimized as a standing preference (one tap to expand per view)
+  ckDismissAt: 0,     // visitStartAt of a per-visit checklist dismissal — returns automatically next visit
+  reviewEngagedAt: 0, // visitStartAt when the user started the due review — the visit's checklist IS the review flow
   checks: { date:"", walkup:[], weekly:[] }
 };
 function load(){
@@ -7908,7 +7917,11 @@ function walkupDecisionCount(){
     Math.min(10, Math.max(1, DB.rulingsCap || 5))); } catch(e){ rulings = 0; }
   let brf = 0;
   try { brf = briefReminderInfo() ? 1 : 0; } catch(e){ brf = 0; }
-  return rulings + brf;
+  /* The review-ready line is a decision point too (start it or not) — it
+     counts against the same ≤7 budget instead of hiding from it. */
+  let rev = 0;
+  try { rev = (reviewDue() && !reviewEngaged()) ? 1 : 0; } catch(e){ rev = 0; }
+  return rulings + brf + rev;
 }
 
 /* ── briefing reminder — the tracker→desk handoff cue ──
@@ -8634,7 +8647,13 @@ function rollChecklistDate(){
 function renderRoutine(){
   rollChecklistDate();
   if (!CHECKLISTS[S.mode]) S.mode = "walkup";   // legacy morning/evening values
-  const m = S.mode, list = CHECKLISTS[m], done = DB.checks[m] || [];
+  const m = S.mode;
+  /* Review replaces, never stacks (user-directed Aug 11 2026): the effective
+     list is shared with the NOW bar via ckEffectiveList — no visit ever owes
+     two checklists. */
+  const list = ckEffectiveList(m);
+  const done = DB.checks[m] || [];
+  const min = ckMinimized();
   const dataDays = new Set(DB.flips.map(f => String(f.date||"").slice(0,10)).filter(Boolean)).size;
   $("#ckDate").textContent = new Date().toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"})
     + (m === "walkup" ? " · checkmarks reset each walk-up"
@@ -8647,7 +8666,7 @@ function renderRoutine(){
   const wed = m === "walkup"
     ? [wedClusterAdvisoryText(sleeveOpenPositions().map(p => p.itemId)), wedIntelAdvisoryText()].filter(Boolean).join(" ")
     : "";
-  $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
+  $("#ckFoot").textContent = min ? "" : list.foot + (wed ? " 🔧 " + wed : "");
   /* Briefing reminder — elevated, dismissible per occurrence (§ handoff cue). */
   const br = m === "walkup" ? briefReminderInfo() : null;
   /* Walk-up attention budget (ruled Aug 10 2026): count the distinct
@@ -8663,13 +8682,34 @@ function renderRoutine(){
     attnLine = '<div class="dim" style="margin-bottom:6px" title="Distinct decisions this walk-up presents (ruling lines shown + briefing reminder). Budget ≤ 7, probe-asserted; the weekly review reports the trend.">walk-up attention: '
       + n + ' decision' + (n === 1 ? '' : 's') + ' of ≤7 budgeted</div>';
   }
-  $("#briefRemind").innerHTML = (br
+  /* Review-due renders as ONE line, never a second checklist — starting it
+     replaces this visit's walk-up with the review flow. */
+  const revN = (S.tab === "home" && m === "walkup" && !reviewEngaged()) ? reviewDue() : 0;
+  $("#briefRemind").innerHTML = (revN
+    ? '<div class="plan-note" style="margin-bottom:10px">📓 weekly review ready — ' + revN
+      + ' days of data. Starting it makes the review this visit\'s checklist (the walk-up\'s execution steps ride along as step zero).'
+      + ' <button class="sm" id="reviewStart">start review</button></div>'
+    : "") + (br
     ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
       + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
     : "") + attnLine;
+  $("#ckBar").parentElement.style.display = min ? "none" : "";
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
-  $("#ckList").innerHTML = list.steps.map((s,i) => {
+  if (min){
+    /* One-line summary, one tap to expand. The NOW bar, rulings digest,
+       WHAT CHANGED, and vitals render above regardless — only the guided
+       steps collapse. */
+    const reason = min === "auto"
+      ? "auto-minimized: no open positions, no armed rungs, no pending rulings — nothing to walk through"
+      : min === "visit" ? "dismissed for this visit — returns next visit"
+      : "minimized (standing preference)";
+    $("#ckList").innerHTML = '<li style="cursor:default"><span style="flex:1"><span class="t">' + esc(list.title)
+      + '</span><span class="d">' + done.length + ' of ' + list.steps.length + ' steps done · ' + reason + '</span></span>'
+      + '<button class="sm" id="ckExpand" title="Expand the checklist for this view.">expand</button>'
+      + (min === "pref" ? ' <button class="sm ghost" id="ckPrefPin" title="Clear the standing minimize preference — the checklist renders expanded by default again.">pin open</button>' : '')
+      + '</li>';
+  } else $("#ckList").innerHTML = list.steps.map((s,i) => {
     const isDone = done.includes(i);
     let inline = "";
     /* The exact lines you're about to execute, inline — no tab-hopping mid-touch. */
@@ -8789,12 +8829,16 @@ function renderRoutine(){
       + (s[2] ? ' <a href="#" data-goto="'+s[2]+'">→ open</a>' : '') + '</span>' + inline + '</span></li>';
   }).join("");
   $("#ckHead").textContent = m === "walkup" ? "Walk-up routine" : "Weekly review";
-  $("#modeExtras").innerHTML = (m === "walkup")
+  const ckCtl = (S.tab === "home" && !min)
+    ? '<button class="sm ghost" id="ckDismiss" style="margin-left:8px" title="Collapse the checklist for THIS visit — it returns automatically next visit. The NOW bar, rulings digest, WHAT CHANGED, and vitals stay regardless.">– this visit</button>'
+      + (m === "walkup" ? '<button class="sm ghost" id="ckPrefMin" title="Minimize the checklist as a standing preference — a one-line summary with expand, every visit, until you pin it open.">⌄ always</button>' : '')
+    : "";
+  $("#modeExtras").innerHTML = min ? "" : ((m === "walkup")
     ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on Trade ▸ Flip Log — keep it honest rather than flattering.">Min / touch'
       + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
       + '<label class="f" style="margin-left:8px" title="Max rulings-pending lines shown per walk-up — overflow is counted out loud, never hidden silently. Target: under two added minutes.">Rulings cap'
       + '<input type="number" data-rulecap min="1" max="10" value="' + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + '" style="width:52px"></label>'
-    : "";
+    : "") + ckCtl;
   renderNow();
 }
 
@@ -8810,13 +8854,80 @@ function renderRoutine(){
 const VISIT_GAP_MS = 2 * 3600e3;
 function rollVisit(){
   const now = Date.now();
-  if (now - (DB.lastOpenAt || 0) > VISIT_GAP_MS){
+  if (now - (DB.lastOpenAt || 0) > VISIT_GAP_MS || !DB.visitStartAt){
     DB.prevOpenAt = DB.lastOpenAt || 0;
     DB.homeSnapPrev = DB.homeSnap || null;
+    DB.visitStartAt = now;   // per-visit state (checklist dismissal, review engagement) keys off this
     S.homeDeltaAll = false;
+    S.ckExpandOverride = false;
   }
   DB.lastOpenAt = now;
   save();
+}
+
+/* ── operating-state awareness (user-directed, Aug 11 2026) ──
+   The checklist adapts to the book instead of assuming one. "Flat" means
+   nothing is working: no open positions and no standing quote legs. */
+function bookOpenCount(){
+  let n = (DB.positions || []).length;
+  try {
+    for (const w of invItems()){
+      const qp = w.quotePlaced;
+      if (qp && (Math.max(0, (qp.buyQty || 0) - (qp.buyFilled || 0)) > 0
+              || Math.max(0, (qp.sellQty || 0) - (qp.sellFilled || 0)) > 0)) n++;
+    }
+  } catch(e){}
+  return n;
+}
+function trackFlat(){
+  const flat = bookOpenCount() === 0;
+  if (flat && !DB.flatSince){ DB.flatSince = Date.now(); save(); }
+  else if (!flat && DB.flatSince){ DB.flatSince = 0; save(); }
+}
+/* Auto-minimize: nothing to walk through means don't render the walkthrough.
+   Live-computed, so a ruling or fill arriving mid-visit re-expands it. */
+function ckAutoMin(){
+  if (bookOpenCount() > 0) return false;
+  try { if (sleeveRungCards().length) return false; } catch(e){}
+  try { if (pendingRulingItems().filter(x => !x.snoozed).length) return false; } catch(e){}
+  return true;
+}
+/* Which minimized state applies on Home (null = expanded). Order matters:
+   an explicit expand tap beats everything for the current view; the standing
+   preference beats the per-visit dismissal beats the auto rule. */
+function ckMinimized(){
+  if (S.tab !== "home") return null;              // the Review tab's checklist is that tab's content
+  if (S.ckExpandOverride) return null;
+  if (DB.ckDismissAt && DB.ckDismissAt === DB.visitStartAt) return "visit";
+  if (S.mode === "weekly" && reviewEngaged()) return null;   // an engaged review was asked for — it renders
+  if (DB.ckPref === "min") return "pref";
+  if (S.mode === "walkup" && ckAutoMin()) return "auto";
+  return null;
+}
+/* Weekly-review readiness rides the EXISTING trigger (3+ data days, 3d+
+   since the last look) — surfaced as one line, engaged by one tap; the
+   engaged visit's checklist IS the review flow, never a second checklist. */
+function reviewDue(){
+  const dataDays = new Set(DB.flips.map(f => String(f.date || "").slice(0, 10)).filter(Boolean)).size;
+  return (dataDays >= REVIEW_MIN_DAYS && Date.now() - (DB.lastReviewAt || 0) > REVIEW_GAP_MS) ? dataDays : 0;
+}
+const reviewEngaged = () => !!DB.visitStartAt && DB.reviewEngagedAt === DB.visitStartAt;
+function engageReview(){
+  if (!DB.visitStartAt) rollVisit();
+  DB.reviewEngagedAt = DB.visitStartAt;
+  S.mode = "weekly";
+  save();
+}
+/* The steps a mode actually presents: the review flow absorbs the walk-up's
+   execution core as step zero while a book is live. One list, one owner —
+   the NOW bar and the renderer read the SAME list so they never disagree. */
+function ckEffectiveList(m){
+  let list = CHECKLISTS[m];
+  if (m === "weekly" && bookOpenCount() > 0)
+    list = { ...list, steps: [["Service the book first — collect, advance, relist, log",
+      "The walk-up's execution core as review step zero: collect fills, advance every position to where it really is, relist sells at your tested margins — sold prefills the log. Money first; the review reads the results.",
+      "watch", "sell"], ...list.steps] };
+  return list;
 }
 const catWinState = c => {
   if (!c.windowStart || !c.windowEnd) return "undated";
@@ -8914,13 +9025,20 @@ function renderHomeDelta(){
   const box = $("#homeDelta");
   if (!box) return;
   $("#homeDeltaSub").textContent = DB.prevOpenAt ? "since your last visit — " + ago(DB.prevOpenAt) : "";
-  const L = homeDeltaLines();
-  if (L === null){
-    box.innerHTML = '<div class="dim">First visit with the delta tracker — changes accrue from now.</div>';
-    return;
+  const raw = homeDeltaLines();
+  const first = raw === null;
+  const L = raw || [];
+  /* Flat-book standing line (user-directed Aug 11 2026): a monitoring visit
+     reads like a ticker — the flat state and what accrued while flat lead. */
+  if (DB.flatSince){
+    const n = (DB.shadowBook || []).filter(p => p.state !== "open" && (p.closedAt || 0) > DB.flatSince).length;
+    L.unshift({ txt: "▭ book flat since " + new Date(DB.flatSince).toLocaleDateString("en-CA")
+      + " — shadow book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckPanel" });
   }
   if (!L.length){
-    box.innerHTML = '<div class="dim">Nothing moved since your last visit — only nonzero deltas ever render here.</div>';
+    box.innerHTML = first
+      ? '<div class="dim">First visit with the delta tracker — changes accrue from now.</div>'
+      : '<div class="dim">Nothing moved since your last visit — only nonzero deltas ever render here.</div>';
     return;
   }
   const show = S.homeDeltaAll ? L : L.slice(0, HOME_DELTA_CAP);
@@ -9019,13 +9137,39 @@ function renderHomeRulings(){
   $("#homeRulings").innerHTML = rulingsInline();
 }
 function renderHomeBlocks(){
+  try { trackFlat(); } catch(e){}
+  /* Flat posture: the monitoring visit's actual content (WHAT CHANGED,
+     vitals) leads by construction; the checklist minimizes on its own. */
+  $("#tab-home").classList.toggle("flat", !!DB.flatSince);
   renderHomeVitals();     // the plan read runs first so the funnel ruling line below is fresh
   renderHomeRulings();
   renderHomeDelta();
 }
 document.addEventListener("click", e => {
   const dm = e.target.closest("[data-deltamore]");
-  if (dm){ S.homeDeltaAll = true; renderHomeDelta(); }
+  if (dm){ S.homeDeltaAll = true; renderHomeDelta(); return; }
+  if (e.target.closest("#ckDismiss")){
+    DB.ckDismissAt = DB.visitStartAt; S.ckExpandOverride = false; save(); rerenderCk();
+    toast("Checklist collapsed for this visit — it returns next visit on its own.");
+    return;
+  }
+  if (e.target.closest("#ckPrefMin")){
+    DB.ckPref = "min"; S.ckExpandOverride = false; save(); rerenderCk();
+    toast("Checklist minimized as a standing preference — expand any time; pin open to undo.");
+    return;
+  }
+  if (e.target.closest("#ckPrefPin")){
+    DB.ckPref = ""; save(); rerenderCk();
+    toast("Checklist pinned open again.");
+    return;
+  }
+  if (e.target.closest("#ckExpand")){
+    S.ckExpandOverride = true;
+    if (DB.ckDismissAt === DB.visitStartAt) DB.ckDismissAt = 0;
+    save(); rerenderCk();
+    return;
+  }
+  if (e.target.closest("#reviewStart")){ engageReview(); rerenderCk(); return; }
 });
 
 /* ═══════════ SHADOW FUND ═══════════ */
@@ -9248,16 +9392,27 @@ function nextMove(){
     return { msg: "List the sell for " + unlisted.map(p => full(p.qty) + " " + itemName(p.itemId, p.name)).join(", ")
            + " — bought items earn nothing sitting in the bank.", tab: "watch" };
   rollChecklistDate();
-  /* No clock, no calendar: the walk-up list is the suggestion whenever you
-     are here. The review surfaces on data volume and time-since-last-look,
-     not on Sundays. */
-  const list = CHECKLISTS.walkup, done = DB.checks.walkup || [];
-  const idx = list.steps.findIndex((s, i) => !done.includes(i));
-  if (idx >= 0)
-    return { msg: "Walk-up · step " + (idx + 1) + " of " + list.steps.length + ": " + list.steps[idx][0] + ".", tab: "routine", mode: "walkup" };
-  const dataDays = new Set(DB.flips.map(f => String(f.date||"").slice(0,10)).filter(Boolean)).size;
-  if (dataDays >= REVIEW_MIN_DAYS && Date.now() - (DB.lastReviewAt || 0) > REVIEW_GAP_MS)
-    return { msg: "Review time — " + dataDays + " days of data" + (DB.lastReviewAt ? ", last look " + ago(DB.lastReviewAt) : ", never reviewed") + ". Five minutes.", tab: "routine", mode: "weekly" };
+  /* No clock, no calendar: the checklist the VISIT owns is the suggestion —
+     the engaged review's steps when the review replaced the walk-up, the
+     walk-up's otherwise, and neither when the checklist is minimized (a
+     NOW line must never point into a walkthrough that isn't rendering). */
+  if (reviewEngaged()){
+    const list = ckEffectiveList("weekly"), done = DB.checks.weekly || [];
+    const idx = list.steps.findIndex((s, i) => !done.includes(i));
+    if (idx >= 0)
+      return { msg: "Review · step " + (idx + 1) + " of " + list.steps.length + ": " + list.steps[idx][0] + ".", tab: "routine", mode: "weekly" };
+  } else {
+    const ckHidden = DB.ckPref === "min" || (DB.ckDismissAt && DB.ckDismissAt === DB.visitStartAt) || ckAutoMin();
+    if (!ckHidden){
+      const list = CHECKLISTS.walkup, done = DB.checks.walkup || [];
+      const idx = list.steps.findIndex((s, i) => !done.includes(i));
+      if (idx >= 0)
+        return { msg: "Walk-up · step " + (idx + 1) + " of " + list.steps.length + ": " + list.steps[idx][0] + ".", tab: "routine", mode: "walkup" };
+    }
+    const dataDays = reviewDue();
+    if (dataDays)
+      return { msg: "Review time — " + dataDays + " days of data" + (DB.lastReviewAt ? ", last look " + ago(DB.lastReviewAt) : ", never reviewed") + ". Five minutes.", tab: "routine", mode: "weekly" };
+  }
   const unex = flipsSince(DB.lastExportAt || 0);
   /* Snoozable (friction, Aug 9 2026): dismiss hides it for the DAY, not
      forever — the log really does live only in this browser, so the nudge
@@ -9269,6 +9424,7 @@ function nextMove(){
   return { msg: "Nothing needs you. Offers work while the app is closed — that's the whole design.", tab: null, idle: true };
 }
 function renderNow(){
+  try { trackFlat(); } catch(e){}       // the flat-book clock rides every render tick
   try { stampHomeSnap(); } catch(e){}   // the WHAT CHANGED baseline rides every render tick
   updatePendBadge();   // header badge with the pending-rulings count, every tab
   const n = nextMove();
@@ -9296,7 +9452,7 @@ function moveCkPanel(){
   if (p && slot && p.parentElement !== slot) slot.appendChild(p);
 }
 function renderHome(){
-  S.mode = "walkup";
+  S.mode = reviewEngaged() ? "weekly" : "walkup";   // an engaged review replaces the walk-up, never stacks
   moveCkPanel();
   renderHomeBlocks();
   renderRoutine();
@@ -9317,8 +9473,8 @@ function setTab(t, sub){
   else if (t === "routine") target = S.mode === "weekly" ? "review" : "home";
   S.tab = target;
   if (target === "trade") S.sub = sub || S.sub || "watch";
-  if (target === "home") S.mode = "walkup";
-  if (target === "review") S.mode = "weekly";
+  if (target === "home") S.mode = reviewEngaged() ? "weekly" : "walkup";
+  if (target === "review"){ S.mode = "weekly"; if (reviewDue()) engageReview(); }   // opening a due review engages it for the visit
   moveCkPanel();
   featTouchMark("tab:" + target + (target === "trade" ? "/" + S.sub : ""));
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === target));
