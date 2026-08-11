@@ -5,6 +5,26 @@ dependencies, all client-side, localStorage persistence. Opening the file in a b
 *is* the app. Data comes from the RuneLite / OSRS Wiki real-time prices API, polled no
 faster than 60s.
 
+## Design philosophy (standing — user ruling, Aug 10 2026)
+
+**Division of labor.** The machine verifies parts, traces requirements, audits
+composition, grades its own accuracy, proposes its own restructurings, and surfaces
+questions proactively on a schedule — noticing is buildable machinery, never the
+user's job; their irritation must never be the detector. The user's non-delegable
+job: ground truth from lived use, judgment of purpose, and rulings.
+
+- **Every layer ships with a detector and a correction channel** — parts→probe suite,
+  specs→REQUIREMENTS.md, composition→integration audit, judgment→scorecard. A
+  component nothing can catch failing is unfinished even if it works.
+- **The constitution accretes case law.** Near-misses become named, dated precedents
+  (see the rulings below); write incidents down, don't just resolve them.
+- **"Done" requires the integration exercise.** Verification milestones are not design
+  milestones; "show me the audit" is answered with an audit, not a claim.
+- Propose/dispose, attention-not-authority, metric honesty, realized-data-over-
+  narrative, attention-cost complexity, adversarial-source, and human-handoff
+  principles are codified in the sections below — they are instances of this
+  philosophy, not exceptions to it.
+
 ## Product constitution (binding — do not soften these in code or copy)
 
 - **The tool proposes and prefills; it never acts.** No flip is logged, no offer placed,
