@@ -177,8 +177,36 @@ Run the suite after any nontrivial change to `index.html`, and extend
 where something renders is only verified by asserting where it must NOT appear —
 existence assertions (`querySelector` finds hidden elements) passed for a full day
 while a CSS specificity bug rendered Home's blocks on every tab. Assert computed
-visibility (`offsetParent`, `getComputedStyle`) on the surfaces that must be clean,
-and prove new detectors by running them against the original defect once. Ruled requirements live in
+visibility (`offsetParent`, `getComputedStyle`) on the surfaces that must be clean.
+
+### A test that cannot fail is a liability, not a test (user ruling, Aug 11 2026)
+
+A green suite is a claim, and an assertion that cannot fail makes that claim falsely.
+Worse than no test: it occupies the slot where a real one would have gone, and it
+reports the feature as covered. Four named instances, all shipped green:
+
+- **The `|| true` assertion** (Aug 11 2026): a probe line ending `… || true`, written
+  to check the poll calls the accrual step. It passed unconditionally and asserted
+  nothing whatever.
+- **The R29.4 durability detector** (Aug 11 2026): it seeded a closed record, rolled it,
+  *then* aged it past the retention window — so it passed whether the roll happened
+  before or after the prune, which was the entire property under test. Rewritten to
+  start from a record already past the window; only then could it fail.
+- **The R22.2 scoping assertions**: `querySelector` existence checks pass on hidden
+  elements, so a CSS specificity bug rendered Home's blocks on every tab for a full day
+  behind a green suite. Fixed by asserting computed visibility where it must be absent.
+- **The R24.2 landing assertions**: "target top in viewport" passed with the title
+  hidden under the sticky header — which is precisely how the offset bug shipped green.
+  Fixed by asserting the first VISIBLE title sits below the chrome's bottom edge.
+
+**Standing practice: prove every new assertion by seeding the defect it is meant to
+catch, watching it fail, then restoring green.** An assertion that has never failed is
+unproven, and "it passes" is not evidence that it *can* fail. This applies to every new
+assertion, not only to detectors written for a known bug — the R29.4 case was a detector
+written for a defect that still slipped through, because the fixture was built so the
+defect could not express itself.
+
+Ruled requirements live in
 [REQUIREMENTS.md](REQUIREMENTS.md) with stable IDs; probe assertions carry `[R#]` tags
 and the report's `===REQS===` section cross-references them — when adding a gated
 feature, add its requirement row and a tagged assertion together, never one without
