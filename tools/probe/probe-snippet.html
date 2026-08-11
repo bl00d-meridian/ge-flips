@@ -2467,6 +2467,65 @@
     ok("[R23.2] the Review scorecard area carries the standing export",
        /data-flagsexport/.test(intelScorecardInline()));
     DB.positions = [];
+
+    // ═══ R24 REVIEW-TAB FIXES (Aug 11 2026) — friction lifecycle; deep links LAND ═══
+    // R24.1 — open / exported / resolved lifecycle
+    const now24 = Date.now();
+    DB.frictionLog = [
+      { t: 9101, d: "2026-08-10", ctx: "watch", text: "note open" },
+      { t: 9102, d: "2026-08-10", ctx: "watch", text: "note exported", exp: now24 - 3600e3 },
+      { t: 9103, d: "2026-08-09", ctx: "log", text: "note resolved", res: now24 - 3600e3 }];
+    setTab("review");
+    const fricLi = () => document.querySelector("#ckstep-friction");
+    ok("[R24.1] only open notes render; resolved live in the collapsed disclosure",
+       /note open/.test(fricLi().textContent) && /note exported/.test(fricLi().textContent)
+       && !!fricLi().querySelector("details") && /resolved \(1\)/.test(fricLi().querySelector("details summary").textContent)
+       && /note resolved/.test(fricLi().querySelector("details").textContent)
+       && fricLi().querySelectorAll("[data-fricdone]").length === 2
+       && !!fricLi().querySelector("[data-fricsweep]"),
+       fricLi() ? fricLi().textContent.slice(0, 200) : "step missing");
+    document.querySelector('[data-fricdone="9101"]').click();
+    ok("[R24.1] ✓ handled moves a note to the resolved disclosure",
+       DB.frictionLog.find(f => f.t === 9101).res > 0
+       && /resolved \(2\)/.test(fricLi().querySelector("details summary").textContent));
+    document.querySelector("[data-fricsweep]").click();
+    ok("[R24.1] clear exported sweeps carried notes in one tap — a clean Sunday reads empty",
+       DB.frictionLog.every(f => f.res) && /No open friction notes/.test(fricLi().textContent)
+       && !fricLi().querySelector("[data-fricsweep]"));
+    DB.frictionLog = [{ t: 9104, d: today(), ctx: "watch", text: "note fresh" }];
+    renderRoutine();
+    document.querySelector("[data-fricopy]").click();
+    ok("[R24.1] copy-all stamps open notes exported (the FRICTION.md carry mark) and offers the sweep",
+       DB.frictionLog[0].exp > 0 && !!fricLi().querySelector("[data-fricsweep]"));
+    DB.frictionLog = [];
+    // R24.2 — every deep link lands ON its section: viewport-measured, R22.2 standard
+    async function land24(dest){
+      window.scrollTo(0, 1e6);   // start at the bottom so landing requires a real scroll
+      const a = document.createElement("a"); a.href = "#"; a.dataset.goto = dest; a.textContent = ".";
+      document.body.appendChild(a);
+      a.click();
+      await new Promise(r => setTimeout(r, 120));
+      a.remove();
+      const el = document.getElementById(dest.split("#")[1]);
+      if (!el) return { pass: false, why: dest + " → target element missing" };
+      const r = el.getBoundingClientRect();
+      return { pass: el.offsetParent !== null && r.top > -12 && r.top < window.innerHeight * 0.85
+        && el.classList.contains("landed"),
+        why: dest + " top=" + Math.round(r.top) + " vis=" + (el.offsetParent !== null)
+          + " landed=" + el.classList.contains("landed") };
+    }
+    for (const dest of ["watch#deployPanel", "watch#posPanel", "watch#planTitle",
+        "log#byItemPanel", "log#eqPanel", "log#exportChip", "log#logForm",
+        "sleeve#clusterPanel", "sleeve#sleevePanel", "sleeve#intelPanel", "sleeve#anomPanel", "sleeve#catPanel",
+        "review#ckstep-shadowbook", "review#ckstep-audit", "review#tab-shadow",
+        "home#ckPanel", "home#homeRulingsPanel"]){
+      const v24 = await land24(dest);
+      ok("[R24.2] deep link lands ON its section: " + dest, v24.pass, v24.why);
+    }
+    // wiring, not just anchors (the original defect was a wrong goto VALUE):
+    setTab("home");
+    ok("[R24.2] the shadow vitals tile is wired to the shadow-book section itself, not the checklist top",
+       Array.from(document.querySelectorAll("#homeVitals .vit")).some(v => v.dataset.goto === "review#ckstep-shadowbook"));
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }
