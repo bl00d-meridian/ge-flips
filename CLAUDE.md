@@ -82,6 +82,24 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   ruling, Aug 10 2026). Learning loops (story-resolution signatures, lag profiles,
   scorecard priors, rulings digests, ramping triggers) may change what gets watched,
   flagged, and prioritized; gates, sizing, and deployment still move only by ruling.
+- **Membership bookkeeping applies itself** (user ruling, Aug 11 2026 — **supersedes
+  "membership never recomposes silently"**, R4.2b, which stood from Aug 10 2026).
+  Coherence membership ADDS and the seed/sibling audits' KEEP / RETIRE / PRUNE
+  recommendations now apply automatically at their existing evidence thresholds —
+  persistence-gated, statistical-cap-respecting, blacklist-excluded. **The reason for the
+  supersession:** membership is mechanical bookkeeping about correlation, not a capital
+  decision; exposure caps and every gate still bind, so what changed is who presses, not
+  what qualifies. Every application is decision-logged with an `auto` stamp, surfaces in
+  the review's own "Applied automatically" block (decomposable to its rows like any
+  aggregate), and is reversible by hand — an add from the basket's thesis detail, a
+  retired lineage by re-seeding. PROMOTE stays manual: it names a thesis cluster, and a
+  name is a judgment.
+  **One carve-out, flagged rather than assumed:** coherence DROPS still queue for
+  ratification. An add only *tightens* a basket's exposure cap, which is restraint and
+  may auto-arm; a drop *loosens* one — it removes an item from the cap's scope, so the
+  allocator may fund capital the cap was withholding. That is the restraint/deployment
+  line, and moving it is the user's call. The drop's queue line states this where it
+  renders.
 - **Concur-recommended proposals skip the ruling ceremony** (user ruling, Aug 10 2026).
   A proposal that argues FOR keeping an existing rule against softer data is the correct
   default posture, not a decision point: flag it "concur-recommended", batch such entries
@@ -215,6 +233,21 @@ reports the feature as covered. Four named instances, all shipped green:
 - **The R24.2 landing assertions**: "target top in viewport" passed with the title
   hidden under the sticky header — which is precisely how the offset bug shipped green.
   Fixed by asserting the first VISIBLE title sits below the chrome's bottom edge.
+- **The intermittent assertion is the same liability** (user ruling, Aug 11 2026). A test
+  that fails at random teaches the operator to ignore failures, which is the same damage
+  as a test that cannot fail. The incident: `[R18.1]` compared the whole paper book's
+  length across a rescan, folding the dedup rule it claimed to test together with the
+  discovery slice's draw — whose family key embeds the first-failing gate and whose
+  stratum comes from the price cycle, both functions of the clock. It failed in roughly
+  1 run in 7. **The fix is never to pin the ambient input** — pinning the fixture clock
+  would have traded a flaky assertion for a silently-wrong one everywhere `S.latestAt`
+  carries staleness meaning. Instead: inject the varying input for the fixture, or assert
+  the property that holds across all of its values; and if neither is possible, the
+  assertion is testing the varying mechanism rather than the behavior it claims, so split
+  it in two. `[R18.1]` now asserts the plan-driven families exactly and the invariant that
+  holds under every stratum ("no family is open twice"), while rotation is tested on its
+  own with the cycle injected. Instrumentation that makes a failure name its own cause
+  stays even once the flake is gone.
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is

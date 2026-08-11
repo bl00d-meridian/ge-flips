@@ -128,8 +128,23 @@
        /probe-cluster/.test(document.querySelector("#watchBody tr.wdet") ? document.querySelector("#watchBody tr.wdet").innerHTML : ""));
     S.wDetail = new Set(); renderWatch();
     S.tab = "routine"; S.mode = "weekly"; renderRoutine();
-    ok("weekly review has basket ledger", /basket ledger/i.test(document.querySelector("#ckList").innerHTML)
-       && /probe-cluster/.test(document.querySelector("#ckList").innerHTML));
+    /* Consolidation (user ruling, Aug 11 2026): the basket ledger and the
+       SLEEVE section left the review — they are only meaningful when new
+       intelligence lands, so they live on the Sleeve tab. Asserted by
+       ABSENCE in the review plus PRESENCE on the tab that owns them: a cut
+       that only checked the review would pass just as well if the machinery
+       had been deleted outright. */
+    ok("[R36.1] the basket ledger and the sleeve section left the weekly review",
+       !/basket ledger/i.test(document.querySelector("#ckList").innerHTML)
+       && !/data-slvhealth/.test(document.querySelector("#ckList").innerHTML)
+       && !/gp per minute of attention/i.test(document.querySelector("#ckList").innerHTML),
+       document.querySelector("#ckList").innerHTML.slice(0, 200));
+    setTab("sleeve"); renderAll();
+    ok("[R36.1] both still live on the Sleeve tab — the machinery moved, it was not deleted",
+       /probe-cluster/.test(document.querySelector("#clusterPanel").innerHTML)
+       && /Sleeve stats|No sleeve positions/.test(document.querySelector("#slvHealth").innerHTML),
+       document.querySelector("#slvHealth").innerHTML.slice(0, 160));
+    S.tab = "routine"; S.mode = "weekly"; renderRoutine();
 
     // ---- advisory pieces (day-independent) ----
     DB.positions = [{ id: 2, itemId: 9001, name:"Probe alpha", qty: 10, buy: 4000, placedAt: Date.now() }];
@@ -503,9 +518,9 @@
     DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: dm84(2), note: "" }];
     DB.shadowBook = [
       { id: 841, fam: "s841", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 50e3 },
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 50e3 },
       { id: 842, fam: "s842", itemId: 9003, name: "Probe gamma", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 40e3 }
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["volume floor"], regimes: [], closedAt: Date.now(), net: 40e3 }
     ];
     renderDeploy();
     const dep84b = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
@@ -716,9 +731,9 @@
     DB.flips = [{ id: Date.now(), itemId: 9031, name: "Probe near-a", qty: 10, buy: 4000, sell: 4046, date: dmR(2), note: "" }];
     DB.shadowBook = [
       { id: 843, fam: "s843", itemId: 9032, name: "Probe near-b", qty: 10, bid: 4001, ask: 4043, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 30e3 },
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 30e3 },
       { id: 844, fam: "s844", itemId: 9033, name: "Probe near-c", qty: 10, bid: 4001, ask: 4041, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 20e3 }
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 20e3 }
     ];
     renderWatch();
     const dep2 = document.querySelector("#depBody").innerHTML;
@@ -1776,11 +1791,28 @@
        /btn:oldFeature/.test(attn) && /proposed for demotion/.test(attn) && /never deleted/.test(attn)
        && /within budget/.test(attn),
        attn);
+    /* DEMOTED to on demand (user ruling, Aug 11 2026): it is the mechanism
+       that catches surfaces that stopped being used, so it must still be
+       one press away — but a report that renders every visit becomes the
+       wallpaper it exists to detect. Asserted both ways: absent from the
+       review's standing steps, and produced by its own button. */
     S.mode = "weekly"; renderRoutine();
-    ok("[R13.2] the attention & dormancy step renders in the weekly review",
-       /attention &amp; dormancy/i.test(document.querySelector("#ckList").innerHTML)
-       && /btn:oldFeature/.test(document.querySelector("#ckList").innerHTML),
+    ok("[R13.2] the dormancy report is no longer a standing review step",
+       !/attention &amp; dormancy/i.test(document.querySelector("#ckList").innerHTML)
+       && !/btn:oldFeature/.test(document.querySelector("#ckList").innerHTML),
        document.querySelector("#ckList").innerHTML.slice(0, 200));
+    setTab("review"); renderAll();
+    ok("[R13.2] it renders nothing until asked — and the button that asks is present",
+       !!document.querySelector("#attnRun")
+       && !/btn:oldFeature/.test(document.querySelector("#attnBody").innerHTML),
+       document.querySelector("#attnBody").innerHTML.slice(0, 160));
+    document.querySelector("#attnRun").click();
+    ok("[R13.2] one press runs the report where it stands, and a re-render keeps it",
+       /btn:oldFeature/.test(document.querySelector("#attnBody").innerHTML)
+       && /proposed for demotion/.test(document.querySelector("#attnBody").innerHTML)
+       && (() => { renderAll(); return /btn:oldFeature/.test(document.querySelector("#attnBody").innerHTML); })(),
+       document.querySelector("#attnBody").innerHTML.slice(0, 200));
+    S.attnRan = false; setTab("home");
     DB.intel = []; DB.featTouch = {}; DB.walkupLoad = []; DB.lastBriefImportAt = Date.now();
 
     // ─── §14: CLUSTERS → CATALYST BASKETS MERGE ───
@@ -2040,17 +2072,41 @@
     ok("[R18.1] funded pick joins the regime books (current + loose at least)",
        !!sbPick && sbPick.regimes.includes("current") && sbPick.regimes.includes("loose"),
        JSON.stringify(sbPick));
-    const sbCount = DB.shadowBook.length;
-    /* Diagnostic carried in the failure extra: the discovery slice draws from
-       a stratum chosen by the price cycle, so a clock-dependent rotation
-       would make this count vary run to run. Naming it here means a flake
-       reports its own cause instead of looking like a dedup bug. */
+    /* ── DEDUP, ASSERTED CLOCK-INDEPENDENTLY (user ruling, Aug 11 2026) ──
+       The original assertion compared the WHOLE book's length across a
+       rescan, which folded two properties together: the dedup rule this
+       claims to test, and the discovery slice's draw — whose family key
+       embeds the item's first-failing gate and whose stratum comes from the
+       price cycle, both functions of the clock. It failed in ~1 run in 7.
+       The clock is NOT pinned (that would trade a flaky assertion for a
+       silently-wrong one wherever S.latestAt carries staleness meaning).
+       Instead: assert the plan-driven families exactly, and assert the
+       invariant that holds across EVERY stratum and every clock value —
+       no family is ever open twice. Rotation gets its own test, below. */
+    const planFams = () => DB.shadowBook.filter(p => /^(bench|regime):/.test(p.fam)).map(p => p.fam);
+    const beforeFams = planFams().slice().sort().join("|");
     const slice18 = { latestAt: S.latestAt, stratum: currentStratum().k, opened: DB.shadowBook.filter(p => p.slice).length };
     shadowScan(shadowPlan);
-    ok("[R18.1] rescan while open opens nothing — one shadow per family",
-       DB.shadowBook.length === sbCount,
-       DB.shadowBook.length + " vs " + sbCount + " :: before " + JSON.stringify(slice18)
-       + " :: after " + JSON.stringify({ stratum: currentStratum().k, opened: DB.shadowBook.filter(p => p.slice).length }));
+    ok("[R18.1] rescan while open re-opens no PLAN family — bench and regime shadows dedup exactly",
+       planFams().slice().sort().join("|") === beforeFams,
+       "before " + beforeFams + " :: after " + planFams().sort().join("|"));
+    const openFams = DB.shadowBook.filter(p => p.state === "open").map(p => p.fam);
+    ok("[R18.1] one shadow per family — no family is open twice, whichever stratum the slice drew",
+       new Set(openFams).size === openFams.length,
+       JSON.stringify({ before: slice18, after: { stratum: currentStratum().k, opened: DB.shadowBook.filter(p => p.slice).length },
+         dupes: openFams.filter((f, i) => openFams.indexOf(f) !== i) }));
+    /* Rotation tested on its own, with the cycle INJECTED rather than read
+       off the wall clock: stable within a price cycle, advancing across it,
+       and covering every stratum over a full lap. */
+    const keepLatest18 = S.latestAt;
+    const stratAt = c => { S.latestAt = c * POLL_MS; return currentStratum().k; };
+    const lap18 = [];
+    for (let c = 0; c < STRATA.length; c++) lap18.push(stratAt(c));
+    ok("[R29.1] the stratum rotation is a pure function of the price cycle — stable within one, advancing across, every stratum on a lap",
+       stratAt(7) === stratAt(7) && stratAt(7) !== stratAt(8)
+       && new Set(lap18).size === STRATA.length,
+       JSON.stringify({ lap: lap18.length, distinct: new Set(lap18).size }));
+    S.latestAt = keepLatest18;
     // R18.2 — honest fill sim on a controlled position
     DB.shadowBook = [{ id: 1, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
       qty: 10, bid: 4001, ask: 4399, t: Date.now() - 60e3, buyQ: 0, sellQ: 0, buyDone: 0,
@@ -2079,6 +2135,12 @@
     const sb3 = DB.shadowBook.find(p => p.id === 2);
     ok("[R18.2] an unfillable bid expires at the horizon as would-not-have-filled — that IS the data",
        sb3.state === "unfilled" && sb3.net === 0, JSON.stringify(sb3));
+    /* The fill sim accrues observed time in REAL milliseconds, so a trip
+       driven through its lifecycle by three shadowTick() calls has observed
+       almost nothing and now falls under the observed-share floor. Set its
+       observed share deliberately: this block is testing fill mechanics, not
+       the floor, and the floor gets its own fixtures below. */
+    sb2.obsMs = FILLH() * 3600e3;
     // R18.3 — per-gate counterfactual, quarantine-labeled (now the Paper Book
     // sub-view's table; the weekly review keeps a one-line read — R35)
     const shAud = paperGateSection();
@@ -2109,9 +2171,9 @@
     DB.flips = [{ id: Date.now(), itemId: 9002, name: "Probe beta", qty: 10, buy: 4000, sell: 4400, date: dstr(2), note: "" }];
     DB.shadowBook = [
       { id: 3, fam: "b1", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 },
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 },
       { id: 4, fam: "b2", itemId: 9003, name: "Probe gamma", qty: 10, bid: 3000, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 }
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", benchedBy: ["ROI floor"], regimes: [], closedAt: Date.now(), net: 250e3 }
     ];
     const aud19 = gateStreamsSection();
     ok("[R19.1] gate health renders both streams, natures labeled",
@@ -2191,9 +2253,9 @@
        must EARN its 200k-loose reading rather than being hand-seeded. */
     DB.shadowBook = [
       { id: 20, fam: "x1", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 120e3 },
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 120e3 },
       { id: 21, fam: "x2", itemId: 9003, name: "Probe gamma", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
-        buyDone: 1, obsMs: 1, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 80e3 }];
+        buyDone: 1, obsMs: FILLH() * 3600e3, lastObs: 1, state: "filled", regimes: ["loose"], closedAt: now20 - 60e3, net: 80e3 }];
     DB.shadowDivLog = [];
     DB.catalysts = [{ id: 7301, name: "R20 window", windowStart: inDays(-1), windowEnd: inDays(3),
       items: [], clusters: [], notes: "", src: "manual", createdAt: now20 }];
@@ -2216,8 +2278,9 @@
     ok("[R20.3] vitals strip renders funnel, paper book, sleeve, capital tiles",
        vits20.length === 4 && vits20.every(v => v.dataset.goto),
        JSON.stringify(vits20.map(v => v.dataset.goto)));
-    ok("[R20.3] shadow-book results are one vitals click away (goto review)",
-       vits20.some(v => /^review/.test(v.dataset.goto) && /simulated/.test(v.innerHTML)));
+    ok("[R20.3] paper-book results are one vitals click away — landing on the Paper Book surface itself",
+       vits20.some(v => v.dataset.goto === "paper#paperRegimePanel" && /simulated/.test(v.innerHTML)),
+       JSON.stringify(vits20.map(v => v.dataset.goto)));
     ok("[R20.3] funnel tile reads pass · funded · deployed",
        vits20.some(v => /pass · \d+ funded · \d+% deployed/.test(v.textContent)), vits20[0].textContent);
     // R20.5 — the delta block: every category one line, cap 6 + overflow counted
@@ -2617,15 +2680,29 @@
     for (const dest of ["watch#deployPanel", "watch#posPanel", "watch#planTitle",
         "log#byItemPanel", "log#eqPanel", "log#exportChip", "log#logForm",
         "sleeve#clusterPanel", "sleeve#sleevePanel", "sleeve#intelPanel", "sleeve#anomPanel", "sleeve#catPanel",
-        "review#ckstep-shadowbook", "review#ckstep-audit", "review#tab-shadow",
+        "review#ckstep-audit", "review#tab-shadow",
+        "paper#paperRegimePanel", "paper#paperGatePanel", "prospect#prospectStrataPanel",
+        "prospect#prospectHoursPanel", "gates#gateStreamPanel",
         "home#ckPanel", "home#homeRulingsPanel"]){
       const v24 = await land24(dest);
       ok("[R24.2] deep link lands ON its section: " + dest, v24.pass, v24.why);
     }
-    // wiring, not just anchors (the original defect was a wrong goto VALUE):
+    /* Wiring, not just anchors (the original defect was a wrong goto VALUE).
+       Amended Aug 11 2026: the paper-book tile pointed at the REVIEW's
+       discussion of the paper book rather than the paper book itself — a
+       link that lands on commentary about a surface has not landed on the
+       surface. Asserted as a NEGATIVE too, since "somewhere in the review"
+       is exactly the wrong destination this class of defect produces. */
     setTab("home");
-    ok("[R24.2] the shadow vitals tile is wired to the shadow-book section itself, not the checklist top",
-       Array.from(document.querySelectorAll("#homeVitals .vit")).some(v => v.dataset.goto === "review#ckstep-shadowbook"));
+    const vitGotos = Array.from(document.querySelectorAll("#homeVitals .vit")).map(v => v.dataset.goto);
+    ok("[R24.2] the paper-book tile is wired to the Paper Book SURFACE, never the review's discussion of it",
+       vitGotos.includes("paper#paperRegimePanel") && !vitGotos.some(g => /^review#ckstep-/.test(g)),
+       JSON.stringify(vitGotos));
+    ok("[R24.2] no deep link anywhere points at a checklist step that stands in for a real surface",
+       !/data-goto="review#ckstep-(shadowbook|recipes|hours|clusters|sleeve)"/.test(document.body.innerHTML)
+       && !/"review#ckstep-(shadowbook|recipes|hours|clusters|sleeve)"/.test(
+            [paperSummaryLine(), prospectSummaryLine(), gateSummaryLine(), hoursSummaryLine()].join("")),
+       "checked vitals, NOW bar, delta lines and the five summary lines");
 
     // ═══ R25 PAPER ↔ ROW INTEGRATION (Aug 11 2026) — route evidence to the decision ═══
     const now25 = Date.now();
@@ -2695,7 +2772,7 @@
     const d1 = dotVisible(9001);
     ok("[R25.6] ONE closed paper trip renders a visibly-rendered accruing dot — not silence",
        d1.ok && /sdot acc/.test(d1.cls || "") && /ACCRUING/.test(d1.title || "")
-       && /\d+ closed, \d+ still open/.test(d1.title || "") && /no verdict until 3 have closed/.test(d1.title || ""),
+       && /\d+ closed and counted, \d+ still open/.test(d1.title || "") && /no verdict until 3 have closed/.test(d1.title || ""),
        d1.why + " :: " + (d1.cls || "") + " :: " + (d1.title || "").slice(0, 160));
     /* Unfillable by construction: a bid of 1 never sees a print at-or-below it,
        so the tick cannot close this record mid-assertion (the fixture market
@@ -2705,7 +2782,7 @@
       state: "open", regimes: [] }];
     const d2 = dotVisible(9001);
     ok("[R25.6] an item with only OPEN paper trips still renders — open activity is activity",
-       d2.ok && /sdot acc/.test(d2.cls || "") && /0 closed, \d+ still open/.test(d2.title || ""),
+       d2.ok && /sdot acc/.test(d2.cls || "") && /0 closed and counted, \d+ still open/.test(d2.title || ""),
        d2.why + " :: " + (d2.title || "").slice(0, 160));
     ok("[R25.6] absence: an item with NO paper history renders its reserved slot but no dot in it",
        (() => { const html = shadowDot(999999);   // an id the book has never touched
@@ -3198,56 +3275,10 @@
        && /sizing the standing overnight book heavier/.test(hi30) && /never applied from here/.test(hi30),
        hi30.slice(hi30.indexOf("Overnight"), hi30.indexOf("Overnight") + 500));
     S.spark.set(9001, sp30);
-    // R31 — recipe basis: name-resolved, patient convention, break flagged with leg attribution
-    DB.shadowBook = []; DB.recipeLog = {}; DB.recipeFlags = [];
-    for (const [id, nm, hi, lo] of [[9500, "Ranarr weed", 10000, 9900], [9501, "Grimy ranarr weed", 9900, 9800],
-                                    [9502, "Snapdragon", 20000, 19800], [9503, "Grimy snapdragon", 19900, 19700]]){
-      const itr = { i: id, n: nm, l: 11000, m: 1, v: 0, a: 0 };
-      S.items.push(itr); S.byId.set(id, itr);
-      S.latest[id] = { high: hi, low: lo, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
-      S.hour[id] = { avgHighPrice: hi, avgLowPrice: lo, highPriceVolume: 90000, lowPriceVolume: 90000 };
-    }
-    const b31 = recipeBasis(RECIPES.find(r => r.k === "clean:ranarr"));
-    const want31 = 10000 - geTax(10000, 9500) - 9800;
-    ok("[R31.1] recipes resolve by NAME against the live mapping and price on the patient convention (output ask net of tax − input bids)",
-       b31.m === want31 && b31.outId === 9500 && b31.inIds[0] === 9501,
-       JSON.stringify({ got: b31.m, want: want31 }));
-    ok("[R31.1] an unresolvable leg renders unresolved rather than a confidently wrong number",
-       (() => { const u = recipeBasis({ k: "x", out: "Ranarr weed", ins: ["No such item at all"] });
-                return !!u.unresolved && u.unresolved.includes("No such item at all"); })());
-    const dstr31 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
-    DB.recipeLog["clean:ranarr"] = [6, 5, 4, 3, 2].map(n => ({ d: dstr31(n), m: want31, l: [10000, 9800] }));
-    recipeTick();
-    ok("[R31.1] the daily ledger writes one row per day, last write wins, and the baseline excludes today's own reading",
-       DB.recipeLog["clean:ranarr"].length === 6
-       && DB.recipeLog["clean:ranarr"][5].d === today()
-       && recipeBaseline("clean:ranarr").n === 5 && !DB.recipeFlags.length,
-       JSON.stringify(DB.recipeLog["clean:ranarr"].slice(-2)));
-    S.latest[9501] = { high: 9900, low: 5000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };   // the input leg collapses
-    recipeTick();
-    const f31 = (DB.recipeFlags || [])[0];
-    ok("[R31.2] a basis at 2× its own normal flags, with the mispriced leg named — the flip signal and the pump tell in one line",
-       !!f31 && f31.k === "clean:ranarr" && f31.leg && f31.leg.name === "Grimy ranarr weed"
-       && f31.leg.movePct < -40 && f31.m >= RECIPE_FLAG_X * f31.base,
-       JSON.stringify(f31));
-    const ri31 = recipeBasisInline();
-    ok("[R31.2] the basis table states the convention, the break, and both readings of it",
-       /output sold at its ask net of tax, inputs bought at their bid/.test(ri31)
-       && /basis break/.test(ri31) && /widest-moving leg/.test(ri31)
-       && /manipulation tell/.test(ri31) && /caps nothing/.test(ri31),
-       ri31.slice(0, 600));
-    ok("[R31.2] a recipe without enough history says its baseline is accruing instead of flagging noise",
-       /baseline accruing/.test(ri31), ri31.slice(ri31.indexOf("baseline accruing") - 120, ri31.indexOf("baseline accruing") + 80));
-    DB.prevOpenAt = now27 - 3600e3;
-    const dl31 = homeDeltaLines() || [];
-    ok("[R31.2] a fresh break surfaces in WHAT CHANGED with the leg that moved",
-       dl31.some(l => /recipe basis break: Ranarr weed/.test(l.txt) && /Grimy ranarr weed moved/.test(l.txt)),
-       JSON.stringify(dl31.map(l => l.txt).slice(0, 6)));
-    for (const id of [9500, 9501, 9502, 9503]){
-      S.items = S.items.filter(it => it.i !== id); S.byId.delete(id);
-      delete S.latest[id]; delete S.hour[id];
-    }
-    DB.recipeLog = {}; DB.recipeFlags = []; DB.strataStats = {};
+    // R31 — the crafting-spread monitor was WITHDRAWN (user ruling, Aug 11
+    // 2026): it terminated in prose and was never wired to a decision. Its
+    // requirement rows are marked withdrawn in REQUIREMENTS.md rather than
+    // deleted, and its assertions go with it.
     // teardown
     DB.shadowBook = []; DB.flips = []; DB.shadowExceptions = []; DB.shadowPartPct = 50;
     S.items = S.items.filter(it => it.i !== 9322); S.byId.delete(9322);
@@ -3350,14 +3381,13 @@
                                        catch(e){ broke33.push(label + ": " + (e && e.message || e)); return ""; } };
     const surfaces33 = {};
     for (const [label, fn] of [["freshness", freshnessInline], ["prospecting", prospectingInline],
-                               ["hours", hoursLedgerInline], ["recipes", recipeBasisInline],
+                               ["hours", hoursLedgerInline],
                                ["gapband", gapBandInline], ["audit", renderAuditInline],
                                ["paperRegime", paperRegimeSection], ["paperGate", paperGateSection],
                                ["paperCohort", paperCohortSection], ["gateStreams", gateStreamsSection],
                                ["gateDieOff", gateDieOffSection], ["gateExc", gateExcSection],
                                ["paperSum", paperSummaryLine], ["prospectSum", prospectSummaryLine],
                                ["gateSum", gateSummaryLine], ["hoursSum", hoursSummaryLine],
-                               ["recipeSum", recipeSummaryLine],
                                ["attention", attentionGovernanceInline], ["intelscore", intelScorecardInline]])
       surfaces33[label] = tryRender(label, fn);
     for (const t of ["home", "trade", "sleeve", "review"])
@@ -3541,7 +3571,7 @@
        !!document.querySelector("#prospectStrata #strataTable")
        && /Gap band 250k–1m/.test(document.querySelector("#prospectGap").innerHTML)
        && /Two streams, different natures|No hour-of-day data yet/.test(document.querySelector("#prospectHours").innerHTML)
-       && /output sold at its ask net of tax/.test(document.querySelector("#prospectRecipe").innerHTML));
+       && !document.querySelector("#prospectRecipePanel"));   // the recipe monitor was WITHDRAWN, not relocated (ruled Aug 11 2026)
     /* No escape hatch here: the fixture SEEDS hour-of-day data above, so
        "the panel had nothing to render" can never stand in for a pass. */
     ok("[R35.4] the hours table keeps the two streams distinct and unobserved hours read no data, never bad hour",
@@ -3627,13 +3657,11 @@
        /data-goto="paper#paperRegimePanel"/.test(paperSummaryLine())
        && /data-goto="prospect#prospectStrataPanel"/.test(prospectSummaryLine())
        && /data-goto="gates#gateStreamPanel"/.test(gateSummaryLine())
-       && /data-goto="prospect#prospectHoursPanel"/.test(hoursSummaryLine())
-       && /data-goto="prospect#prospectRecipePanel"/.test(recipeSummaryLine()),
+       && /data-goto="prospect#prospectHoursPanel"/.test(hoursSummaryLine()),
        paperSummaryLine().slice(0, 200));
     ok("[R35.7] the weekly review renders those one-line reads, each with its step anchor",
        /data-goto="paper#paperRegimePanel"/.test(ck35)
        && /data-goto="prospect#prospectHoursPanel"/.test(ck35)
-       && /data-goto="prospect#prospectRecipePanel"/.test(ck35)
        && /id="ckstep-shadowbook"/.test(ck35),
        ck35.slice(0, 300));
     const aud35 = renderAuditInline();
@@ -3654,6 +3682,202 @@
     DB.dieOffLog = []; DB.shadowExceptions = []; S.drillOpen = new Set(); S.drillUI = new Map();
   } catch(e){
     out.push("FAIL decomposition primitive / trade sub-views :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R36 — CONSOLIDATION + AUTO-APPLIED BOOKKEEPING (user rulings,
+       Aug 11 2026). Membership adds and seed/sibling calls apply themselves;
+       drops deliberately do not. What changed is who presses, not what
+       qualifies — so the evidence bars are asserted still binding. ═══ */
+    const now36 = Date.now();
+    DB.clusters = [{ id: 361, name: "auto-basket", members: [9001, 9002, 9003], capPct: null,
+                     story: "", src: "manual", confirmedAt: now36, mclass: {} }];
+    DB.cohProps = []; DB.decisionLog = []; DB.blacklist = []; DB.audRuled = {};
+    const mkProp36 = (kind, itemId, mclass) => ({ id: now36 + DB.cohProps.length, kind, basketId: 361,
+      itemId, mclass: mclass || "t", trend: [0.61, 0.63, 0.66, 0.71], note: "probe", status: "pending", at: now36 });
+    DB.cohProps.push(mkProp36("add", 9004, "t"));
+    DB.cohProps.push(mkProp36("drop", 9002));
+    const it36 = { i: 9004, n: "Probe auto-add", l: 25000, m: 0, v: 0, a: 0 };
+    S.items.push(it36); S.byId.set(9004, it36);
+    autoApplyCohProps();
+    const cl36 = DB.clusters.find(c => c.id === 361);
+    ok("[R36.2] a coherence ADD applies itself — an add only tightens the basket's exposure cap",
+       cl36.members.includes(9004) && cl36.mclass[9004] === "t"
+       && DB.cohProps.find(p => p.kind === "add" && p.itemId === 9004).autoAt > 0,
+       JSON.stringify({ members: cl36.members }));
+    ok("[R36.2] a coherence DROP does NOT apply itself, and its queue line says why",
+       cl36.members.includes(9002)
+       && DB.cohProps.find(p => p.kind === "drop").status === "pending"
+       && (() => { setTab("sleeve"); renderAll();
+                   const h = document.querySelector("#cluQueueBody").innerHTML;
+                   return /Still your press, deliberately/.test(h) && /loosens/.test(h); })(),
+       document.querySelector("#cluQueueBody").innerHTML.slice(0, 300));
+    ok("[R36.2] the application is decision-logged with an auto stamp, distinguishable from a press",
+       DB.decisionLog.some(x => x.auto === 1 && /auto-admitted Probe auto-add/.test(x.action))
+       && autoApplied(0).length === 1,
+       JSON.stringify(DB.decisionLog.map(x => x.action + ":" + (x.auto || 0))));
+    /* The bars still bind: blacklist and the 40% statistical cap. */
+    DB.clusters = [{ id: 362, name: "cap-basket", members: [9001, 9002], capPct: null, story: "",
+                     src: "manual", confirmedAt: now36, mclass: { 9001: "s", 9002: "t" } }];
+    DB.cohProps = [Object.assign(mkProp36("add", 9004, "t"), { basketId: 362 })];
+    DB.blacklist = [9004];   // the blacklist is a plain id array
+    autoApplyCohProps();
+    ok("[R36.3] the blacklist is still the user's alone — no automated path admits an entry",
+       !DB.clusters[0].members.includes(9004)
+       && DB.cohProps[0].status === "pending",
+       JSON.stringify(DB.clusters[0].members));
+    DB.blacklist = [];
+    DB.cohProps = [Object.assign(mkProp36("add", 9004, "s"), { basketId: 362 })];
+    autoApplyCohProps();
+    ok("[R36.3] the 40% statistical cap is re-checked at APPLICATION time, not just at proposal time",
+       !DB.clusters[0].members.includes(9004) && DB.cohProps[0].status === "pending",
+       JSON.stringify({ members: DB.clusters[0].members, statShare: basketStatShare(DB.clusters[0]) }));
+    /* Seed + sibling auto-execution. */
+    DB.clusters = []; DB.cohProps = []; DB.decisionLog = []; DB.audRuled = {};
+    DB.seedAt = { 9001: now36 - 40 * 86400e3 };
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null, sib: 9001 }, { id: 9003, qty: null }];
+    DB.sibBorn = { 9002: now36 - 40 * 86400e3 };
+    DB.flips = [];
+    const seedRec36 = (seedAudit()[0] || {}).rec;
+    autoApplyAudits();
+    ok("[R36.4] the seed audit's own recommendation is what executes — nothing is invented for it",
+       (seedRec36 === "RETIRE" && !DB.seedAt[9001] && !DB.watch.some(w => w.sib === 9001))
+       || (seedRec36 === "KEEP" && DB.decisionLog.some(x => x.auto && /auto-kept/.test(x.action))),
+       JSON.stringify({ rec: seedRec36, watch: DB.watch.map(w => w.id), logged: DB.decisionLog.map(x => x.action) }));
+    ok("[R36.4] every auto-execution states which ruling authorised it, in the record",
+       DB.decisionLog.filter(x => x.auto).every(x => /Aug 11 2026 ruling/.test(x.reason || "")),
+       JSON.stringify(DB.decisionLog.filter(x => x.auto).map(x => (x.reason || "").slice(0, 60))));
+    ok("[R36.4] PROMOTE is never auto-executed — naming a thesis cluster is a judgment, not bookkeeping",
+       !DB.decisionLog.some(x => x.auto && /promote/i.test(x.action)),
+       JSON.stringify(DB.decisionLog.filter(x => x.auto).map(x => x.action)));
+    /* The reviewable block, decomposable like every other aggregate. */
+    const aud36 = renderAuditInline();
+    ok("[R36.5] the review carries an Applied-automatically block that opens to its rows",
+       /5b · Applied automatically/.test(aud36) && /data-drill="auto:log"/.test(aud36)
+       && (DRILLS.get("auto:log").rows || []).length === autoApplied(0).length
+       && /Undo an add from the basket/.test(DRILLS.get("auto:log").note || "")
+       && /drops deliberately do not|Coherence <b>drops<\/b> deliberately do not/.test(DRILLS.get("auto:log").note || ""),
+       aud36.slice(aud36.indexOf("5b ·"), aud36.indexOf("5b ·") + 300));
+    /* Poll-driven, never render-driven (R34.1 applies to this too). */
+    DB.clusters = [{ id: 363, name: "poll-basket", members: [9001, 9002, 9003], capPct: null, story: "",
+                     src: "manual", confirmedAt: now36, mclass: {} }];
+    DB.cohProps = [Object.assign(mkProp36("add", 9004, "t"), { basketId: 363 })];
+    S.tab = "review"; S.sub = "log";
+    accrueBackground();   // no render call at all
+    ok("[R36.6] auto-application rides the poll — which tab you are on never decides whether a basket recomposes",
+       DB.clusters.find(c => c.id === 363).members.includes(9004),
+       JSON.stringify(DB.clusters.find(c => c.id === 363).members));
+    DB.clusters = []; DB.cohProps = []; DB.decisionLog = []; DB.seedAt = {}; DB.sibBorn = {}; DB.audRuled = {};
+    S.items = S.items.filter(x => x.i !== 9004); S.byId.delete(9004);
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    setTab("home");
+  } catch(e){
+    out.push("FAIL auto-applied bookkeeping :: " + (e && e.stack || e));
+  }
+  try {
+    /* ═══ R37 — OBSERVED-SHARE FLOOR (user ruling, Aug 11 2026) ═══
+       A trip that opens and closes inside one observation window is tape
+       coincidence, not a test of patient-fill behaviour. Below the floor it
+       is RECORDED AND VISIBLE but excluded from every verdict, and each
+       aggregate states its excluded count. */
+    const now37 = Date.now();
+    DB.shadowBook = []; DB.strataStats = {}; DB.shadowDivLog = []; DB.shadowExceptions = [];
+    S.drillOpen = new Set(); S.drillUI = new Map();
+    let seq37 = 1;
+    const H37 = FILLH() * 3600e3;
+    const mk37 = (id, state, net, obsFrac, gate, extra) => Object.assign({
+      id: 37000 + seq37++, fam: "f37:" + seq37, itemId: id, name: itemName(id), qty: 10, bid: 4001, ask: 4399,
+      t: now37 - 8 * 86400e3, buyQ: state === "unfilled" ? 0 : 10, sellQ: state === "filled" ? 10 : 0,
+      buyQFull: state === "unfilled" ? 0 : 10, buyDone: state === "unfilled" ? 0 : 1,
+      obsMs: Math.round(H37 * obsFrac), lastObs: now37, state: state,
+      closedAt: now37 - 86400e3, net: net, benchedBy: gate ? [gate] : undefined, regimes: ["current"] }, extra || {});
+    ok("[R37.1] the floor is 25% of the fill horizon, and the three states are distinct",
+       SHADOW_MIN_OBS === 0.25
+       && shadowCounts(mk37(9001, "filled", 100, 0.25, "ROI floor"))
+       && shadowThin(mk37(9001, "filled", 100, 0.24, "ROI floor"))
+       && !shadowCounts(mk37(9001, "filled", 100, 0.02, "ROI floor"))
+       && !shadowThin({ state: "unobserved", obsMs: 0 })
+       && !shadowThin({ state: "open", obsMs: 0 }),
+       JSON.stringify({ floor: SHADOW_MIN_OBS }));
+    /* Four counted trips (2 filled, 2 unfilled) and three thin ones whose
+       net would flip the gate's verdict if they leaked in. */
+    for (let i = 0; i < 2; i++) DB.shadowBook.push(mk37(9001, "filled", 5000, 0.9, "ROI floor"));
+    for (let i = 0; i < 2; i++) DB.shadowBook.push(mk37(9001, "unfilled", 0, 0.9, "ROI floor"));
+    for (let i = 0; i < 3; i++) DB.shadowBook.push(mk37(9002, "filled", 900000, 0.02, "ROI floor"));
+    const g37 = shadowByGate().get("ROI floor");
+    ok("[R37.1] gate-tuning aggregates count observed trips only — a thin trip cannot move the verdict",
+       g37.n === 4 && g37.thin === 3 && g37.filled === 2 && g37.unfilled === 2 && g37.net === 10000,
+       JSON.stringify({ n: g37.n, thin: g37.thin, filled: g37.filled, net: g37.net }));
+    const gs37 = paperGateSection();
+    ok("[R37.1] the per-gate table states the excluded count and opens it to the excluded trips",
+       /data-drill="paper:gate:ROI floor:thin"[^>]*>3</.test(gs37) && /Excluded<\/th>/.test(gs37),
+       gs37.slice(gs37.indexOf("<tbody"), gs37.indexOf("<tbody") + 400));
+    setTab("trade", "paper"); renderAll();
+    /* Guarded, not asserted through: a missing face must fail THIS assertion
+       by name rather than throwing and taking the rest of the block with it. */
+    const bThin = Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === "paper:gate:ROI floor:thin");
+    if (bThin) bThin.click();
+    const boxThin = bThin ? document.getElementById(drillId("paper:gate:ROI floor:thin")) : null;
+    const tb37 = boxThin && boxThin.getElementsByTagName("tbody")[0];
+    ok("[R37.2] excluded trips stay VISIBLE and openable — recorded, not discarded",
+       !!boxThin && boxThin.offsetParent !== null && tb37 && tb37.rows.length === 3
+       && /insufficient observation/.test(boxThin.innerHTML),
+       boxThin ? boxThin.innerHTML.slice(0, 200) : "no excluded-count face rendered at all");
+    if (bThin) bThin.click();
+    /* Interrogability: an exclusion COUNT is itself an aggregate, so it must
+       open to its rows like any other number rather than being a bare figure
+       the operator has to take on trust. */
+    ok("[R37.2] every excluded count opens to the trips behind it — on the gate tree, the cohort ledger and the hours table",
+       /data-drill="thin:gate:ROI floor"/.test(gateStreamsSection())
+       && (() => { DB.shadowBook = [mk37(9001, "filled", 100, 0.02, null, {})];
+                   const c = paperCohortSection();
+                   DB.shadowBook = [];
+                   return /data-drill="thin:coh:watchlist"/.test(c); })(),
+       gateStreamsSection().slice(0, 200));
+    for (let i = 0; i < 2; i++) DB.shadowBook.push(mk37(9001, "filled", 5000, 0.9, "ROI floor"));
+    for (let i = 0; i < 2; i++) DB.shadowBook.push(mk37(9001, "unfilled", 0, 0.9, "ROI floor"));
+    for (let i = 0; i < 3; i++) DB.shadowBook.push(mk37(9002, "filled", 900000, 0.02, "ROI floor"));
+    ok("[R37.2] every trip row names its own observed share, so an excluded row explains itself",
+       paperTripRows(DB.shadowBook.filter(shadowThin)).every(r => /insufficient observation/.test(r.obs))
+       && paperTripRows(DB.shadowBook.filter(shadowCounts)).every(r => !/insufficient observation/.test(r.obs)));
+    /* Exception-lane evidence: three fat-net thin trips must not qualify an
+       item that has nothing observed behind it. */
+    DB.shadowBook = [];
+    for (let i = 0; i < 6; i++) DB.shadowBook.push(mk37(9003, "filled", 90000, 0.02, "ROI floor",
+      { t: now37 - (16 - 2 * i) * 86400e3, closedAt: now37 - (15 - 2 * i) * 86400e3 }));
+    ok("[R37.3] exception-lane evidence ignores thin trips — six of them ground nothing",
+       exceptionEvidence(9003) === null && exceptionProposals().length === 0,
+       JSON.stringify({ slice: shadowSlice(9003, true) && { n: shadowSlice(9003, true).n, thin: shadowSlice(9003, true).thin } }));
+    ok("[R37.3] the row cite says the screen has no reading rather than reporting a null result",
+       /insufficient observation, so the screen has no reading/.test(shadowCite(9003)), shadowCite(9003));
+    for (let i = 0; i < 6; i++) DB.shadowBook.push(mk37(9003, "filled", 90000, 0.9, "ROI floor",
+      { t: now37 - (16 - 2 * i) * 86400e3, closedAt: now37 - (15 - 2 * i) * 86400e3 }));
+    ok("[R37.3] the same item qualifies once six OBSERVED trips exist — the floor gates evidence, it does not ban the item",
+       !!exceptionEvidence(9003), JSON.stringify(shadowSlice(9003, true)));
+    /* Regime curves and the per-stratum ledger. */
+    DB.shadowBook = [mk37(9001, "filled", 500000, 0.02, null, { regimes: ["current"] })];
+    DB.shadowDivLog = [];
+    shadowTick();
+    const snap37 = (DB.shadowDivLog || [])[0];
+    ok("[R37.4] the regime ledger's daily snapshot excludes thin trips — a fast fill cannot argue for a gate change",
+       !!snap37 && snap37.cur === 0, JSON.stringify(snap37));
+    DB.shadowBook = [mk37(9001, "filled", 7000, 0.9, null, { slice: 1, stratum: "equip:ring" }),
+                     mk37(9002, "filled", 500000, 0.02, null, { slice: 1, stratum: "equip:ring" })];
+    DB.strataStats = {};
+    shadowTick();
+    const st37 = DB.strataStats["equip:ring"];
+    ok("[R37.4] the durable per-stratum ledger rolls thin trips into their own counter, never the region's verdict",
+       !!st37 && st37.trips === 1 && st37.net === 7000 && st37.insuf === 1,
+       JSON.stringify(st37 && { trips: st37.trips, net: st37.net, insuf: st37.insuf }));
+    setTab("trade", "prospect"); renderAll();
+    ok("[R37.4] the stratum row states the exclusion and opens it",
+       /data-drill="prosp:equip:ring:insuf"[^>]*>1</.test(document.querySelector("#prospectStrata").innerHTML)
+       && /Excluded<\/th>/.test(document.querySelector("#prospectStrata").innerHTML),
+       document.querySelector("#prospectStrata").innerHTML.slice(0, 200));
+    setTab("home");
+    DB.shadowBook = []; DB.strataStats = {}; DB.shadowDivLog = []; DB.shadowExceptions = [];
+    S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL observed-share floor :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

@@ -433,10 +433,6 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>Hours ledger</h2><span class="sub">market stream (unbiased) vs paper stream (presence-biased)</span></div>
       <div id="prospectHours"></div>
     </div>
-    <div class="panel" id="prospectRecipePanel">
-      <div class="ph"><h2>Recipe basis</h2><span class="sub">output at ask net of tax − inputs at bid (the patient convention)</span></div>
-      <div id="prospectRecipe"></div>
-    </div>
   </div>
 
   <!-- ── gate health sub-view: two streams per gate, die-off episodes, and
@@ -818,6 +814,12 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <span class="note" style="align-self:center;max-width:600px" id="slvBudgetNote"></span>
       </div>
       <div id="slvBody"></div>
+      <!-- Thesis health, realized exits and the separated sleeve stats:
+           relocated here from the weekly review (user ruling, Aug 11 2026).
+           The health lights are only settable here, so this block is the
+           machinery, not a report about it — it belongs where the positions
+           are, on the tab visited after an import. -->
+      <div id="slvHealth"></div>
       <div class="note" style="margin-top:8px">
         <b>Judged at exit, not at the mark.</b> The sleeve proposes and surfaces SELL cards when exit rungs arm;
         you execute in-game and confirm every fill. Sleeve gp never blends into a flipping metric — no shared
@@ -1019,6 +1021,20 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         <tbody id="tgtBody"></tbody>
       </table></div>
     </div>
+    </div>
+
+    <!-- Attention & dormancy: DEMOTED from a standing review section to an
+         on-demand action (user ruling, Aug 11 2026). Not deleted — it is the
+         mechanism that catches surfaces that stopped being used, which is
+         exactly why several cut sections sat unread for a week. A report
+         that renders on every visit becomes the wallpaper it exists to
+         detect; pressing for it is the point. -->
+    <div class="panel" id="attnPanel">
+      <div class="ph"><h3>Attention &amp; dormancy</h3>
+        <span class="sub">on demand — the check that catches surfaces you stopped using</span>
+        <span style="margin-left:auto"><button class="sm" id="attnRun" title="Runs the walk-up decision-count trend against its ≤7 budget and the 90-day dormancy report. Nothing is applied — demotions are ratified like anything else.">▸ run the report</button></span>
+      </div>
+      <div id="attnBody"><div class="note">Press to run. Reports the walk-up decision-count trend against its ≤7 budget, features untouched for 90+ days proposed for demotion, and any tier assignment your usage contradicts. Advisory: nothing here demotes or deletes anything on its own.</div></div>
     </div>
   </section>
 
@@ -1255,8 +1271,6 @@ let DB = {
   shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
   shadowExceptions: [], // PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,mkAdverse?,divergence?}] — active = probation (half size, 2× tick floor; 3 real trips adjudicate on net P&L AND adverse markout, ruled Aug 11 2026); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on paper screening alone — screening ranks candidates for the live test; realized trips are the only path to a waiver.
   strataStats: {},    // POND PROSPECTING (user-directed Aug 11 2026): per-stratum discovery ledger, key → {ids:[distinct item ids seen, capped],samp,nm,pass,trips,filled,net,first} — durable across the paper book's 30d pruning, so the quarterly "which pond regions hold edge" map is answerable with a ledger instead of a hunch; observation only, admits nothing
-  recipeLog: {},      // CRAFTING BASIS (user-directed Aug 11 2026): recipe key → [{d,m,l:[leg prices]}] daily readings, 31d — m = patient processing margin (output ask net of tax minus input bids); the baseline a 2× break is measured against, and the per-leg attribution when one breaks
-  recipeFlags: [],    // basis breaks [{k,name,at,m,base,leg}] — 30d retention; a flip signal on the mispriced leg AND a manipulation tell (pumps distort one leg of a recipe before the other); advisory, sizes nothing
   shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
@@ -1287,10 +1301,10 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions","recipeFlags"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog","strataStats","recipeLog"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog","strataStats"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
     if (!Array.isArray(DB.cohProps)) DB.cohProps = [];
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time (sustained qualification, Aug 10 2026): items already on the
@@ -2105,7 +2119,6 @@ async function doRefresh(opts = {}){
     accrueBackground();   // plan-driven ledgers ride the POLL, not a render path — tab-independent by construction
     runScout();
     scannerShadowScan();   // scanner paper cohort — self-throttled to the scout cadence, polite-budgeted
-    try { recipeTick(); } catch(e){}   // crafting basis rides the /latest bulk fetch — no new requests
     /* The 7-day chart drives the trend, momentum and volume-trend gates, but
        nothing refreshed it on a timer — a tab left open for a fortnight kept
        judging today's prices against a chart fetched at boot. fillSparks is
@@ -5037,6 +5050,43 @@ const shadowOpen = () => DB.shadowBook.filter(p => p.state === "open");
    excluded from every aggregate — a hole in the record is not a result
    (audit fix, Aug 11 2026). They are still counted and reported as holes. */
 const shadowResolved = p => p.state !== "open" && p.state !== "unobserved";
+/* ═══ OBSERVED-SHARE FLOOR (user ruling, Aug 11 2026) ═══
+   A trip that opens and closes inside a single observation window has not
+   tested patient-fill behavior — it is tape coincidence, and it must not
+   carry the evidentiary weight of a trip that survived a real horizon.
+   Below the floor a trip is RECORDED AND VISIBLE but excluded from every
+   verdict: gate-tuning aggregates, exception-lane evidence, the regime
+   curves, per-stratum verdicts, the row dot, the hours ledger's fill rate.
+   Each aggregate states how many it excluded — a silent exclusion would be
+   the same defect as a silent inclusion.
+   The floor is a strategy parameter and moves only on the user's word; 25%
+   is the value they set when ruling this ("e.g. ≥25%" — taken as ruled, and
+   one constant to change). NOT the same thing as `unobserved`, which is a
+   trip whose horizon elapsed with the tab closed and which was never a
+   result at all. Three states, three names: counted, insufficient
+   observation, unobserved hole. */
+const SHADOW_MIN_OBS = 0.25;
+const shadowObsShare = p => Math.min(1, (p.obsMs || 0) / Math.max(1, FILLH() * 3600e3));
+const shadowObsPct = p => Math.round(shadowObsShare(p) * 100);
+const shadowThin = p => shadowResolved(p) && shadowObsShare(p) < SHADOW_MIN_OBS;
+/* The predicate every VERDICT reads. `shadowResolved` still means "closed";
+   `shadowCounts` means "closed AND observed enough to mean something". */
+const shadowCounts = p => shadowResolved(p) && shadowObsShare(p) >= SHADOW_MIN_OBS;
+/* Standing sentence for any aggregate reporting an exclusion. The count is
+   itself an aggregate, so it opens to its rows like every other number
+   (interrogability scan, Aug 11 2026) — a bare "3 excluded" would be a
+   number the operator cannot audit, which is the defect this tool refuses. */
+function thinNote(n, key, trips){
+  if (!n) return '';
+  const face = '(' + n + ' excluded — insufficient observation, under ' + Math.round(SHADOW_MIN_OBS * 100) + '% of the horizon)';
+  if (!key || !trips) return ' <span class="dim">' + face + '</span>';
+  return ' <span class="dim">' + drill("thin:" + key, face, {
+    head: "trips excluded from this number — closed inside one observation window",
+    cols: PAPER_TRIP_COLS, rows: paperTripRows(trips),
+    empty: "No excluded trips.",
+    note: 'A trip that opened and closed inside one observation window did not test patient-fill behaviour — tape coincidence, not evidence. Recorded and shown here, excluded from the verdict beside it.'
+  }) + '</span>';
+}
 /* EPOCH NOTICE (user ruling, Aug 11 2026). After the purge the book is empty,
    and an empty book looks exactly like a broken one. Until the machinery
    could actually produce a verdict again — 7 daily regime readings AND
@@ -5305,15 +5355,24 @@ function shadowTick(){
   for (const p of DB.shadowBook){
     if (p.state === "open" || p.state === "unobserved" || p.rolled || !p.stratum) continue;
     const st = strataStat(p.stratum);
-    st.trips++; st.net += (p.net || 0);
-    if (p.state === "filled" || p.state === "forced-exit") st.filled++;
+    /* Observed-share floor (ruled Aug 11 2026): a thin trip rolls into its
+       OWN durable counter, never into the region's verdict numbers — the
+       stratum row then states how many it excluded rather than hiding them. */
+    if (shadowCounts(p)){
+      st.trips++; st.net += (p.net || 0);
+      if (p.state === "filled" || p.state === "forced-exit") st.filled++;
+    } else {
+      st.insuf = (st.insuf || 0) + 1;
+    }
     p.rolled = 1; changed = true;
   }
   DB.shadowBook = DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < 30 * 86400e3).slice(-300);
   /* Daily regime snapshot: 30d cumulative simulated net per regime — the
      divergence ledger the proposal engine's persistence rule reads. */
   const d = today();
-  const reg = r => DB.shadowBook.filter(p => shadowResolved(p) && (p.regimes || []).includes(r))
+  /* Observed-share floor (ruled Aug 11 2026): the regime curves are a
+     verdict about gate settings, so thin trips never enter them. */
+  const reg = r => DB.shadowBook.filter(p => shadowCounts(p) && (p.regimes || []).includes(r))
     .reduce((a, p) => a + (p.net || 0), 0);
   const snap = { d, cur: reg("current"), loose: reg("loose"), tight: reg("tight") };
   const last = DB.shadowDivLog[DB.shadowDivLog.length - 1];
@@ -5364,17 +5423,20 @@ function shadowByGate(){
      question on its own ledger line; populations never mix in a gate read. */
   for (const p of DB.shadowBook.filter(p => shadowResolved(p) && p.benchedBy && p.benchedBy.length && p.cohort !== "scanner")){
     const g = p.benchedBy[0];
-    if (!byGate.has(g)) byGate.set(g, { arr: [] });
-    byGate.get(g).arr.push(p);
+    if (!byGate.has(g)) byGate.set(g, { arr: [], thinArr: [] });
+    /* Observed-share floor (ruled Aug 11 2026): thin trips stay on the
+       record and stay openable, but no verdict number is built from them. */
+    (shadowCounts(p) ? byGate.get(g).arr : byGate.get(g).thinArr).push(p);
   }
   for (const s of byGate.values()){
     s.n = s.arr.length;
+    s.thin = s.thinArr.length;
     s.filled = s.arr.filter(p => p.state === "filled").length;
     s.forced = s.arr.filter(p => p.state === "forced-exit").length;
     s.unfilled = s.arr.filter(p => p.state === "unfilled").length;
     s.filledFull = s.arr.filter(shadowFullFilled).length;   // the 100%-participation reading, reported beside the conservative one
     s.net = s.arr.reduce((a, p) => a + (p.net || 0), 0);
-    s.obsMed = medianOf(s.arr.map(p => Math.min(100, Math.round((p.obsMs || 0) / (FILLH() * 3600e3) * 100))));
+    s.obsMed = medianOf(s.arr.map(shadowObsPct));
   }
   return byGate;
 }
@@ -5428,7 +5490,7 @@ function paperTripRows(trips){
       qty: full(p.qty), _qty: p.qty || 0,
       tape: full(p.buyQ || 0) + " of " + full(p.qty) + " bought at " + shadowPartPct() + "% participation"
         + (p.buyQFull != null ? " · " + full(p.buyQFull) + " at 100%" : " · 100% reading not retained on this record"),
-      obs: obs + "% of horizon", _obs: obs,
+      obs: obs + "% of horizon" + (shadowThin(p) ? " — insufficient observation" : ""), _obs: obs,
       outcome,
       net: '<span class="' + sign(p.net || 0) + '">' + gp(Math.round(p.net || 0)) + '</span>', _net: Math.round(p.net || 0),
       regime: (p.regimes && p.regimes.length) ? p.regimes.join(" + ") : "—",
@@ -5439,7 +5501,8 @@ function paperTripRows(trips){
   });
 }
 const PAPER_NOTE = () => 'Every row here is <b>simulated</b>: the honest-fill model credits a buy only when the tape printed at or below the bid <em>while the tracker was observing</em>, capture-capped and then haircut to '
-  + shadowPartPct() + '% participation, with the 100% reading beside it. <b>Observed</b> is the share of the fill horizon actually watched — an unobserved window is unknown, not unfilled. The sim assumes a book you are not in; thin books change when you post. Screening evidence, never a verdict.';
+  + shadowPartPct() + '% participation, with the 100% reading beside it. <b>Observed</b> is the share of the fill horizon actually watched — an unobserved window is unknown, not unfilled. Trips under <b>'
+  + Math.round(SHADOW_MIN_OBS * 100) + '%</b> observed read <b>insufficient observation</b>: they opened and closed inside one observation window, which is tape coincidence rather than a test of patient-fill behavior, so they are kept and shown here but excluded from every verdict. The sim assumes a book you are not in; thin books change when you post. Screening evidence, never a verdict.';
 
 /* ═══ PAPER ↔ ROW INTEGRATION (ruled Aug 11 2026) ═══
    Route existing evidence to the point of decision — no new collection.
@@ -5453,9 +5516,17 @@ const SLICE_SHADOW_CAP = 5;      // discovery-slice paper entries per cycle (rul
 function shadowSlice(id, exclScanner){
   /* exclScanner (exception lane only): scanner-cohort trips nominate scout
      ADMISSION, never probation — the funnel moves one stage per ruling. */
-  const closed = (DB.shadowBook || []).filter(p => p.itemId === id && shadowResolved(p)
+  const all = (DB.shadowBook || []).filter(p => p.itemId === id && shadowResolved(p)
     && (!exclScanner || p.cohort !== "scanner"));
-  if (!closed.length) return null;
+  /* Observed-share floor (ruled Aug 11 2026): the slice's verdict numbers
+     are built from observed trips only; the thin ones are counted, named
+     and kept openable so the exclusion is never silent. */
+  const closed = all.filter(shadowCounts);
+  const thinArr = all.filter(shadowThin);
+  if (!all.length) return null;
+  if (!closed.length)
+    return { n: 0, thin: thinArr.length, thinArr, all, bought: 0, boughtFull: 0, unfilled: 0, net: 0,
+      fillRate: 0, regs: [], spanD: 0, obsMed: medianOf(thinArr.map(shadowObsPct)) || 0, last: [] };
   const bought = closed.filter(p => p.state === "filled" || p.state === "forced-exit").length;
   const boughtFull = closed.filter(shadowFullFilled).length;   // 100%-participation reading — always reported beside the conservative one
   const net = closed.reduce((a, p) => a + (p.net || 0), 0);
@@ -5463,9 +5534,10 @@ function shadowSlice(id, exclScanner){
     : (p.regimes && p.regimes.length) ? p.regimes
     : (p.benchedBy && p.benchedBy.length) ? ["bench: " + p.benchedBy[0]] : ["discovery"]))];
   const spanD = (Math.max(...closed.map(p => p.closedAt || p.t)) - Math.min(...closed.map(p => p.t))) / 86400e3;
-  return { n: closed.length, bought, boughtFull, unfilled: closed.length - bought, net,
+  return { n: closed.length, thin: thinArr.length, thinArr, all, bought, boughtFull,
+    unfilled: closed.length - bought, net,
     fillRate: bought / closed.length, regs, spanD,
-    obsMed: medianOf(closed.map(p => Math.min(100, Math.round((p.obsMs || 0) / (FILLH() * 3600e3) * 100)))),
+    obsMed: medianOf(closed.map(shadowObsPct)),
     last: closed.slice(-5) };
 }
 /* Toxic-flow verdict per item — the same math the weekly mkcap verdicts use,
@@ -5491,12 +5563,20 @@ function shadowCite(id){
   /* Reweight ruling (Aug 11 2026): the screen never claims evidence — a
      positive slice reads as a probation candidate, and the cite quotes the
      conservative participation reading with the 100% reading beside it. */
+  /* Observed-share floor (ruled Aug 11 2026): with nothing observed
+     enough to count, the cite says so rather than reading as a null result. */
+  if (!s.n)
+    return " (paper screen: " + s.thin + " closed trip" + (s.thin === 1 ? "" : "s")
+      + ", all under " + Math.round(SHADOW_MIN_OBS * 100)
+      + "% of the horizon observed — insufficient observation, so the screen has no reading on this one)";
   const verdict = s.net <= 0
     ? (s.bought === 0 ? "bench agrees — it would not even have filled" : "bench agrees")
     : "screening: probation candidate — a live half-size test decides, not the sim";
   return " (paper screen: " + s.n + " trip" + (s.n === 1 ? "" : "s") + ", would-have-filled " + s.bought
     + " at " + shadowPartPct() + "% participation" + (s.boughtFull !== s.bought ? " (" + s.boughtFull + " at 100%)" : "")
-    + ", net " + gp(Math.round(s.net)) + " sim — " + verdict + ")";
+    + ", net " + gp(Math.round(s.net)) + " sim"
+    + (s.thin ? " (" + s.thin + " more excluded — insufficient observation)" : "")
+    + " — " + verdict + ")";
 }
 
 /* ═══ PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026) ═══
@@ -5699,7 +5779,11 @@ function paperCaveat(){
     + 'This view\'s output is a ranked shortlist of probation candidates for live half-size tests (the exception lane); realized trips remain the only path to a waiver. '
     + 'Fills claimed at ' + shadowPartPct() + '% participation of the tape that crossed each price (setting), 100%-participation reading beside it.</div>';
 }
-const paperClosed = () => (DB.shadowBook || []).filter(shadowResolved);
+/* Verdict population vs full record: paperClosed is what NUMBERS are
+   built from (observed-share floor, ruled Aug 11 2026); paperThin is what
+   was excluded, kept openable so the exclusion is never silent. */
+const paperClosed = () => (DB.shadowBook || []).filter(shadowCounts);
+const paperThin = () => (DB.shadowBook || []).filter(shadowThin);
 const REGIME_DEFS = () => [
   { key: "current", col: "cur",   lab: "current (" + GATE.roi + "%)" },
   { key: "loose",   col: "loose", lab: "loose (" + (GATE.roi * SHADOW_LOOSE).toFixed(1) + "%)" },
@@ -5732,6 +5816,7 @@ function paperRegimeSection(){
     + 'The headline is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger.</div>');
   bits.push('<div class="curves">' + regs.map(r => {
     const arr = closed.filter(p => (p.regimes || []).includes(r.key));
+    const thinReg = paperThin().filter(p => (p.regimes || []).includes(r.key)).length;
     const net = arr.reduce((a, p) => a + (p.net || 0), 0);
     const face = '<span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span>';
     return '<div class="curve" data-drillrow="1"><div class="k">' + esc(r.lab) + '</div><div class="v">'
@@ -5742,8 +5827,9 @@ function paperRegimeSection(){
           note: PAPER_NOTE() + ' The curve is the daily cumulative ledger (31 readings retained); this table is the trips still in the book, which prunes closed trips after 30 days.'
         })
       + '</div>' + curveSVG(log.map(x => Number(x[r.col]) || 0), lo, hi, 200, 40)
-      + '<div class="dim" style="font-size:11px;margin-top:3px">' + arr.length + ' closed trip' + (arr.length === 1 ? '' : 's')
-      + ' in the book · ' + log.length + ' daily reading' + (log.length === 1 ? '' : 's') + '</div></div>';
+      + '<div class="dim" style="font-size:11px;margin-top:3px">' + arr.length + ' counted trip' + (arr.length === 1 ? '' : 's')
+      + ' in the book · ' + log.length + ' daily reading' + (log.length === 1 ? '' : 's')
+      + (thinReg ? ' · ' + thinReg + ' excluded (insufficient observation)' : '') + '</div></div>';
   }).join("") + '</div>');
   /* The divergence ledger itself — the persistence rule's raw evidence. */
   const ledRows = log.slice().reverse().map(x => {
@@ -5793,7 +5879,12 @@ function paperGateSection(){
       + '<td>' + cell(g, "rate", rate + "%", 'fill rate — the outcome of each trip that produced it', s.arr) + '</td>'
       + '<td class="' + sign(s.net) + '">' + cell(g, "net", gp(Math.round(s.net)), 'net simulated after tax — every trip and its contribution', s.arr) + '</td>'
       + '<td>' + cell(g, "obs", s.obsMed + "%", 'median share of the fill horizon actually observed — unobserved windows are unknown, not unfilled', s.arr,
-          'Sort by Observed to see which verdicts rest on a watched horizon and which rest on a hole.') + '</td></tr>';
+          'Sort by Observed to see which verdicts rest on a watched horizon and which rest on a hole.') + '</td>'
+      + '<td>' + (s.thin
+          ? cell(g, "thin", String(s.thin), 'EXCLUDED from every number in this row — closed under ' + Math.round(SHADOW_MIN_OBS * 100)
+              + '% of the horizon observed, which is tape coincidence rather than a patient-fill test', s.thinArr,
+              'These trips are on the record and openable here precisely so the exclusion is visible. They count toward nothing above.')
+          : '<span class="dim">0</span>') + '</td></tr>';
   }).join("");
   bits.push('<div class="tw"><table id="paperGateTable"><thead><tr>'
     + '<th>Gate</th><th title="Closed paper trips this gate benched, alone">Benched</th>'
@@ -5802,7 +5893,8 @@ function paperGateSection(){
     + '<th title="Would-not-have-filled: the bid never got the tape. That is the data, not a gap in it.">Would not</th>'
     + '<th title="Filled (including forced exits) as a share of closed trips">Fill rate</th>'
     + '<th title="Simulated net after GE tax across the gate\'s closed trips">Net sim</th>'
-    + '<th title="Median share of the fill horizon observed — unobserved windows are unknown, not unfilled">Observed</th></tr></thead>'
+    + '<th title="Median share of the fill horizon observed — unobserved windows are unknown, not unfilled">Observed</th>'
+    + '<th title="Closed trips excluded from this row: under the observed-share floor, so tape coincidence rather than a patient-fill test. Recorded, openable, counted toward nothing.">Excluded</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table></div>');
   bits.push('<div class="dim" style="margin-top:6px">A gate whose benched trips would have filled AND netted positive is a candidate for a proposal — never a change. '
     + 'The combined verdict needs the realized stream too, which lives in <a href="#" data-goto="gates#gateStreamPanel">Gate Health</a>.</div>');
@@ -5850,7 +5942,9 @@ function paperCohortSection(){
   const cohorts = ["watchlist", "slice", "slice·clean", "gap band", "scanner·T1", "scanner·T2"];
   const seen = new Map();
   for (const p of closed) seen.set(paperCohortOf(p), (seen.get(paperCohortOf(p)) || []).concat([p]));
-  lines.push('<div class="nexthead"><b>Cohort ledger</b> — one line per population, whether or not it has trips.</div>');
+  const thinByCoh = new Map();
+  for (const p of paperThin()) thinByCoh.set(paperCohortOf(p), (thinByCoh.get(paperCohortOf(p)) || 0) + 1);
+  lines.push('<div class="nexthead"><b>Cohort ledger</b> — one line per population, whether or not it has trips. Counts are trips that cleared the observed-share floor; anything excluded is stated beside them.</div>');
   for (const c of cohorts){
     const arr = seen.get(c) || [];
     const net = arr.reduce((a, p) => a + (p.net || 0), 0);
@@ -5861,7 +5955,8 @@ function paperCohortSection(){
           note: PAPER_NOTE()
         })
       + (arr.length ? ', net <span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span> sim' : '')
-      + (arr.length ? '' : ' <span class="dim">— nothing has closed in this cohort yet</span>') + '</div>');
+      + thinNote(thinByCoh.get(c) || 0, "coh:" + c, paperThin().filter(p => paperCohortOf(p) === c))
+      + (arr.length || (thinByCoh.get(c) || 0) ? '' : ' <span class="dim">— nothing has closed in this cohort yet</span>') + '</div>');
   }
   /* Holes are reported, never quietly excluded. */
   const holes = (DB.shadowBook || []).filter(p => p.state === "unobserved");
@@ -5872,7 +5967,17 @@ function paperCohortSection(){
         empty: "No holes — every trip in the book had its horizon observed.",
         note: 'A hole in the record is not a result. These are counted and shown here precisely so the aggregates above can honestly exclude them.'
       })
-    + ' <span class="dim">— counted, excluded from every verdict, and shown here rather than silently dropped.</span></div>');
+    + ' <span class="dim">— horizon elapsed with the tab closed; never a result at all.</span></div>');
+  const thinAll = paperThin();
+  lines.push('<div data-drillrow="1">Insufficient observation: '
+    + drill("paper:thin", String(thinAll.length), {
+        head: "closed trips excluded from every verdict — under the observed-share floor",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(thinAll),
+        empty: "No trips fell under the observed-share floor.",
+        note: 'These opened and closed inside a single observation window, so they record tape coincidence rather than patient-fill behaviour. They are kept and openable here, and excluded from gate tuning, exception-lane evidence, the regime curves and the per-stratum verdicts. The floor is '
+          + Math.round(SHADOW_MIN_OBS * 100) + '% of the fill horizon — a strategy parameter, changed only on your word.'
+      })
+    + ' <span class="dim">— closed too fast to have tested anything; excluded from every verdict, shown here rather than silently dropped.</span></div>');
   return lines.join("");
 }
 /* The weekly review's one-line read of this surface (ruled Aug 11 2026:
@@ -5916,17 +6021,25 @@ function hoursLedger(){
     for (let h = 0; h < 24; h++)
       if (sp.roiHour[h] != null){ mkt[h] += sp.roiHour[h]; mktN[h]++; srcs[h].push({ id: w.id, name: itemName(w.id), roi: sp.roiHour[h] }); }
   }
-  const closed = (DB.shadowBook || []).filter(shadowResolved);
-  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0, trips: [] }));
+  /* Observed-share floor (ruled Aug 11 2026): an hour's fill rate is a
+     verdict about that hour, so thin trips are counted separately and
+     reported, never folded into the rate. */
+  const closed = (DB.shadowBook || []).filter(shadowCounts);
+  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0, trips: [], thin: 0, thinTrips: [] }));
   for (const p of closed){
     const h = new Date(p.t).getHours();
     sh[h].n++; sh[h].net += (p.net || 0); sh[h].trips.push(p);
     if (p.state === "filled" || p.state === "forced-exit") sh[h].filled++;
   }
+  for (const p of (DB.shadowBook || []).filter(shadowThin)){
+    const h = new Date(p.t).getHours();
+    sh[h].thin++; sh[h].thinTrips.push(p);
+  }
   const rows = [];
   for (let h = 0; h < 24; h++)
     rows.push({ h, mkt: mktN[h] ? mkt[h] / mktN[h] : null, items: mktN[h], srcs: srcs[h],
       n: sh[h].n, filled: sh[h].filled, net: sh[h].net, trips: sh[h].trips,
+      thin: sh[h].thin, thinTrips: sh[h].thinTrips,
       fillRate: sh[h].n ? sh[h].filled / sh[h].n : null });
   return rows;
 }
@@ -5965,7 +6078,9 @@ function hoursLedgerInline(){
       empty: "No watched item has an hourly reading for this hour.",
       note: 'The market stream is computed from the 168-point hourly series each watched item already fetches, so <b>every hour is equally represented whether or not the tracker was open</b>. It is the unbiased stream, and it makes no claim about whether those spreads are fillable.'
     });
-    const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n) : '<span class="dim">no data — never observed</span>';
+    const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n)
+      : r.thin ? '<span class="dim">no counted trips</span>'
+      : '<span class="dim">no data — never observed</span>';
     const shCell = r.n ? drill("hours:sh:" + r.h, shFace, {
       head: hh(r.h) + " paper stream — the simulated trips opened in this hour",
       cols: PAPER_TRIP_COLS, rows: paperTripRows(r.trips),
@@ -5973,7 +6088,7 @@ function hoursLedgerInline(){
       note: PAPER_NOTE() + ' This stream accrues only while the tracker is OBSERVING, so it is biased toward the hours you keep it open; an hour with no rows is unobserved, not bad.'
     }) : shFace;
     return '<tr><td style="text-align:left">' + hh(r.h) + '</td><td>' + mktCell + '</td><td>' + r.items + '</td>'
-      + '<td>' + shCell + '</td><td class="' + sign(r.net) + '">' + (r.n ? gp(Math.round(r.net)) : "—") + '</td></tr>';
+      + '<td>' + shCell + thinNote(r.thin, "hour:" + r.h, r.thinTrips) + '</td><td class="' + sign(r.net) + '">' + (r.n ? gp(Math.round(r.net)) : "—") + '</td></tr>';
   }).join("");
   lines.push('<div class="tw"><table id="hoursTable"><thead><tr><th>Hour</th>'
     + '<th title="Post-tax spread averaged across watched items — presence-independent, the unbiased stream">Market spread</th>'
@@ -6004,169 +6119,22 @@ function hoursLedgerInline(){
   return '<div class="inline">' + lines.join("") + '</div>';
 }
 
-/* ═══ CRAFTING-SPREAD MONITOR (user-directed, Aug 11 2026) ═══
-   The family map knows recipes; nothing traded them. This watches the
-   PROCESSING BASIS on high-volume recipes — outputs minus inputs minus tax —
-   and flags when it breaks wide. Not to make anyone a crafter: a wide basis
-   is simultaneously a flip signal on the mispriced leg and a manipulation
-   tell, because a pump distorts one leg of a recipe before the other.
-   Recipes resolve BY NAME against the live mapping rather than hardcoded ids:
-   a wrong id would render a confidently wrong number, while an unresolved
-   name renders as unresolved. Prices come from the /latest bulk fetch every
-   refresh already makes — no new requests.
-   Convention, stated because a basis is meaningless without one: PATIENT —
-   inputs bought at their bid, output sold at its ask net of GE tax, the same
-   both-sides-patient posture the rest of the tool sizes for. */
-const RECIPES = [
-  { k: "clean:ranarr",  out: "Ranarr weed",           ins: ["Grimy ranarr weed"] },
-  { k: "clean:snap",    out: "Snapdragon",            ins: ["Grimy snapdragon"] },
-  { k: "clean:toad",    out: "Toadflax",              ins: ["Grimy toadflax"] },
-  { k: "unf:ranarr",    out: "Ranarr potion (unf)",   ins: ["Ranarr weed", "Vial of water"] },
-  { k: "unf:snap",      out: "Snapdragon potion (unf)", ins: ["Snapdragon", "Vial of water"] },
-  { k: "pot:prayer",    out: "Prayer potion(3)",      ins: ["Ranarr potion (unf)", "Snape grass"] },
-  { k: "pot:restore",   out: "Super restore(3)",      ins: ["Snapdragon potion (unf)", "Red spiders' eggs"] },
-  { k: "pot:brew",      out: "Saradomin brew(3)",     ins: ["Toadflax potion (unf)", "Crushed nest"] },
-  { k: "pot:scb",       out: "Super combat potion(4)", ins: ["Torstol", "Super attack(4)", "Super strength(4)", "Super defence(4)"] },
-  { k: "set:dharok",    out: "Dharok's armour set",   ins: ["Dharok's helm", "Dharok's platebody", "Dharok's platelegs", "Dharok's greataxe"] }
-];
-const RECIPE_FLAG_X = 2;      // a break is 2× the recipe's own normal basis spread (ruled)
-const RECIPE_MIN_READS = 5;   // below this the baseline is accruing, and the monitor says so rather than flagging noise
-function recipeIdOf(name){
-  const it = S.items.find(x => x.n === name);
-  return it ? it.i : null;
-}
-/* One computation, three readers: the tick's ledger write, the basis table,
-   and the WHAT CHANGED delta all read this. */
-function recipeBasis(r){
-  const outId = recipeIdOf(r.out);
-  const inIds = r.ins.map(recipeIdOf);
-  if (outId == null || inIds.some(x => x == null))
-    return { k: r.k, name: r.out, unresolved: r.ins.filter((_, i) => inIds[i] == null).concat(outId == null ? [r.out] : []) };
-  const oc = calc(outId), ics = inIds.map(id => calc(id));
-  if (!oc || oc.sell == null || ics.some(c => !c || c.buy == null))
-    return { k: r.k, name: r.out, noPrice: 1 };
-  const revenue = oc.sell - geTax(oc.sell, outId);
-  const cost = ics.reduce((a, c) => a + c.buy, 0);
-  return { k: r.k, name: r.out, outId, inIds, m: revenue - cost, revenue, cost,
-    legs: [oc.sell].concat(ics.map(c => c.buy)),
-    legNames: [r.out].concat(r.ins) };
-}
-/* Daily ledger, last write of the day wins — the same shape as the regime
-   divergence log, and the baseline a break is measured against. */
-function recipeTick(){
-  if (!S.items.length || !S.latestAt) return;
-  const d = today();
-  let changed = false;
-  for (const r of RECIPES){
-    const b = recipeBasis(r);
-    if (b.unresolved || b.noPrice) continue;
-    const log = DB.recipeLog[r.k] || (DB.recipeLog[r.k] = []);
-    const last = log[log.length - 1];
-    const row = { d, m: Math.round(b.m), l: b.legs.map(x => Math.round(x)) };
-    if (last && last.d === d) Object.assign(last, row); else log.push(row);
-    DB.recipeLog[r.k] = log.slice(-31);
-    changed = true;
-    /* A break is measured against the recipe's OWN history, never an absolute
-       — a 500gp basis is normal on one recipe and a scandal on another. */
-    const base = recipeBaseline(r.k);
-    if (base && Math.abs(b.m) >= RECIPE_FLAG_X * Math.max(1, base.typical)){
-      const recent = (DB.recipeFlags || []).find(f => f.k === r.k && Date.now() - f.at < 24 * 3600e3);
-      if (!recent){
-        DB.recipeFlags.push({ k: r.k, name: b.name, at: Date.now(), m: Math.round(b.m),
-          base: Math.round(base.typical), leg: recipeLegBreak(r.k, b) });
-        DB.recipeFlags = DB.recipeFlags.filter(f => Date.now() - f.at < 30 * 86400e3).slice(-40);
-      }
-    }
-  }
-  if (changed) save();
-}
-function recipeBaseline(k){
-  const log = (DB.recipeLog[k] || []).slice(0, -1);   // today's own reading never sets the bar it is judged against
-  if (log.length < RECIPE_MIN_READS) return null;
-  const typical = medianOf(log.map(x => Math.abs(x.m)));
-  return { typical: typical || 0, n: log.length };
-}
-/* Which leg moved? Attribution from the same daily log — no extra fetches. */
-function recipeLegBreak(k, b){
-  const log = (DB.recipeLog[k] || []).slice(0, -1);
-  if (log.length < RECIPE_MIN_READS || !b.legs) return null;
-  let worst = null;
-  for (let i = 0; i < b.legs.length; i++){
-    const hist = log.map(x => (x.l || [])[i]).filter(v => v > 0);
-    if (hist.length < RECIPE_MIN_READS) continue;
-    const med = medianOf(hist);
-    if (!(med > 0)) continue;
-    const movePct = (b.legs[i] - med) / med * 100;
-    if (!worst || Math.abs(movePct) > Math.abs(worst.movePct))
-      worst = { i, name: (b.legNames || [])[i] || "leg " + i, movePct, now: b.legs[i], med: Math.round(med) };
-  }
-  return worst;
-}
-function recipeBasisInline(){
-  const lines = [];
-  lines.push('<div class="plan-note">Processing basis on ' + RECIPES.length + ' high-volume recipes — <b>output sold at its ask net of tax, inputs bought at their bid</b> (the patient convention this tool sizes for). Read it two ways: a basis breaking to '
-    + RECIPE_FLAG_X + '× its own normal is a flip signal on whichever leg mispriced, and it is also a manipulation tell — a pump distorts one leg of a recipe before the other. Advisory: this monitor buys nothing and caps nothing.</div>');
-  const rows = [];
-  for (const r of RECIPES){
-    const b = recipeBasis(r);
-    if (b.unresolved){
-      rows.push('<div class="dim">' + esc(r.out) + ' — <b>unresolved</b>: ' + esc(b.unresolved.join(", "))
-        + ' not found in the live mapping (a renamed item, not a wrong number — the row stays blank rather than guessing)</div>');
-      continue;
-    }
-    if (b.noPrice){ rows.push('<div class="dim">' + esc(r.out) + ' — no two-sided price yet this cycle</div>'); continue; }
-    const base = recipeBaseline(r.k);
-    const broken = base && Math.abs(b.m) >= RECIPE_FLAG_X * Math.max(1, base.typical);
-    const leg = broken ? recipeLegBreak(r.k, b) : null;
-    /* The basis opens to the daily readings it is judged against — the
-       baseline is the whole claim, so it must be auditable. */
-    const log = (DB.recipeLog[r.k] || []).slice().reverse();
-    const legNames = [r.out].concat(r.ins);
-    const face = '<span class="' + sign(b.m) + '">' + gp(Math.round(b.m)) + '</span>';
-    const num = drill("recipe:" + r.k, face, {
-      head: esc(r.out) + " — the daily basis readings behind this number and its baseline",
-      cols: [{ k: "d", lab: "Date" }, { k: "m", lab: "Basis / craft", num: 1, sortk: "_m" }, { k: "legs", lab: "Leg prices (output first)" }],
-      rows: log.map(x => ({ d: x.d, m: gp(Math.round(x.m || 0)), _m: Math.round(x.m || 0),
-        legs: (x.l || []).map((v, i) => (legNames[i] || ("leg " + i)) + " " + full(v)).join(" · "),
-        _txt: x.d })),
-      empty: "No daily readings yet — one row is written per day the app is open with two-sided prices on every leg.",
-      note: 'Today\'s figure is <b>' + gp(Math.round(b.m)) + '</b>/craft (' + gp(Math.round(b.revenue)) + ' output net of tax − '
-        + gp(Math.round(b.cost)) + ' inputs). The baseline a break is measured against is the median ABSOLUTE basis over the prior readings only — '
-        + (base ? gp(Math.round(base.typical)) + ' over ' + base.n + ' readings' : 'still accruing, so nothing can flag yet')
-        + ' — because a recipe\'s own history is the only fair bar: a 500gp basis is normal on one recipe and a scandal on another. Today\'s reading never sets the bar it is judged against.'
-    });
-    rows.push('<div data-drillrow="1" style="margin:2px 0">' + (broken ? '<span class="badge b-risk" title="Basis at or beyond '
-        + RECIPE_FLAG_X + '× this recipe\'s own normal spread.">basis break</span> ' : '')
-      + '<b>' + esc(b.name) + '</b> — basis ' + num + '/craft'
-      + ' <span class="dim">(' + gp(Math.round(b.revenue)) + ' out net of tax − ' + gp(Math.round(b.cost)) + ' in · '
-      + esc(r.ins.join(" + ")) + ')</span>'
-      + (base ? ' <span class="dim">· normal ' + gp(Math.round(base.typical)) + ' over ' + base.n + ' readings</span>'
-              : ' <span class="dim">· baseline accruing (' + ((DB.recipeLog[r.k] || []).length) + ' of ' + RECIPE_MIN_READS + ' daily readings) — no flag until it can be judged against its own history</span>')
-      + (leg ? '<div class="dim">→ widest-moving leg: <b>' + esc(leg.name) + '</b> at ' + full(leg.now) + ' vs '
-          + full(leg.med) + ' typical (' + (leg.movePct >= 0 ? "+" : "") + leg.movePct.toFixed(1)
-          + '%) — the mispriced leg to flip, and the leg to distrust if this is a pump.</div>' : '')
-      + '</div>');
-  }
-  lines.push(rows.join(""));
-  const flags = (DB.recipeFlags || []).filter(f => Date.now() - f.at < 7 * 86400e3);
-  lines.push(flags.length
-    ? '<div data-drillrow="1" style="margin-top:4px"><b>Breaks this week:</b> '
-      + drill("recipe:flags", flags.length + ' break' + (flags.length === 1 ? '' : 's'), {
-          head: "the basis breaks flagged in the last 7 days",
-          cols: [{ k: "name", lab: "Recipe" }, { k: "when", lab: "Flagged", num: 1, sortk: "_at" },
-                 { k: "m", lab: "Basis at flag", num: 1, sortk: "_m" }, { k: "base", lab: "Its normal", num: 1, sortk: "_base" },
-                 { k: "leg", lab: "Widest-moving leg" }],
-          rows: flags.slice().reverse().map(f => ({ name: f.name, when: ago(f.at), _at: f.at,
-            m: gp(f.m), _m: f.m, base: gp(f.base), _base: f.base,
-            leg: f.leg ? f.leg.name + " " + (f.leg.movePct >= 0 ? "+" : "") + f.leg.movePct.toFixed(1) + "% (" + full(f.leg.now) + " vs " + full(f.leg.med) + " typical)" : "not attributable — too little leg history",
-            _txt: f.name + " " + (f.leg ? f.leg.name : "") })),
-          empty: "No breaks in the window.",
-          note: 'Flags dedupe per recipe per 24h and retain 30 days. A break is a flip signal on the mispriced leg AND a manipulation tell — a pump distorts one leg of a recipe before the other. It sizes and caps nothing.'
-        })
-      + ': ' + flags.map(f => esc(f.name) + ' (' + ago(f.at) + ')').join(" · ") + '</div>'
-    : '<div class="dim" style="margin-top:4px">No basis breaks in the last 7 days — the recipe legs are tracking each other.</div>');
-  return '<div class="inline">' + lines.join("") + '</div>';
-}
+/* ═══ CRAFTING-SPREAD MONITOR — WITHDRAWN (user ruling, Aug 11 2026) ═══
+   Removed entirely rather than relocated. It measured the per-craft
+   processing basis on ten hand-picked recipes and flagged a "basis break"
+   at 2× a recipe's own median. The withdrawal reason, recorded so this is
+   not rebuilt by accident: the monitor terminated in PROSE. Its
+   manipulation-tell half duplicated `suspectedPump`, which is already wired
+   to auto-arm restraint; its flip-signal half named a mispriced leg but put
+   it nowhere the funnel could act on — no scout nomination, no paper trip,
+   no plan line — so acting on it meant hand-carrying a name to the
+   watchlist. Ten hardcoded recipes is also a fixed, tiny universe beside the
+   stratified slice, which samples the whole item space on a clock. If the
+   idea returns it should return WIRED (a break nominates the mispriced leg
+   into the scanner's paper cohort), which is a new capability and needs its
+   own price tag and ruling — not a re-render of the same paragraph.
+   DB.recipeLog / DB.recipeFlags are derived data; existing stores simply
+   stop writing them. */
 
 /* ═══ DATA FRESHNESS (user-directed, Aug 11 2026) ═══
    Every background accrual in this tool ticks off the app being OPEN — the
@@ -6206,8 +6174,6 @@ function freshnessRows(){
       2 * dayMs, "scheduled", "one row per item·gate·day");
   add("Deploy ledger (funnel)", maxOf((DB.deployLog || []).map(e => (e.h || 0) * 3600e3)),
       12 * 3600e3, "scheduled", "one bucket per hour");
-  add("Recipe basis", dParse(maxOf(Object.values(DB.recipeLog || {}).flatMap(v => (v || []).map(x => dParse(x.d)))) ? new Date(maxOf(Object.values(DB.recipeLog || {}).flatMap(v => (v || []).map(x => dParse(x.d))))).toLocaleDateString("en-CA") : ""),
-      2 * dayMs, "scheduled", "one reading per recipe per day");
   add("Hour-of-day (market stream)", maxOf(DB.watch.map(w => (S.spark.get(w.id) || {}).at || 0)),
       2 * dayMs, "scheduled", "rides the 7-day series each watch item fetches");
   add("Coherence readings", DB.lastCoScanAt || 0, 10 * dayMs, "scheduled", "weekly co-movement scan");
@@ -6217,7 +6183,6 @@ function freshnessRows(){
   /* — event-driven: silence is a finding, not a stall — */
   add("Markouts (realized)", maxOf((DB.flips || []).map(f => f.id || 0)), 0, "event", "needs logged round trips");
   add("Die-off episodes", maxOf((DB.dieOffLog || []).map(e => e.t || 0)), 0, "event", "only on a confirmed die-off");
-  add("Basis breaks", maxOf((DB.recipeFlags || []).map(f => f.at || 0)), 0, "event", "only on a 2× basis break");
   add("Accumulation flags", maxOf((DB.anomalyFlags || []).map(f => f.at || 0)), 0, "event", "only on a flagged signature");
   return rows;
 }
@@ -6335,6 +6300,11 @@ function accrueBackground(){
     shadowScan(P);               // opens paper positions + stamps the per-stratum sampling ledger
     stampDeployLog(P);           // hourly funnel bucket
   } catch(e){}
+  /* Auto-applied bookkeeping rides the POLL like every other ledger, never a
+     render path (R34.1) — otherwise which tab you happened to be on would
+     decide whether a basket recomposed. */
+  try { autoApplyCohProps(); } catch(e){}
+  try { autoApplyAudits(); } catch(e){}
 }
 
 function renderDeploy(plan){
@@ -7097,7 +7067,8 @@ function shadowDot(id){
   const openN = book.filter(p => p.itemId === id && p.state === "open").length;
   const gapN  = book.filter(p => p.itemId === id && p.state === "unobserved").length;
   const closedN = s ? s.n : 0;
-  const total = closedN + openN + gapN;
+  const thinN = s ? (s.thin || 0) : 0;
+  const total = closedN + thinN + openN + gapN;
   if (!total) return '<span class="dslot"></span>';   // no history: the SLOT still holds its place, the dot does not render
   /* ACCRUING STATE (user ruling, Aug 11 2026). A row with paper history that
      renders nothing is the F18 defect in a new place: the machinery is
@@ -7107,7 +7078,8 @@ function shadowDot(id){
      glyph, and it leads the dot slot so it is never lost behind the test dot. */
   if (closedN < SHADOW_ROW_MIN)
     return '<span class="dslot"><span class="sdot acc" title="Paper screen: ACCRUING — '
-      + total + ' trip' + (total === 1 ? '' : 's') + ' on this item · ' + closedN + ' closed, ' + openN + ' still open'
+      + total + ' trip' + (total === 1 ? '' : 's') + ' on this item · ' + closedN + ' closed and counted, ' + openN + ' still open'
+      + (thinN ? ', ' + thinN + ' excluded (insufficient observation — closed inside one observation window, which is tape coincidence rather than a patient-fill test)' : '')
       + (gapN ? ', ' + gapN + ' unobserved (horizon expired while the tab was closed — held out of every aggregate)' : '')
       + ' · no verdict until ' + SHADOW_ROW_MIN + ' have closed'
       + (closedN ? ' · net so far ' + gp(Math.round(s.net)) + ' sim' : '')
@@ -7119,6 +7091,7 @@ function shadowDot(id){
     + (hollow ? " — the margin exists, the fills don’t" : (s.net > 0 ? " — paper-profitable" : " — paper-losing"))
     + ' · net ' + gp(Math.round(s.net)) + ' sim · book: ' + esc(s.regs.join(", "))
     + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)'
+    + (s.thin ? ' · ' + s.thin + ' further trip' + (s.thin === 1 ? '' : 's') + ' excluded — insufficient observation' : '')
     + '. All simulated — ranks probation candidates, not evidence.">'
     + (hollow ? "◎" : "◉") + '</span></span>';
 }
@@ -7579,7 +7552,12 @@ function renderClusters(){
       + (p.resurfaced ? '<div class="dim" style="white-space:normal">' + esc(p.resurfaced) + '</div>' : '')
       + '<div class="dim">excess corr vs composite, last ' + p.trend.length + ' weekly readings: ' + esc(trend)
       + (isAdd ? ' (add rule: > 0.5 in ≥3 of 4)' : ' (drop rule: < 0.25 for 4 straight — decay sparkline above)') + '</div>'
-      + (p.note ? '<div class="dim" style="white-space:normal;max-width:460px">' + esc(p.note) + '</div>' : '') + '</span>'
+      + (p.note ? '<div class="dim" style="white-space:normal;max-width:460px">' + esc(p.note) + '</div>' : '')
+      /* Every entity states where it stands: a drop sitting in a queue that
+         adds no longer use must say why it is still here. */
+      + (isAdd ? ''
+        : '<div class="plan-note" style="white-space:normal;max-width:460px;margin-top:3px">Still your press, deliberately. Adds auto-apply under your Aug 11 2026 ruling because an add only <b>tightens</b> this basket\'s exposure cap. A drop <b>loosens</b> one — it takes this item out of the cap\'s scope, so the allocator may fund capital the cap was withholding. That is the restraint/deployment line, so it waits for you. Say the word and drops join the adds.</div>')
+      + '</span>'
       + '<span class="r" style="white-space:nowrap"><button class="sm" data-cohconfirm="' + p.id + '">'
       + (isAdd ? 'admit as ' + (p.mclass === "s" ? 'statistical' : 'thesis') + ' member' : 'remove member') + '</button>'
       + '<button class="sm ghost" data-cohdismiss="' + p.id + '">dismiss</button></span></div>';
@@ -7907,10 +7885,107 @@ function audRuledInfo(key){
   const r = (DB.audRuled || {})[key];
   return r && Date.now() - r.t < AUD_REST_MS ? r : null;
 }
-function logDecision(kind, subject, action, reason){
-  DB.decisionLog.push({ t: Date.now(), d: today(), kind, subject, action, reason: String(reason || "") });
+function logDecision(kind, subject, action, reason, auto){
+  const e = { t: Date.now(), d: today(), kind, subject, action, reason: String(reason || "") };
+  /* AUTO-APPLIED (user ruling, Aug 11 2026): machine-applied entries are
+     stamped so the review can show them as their own reviewable block. A
+     log that cannot tell "you decided this" from "it decided this" is not a
+     record of decisions. */
+  if (auto) e.auto = 1;
+  DB.decisionLog.push(e);
   if (DB.decisionLog.length > 500) DB.decisionLog = DB.decisionLog.slice(-500);
   save();
+}
+const autoApplied = since => (DB.decisionLog || []).filter(x => x.auto && x.t > (since || 0));
+
+/* ═══ AUTO-APPLIED MEMBERSHIP + AUDIT RECOMMENDATIONS ═══════════════════
+   USER RULING, Aug 11 2026 — supersedes "membership never recomposes
+   silently" (R4.2b) for coherence ADDS and for the seed/sibling audits'
+   KEEP/RETIRE/PRUNE recommendations. The reasoning ruled: membership is
+   mechanical bookkeeping about correlation, not a capital decision;
+   exposure caps and every gate still bind. Everything applied here already
+   had to clear its existing evidence bar — the persistence rule, the 40%
+   statistical cap, the blacklist exclusion — so the change is WHO PRESSES,
+   not WHAT QUALIFIES. Every application is decision-logged with `auto`,
+   surfaces as a reviewable block, and is reversible by hand.
+
+   ONE PART OF THE RULING IS NOT BUILT, deliberately (flagged, not silently
+   obeyed): coherence DROPS still queue for ratification. An add TIGHTENS a
+   basket's exposure cap — pure restraint, and the constitution already lets
+   restraint auto-arm. A drop LOOSENS one: it removes an item from the
+   cap's scope, so on the next plan build the allocator may fund capital the
+   cap was withholding. That is the "restraint may auto-arm; deployment
+   never" line, and it is the user's to move, not mine to assume from
+   "membership is bookkeeping". The drop queue line says so where it
+   renders. One word flips it. */
+function autoApplyCohProps(){
+  let changed = false;
+  for (const p of (DB.cohProps || [])){
+    if (p.status !== "pending" || p.kind !== "add") continue;
+    const cl = (DB.clusters || []).find(x => x.id === p.basketId);
+    if (!cl) continue;
+    if (cl.members.includes(p.itemId)){ p.status = "dismissed"; p.ruledAt = Date.now(); p.applied = 1; changed = true; continue; }
+    /* The blacklist is the user's alone — no automated path admits, funds,
+       quotes or clears an entry, and that includes this one. */
+    if (isBlk(p.itemId)) continue;
+    /* Re-check the statistical cap at application time: proposals are made
+       against the basket as it stood, and several may land in one pass. */
+    if (p.mclass === "s"){
+      const statN = cl.members.filter(m => memberIsStat(cl, m)).length;
+      if ((statN + 1) / (cl.members.length + 1) > COH_STAT_CAP) continue;
+    }
+    cl.members.push(p.itemId);
+    if (!cl.mclass) cl.mclass = {};
+    cl.mclass[p.itemId] = p.mclass === "s" ? "s" : "t";
+    p.status = "dismissed"; p.ruledAt = Date.now(); p.applied = 1; p.autoAt = Date.now();
+    logDecision("basket", cl.name, "auto-admitted " + itemName(p.itemId),
+      (p.mclass === "s" ? "STATISTICAL member (counts toward the exposure cap, excluded from narratives)" : "THESIS member")
+      + " — excess corr > " + COH_ADD_C + " vs the basket composite in " + COH_ADD_HITS + " of the last " + COH_WINDOWS
+      + " weekly readings (trend " + (p.trend || []).map(c => c == null ? "·" : c).join("→") + "). "
+      + "Applied automatically under your Aug 11 2026 ruling: an add only TIGHTENS this basket's exposure cap, so it is restraint, and membership is bookkeeping about correlation rather than a capital decision. "
+      + "Remove it by hand from the basket's thesis detail if the story does not hold.", 1);
+    changed = true;
+  }
+  if (changed) save();
+  return changed;
+}
+/* Seed and sibling audits auto-execute their KEEP / RETIRE / PRUNE calls
+   (same ruling). PROMOTE stays manual — it creates a named thesis cluster
+   and a name is a judgment, not bookkeeping. */
+function autoApplyAudits(){
+  let changed = false;
+  for (const a of seedAudit()){
+    if (audRuledInfo("seed:" + a.id)) continue;
+    if (a.rec === "KEEP"){
+      /* A KEEP is a no-op on state; it is logged once per week so the record
+         shows the call was made and not merely skipped. */
+      const key = "seedkeep:" + a.id;
+      const last = DB.audRuled[key];
+      if (last && Date.now() - last.t < 7 * 86400e3) continue;
+      DB.audRuled[key] = { t: Date.now(), action: "auto-keep" };
+      logDecision("seed", a.name, "auto-kept", a.why + " — applied automatically (your Aug 11 2026 ruling); a KEEP changes nothing but the record now says the call was made.", 1);
+      changed = true;
+    } else if (a.rec === "RETIRE"){
+      const gone = DB.watch.filter(w => w.sib === a.id && !w.sibGrad);
+      DB.watch = DB.watch.filter(w => !(w.sib === a.id && !w.sibGrad));
+      delete DB.seedAt[a.id];
+      DB.audRuled["seed:" + a.id] = { t: Date.now(), action: "auto-retired" };
+      logDecision("seed", a.name, "auto-retired", a.why + " — pruned " + gone.length + " un-graduated sibling watcher"
+        + (gone.length === 1 ? "" : "s") + ". Applied automatically (your Aug 11 2026 ruling): retiring a lineage frees attention, never capital — nothing it held was funded. Re-seed by hand if you disagree.", 1);
+      changed = true;
+    }
+  }
+  for (const r of sibAudit().rows){
+    if (!r.zombie || audRuledInfo("sib:" + r.id)) continue;
+    DB.watch = DB.watch.filter(w => w.id !== r.id);
+    DB.audRuled["sib:" + r.id] = { t: Date.now(), action: "auto-pruned" };
+    logDecision("sibling", r.name, "auto-pruned", "sibling of " + r.seed + ", watched " + Math.floor(r.days)
+      + "d, " + (r.lastPass ? "last gate pass " + ago(r.lastPass) : "never passed a gate")
+      + " — intermittent passes kept resetting its washout. Applied automatically (your Aug 11 2026 ruling): the slot serves discovery better empty, and an empty watch slot spends nothing.", 1);
+    changed = true;
+  }
+  if (changed){ save(); }
+  return changed;
 }
 
 /* §1 — seed audit: the discovery pipeline's P&L statement, per lineage. */
@@ -8159,6 +8234,7 @@ function gateStreamsSection(){
             empty: "None.", note: PAPER_NOTE()
           })
         + ' would never have filled at the benched price'
+        + thinNote(sh.thin, "gate:" + g, sh.thinArr)
         + ' <span class="dim">[simulated — fill-model caveats; a screen, not evidence; median ' + sh.obsMed + '% of horizon observed]</span>'
       : '<span class="dim">no closed paper positions for this gate yet [simulated]</span>');
     const dirs = gateStreamDirs(g, gh.rows);
@@ -8395,6 +8471,23 @@ function renderAuditInline(){
   secs.push(gateSummaryLine());
   secs.push('<div class="nexthead"><b>5 · Prospecting</b> — the per-stratum map, the gap band\'s verdict, the hours ledger and the recipe basis now live on their own surface.</div>');
   secs.push(prospectSummaryLine());
+  /* §5b — APPLIED AUTOMATICALLY (user ruling, Aug 11 2026). The ruling
+     traded the ratification ceremony for a reviewable record, so the record
+     has to be prominent, decomposable, and reversible — not a line in a
+     500-entry log the user would have to go looking for. */
+  const auto = autoApplied(Date.now() - 30 * 86400e3).reverse();
+  secs.push('<div class="nexthead"><b>5b · Applied automatically</b> — membership bookkeeping and seed/sibling calls that no longer wait for a ruling. Everything here cleared its existing evidence bar; what changed is who presses, not what qualifies. All reversible by hand.</div>');
+  secs.push(auto.length
+    ? '<div data-drillrow="1">' + drill("auto:log", auto.length + ' change' + (auto.length === 1 ? '' : 's') + ' in the last 30 days', {
+        head: "everything the tool applied without asking, and why",
+        cols: [{ k: "d", lab: "Date" }, { k: "kind", lab: "Kind" }, { k: "subject", lab: "Subject" },
+               { k: "action", lab: "Action" }, { k: "reason", lab: "Why it qualified" }],
+        rows: auto.map(x => ({ d: x.d, kind: x.kind, subject: x.subject, action: x.action, reason: x.reason,
+          _txt: x.subject + " " + x.action + " " + x.kind })),
+        empty: "Nothing has been applied automatically.",
+        note: 'Coherence <b>adds</b>, seed KEEP/RETIRE and sibling PRUNE apply themselves. Coherence <b>drops</b> deliberately do not — an add tightens a basket\'s exposure cap (restraint), a drop loosens it and can free capital the cap was withholding, which is the line your standing rule reserves for you. Undo an add from the basket\'s thesis detail; re-seed a retired lineage by hand.'
+      }) + '</div>'
+    : '<div class="dim">Nothing applied automatically in the last 30 days.</div>');
   /* §6 decision log */
   const dl = DB.decisionLog.slice(-50).reverse();
   secs.push('<div class="nexthead"><b>6 · Decision log</b> — every ruling from this queue, so next quarter you can audit your own audit.</div>');
@@ -8509,6 +8602,15 @@ function prospectingInline(){
           STRATUM_LAB(r.k) + " — the trips that would have filled (durable count, surviving rows)") + '</td>'
       + '<td class="' + sign(r.net || 0) + '">' + tripDrill("net", gp(Math.round(r.net || 0)),
           { rows: trips, total: r.trips || 0 }, STRATUM_LAB(r.k) + " — the trips behind its simulated net") + '</td>'
+      + '<td>' + ((r.insuf || 0)
+          ? drill("prosp:" + r.k + ":insuf", String(r.insuf), {
+              head: STRATUM_LAB(r.k) + " — trips excluded from this region's verdict (insufficient observation)",
+              cols: PAPER_TRIP_COLS, rows: paperTripRows(trips.filter(shadowThin)), total: r.insuf,
+              totalNote: 'a durable counter; the paper book prunes closed trips after 30 days, so these are the rows that still exist',
+              empty: "No rows remain in the paper book for this counter.",
+              note: 'Closed under ' + Math.round(SHADOW_MIN_OBS * 100) + '% of the fill horizon observed — tape coincidence rather than a patient-fill test. Counted here and nowhere else.'
+            })
+          : '<span class="dim">0</span>') + '</td>'
       + '<td style="text-align:left">' + edge
       + (r.capped ? ' <span class="dim">[id ledger at its ' + STRATA_ID_CAP + '-item cap — sampling counts stop rising, outcomes keep accruing]</span>' : '')
       + '</td></tr>';
@@ -8519,7 +8621,9 @@ function prospectingInline(){
     + '<th title="Random draws that cleared every gate">Clean</th>'
     + '<th title="Closed paper trips credited to this stratum (durable counter)">Closed</th>'
     + '<th title="Of those, how many would have filled">Filled</th>'
-    + '<th title="Simulated net across its closed trips">Net sim</th><th>Verdict</th></tr></thead><tbody>'
+    + '<th title="Simulated net across its closed trips">Net sim</th>'
+    + '<th title="Closed trips excluded from this region&#39;s verdict: under the observed-share floor. Durable counter, kept separate.">Excluded</th>'
+    + '<th>Verdict</th></tr></thead><tbody>'
     + trs + '</tbody></table></div>');
   return secs.join("");
 }
@@ -8584,22 +8688,6 @@ function hoursSummaryLine(){
         + (nObs ? ' with paper corroboration' : ' with <b>no</b> paper corroboration — unknown, not disproven') : '')
     + ' · ' + unobs + ' of 24 hours never observed by the paper stream'
     + ' — <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
-}
-function recipeSummaryLine(){
-  const flags = (DB.recipeFlags || []).filter(f => Date.now() - f.at < 7 * 86400e3);
-  let broken = 0, accruing = 0, live = 0;
-  for (const r of RECIPES){
-    const b = recipeBasis(r);
-    if (b.unresolved || b.noPrice) continue;
-    live++;
-    const base = recipeBaseline(r.k);
-    if (!base) accruing++;
-    else if (Math.abs(b.m) >= RECIPE_FLAG_X * Math.max(1, base.typical)) broken++;
-  }
-  return '<div class="inline"><div>' + live + ' of ' + RECIPES.length + ' recipes priced this cycle · '
-    + (broken ? '<b>' + broken + ' basis break' + (broken === 1 ? '' : 's') + ' standing</b>' : 'no basis breaks standing')
-    + ' · ' + flags.length + ' flagged in the last 7 days · ' + accruing + ' still accruing a baseline'
-    + ' — <a href="#" data-goto="prospect#prospectRecipePanel">open the recipe basis →</a></div></div>';
 }
 /* The weekly review's one-line read of the prospecting surfaces. */
 function prospectSummaryLine(){
@@ -9069,6 +9157,7 @@ function renderSleeve(){
         }).join("") + '</details>'
     : "";
   $("#slvBody").innerHTML = (cards || '<div class="empty">No sleeve positions. Every position needs its catalyst, thesis, exit ladder and invalidation before it can save — the form below enforces all four.</div>') + closedHTML;
+  setHTML("#slvHealth", sleeveWeeklyInline());
   renderSlvRungs();
   renderSleeveEngine();
   renderCatDraft();
@@ -11105,21 +11194,27 @@ const CHECKLISTS = {
     ["Snapshot the bank", "One number off the bank interface — one dot per day on the equity curve; gaps are fine. Game gp (supplies bought, drops sold) goes in its box first so the dot stays clean.", null, "snap"],
     ["Note any friction", "One line about anything annoying — it feeds the review.", null, "fricin"]
   ]},
-  weekly: { title: "📓 Review — every few days, whenever you open it", foot: "gp per minute of attention is the only number that matters. If flipping loses to content you enjoy, stop guilt-free.", steps: [
+  /* CONSOLIDATION (user ruling, Aug 11 2026). Four sections left the review:
+     the basket ledger and the SLEEVE section (only meaningful when new
+     intelligence lands — they belong on the Sleeve tab, where the user goes
+     after an import), the recipe basis table (withdrawn entirely — see the
+     RECIPE MONITOR note in CLAUDE.md), and the gp/min-of-attention reminder
+     (a metric that was never acted on). The dormancy/attention report was
+     DEMOTED, not deleted: it is the mechanism that catches surfaces that
+     stopped being used, which is exactly why several of these sections sat
+     unread — it now runs on demand from the Review tab's own button.
+     The foot's old line advertised the gp/min computation this list no
+     longer offers; a closing line must not point at a step that is gone. */
+  weekly: { title: "📓 Review — every few days, whenever you open it", foot: "If flipping loses to content you enjoy, stop guilt-free. Baskets and the sleeve live on the Sleeve tab — read them when an import lands, not on a clock.", steps: [
     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log#byItemPanel"],
     ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log#byItemPanel"],
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
-    ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
-    ["Read the basket ledger", "Correlated positions are one bet wearing several names — per-basket exposure vs cap and P&L, and any membership candidates awaiting your ruling (baskets live on the Sleeve tab, under the calendar):", "sleeve#clusterPanel", "clusters"],
-    ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
-    ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
+    ["Run the discovery audit", "Decisions, not stats — the cards that still need you end in confirm / modify / dismiss; membership and seed/sibling recommendations now apply themselves and report what they did:", null, "audit"],
     ["Read the paper book", "One line here; the surface itself is Trade → Paper Book, where every number opens to its trips:", "paper#paperRegimePanel", "shadowbook"],
     ["Check data freshness", "Every background stream reports when it last accrued. Nothing collects while the tab is closed, and a stalled stream looks exactly like a quiet one on a chart — so this says which is which before you read any of the numbers below:", null, "freshness"],
     ["Read the hours ledger", "One line here; the surface is Trade → Prospecting, where each hour opens to the items and trips behind it:", "prospect#prospectHoursPanel", "hours"],
-    ["Read the recipe basis table", "One line here; the surface is Trade → Prospecting, where each basis opens to its daily readings:", "prospect#prospectRecipePanel", "recipes"],
-    ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
@@ -11287,41 +11382,20 @@ function renderRoutine(){
       inline = '<div class="inline">' + (lines.length
         ? lines.join("")
         : '<div class="dim">No flips logged yet — verdicts appear with data.</div>') + '</div>';
-    } else if (s[3] === "clusters"){
-      const lines = DB.clusters.map(cl => {
-        const ex = clusterExposure(cl), cap = clusterCapGp(cl);
-        const pl14 = clusterPnL(cl, Date.now() - 14 * 86400e3), plAll = clusterPnL(cl, 0);
-        return '<div>⬡ <b>' + esc(cl.name) + '</b> — ' + cl.members.length + ' member' + (cl.members.length === 1 ? '' : 's')
-          + ' · exposure ' + gp(ex) + ' of ' + gp(cap) + ' cap (' + clusterCapPctOf(cl) + '% of working)'
-          + (ex >= cap ? ' <span class="badge b-risk">at limit</span>' : '')
-          + ' · P&L 14d <span class="' + sign(pl14) + '">' + gp(pl14) + '</span>'
-          + ' · all-time <span class="' + sign(plAll) + '">' + gp(plAll) + '</span></div>';
-      });
-      const pend = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded").length;
-      if (pend) lines.push('<div class="dim">' + pend + ' candidate' + (pend === 1 ? '' : 's')
-        + ' in the review queue await your ruling — advisory only until confirmed.</div>');
-      inline = '<div class="inline">' + (lines.length ? lines.join("")
-        : '<div class="dim">No confirmed baskets — correlated positions are currently treated as independent bets. The Item baskets panel (Sleeve tab, under the calendar) collects candidates.</div>') + '</div>';
     } else if (s[3] === "rulings"){
       /* The digest itself renders at the top of Home (tier-1, zero clicks) —
          this step is the checklist's pointer to it, not a second copy. */
       inline = S.tab === "home"
         ? '<div class="inline"><div class="dim">The RULINGS PENDING digest sits at the top of this page — ratify, dismiss, or snooze there.</div></div>'
         : rulingsInline();
-    } else if (s[3] === "sleeve"){
-      inline = sleeveWeeklyInline();
     } else if (s[3] === "intelscore"){
       inline = intelScorecardInline();
-    } else if (s[3] === "attention"){
-      inline = attentionGovernanceInline();
     } else if (s[3] === "shadowbook"){
       inline = paperSummaryLine();
     } else if (s[3] === "freshness"){
       inline = freshnessInline();
     } else if (s[3] === "hours"){
       inline = hoursSummaryLine();
-    } else if (s[3] === "recipes"){
-      inline = recipeSummaryLine();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -11518,7 +11592,7 @@ function homeDeltaLines(){
   if (closed.length){
     const net = closed.reduce((a, p) => a + (p.net || 0), 0);
     line("👻 paper book: " + closed.length + " trip" + (closed.length === 1 ? "" : "s")
-      + " closed · net " + gp(Math.round(net)) + " (simulated)", "review#ckstep-shadowbook");
+      + " closed · net " + gp(Math.round(net)) + " (simulated)", "paper#paperRegimePanel");
   }
   /* A random draw clearing every gate is exactly the event the slice exists
      to catch (user-directed Aug 11 2026) — it leads with the item's name. */
@@ -11528,11 +11602,6 @@ function homeDeltaLines(){
       + " (" + STRATUM_LAB(p.stratum) + ") — unwatched, passed every gate on a random draw", "scan#beyondNet");
   if (finds.length > 2)
     line("🎣 +" + (finds.length - 2) + " more clean gate-passers from the slice", "scan#beyondNet");
-  const rFlags = (DB.recipeFlags || []).filter(f => f.at > since);
-  if (rFlags.length)
-    line("⚗ recipe basis break: " + rFlags.map(f => f.name).slice(0, 2).join(", ")
-      + (rFlags[0].leg ? " — " + rFlags[0].leg.name + " moved " + (rFlags[0].leg.movePct >= 0 ? "+" : "")
-         + rFlags[0].leg.movePct.toFixed(1) + "%" : ""), "review#ckstep-recipes");
   if (snap){
     const prevArmed = new Set(snap.armed || []);
     try {
@@ -11549,7 +11618,7 @@ function homeDeltaLines(){
       if (l0 !== l1 || Math.abs(moved) >= 100e3)
         line("👻 regime divergence: " + l1 + " now " + (cur[l1] >= 0 ? "+" : "−") + gp(Math.abs(cur[l1]))
           + " vs current, was " + l0 + " " + ((snap.div[l0] || 0) >= 0 ? "+" : "−") + gp(Math.abs(snap.div[l0] || 0))
-          + " (30d, simulated)", "review#ckstep-shadowbook");
+          + " (30d, simulated)", "paper#paperRegimePanel");
     }
     for (const c of (DB.catalysts || [])){
       const was = (snap.catStates || {})[c.id], is = catWinState(c);
@@ -11578,7 +11647,7 @@ function renderHomeDelta(){
   if (DB.flatSince){
     const n = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > DB.flatSince).length;
     L.unshift({ txt: "▭ book flat since " + new Date(DB.flatSince).toLocaleDateString("en-CA")
-      + " — paper book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckstep-shadowbook" });
+      + " — paper book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "paper#paperRegimePanel" });
   }
   if (!L.length){
     setHTML(box, first
@@ -11664,8 +11733,8 @@ function renderHomeVitals(){
       vit("Funnel", esc(funnel), "watch#deployPanel",
         "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
     + vit("Paper book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
-        + ' <span class="dim">(30d, simulated)</span>', "review#ckstep-shadowbook",
-        "Counterfactual book — all simulated, a screen ranking probation candidates, not evidence. Click for the weekly review's shadow-book section.")
+        + ' <span class="dim">(30d, simulated)</span>', "paper#paperRegimePanel",
+        "Counterfactual book — all simulated, a screen ranking probation candidates, not evidence. Click for the Paper Book surface, where every number opens to its trips.")
     + vit("Sleeve", open.length + " position" + (open.length === 1 ? "" : "s") + " · " + esc(rung) + " · " + esc(cat),
         "sleeve#sleevePanel",
         "Catalyst positions: nearest exit rung and nearest catalyst window. Click for the sleeve.")
@@ -12037,7 +12106,6 @@ function renderProspectView(){
   setHTML("#prospectStrata", prospectingInline());
   setHTML("#prospectGap", gapBandInline());
   setHTML("#prospectHours", hoursLedgerInline());
-  setHTML("#prospectRecipe", recipeBasisInline());
 }
 function renderGateView(){
   const gh = gateHealthAudit();
@@ -12083,6 +12151,10 @@ function renderReview(){
   moveCkPanel();
   renderRoutine();
   renderShadow();
+  /* The dormancy report is on demand (ruled Aug 11 2026) — a re-render must
+     not silently clear a report the user just asked for, and must not run
+     one they didn't. */
+  if (S.attnRan) setHTML("#attnBody", attentionGovernanceInline());
 }
 /* setTab accepts the four new tabs AND every legacy name — watch/scan/log
    land on the Trade sub-view, shadow on Review, routine on whichever surface
@@ -12106,6 +12178,10 @@ function setTab(t, sub){
   renderAll();
   if (onWatch() || S.tab === "review") fillSparks();
 }
+$("#attnRun").onclick = () => {
+  S.attnRan = true;
+  setHTML("#attnBody", attentionGovernanceInline());
+};
 $("#tradeSubs").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   setTab("trade", b.dataset.sub);
@@ -13158,24 +13234,6 @@ function validateImport(d){
                 pass: Math.max(0, num(v && v.pass) || 0), trips: Math.max(0, num(v && v.trips) || 0),
                 filled: Math.max(0, num(v && v.filled) || 0), net: num(v && v.net) || 0,
                 first: num(v && v.first) || Date.now(), capped: (v && v.capped) ? 1 : 0 }])) : {},
-          recipeLog: (d.recipeLog && typeof d.recipeLog === "object" && !Array.isArray(d.recipeLog))
-            ? Object.fromEntries(Object.entries(d.recipeLog).slice(0, 40).map(([k, v]) => [String(k).slice(0, 24),
-                (Array.isArray(v) ? v : []).map(x => {
-                  const dd = String((x && x.d) || "");
-                  if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) return null;
-                  return { d: dd, m: num(x.m) || 0,
-                    l: (Array.isArray(x.l) ? x.l : []).map(y => num(y) || 0).slice(0, 8) };
-                }).filter(Boolean).slice(-31)])) : {},
-          recipeFlags: (Array.isArray(d.recipeFlags) ? d.recipeFlags : []).map(f => {
-            const at = num(f && f.at);
-            if (!(at > 0) || !f.k) return null;
-            const o2 = { k: String(f.k).slice(0, 24), name: String(f.name || "").slice(0, 60), at,
-              m: num(f.m) || 0, base: num(f.base) || 0 };
-            if (f.leg && typeof f.leg === "object")
-              o2.leg = { name: String(f.leg.name || "").slice(0, 60), movePct: num(f.leg.movePct) || 0,
-                now: num(f.leg.now) || 0, med: num(f.leg.med) || 0 };
-            return o2;
-          }).filter(Boolean).slice(-40),
           shadowDivLog: (Array.isArray(d.shadowDivLog) ? d.shadowDivLog : []).map(x => {
             const dd = String((x && x.d) || "");
             if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) return null;
