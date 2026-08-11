@@ -7,3 +7,6 @@ cleanup.html
 !.claude/skills/
 # disposable probe-run artifacts (see PROBE.md)
 tools/probe/out/
+# transient tracker→analyst handoff, carried by the human per BRIEFING.md;
+# its contents are quoted in the dated BRIEF, the raw export stays local
+briefings/flags-pending.json

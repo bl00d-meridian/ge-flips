@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-10T22:33:46Z",
+  "generatedAt": "2026-08-11T00:40:00Z",
   "coversFrom": "2026-08-03",
   "coversTo": "2026-08-10",
   "records": [
@@ -84,9 +84,9 @@
     {
       "id": "2026-08-10-jewellers-chisel-poll",
       "type": "demand-context",
-      "confidence": "hinted",
-      "title": "Pending poll: Jeweller's chisel bolt-tip buff (opal/jade/topaz chain)",
-      "thesis": "The 2026-08-05 update proposed (pending poll, not yet scheduled) buffing the Jeweller's chisel to cut bolt tips in 2 ticks instead of 5 with a 1-in-10 chance of double gems. If polled and passed, bolt tip production speed roughly doubles for chisel owners, changing throughput economics across the uncut opal/jade/red topaz and bolt tip chain in directions that depend on where the bottleneck currently sits.",
+      "confidence": "polled",
+      "title": "Poll #270 OPEN (closes Aug 12): Jeweller's chisel bolt-tip buff (opal/jade/topaz chain)",
+      "thesis": "Poll #270 (Wyrmscraig - Jeweller's Chisel) opened 2026-08-05 and closes 2026-08-12: buff the Jeweller's chisel to cut bolt tips from gems in 2 ticks instead of 5, with a 1-in-10 chance to cut 2 gems at once. If it passes, bolt tip production speed roughly doubles for chisel owners, changing throughput economics across the uncut opal/jade/red topaz and bolt tip chain in directions that depend on where the bottleneck currently sits. Results due 2026-08-12.",
       "direction": "unclear",
       "items": [
         { "id": 1625, "name": "Uncut opal" },
@@ -97,13 +97,14 @@
         { "id": 9188, "name": "Topaz bolt tips" }
       ],
       "sources": [
-        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Pending-poll proposal text", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Proposal text in the Aug 5 update post", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/Poll:Wyrmscraig_-_Jeweller%27s_Chisel", "note": "Poll #270 page: opened 2026-08-05, closes 2026-08-12, exact question text (live vote tallies not yet populated on the wiki)", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-09-15",
-      "contrary": "The chain is already moving on Wyrmscraig supply before any poll: since Jul 29 uncut jade -32.8% and uncut red topaz -26.4% on ~2.5x volume (mechanism unsourced - no record claims it), while topaz bolt tips are +23.9% and opal bolt tips -21.2%. Mixed, high-variance chain; and the poll may never be scheduled or may fail.",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29: uncut opal 74 to 75 gp, uncut jade 137 to 92 gp, uncut red topaz 2146 to 1580 gp; opal bolt tips 33 to 26 gp, jade bolt tips 6 gp flat, topaz bolt tips 92 to 114 gp. Large moves already occurred in parts of the chain, but they trace to Wyrmscraig supply, not to the (unscheduled) poll this record is about." }
+      "contrary": "The chain is already moving on Wyrmscraig supply before the poll resolves: since Jul 29 uncut jade -32.8% and uncut red topaz -26.4% on ~2.5x volume (mechanism unsourced - no record claims it), while topaz bolt tips are +23.9% and opal bolt tips -21.2%. Mixed, high-variance chain; and the poll may fail (results 2026-08-12).",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29 (re-verified evening 2026-08-10): uncut opal 74 to 75 gp, uncut jade 140 to 92 gp, uncut red topaz 2099 to 1580 gp; opal bolt tips 30 to 26 gp, jade bolt tips 6 gp flat, topaz bolt tips 94 to 114 gp. Large moves already occurred in parts of the chain, but they trace to Wyrmscraig supply, not to the still-open poll this record is about." }
     },
     {
       "id": "2026-08-10-archaic-emblems-ge-listing",
@@ -124,6 +125,63 @@
       "validUntil": "2026-09-15",
       "contrary": "Demand exists only inside the permanent Deadman world loop; if that mode's population fades, both emblems fade with it. Thin-book items are also classic manipulation targets.",
       "pricedIn": { "checked": true, "verdict": "no", "detail": "Timeseries for ids 12746 and 12751 returned empty on 2026-08-10 - no GE trade history exists yet. Nothing can be priced in; equally, nothing about a fair price is known." }
+    },
+    {
+      "id": "2026-08-10-fractured-archive-rewards-locked",
+      "type": "catalyst",
+      "confidence": "polled",
+      "title": "Fractured Archive rewards lock-in poll: everything passed (49,287 votes)",
+      "thesis": "The rewards lock-in poll for The Fractured Archive (OSRS's fourth raid, targeted late 2026) opened 2026-08-03 and finished with every reward passing: Elemental Fragments, untradeable elemental-spell upgrades (85.8% yes); Rondache, a damage-mitigating shield with retaliatory special attack (80.7%); Zorya's Tome, a DPS magic special-attack weapon (90.4%); Zeal, an upgrade to the Piety prayer (86.1%); Ascension Crossbows, rapid-fire dual-wield crossbows (85.6%); and the Breaker, a best-in-slot Crush megarare (88.4%; the Obligator design won the ranked vote at 45.8% first-choice). 49,287 total votes. None of these items exist in game yet, so there is nothing to buy; the eventual market mechanism is displacement pressure on incumbent gear in the affected slots (crush weapons, magic special weapons, high-end crossbows) as the release window approaches and firms.",
+      "direction": "unclear",
+      "items": [],
+      "sources": [
+        { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Official poll results page: POLL_STATE_FINISHED, all questions with vote counts and percentages", "tier": 0 },
+        { "url": "https://secure.runescape.com/m=news/the-fractured-archive---rewards-poll-blog?oldschool=1", "note": "Rewards poll blog with full item descriptions (linked from the poll page)", "tier": 0 },
+        { "url": "https://old.reddit.com/r/2007scape/comments/1vkiqjq/obligator_wins_and_everything_passes_tfa_poll/", "note": "T2 lead that surfaced the finished results on 2026-08-10", "tier": 2, "community": "r/2007scape" }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-12-31",
+      "contrary": "The release window is still only 'late 2026' with no date, and OSRS windows slip routinely. Lock-in poll rewards regularly change stats or tradeability between poll and release. Two of the six rewards (Elemental Fragments, Zeal) are untradeable-shaped, blunting direct GE impact. Incumbent-displacement repricing historically concentrates close to release, not months out.",
+      "pricedIn": { "checked": false, "verdict": "no", "detail": "No tradeable items exist yet for these rewards. The priced-in check applies to incumbent gear in affected slots and should run when a release date is announced; naming specific incumbents now would be analyst inference beyond what the sources state." },
+      "catalyst": { "name": "The Fractured Archive raid release", "windowStart": "2026-10-01", "windowEnd": "2026-12-31" }
+    },
+    {
+      "id": "2026-08-10-inquisitors-tfa-speculation",
+      "type": "demand-context",
+      "confidence": "rumor",
+      "title": "Inquisitor's armour set repricing coincides with TFA crush-megarare confirmation (answers anomaly flag)",
+      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Inquisitor's armour set. The set ran from a ~320m mid-July base to a ~387m peak on 2026-08-05, and sits at ~367m as of 2026-08-10 on roughly doubled daily volume. The run-up began after the 2026-07-30 TFA rewards blog first detailed the Breaker, a best-in-slot Crush megarare whose damage scales with NPC size, and community discussion explicitly links Inquisitor's (the crush-synergy armour set) to the new megarare, including a front-page suggestion to add a TFA Inquisitor's armour kit. The causal link is community speculation, not any official statement; the events themselves are confirmed.",
+      "direction": "unclear",
+      "items": [{ "id": 24488, "name": "Inquisitor's armour set" }],
+      "sources": [
+        { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Breaker crush megarare confirmed passing 88.4% on 2026-08-10", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/The_Fractured_Archive", "note": "Reward details; notably lists NO changes to existing boss defences", "tier": 1 },
+        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "Front-page post linking Inquisitor's set to the Obligator (crush-synergy framing)", "tier": 2, "community": "r/2007scape" },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "30-day price/volume history", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "community": "r/2007scape",
+      "validUntil": "2026-09-30",
+      "contrary": "The set peaked Aug 5 and has retraced ~5% into the Aug 10 poll result - consistent with news-realization unwinding, not fresh accumulation. No official source links Inquisitor's to TFA: the wiki's TFA page lists no boss-defence changes, and the 'Nex crush defence is being reduced' claim circulating in comments is unsourced. Commenters also allege the recurring buff-Inquisitor's suggestion posts are mercher-driven - see the companion promotion-warning record.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~320.0m, peak ~387m on Aug 5, ~366.7m on Aug 10; recent(Aug 7-10) vs baseline: price +17.7%, volume +125% (tracker's flag math: +23.4% / +418% on its own baseline). The move predates the poll close by a week and is already partially retracing; nothing here supports chasing." }
+    },
+    {
+      "id": "2026-08-10-inquisitors-promotion-warning",
+      "type": "promotion-warning",
+      "confidence": "rumor",
+      "title": "Inquisitor's armour set being promoted in r/2007scape — possible coordinated accumulation",
+      "thesis": "Recurring suggestion posts proposing buffs or new synergies for the Inquisitor's set are appearing in r/2007scape while the set runs +18% on doubled volume, the latest being a front-page 2026-08-10 post proposing a TFA Inquisitor's armour kit hours before the tracker's anomaly flag tripped. Multiple commenters in that thread independently allege the pattern is mercher-driven ('Is this a psyop by inquisitor merchers? I swear it's like every week there is a suggestion to upgrade inquisitors'). The existence and cadence of the promotion content is the datum; its claims are not. Correct posture on a suspected accumulation story is absence.",
+      "direction": "caution",
+      "items": [{ "id": 24488, "name": "Inquisitor's armour set" }],
+      "sources": [
+        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "The promotion vehicle: buff-suggestion post, front page during the price run", "tier": 2, "community": "r/2007scape" },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "Price/volume anomaly the promotion coincides with", "tier": 1 }
+      ],
+      "sourceTier": 1,
+      "community": "r/2007scape",
+      "validUntil": "2026-09-10",
+      "contrary": "A genuine T0 catalyst sits adjacent (the TFA crush megarare was confirmed in the same window), so elevated attention has an organic explanation. No explicit buy-calls, price targets, or urgency framing were found in the public threads - the promotion is suggestion-shaped - and the 'merchers' allegation is itself an unproven community claim.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Same data as the companion demand-context record: ~320m baseline to ~387m Aug 5 peak, ~366.7m Aug 10; +17.7% recent-vs-baseline on +125% volume. Whatever the accumulation story was, most of it has already printed." }
     }
   ]
 }

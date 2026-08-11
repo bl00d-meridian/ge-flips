@@ -93,15 +93,25 @@ minimum bar for a source — and it is a bar, not a guarantee of honesty.
 | Dev blogs | whatever the above link to — read the primary, cite the primary |
 | Item mapping (name → id) | `https://prices.runescape.wiki/api/v1/osrs/mapping` |
 
-**Reddit method (standing):** standard page fetches are blocked — use the public JSON
-endpoints `https://www.reddit.com/r/2007scape/top.json?t=week&limit=50` and
-`.../hot.json?limit=50` via curl with a descriptive User-Agent, single pass, no
-pagination hammering. Parse titles, scores, flair, selftext; fetch a post's comments
-(`.json` appended to the post URL) ONLY for the top handful of catalyst-relevant posts,
-never wholesale. If the JSON endpoints are also blocked from the current network
-(datacenter IPs get 403 regardless of UA), degrade gracefully: state
-"T2 source unavailable this sweep" in the BRIEF header and proceed on T0/T1 — an honest
-partial brief beats a stalled one.
+**Reddit method (standing, RSS — diagnosed 2026-08-10):** the `.json` endpoints return
+403 from this machine on both `www.` and `old.` regardless of User-Agent (`Server:
+snooserv` — Reddit-side client filtering, not network egress; there is no Claude Code
+domain allowlist in play). The **RSS/Atom feeds are not filtered** and are the standing
+method:
+
+- Listings: `https://old.reddit.com/r/2007scape/top/.rss?t=week&limit=50` and
+  `https://old.reddit.com/r/2007scape/hot/.rss?limit=50` — 50 entries each with title,
+  author, selftext HTML, link, timestamps. **Scores and flair are not in RSS**; the
+  `top?t=week` feed's own ordering substitutes for score ranking — never invent counts.
+- Comments: append `.rss` to a post URL, ONLY for the top handful of catalyst-relevant
+  posts, never wholesale.
+- **Space requests ≥5s apart** — Reddit 429s fast on burst traffic (observed at ~6
+  requests/2min); a 429 is a politeness failure, wait ≥45s before one retry.
+- Descriptive User-Agent, single pass, no pagination hammering, as before.
+
+If the RSS feeds also become blocked, degrade gracefully: state "T2 source unavailable
+this sweep" in the BRIEF header and proceed on T0/T1 — an honest partial brief beats a
+stalled one.
 | 30-day charts (priced-in check) | `https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=<id>` |
 
 ## Output 1 — `intelligence.json` (repo root, overwritten per run)
