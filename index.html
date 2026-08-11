@@ -10171,6 +10171,20 @@ function navGoto(dest){
   requestAnimationFrame(() => {
     const el = document.getElementById(anchor);
     if (!el) return;
+    /* Sticky-chrome offset (ruled Aug 11 2026): scroll-margin-top set from
+       the ACTUAL rendered height of pinned top chrome, measured at scroll
+       time — never hardcoded, because the header wraps taller on a phone.
+       The vitals strip is measured by the same rule: it is in normal flow
+       today (scrolls away, overlays nothing), so it contributes its height
+       the moment it ever becomes sticky/fixed chrome and zero until then.
+       +10px so the section title and its top border are fully visible. */
+    let pad = 10;
+    for (const c of [document.querySelector("header"), document.getElementById("homeVitals")]){
+      if (!c) continue;
+      const p = getComputedStyle(c).position;
+      if (p === "sticky" || p === "fixed") pad += c.getBoundingClientRect().height;
+    }
+    el.style.scrollMarginTop = Math.ceil(pad) + "px";
     el.scrollIntoView({ block: "start" });
     el.classList.add("landed");
     setTimeout(() => el.classList.remove("landed"), 1600);

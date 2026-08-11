@@ -2508,10 +2508,21 @@
       a.remove();
       const el = document.getElementById(dest.split("#")[1]);
       if (!el) return { pass: false, why: dest + " → target element missing" };
-      const r = el.getBoundingClientRect();
-      return { pass: el.offsetParent !== null && r.top > -12 && r.top < window.innerHeight * 0.85
+      /* Landing standard (ruled Aug 11 2026): the target's TITLE must sit
+         fully inside the viewport AND below the sticky chrome's bottom edge.
+         The old "top is in the viewport" passed at top≈0 — i.e. with the
+         title hidden under the sticky header — which is how the offset bug
+         shipped green. */
+      const hdr = document.querySelector("header");
+      const chromeBottom = hdr ? hdr.getBoundingClientRect().bottom : 0;
+      /* first VISIBLE title — a minimized panel's h2 is display:none by the
+         one-line ruling; its summary row's .t is the title that must land */
+      const title = Array.from(el.querySelectorAll("h2, h3, summary, .t")).find(x => x.offsetParent !== null) || el;
+      const tr = title.getBoundingClientRect();
+      return { pass: el.offsetParent !== null && tr.top >= chromeBottom + 1 && tr.bottom <= window.innerHeight
         && el.classList.contains("landed"),
-        why: dest + " top=" + Math.round(r.top) + " vis=" + (el.offsetParent !== null)
+        why: dest + " titleTop=" + Math.round(tr.top) + " chromeBottom=" + Math.round(chromeBottom)
+          + " titleBottom=" + Math.round(tr.bottom) + "/" + window.innerHeight
           + " landed=" + el.classList.contains("landed") };
     }
     for (const dest of ["watch#deployPanel", "watch#posPanel", "watch#planTitle",

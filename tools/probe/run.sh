@@ -38,7 +38,11 @@ if [ ! -f "$EDGE" ]; then echo "FATAL: msedge.exe not found — edit EDGE in $0"
 # value silently breaks Edge (file:////c/... never loads, so no beacon ever
 # fires). cygpath -m produces C:/... which works in both positions.
 OUTW="$(cygpath -m "$OUT" 2>/dev/null || echo "$OUT")"
+# PROBE_WINDOW=390,844 bash tools/probe/run.sh  → phone-viewport pass (deep-link
+# landings measure sticky chrome at scroll time; both viewports must pass).
+WINSIZE="${PROBE_WINDOW:-1200,900}"
 "$EDGE" --headless=new --disable-gpu --no-first-run --no-default-browser-check --disable-extensions \
+  --window-size="$WINSIZE" \
   --disable-sync --disable-background-networking --disable-component-update \
   --disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessChecks \
   --host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE 127.0.0.1" \
