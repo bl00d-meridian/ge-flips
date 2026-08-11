@@ -267,6 +267,33 @@ Ratified Aug 10 2026 as a **starting value** for the pump fingerprint's structur
 at the first monthly read of the briefing scorecard, check it against the flagged items'
 actual books and propose a correction. The setting lives in the intel panel (`pumpThin`).
 
+### 6.7 Harden the stratum classifier with wiki categories — **deferred by ruling** · M · **3**
+Ratified Aug 11 2026, and deliberately **not built yet**. The pond-prospecting slice sorts the item
+universe into 21 structural strata, but the prices API's mapping carries only name, members, buy
+limit, value and high-alch — no categories. So 19 of the 21 strata are matched on item *names*
+(`/\b(helm|helmet|coif|hood|mask)\b/i` and friends); only F2P (the mapping's own members flag) and
+the two price-band strata are exact. That makes the per-stratum map **directional, not a census**:
+a Dragon *pickaxe* lands in the weapon stratum, "Ring of recoil" and "Ring of shadows" both land in
+the ring stratum whether or not they are equipment at all, and anything the patterns miss is
+credited to no region.
+
+The fix, when it is worth paying for: enrich each sampled item with its real wiki categories
+through the **existing** MediaWiki path this file already uses for basket metadata — `wikiCatsFor()`
+(`WIKI_API`, `action=query&prop=categories`, batched 50 titles per request, cached in
+`localStorage` under `WCAT_KEY` on a 7-day TTL). Classification would then key off
+`Category:Head slot items` and similar rather than a regex, and the caveat could come off.
+
+**Why it is deferred:** the enrichment costs an API round trip per uncached item, and the slice
+samples items nothing else has ever fetched — the cache would be cold constantly, which is exactly
+the traffic pattern the politeness rules exist to prevent. The map is not load-bearing: today it
+steers *sampling* and nothing else, and being wrong about which bucket an item belongs to is cheap.
+
+**The trigger to build it:** the first time a per-stratum finding is cited in an actual ruling — a
+scanner proposal, a scout priority change, a gate proposal. Until then the tripwire carries the
+warning to the point of decision instead (every stratum verdict renders "Depends on approximate
+stratum classification — verify before ruling"). When that warning starts appearing on things you
+are about to *rule* on, the classifier has become load-bearing and this entry comes due.
+
 ---
 
 ## Suggested order

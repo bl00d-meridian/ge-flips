@@ -85,11 +85,19 @@ nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--go
 /* deep-link landing flash — you always know where you arrived */
 .landed{outline:2px solid var(--gold);outline-offset:2px;transition:outline-color 1.2s}
 /* four-slot row scheme: test dot + expand view (+ the shadow ghost dot) */
-.tdot{font-size:10px;margin-left:4px;color:var(--dim);cursor:default}
-.tdot.on{color:var(--green)}
-.sdot{font-size:10px;margin-left:4px;color:var(--dim);cursor:default}
+/* Row dots (user ruling, Aug 11 2026): SHAPE carries identity, colour carries
+   state within that identity, and the two families never share a colour
+   meaning. Test = plain circle in neutral steel (verified vs stale is not
+   good-vs-bad). Shadow = circle-within-circle in green/red (which IS
+   good-vs-bad). .dslot fixes each position so a missing dot leaves its space
+   instead of letting its neighbour slide into it. */
+.dslot{display:inline-block;width:14px;margin-left:3px;text-align:center;vertical-align:middle}
+.tdot{font-size:10px;color:#6d8093;cursor:default}
+.tdot.on{color:#93b7d6}
+.sdot{font-size:11px;color:var(--dim);cursor:default}
 .sdot.pos{color:var(--green)}
 .sdot.neg{color:var(--red)}
+.sdot.acc{opacity:.65}
 tr.wdet td{background:#221c13;white-space:normal;text-align:left}
 .wdetbox{padding:4px 6px;font-size:12.5px;line-height:1.6;border-left:2px solid var(--gold-dim)}
 .wdetbox .memchip{margin:0 4px 0 0}
@@ -529,6 +537,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     </div>
 
     <div class="panel">
+      <div class="note" id="dotLegend" style="margin-bottom:6px">
+        <b>Row dots</b> — shape is the identity, colour is the state inside it, and the two families never share a colour meaning:
+        <span class="dslot"><span class="sdot pos">◉</span></span> shadow-profitable ·
+        <span class="dslot"><span class="sdot neg">◉</span></span> shadow-losing ·
+        <span class="dslot"><span class="sdot">◎</span></span> shadow: the margin exists, the fills don't ·
+        <span class="dslot"><span class="sdot acc">◌</span></span> shadow accruing (under 3 closed trips — no verdict yet) ·
+        <span class="dslot"><span class="tdot on">●</span></span> margin test verified ·
+        <span class="dslot"><span class="tdot">○</span></span> margin test expired.
+        Shadow states are circles-within-circles and carry good/bad colour because they ARE good/bad; test states are plain circles in neutral steel because verified-vs-stale is not good-vs-bad. Each dot keeps a fixed slot, so a missing one leaves its space rather than letting its neighbour slide over.
+      </div>
       <div class="ph"><h2>Watchlist</h2><span class="sub" id="watchStack"></span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           <button class="sm" id="scoutTog" title="Auto-scout screens the whole market on sustained post-tax ROI and keeps the list topped up. It only adds and removes its own entries — items you added, tested, hold, or flipped recently are never touched."></button>
@@ -1370,6 +1388,9 @@ const S = {
   vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
+  tsNeg: new Map(),     // id → ms of its last /timeseries failure: a failed id must not be retried on the very next pass
+  tsFail: 0,            // consecutive /timeseries failures — trips the circuit breaker below
+  tsPauseUntil: 0,      // breaker: while set, timeseries fetching is suspended and a banner says so
   loading: false, err: null, tab: "home", sub: "watch",
   mode: "walkup", planMode: "buy", promoteFor: null
 };
@@ -1588,10 +1609,45 @@ async function loadHour(){
 
 /* Timeseries powers three things: the sparkline, the trend gate, and the
    hour-of-day profile. All three come from one request already being made. */
+/* Timeseries circuit breaker (audit finding, Aug 11 2026). The poll's own
+   backoff only counts failures of the bulk endpoints in doRefresh; every
+   /timeseries call site swallows its error, and a failed id was never cached,
+   so an endpoint that rejects timeseries while /latest keeps returning 200
+   would be re-hit by the scout, the scanner cohort and fillSparks on every
+   pass — thousands of rejected requests a day, indefinitely, with nothing on
+   screen. Unattended that is exactly the shape of a bad neighbour. So:
+   failures are remembered per id, and a run of them suspends timeseries
+   fetching entirely behind a visible banner until a probe succeeds. */
+const TS_FAIL_TRIP = 8, TS_PAUSE_MS = 30 * 60e3, TS_NEG_TTL = 10 * 60e3;
+const tsPaused = () => S.tsPauseUntil && Date.now() < S.tsPauseUntil;
 async function sparkFor(id){
   const c = S.spark.get(id);
   if (c && Date.now() - c.at < SPARK_TTL) return c;
-  const d = await getJSON("/timeseries?id=" + id + "&timestep=1h");
+  /* Stale-but-real data beats a repeat request while the breaker is open. */
+  if (tsPaused()){
+    if (c) return c;
+    throw new Error("timeseries paused — " + Math.ceil((S.tsPauseUntil - Date.now()) / 60e3) + "m left");
+  }
+  const negAt = S.tsNeg.get(id);
+  if (negAt && Date.now() - negAt < TS_NEG_TTL){
+    if (c) return c;
+    throw new Error("timeseries failed for " + id + " recently — not retrying yet");
+  }
+  let d;
+  try {
+    d = await getJSON("/timeseries?id=" + id + "&timestep=1h");
+  } catch(e){
+    S.tsNeg.set(id, Date.now());
+    S.tsFail++;
+    if (S.tsFail >= TS_FAIL_TRIP){
+      S.tsPauseUntil = Date.now() + TS_PAUSE_MS;
+      warn("ts", "⚠ Price-history (/timeseries) requests are failing — " + S.tsFail
+        + " in a row. Paused for " + Math.round(TS_PAUSE_MS / 60e3)
+        + " minutes rather than hammering the API; charts, trend gates and the hours ledger run on cached data until it recovers. Live prices are unaffected.");
+    }
+    throw e;
+  }
+  S.tsFail = 0; S.tsPauseUntil = 0; S.tsNeg.delete(id); clearWarn("ts");
   const raw = (d.data || []).slice(-168);
   const pts = [], vols = [], byHour = new Array(24).fill(0), hourN = new Array(24).fill(0);
   /* TIME-STRUCTURE PROSPECTING (user-directed, Aug 11 2026): the same 168
@@ -1723,6 +1779,12 @@ async function doRefresh(opts = {}){
     runScout();
     scannerShadowScan();   // scanner shadow cohort — self-throttled to the scout cadence, polite-budgeted
     try { recipeTick(); } catch(e){}   // crafting basis rides the /latest bulk fetch — no new requests
+    /* The 7-day chart drives the trend, momentum and volume-trend gates, but
+       nothing refreshed it on a timer — a tab left open for a fortnight kept
+       judging today's prices against a chart fetched at boot. fillSparks is
+       TTL-gated (30 min) and 250ms-spaced, so this costs nothing beyond what
+       sitting on the watch tab already cost (audit fix, Aug 11 2026). */
+    fillSparks();
   } catch(e){
     S.err = e.message || String(e);
     failCount++;
@@ -2028,7 +2090,7 @@ function renderScan(){
         + esc(risks.map(f => f.label + ": " + f.why).join("\n")) + '">⚠ ' + risks.length + '</span>';
     return '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
-      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? testDot(w, c) + shadowDot(c.id) : '') + '</div></td>'
+      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? shadowDot(c.id) + testDot(w, c) : '') + '</div></td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num dim sec">'+full(c.tax)+'</td>'
@@ -2099,6 +2161,20 @@ const STRATA = [
   { k: "bulk",         lab: "sub-400gp bulk",         lo: 1, hi: 399 }
 ];
 const STRATUM_LAB = k => (STRATA.find(s => s.k === k) || {}).lab || (k === "gap" ? "gap band 250k–1m" : k);
+/* CLASSIFIER HONESTY (user ruling, Aug 11 2026). Only F2P (the mapping's own
+   members flag) and the price-band strata are exact; every other stratum is a
+   name-pattern guess, so the map is directional and not a census. Two devices
+   enforce that, and both are derived from STRATA rather than hardcoded so the
+   numbers cannot drift out of true when a stratum is added:
+   • STRATUM_CAVEAT rides every render of the per-stratum map;
+   • STRATUM_TRIPWIRE must be appended to ANY proposal that cites a per-stratum
+     finding — a scanner proposal, a scout priority change, a gate proposal. A
+     finding that steers sampling is cheap to be wrong about; one that steers a
+     RULING is not, so the ruling carries the caveat to the point of decision. */
+const STRATA_APPROX_N = STRATA.filter(s => !!s.rx).length;
+const STRATUM_CAVEAT = STRATA_APPROX_N + " of " + STRATA.length
+  + " strata are name-pattern approximations — directional, not a census.";
+const STRATUM_TRIPWIRE = " <b>Depends on approximate stratum classification — verify before ruling.</b>";
 /* Rotation index advances with the price cycle and is stable within it — the
    rows you see are the rows that accrue counterfactuals, same as before. */
 function currentStratum(){
@@ -2169,6 +2245,7 @@ function strataStat(k){
 }
 function strataSeen(k, id){
   const s = strataStat(k);
+  s.lastAt = Date.now();   // freshness: a stalled sampler must be visible, not inferred from a flat map
   if (s.ids.includes(id)) return false;
   if (s.ids.length >= STRATA_ID_CAP){ s.capped = 1; return false; }
   s.ids.push(id); s.samp = s.ids.length;
@@ -3318,6 +3395,7 @@ function applyFamilyRule(pass, bench){
    measurement or the user's own diligence, stated inline on the plan:
    a completed logged round trip in 30d, or a fresh margin test. */
 const QUAL_PASSES = 3, QUAL_SPAN_MS = 2 * 3600e3, QUAL_GAP_MS = 3600e3;
+const QUAL_GAP_MAX = 12 * 3600e3;   // beyond this the gap is a closed tab, not an observation interval — see updateQualStreaks
 function qualExemption(id, c){
   if (c && c.tested) return "margin-tested by you — your diligence outranks the clock";
   const cut = Date.now() - 30 * 86400e3;
@@ -3352,7 +3430,16 @@ function updateQualStreaks(all){
     }
     const q = DB.qual[x.id];
     if (!q){ DB.qual[x.id] = { n: 1, firstAt: now, lastAt: now }; dirty = true; }
-    else if (now - q.lastAt >= QUAL_GAP_MS){ q.n++; q.lastAt = now; dirty = true; }
+    else if (now - q.lastAt >= QUAL_GAP_MS){
+      /* A gap is not a pass (audit fix, Aug 11 2026). The streak claims
+         "counted full-gate passes spanning ≥2h" as proof the edge is
+         SUSTAINED; before this, a five-day closed tab handed an item its next
+         count on the first refresh back, because nothing had been observed to
+         reset it. An implausible gap re-stamps the clock without crediting a
+         pass, so seasoning measures observation rather than elapsed time. */
+      if (now - q.lastAt <= QUAL_GAP_MAX) q.n++;
+      q.lastAt = now; dirty = true;
+    }
   }
   for (const id of Object.keys(DB.qual))
     if (!DB.watch.some(w => w.id === +id)){ delete DB.qual[id]; dirty = true; }
@@ -4610,6 +4697,12 @@ const shadowPartPct = () => Math.round(shadowPart() * 100);
 const shadowFullFilled = p => (p.buyQFull != null ? p.buyQFull
   : (p.state === "filled" || p.state === "forced-exit") ? p.qty : (p.buyQ || 0)) >= p.qty;
 const shadowOpen = () => DB.shadowBook.filter(p => p.state === "open");
+/* A trip counts as EVIDENCE only if its horizon was actually observed. Trips
+   that expired during a closed-tab gap resolve to "unobserved" and are
+   excluded from every aggregate — a hole in the record is not a result
+   (audit fix, Aug 11 2026). They are still counted and reported as holes. */
+const shadowResolved = p => p.state !== "open" && p.state !== "unobserved";
+const shadowGaps = () => (DB.shadowBook || []).filter(p => p.state === "unobserved").length;
 function shadowSizeFor(c){
   const hu = Math.max(1, Math.floor(volGateFor(c).v * GATE.capture * FILLH()));
   const cap = planCap(c);
@@ -4726,7 +4819,7 @@ const SHADOW_SCAN_TOP = 8;          // per tier per cycle (ruled)
 const SHADOW_SCAN_BOOST_TRIPS = 3;  // profitable scanner-cohort trips that earn the scout attention boost (ruled)
 function scannerShadowBoost(){
   const m = new Map();
-  for (const p of (DB.shadowBook || []).filter(p => p.cohort === "scanner" && p.state !== "open" && (p.net || 0) > 0))
+  for (const p of (DB.shadowBook || []).filter(p => p.cohort === "scanner" && shadowResolved(p) && (p.net || 0) > 0))
     m.set(p.itemId, (m.get(p.itemId) || 0) + 1);
   return new Set([...m].filter(([, n]) => n >= SHADOW_SCAN_BOOST_TRIPS).map(([id]) => id));
 }
@@ -4807,7 +4900,13 @@ function shadowTick(){
       if (p.buyQ >= p.qty){ p.buyDone = now; }
       else if (now - p.t > H){
         if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = now; }   // partial: the bought units still need selling
-        else {
+        else if (now - (p.t + H) > SHADOW_OBS_CAP){
+          /* The horizon expired while nobody was watching (audit fix, Aug 11
+             2026): "would not have filled" is a claim about a window we did
+             not observe, so it is not evidence — it is a hole. */
+          p.state = "unobserved"; p.closedAt = now; p.net = 0; p.gap = 1;
+          changed = true;
+        } else {
           p.state = "unfilled"; p.closedAt = now; p.net = 0;
           changed = true;
         }
@@ -4823,6 +4922,13 @@ function shadowTick(){
       if (p.sellQ >= p.qty){
         p.state = "filled"; p.closedAt = now;
         p.net = p.qty * (p.ask - geTax(p.ask, p.itemId)) - p.qty * p.bid;
+        changed = true;
+      } else if (now - (p.buyDone + H) > SHADOW_OBS_CAP){
+        /* Same hole on the sell leg, and worse: the undercut-to-exit rule
+           would book TODAY's instasell as the exit for a horizon that expired
+           days ago, and that fictional drift would enter the regime curves and
+           the gate verdicts as simulated P&L. Refuse to price it. */
+        p.state = "unobserved"; p.closedAt = now; p.net = 0; p.gap = 1;
         changed = true;
       } else if (now - p.buyDone > H){
         const rem = p.qty - p.sellQ;
@@ -4840,7 +4946,7 @@ function shadowTick(){
      edge" map has to outlive the shadow book's retention window. Each record
      rolls exactly once. */
   for (const p of DB.shadowBook){
-    if (p.state === "open" || p.rolled || !p.stratum) continue;
+    if (p.state === "open" || p.state === "unobserved" || p.rolled || !p.stratum) continue;
     const st = strataStat(p.stratum);
     st.trips++; st.net += (p.net || 0);
     if (p.state === "filled" || p.state === "forced-exit") st.filled++;
@@ -4850,7 +4956,7 @@ function shadowTick(){
   /* Daily regime snapshot: 30d cumulative simulated net per regime — the
      divergence ledger the proposal engine's persistence rule reads. */
   const d = today();
-  const reg = r => DB.shadowBook.filter(p => p.state !== "open" && (p.regimes || []).includes(r))
+  const reg = r => DB.shadowBook.filter(p => shadowResolved(p) && (p.regimes || []).includes(r))
     .reduce((a, p) => a + (p.net || 0), 0);
   const snap = { d, cur: reg("current"), loose: reg("loose"), tight: reg("tight") };
   const last = DB.shadowDivLog[DB.shadowDivLog.length - 1];
@@ -4871,13 +4977,23 @@ function shadowRegimeEvidence(){
      regime's candidates earned probation slots", never "this regime is
      right" — the race ranks candidates for live half-size tests; the floor
      itself still moves only on your ruling. */
+  /* "4 of the last 7 days" is only true if the 7 readings ARE seven days: the
+     ledger writes one row per day the app was open, so after an absence the
+     same seven rows can span a month. Say which it is (audit fix, Aug 11
+     2026) — the persistence rule is the evidence bar for a gate proposal, and
+     it must not quietly widen its own window. */
+  const spanD = Math.round((Date.parse(log[log.length - 1].d + "T00:00:00")
+                          - Date.parse(log[0].d + "T00:00:00")) / 86400e3) + 1;
+  const windowTxt = spanD > 9
+    ? " (7 readings spanning " + spanD + " days — the app was closed on " + (spanD - 7) + " of them; this is not a clean 7-day window)"
+    : "";
   if (looseWins >= 4 && latest.loose > latest.cur)
     return { dir: "loosen", html: '<b>Shadow screen:</b> the loose ROI regime (' + (GATE.roi * SHADOW_LOOSE).toFixed(1)
-      + '%) out-earned current on ' + looseWins + ' of the last 7 days — 30d simulated net ' + gp(Math.round(latest.loose))
+      + '%) out-earned current on ' + looseWins + ' of the last 7 readings' + windowTxt + ' — 30d simulated net ' + gp(Math.round(latest.loose))
       + ' vs ' + gp(Math.round(latest.cur)) + ' at ' + shadowPartPct() + '% fill participation (both books simulated). Reading: the loose regime\'s candidates earned probation slots — a screening rank, not proof the regime is right; live half-size trips through the exception lane are the only path to a waiver, and the ROI floor moves only on your ruling — nothing changes without it.' };
   if (tightWins >= 4 && latest.tight > latest.cur)
     return { dir: "tighten", html: '<b>Shadow screen:</b> the tight ROI regime (' + (GATE.roi * SHADOW_TIGHT).toFixed(2)
-      + '%) out-earned current on ' + tightWins + ' of the last 7 days — 30d simulated net ' + gp(Math.round(latest.tight))
+      + '%) out-earned current on ' + tightWins + ' of the last 7 readings' + windowTxt + ' — 30d simulated net ' + gp(Math.round(latest.tight))
       + ' vs ' + gp(Math.round(latest.cur)) + ' at ' + shadowPartPct() + '% fill participation. Reading: the tight regime\'s candidates earned probation slots — a screening rank, not proof the regime is right; the ROI floor moves only on your ruling — nothing changes without it.' };
   return null;
 }
@@ -4889,7 +5005,7 @@ function shadowByGate(){
   const byGate = new Map();
   /* Watchlist + slice cohorts only — the scanner cohort answers the FILTER
      question on its own ledger line; populations never mix in a gate read. */
-  for (const p of DB.shadowBook.filter(p => p.state !== "open" && p.benchedBy && p.benchedBy.length && p.cohort !== "scanner")){
+  for (const p of DB.shadowBook.filter(p => shadowResolved(p) && p.benchedBy && p.benchedBy.length && p.cohort !== "scanner")){
     const g = p.benchedBy[0];
     if (!byGate.has(g)) byGate.set(g, { arr: [] });
     byGate.get(g).arr.push(p);
@@ -4917,7 +5033,7 @@ const SLICE_SHADOW_CAP = 5;      // discovery-slice shadow entries per cycle (ru
 function shadowSlice(id, exclScanner){
   /* exclScanner (exception lane only): scanner-cohort trips nominate scout
      ADMISSION, never probation — the funnel moves one stage per ruling. */
-  const closed = (DB.shadowBook || []).filter(p => p.itemId === id && p.state !== "open"
+  const closed = (DB.shadowBook || []).filter(p => p.itemId === id && shadowResolved(p)
     && (!exclScanner || p.cohort !== "scanner"));
   if (!closed.length) return null;
   const bought = closed.filter(p => p.state === "filled" || p.state === "forced-exit").length;
@@ -4981,7 +5097,7 @@ function exceptionEvidence(id){
   if (suspectedPump(id) || isBlk(id) || toxicFor(id)) return null;   // red flags bar the lane entirely
   if (excFor(id)) return null;                                        // already granted or waived
   const gates = {};
-  for (const p of (DB.shadowBook || []).filter(p => p.itemId === id && p.state !== "open" && p.cohort !== "scanner"))
+  for (const p of (DB.shadowBook || []).filter(p => p.itemId === id && shadowResolved(p) && p.cohort !== "scanner"))
     for (const g of (p.benchedBy || [])) gates[g] = (gates[g] || 0) + 1;
   const gate = Object.entries(gates).sort((a, b) => b[1] - a[1]).map(x => x[0])[0];
   if (!gate) return null;   // regime/discovery trips don't ground an exception — it waives a named gate
@@ -4992,7 +5108,7 @@ function exceptionProposals(){
   /* Reweight ruling (Aug 11 2026): the screen's output is a RANKED shortlist
      — candidates ordered by conservative simulated net, best case for a live
      half-size test first, truncated at the free probation slots. */
-  const ids = [...new Set((DB.shadowBook || []).filter(p => p.state !== "open").map(p => p.itemId))];
+  const ids = [...new Set((DB.shadowBook || []).filter(shadowResolved).map(p => p.itemId))];
   const out = [];
   for (const id of ids){
     const ev = exceptionEvidence(id);
@@ -5113,7 +5229,7 @@ function gateStreamDirs(g, ghRows){
 }
 
 function shadowAuditInline(){
-  const closed = DB.shadowBook.filter(p => p.state !== "open");
+  const closed = DB.shadowBook.filter(shadowResolved);
   const lines = [];
   /* Standing caveat (reweight ruling, Aug 11 2026) — self-impact limitation
      stated wherever the panel renders. */
@@ -5199,7 +5315,7 @@ function hoursLedger(){
     for (let h = 0; h < 24; h++)
       if (sp.roiHour[h] != null){ mkt[h] += sp.roiHour[h]; mktN[h]++; }
   }
-  const closed = (DB.shadowBook || []).filter(p => p.state !== "open");
+  const closed = (DB.shadowBook || []).filter(shadowResolved);
   const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0 }));
   for (const p of closed){
     const h = new Date(p.t).getHours();
@@ -5385,6 +5501,88 @@ function recipeBasisInline(){
   lines.push(flags.length
     ? '<div style="margin-top:4px"><b>Breaks this week:</b> ' + flags.map(f => esc(f.name) + ' (' + ago(f.at) + ')').join(" · ") + '</div>'
     : '<div class="dim" style="margin-top:4px">No basis breaks in the last 7 days — the recipe legs are tracking each other.</div>');
+  return '<div class="inline">' + lines.join("") + '</div>';
+}
+
+/* ═══ DATA FRESHNESS (user-directed, Aug 11 2026) ═══
+   Every background accrual in this tool ticks off the app being OPEN — the
+   60s poll and the render pass. Nothing accrues while the tab is closed, and
+   a stream that stops accruing looks exactly like a stream with nothing to
+   say: a flat chart, an empty section, a count that stopped moving. That is
+   the one failure mode a quiet fortnight can hide, so each stream reports
+   when it last accrued and whether that is late for its own cadence.
+   The absence/silence distinction is explicit per stream, because it is not
+   the same question for all of them: SCHEDULED streams (a daily snapshot, a
+   weekly scan) are late if their clock has passed, while EVENT-DRIVEN ones
+   (die-off episodes, basis breaks, logged flips) are silent when nothing
+   happened, and silence there is data, not a stall. Only scheduled streams
+   can go stale; event-driven ones say so instead of faking a verdict. */
+function freshnessRows(){
+  const now = Date.now();
+  const dayMs = 86400e3;
+  const dParse = d => (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? Date.parse(d + "T00:00:00") : 0;
+  const maxOf = arr => arr.length ? Math.max(...arr) : 0;
+  const sb = DB.shadowBook || [];
+  const rows = [];
+  const add = (name, at, staleMs, kind, note) => rows.push({ name, at, staleMs, kind, note,
+    stale: kind === "scheduled" && at > 0 && (now - at) > staleMs,
+    never: !at });
+  /* — scheduled: these should tick on their own clock while the app is open — */
+  add("Shadow trips (fill sim)", maxOf(sb.map(p => p.lastObs || p.closedAt || p.t || 0)),
+      6 * 3600e3, "scheduled", "observes every 60s refresh"
+      + (shadowGaps() ? " · " + shadowGaps() + " trip" + (shadowGaps() === 1 ? "" : "s")
+         + " resolved UNOBSERVED (horizon expired while the tab was closed) — held out of every aggregate, not scored" : ""));
+  add("Regime ledger (divergence)", dParse((DB.shadowDivLog || []).slice(-1)[0] && DB.shadowDivLog.slice(-1)[0].d),
+      2 * dayMs, "scheduled", "one snapshot per day");
+  add("Scanner cohort", maxOf(sb.filter(p => p.cohort === "scanner").map(p => p.t || 0)),
+      12 * 3600e3, "scheduled", "opens on the scout's 10-min cadence");
+  add("Stratum samples", maxOf(Object.values(DB.strataStats || {}).map(s => s.lastAt || 0)),
+      6 * 3600e3, "scheduled", "samples every render pass");
+  add("Gate-health ledger", dParse(maxOf((DB.gateLog || []).map(e => dParse(e.d))) ? new Date(maxOf((DB.gateLog || []).map(e => dParse(e.d)))).toLocaleDateString("en-CA") : ""),
+      2 * dayMs, "scheduled", "one row per item·gate·day");
+  add("Deploy ledger (funnel)", maxOf((DB.deployLog || []).map(e => (e.h || 0) * 3600e3)),
+      12 * 3600e3, "scheduled", "one bucket per hour");
+  add("Recipe basis", dParse(maxOf(Object.values(DB.recipeLog || {}).flatMap(v => (v || []).map(x => dParse(x.d)))) ? new Date(maxOf(Object.values(DB.recipeLog || {}).flatMap(v => (v || []).map(x => dParse(x.d))))).toLocaleDateString("en-CA") : ""),
+      2 * dayMs, "scheduled", "one reading per recipe per day");
+  add("Hour-of-day (market stream)", maxOf(DB.watch.map(w => (S.spark.get(w.id) || {}).at || 0)),
+      2 * dayMs, "scheduled", "rides the 7-day series each watch item fetches");
+  add("Coherence readings", DB.lastCoScanAt || 0, 10 * dayMs, "scheduled", "weekly co-movement scan");
+  add("Anomaly scan", DB.lastAnomalyScanAt || 0, 10 * dayMs, "scheduled", "weekly accumulation sweep");
+  add("Walk-up attention", dParse(((DB.walkupLoad || []).slice(-1)[0] || {}).d), 3 * dayMs, "scheduled",
+      "one reading per day you walk up");
+  /* — event-driven: silence is a finding, not a stall — */
+  add("Markouts (realized)", maxOf((DB.flips || []).map(f => f.id || 0)), 0, "event", "needs logged round trips");
+  add("Die-off episodes", maxOf((DB.dieOffLog || []).map(e => e.t || 0)), 0, "event", "only on a confirmed die-off");
+  add("Basis breaks", maxOf((DB.recipeFlags || []).map(f => f.at || 0)), 0, "event", "only on a 2× basis break");
+  add("Accumulation flags", maxOf((DB.anomalyFlags || []).map(f => f.at || 0)), 0, "event", "only on a flagged signature");
+  return rows;
+}
+function freshnessInline(){
+  const rows = freshnessRows();
+  const stale = rows.filter(r => r.stale);
+  const neverSched = rows.filter(r => r.kind === "scheduled" && r.never);
+  const lines = [];
+  if (tsPaused())
+    lines.push('<div class="plan-note"><b class="neg">⚠ Price-history fetching is paused</b> — '
+      + Math.ceil((S.tsPauseUntil - Date.now()) / 60e3) + ' minutes left on the circuit breaker after '
+      + S.tsFail + ' consecutive /timeseries failures. Anything chart-derived below (trend gates, the hours ledger\'s market stream, sparklines) is running on cached data. Live prices are unaffected.</div>');
+  lines.push('<div class="plan-note"><b>Every accrual in this tool ticks off the app being open — and VISIBLE.</b> The poll skips entirely while the tab is hidden (backgrounded or minimized), so a fortnight behind another tab accrues nothing at all: no shadow fills, no stratum samples, no daily snapshots. Nothing is lost, but nothing is gained either. A stalled stream and a quiet one look identical on a chart, so each stream states when it last accrued. <b>Scheduled</b> streams can be late; <b>event-driven</b> ones are silent when nothing happened, and that silence is data, not a fault.</div>');
+  lines.push(stale.length
+    ? '<div class="plan-note"><b class="neg">⚠ ' + stale.length + ' stream' + (stale.length === 1 ? '' : 's')
+      + ' behind schedule:</b> ' + stale.map(r => esc(r.name) + ' (' + ago(r.at) + ')').join(" · ")
+      + ' — if the app sat closed, that is expected and they resume on their own; if it was open, something is throwing. Check the browser console.</div>'
+    : '<div class="pos">✓ every scheduled stream is current for its cadence.</div>');
+  if (neverSched.length)
+    lines.push('<div class="dim">Never accrued: ' + neverSched.map(r => esc(r.name)).join(" · ")
+      + ' — expected on a fresh store; a finding if it persists past a few cycles with a watchlist loaded.</div>');
+  for (const r of rows)
+    lines.push('<div>' + (r.stale ? '<span class="neg">⚠</span> ' : r.never ? '<span class="dim">·</span> ' : '<span class="pos">✓</span> ')
+      + '<b>' + esc(r.name) + '</b> — '
+      + (r.never
+        ? (r.kind === "event" ? '<span class="dim">nothing yet (' + esc(r.note) + ')</span>'
+                              : '<span class="dim">never accrued</span>')
+        : 'last accrued <b>' + esc(ago(r.at)) + '</b>')
+      + ' <span class="dim">· ' + (r.kind === "event" ? 'event-driven — silence is a valid state' : esc(r.note)) + '</span></div>');
   return '<div class="inline">' + lines.join("") + '</div>';
 }
 
@@ -5674,6 +5872,13 @@ function scanScreenTier(t, minRoiFactor){
   return out;
 }
 
+/* The watch entries whose 7-day chart is actually in the cache. The cache is
+   in-memory and EMPTY on a cold boot (fillSparks runs after the first scout
+   pass), so without this every automated cull would fire on the first refresh
+   of a new session against items that failed only "chart still loading" —
+   a verdict with no trial behind it. Nothing may be culled unless it appears
+   here (audit fix, Aug 11 2026). */
+const chartedNow = () => new Set(DB.watch.filter(w => S.spark.get(w.id)).map(w => w.id));
 const SCOUT_EVERY = 10 * 60e3, SCOUT_EVICT_MS = 48 * 3600e3;
 const SCOUT_EVAL_PER_TIER = 12;   // full-gate evaluations (spark fetches) per cycle — API politeness
 async function runScout(force){
@@ -5684,7 +5889,15 @@ async function runScout(force){
   S.lastScout = now; S.scoutBusy = true;
   try {
     /* 1) lastPass upkeep — against the FULL plan gates, not just the screen:
-       an entry that keeps failing gates is dead menu weight either way. */
+       an entry that keeps failing gates is dead menu weight either way.
+       EVALUABILITY (audit fix, Aug 11 2026): the 7-day chart lives in an
+       in-memory cache that is EMPTY on a cold boot, and `fillSparks` runs
+       after this. So on the first refresh of a new session every item fails
+       the "chart still loading" gate — not on its merits. Eviction below must
+       therefore only consider items whose chart is actually loaded; an item
+       that could not be judged this pass is not evidence of anything, and
+       evicting it would be a verdict with no trial behind it. */
+    const charted = chartedNow();
     for (const x of planCandidates()){
       if (x.failed) continue;
       const w = DB.watch.find(v => v.id === x.id);
@@ -5701,10 +5914,11 @@ async function runScout(force){
       if (w.sib != null) return true;                           // siblings live on their own washout clock
       if (held.has(w.id) || recentFlip.has(w.id)) return true;  // open position / recent flip
       if (Number.isFinite(w.tBuy)) return true;                 // you margin-tested it — yours now
+      if (!charted.has(w.id)) return true;                      // never judged this pass (chart not loaded) — no evidence, no eviction
       if (now - (w.lastPass || w.addedAt || 0) > SCOUT_EVICT_MS){
         removed.push(itemName(w.id));
         DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
-          why: "failed the full gate screen for 48h straight (scout·T" + (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy) || "?") + ")" });
+          why: "no full-gate pass in 48h of evaluated refreshes (scout·T" + (w.scoutTier || tierFromPrice((calc(w.id)||{}).buy) || "?") + ")" });
         return false;
       }
       return true;
@@ -5753,7 +5967,7 @@ async function runScout(force){
     runSiblings(now);
 
     /* Journal retention: three days is enough to review a weekend away. */
-    DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 72 * 3600e3).slice(-80);
+    DB.scoutLog = DB.scoutLog.filter(e => now - e.t < 14 * 86400e3).slice(-80);
 
     if (added.length || removed.length){
       S.scoutMsg = "scout: "
@@ -5825,9 +6039,13 @@ function runSiblings(now){
     delete DB.seedAt[id];
   }
 
-  /* Washout: a sibling that never passed the full gates within 5 days. */
+  /* Washout: a sibling that never passed the full gates within 5 days.
+     Same evaluability guard as the scout's eviction — an unloaded chart is
+     not a failed screen (audit fix, Aug 11 2026). */
+  const chartedSib = chartedNow();
   DB.watch = DB.watch.filter(w => {
     if (w.sib == null || protectedW(w)) return true;
+    if (!chartedSib.has(w.id)) return true;
     if (now - (w.sibAt || w.addedAt || 0) > SIB_WASHOUT_MS && !((w.lastPass || 0) > (w.sibAt || 0))){
       DB.sibStats.washed++;
       DB.scoutLog.push({ t: now, act: "evict", id: w.id, name: itemName(w.id),
@@ -6130,21 +6348,42 @@ function rowRiskFlags(w, c, sp, P){
     + tox.n + " marked-out fills) — someone better-informed is hitting your quotes");
   return out;
 }
-/* Slot-5 dot (dot-class like the test dot — the four-BADGE rule holds):
-   the item's shadow record at a glance. Solid green shadow-profitable,
-   solid red shadow-losing, hollow when fill rate < 40% — the margin
-   exists, the fills don't. All simulated, said so in the tooltip. */
+/* Shadow dot (dot-class like the test dot — the four-BADGE rule holds): the
+   item's shadow record at a glance. GLYPH FAMILY IS THE IDENTITY (user
+   ruling, Aug 11 2026): every shadow state is a circle-within-a-circle —
+   ◉ verdict, ◎ fills-missing, ◌ accruing — so it can never be misread as the
+   test dot's plain ●/○ at a glance or on a phone. Colour then carries state
+   WITHIN that identity, and only here does green/red mean good/bad. */
 function shadowDot(id){
   const s = shadowSlice(id);
-  if (!s || s.n < SHADOW_ROW_MIN) return "";
+  const book = DB.shadowBook || [];
+  const openN = book.filter(p => p.itemId === id && p.state === "open").length;
+  const gapN  = book.filter(p => p.itemId === id && p.state === "unobserved").length;
+  const closedN = s ? s.n : 0;
+  const total = closedN + openN + gapN;
+  if (!total) return '<span class="dslot"></span>';   // no history: the SLOT still holds its place, the dot does not render
+  /* ACCRUING STATE (user ruling, Aug 11 2026). A row with shadow history that
+     renders nothing is the F18 defect in a new place: the machinery is
+     working and the surface is silent, so the feature reads as broken. Below
+     the verdict threshold there is no verdict to give — but "accruing, N
+     trips" is itself a state, and every state says so. Dim outline, distinct
+     glyph, and it leads the dot slot so it is never lost behind the test dot. */
+  if (closedN < SHADOW_ROW_MIN)
+    return '<span class="dslot"><span class="sdot acc" title="Shadow screen: ACCRUING — '
+      + total + ' trip' + (total === 1 ? '' : 's') + ' on this item · ' + closedN + ' closed, ' + openN + ' still open'
+      + (gapN ? ', ' + gapN + ' unobserved (horizon expired while the tab was closed — held out of every aggregate)' : '')
+      + ' · no verdict until ' + SHADOW_ROW_MIN + ' have closed'
+      + (closedN ? ' · net so far ' + gp(Math.round(s.net)) + ' sim' : '')
+      + '. All simulated — a screen ranking probation candidates, not evidence.">◌</span></span>';
   const hollow = s.fillRate < SHADOW_FILLRATE_LO;
-  return '<span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
-    + '" title="SHADOW SCREEN (all simulated — ranks probation candidates, not evidence): ' + s.n
+  return '<span class="dslot"><span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
+    + '" title="Shadow screen: ' + s.n
     + ' closed trips · fill rate ' + Math.round(s.fillRate * 100) + '% at ' + shadowPartPct() + '% participation'
-    + (hollow ? " — the margin exists, the fills don’t" : "")
+    + (hollow ? " — the margin exists, the fills don’t" : (s.net > 0 ? " — shadow-profitable" : " — shadow-losing"))
     + ' · net ' + gp(Math.round(s.net)) + ' sim · book: ' + esc(s.regs.join(", "))
-    + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)">'
-    + (hollow ? "◌" : "●") + '</span>';
+    + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)'
+    + '. All simulated — ranks probation candidates, not evidence.">'
+    + (hollow ? "◎" : "◉") + '</span></span>';
 }
 const riskChip = (id, flags) => !flags.length ? ""
   : '<button class="badge ' + (flags.some(f => f.hard) ? "b-risk" : "b-warn") + '" data-wdetail="' + id
@@ -6153,10 +6392,14 @@ const riskChip = (id, flags) => !flags.length ? ""
 /* Slot 4 — test state: a dot, not a badge. Solid = fresh, hollow = expired,
    absent = never tested. The numbers live in the tooltip. */
 function testDot(w, c){
-  if (!(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell))) return "";
-  return c.tested
-    ? '<span class="tdot on" title="Margin-tested ' + ago(w.tAt) + ': buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + ' — your fills override live prices for 16h.">●</span>'
-    : '<span class="tdot" title="Test EXPIRED (' + ago(w.tAt) + '): buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + ' — live prices are back in charge; ↻ in the Tested column re-tests.">○</span>';
+  /* The slot is emitted whether or not there is a dot in it — a fixed
+     position is what stops the shadow dot sliding over here and being read
+     as a test state (user ruling, Aug 11 2026). Tooltip names itself first. */
+  const inner = !(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell)) ? ""
+    : c.tested
+      ? '<span class="tdot on" title="Margin test: VERIFIED ' + ago(w.tAt) + ' — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Your own fills override live prices for 16h. (Steel, not green: verified vs stale is not good vs bad.)">●</span>'
+      : '<span class="tdot" title="Margin test: EXPIRED (' + ago(w.tAt) + ') — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Live prices are back in charge; ↻ in the Tested column re-tests.">○</span>';
+  return '<span class="dslot">' + inner + '</span>';
 }
 
 /* Gate tag for rows OUTSIDE the watch pipeline (scanner, discovery slice):
@@ -6313,8 +6556,8 @@ function renderWatch(){
       + '<span class="badge ' + status.cls + '" title="' + esc(status.why) + '">' + esc(status.label) + '</span>'
       + identityBadge(w, c)
       + riskChip(w.id, risks)
-      + testDot(w, c)
       + shadowDot(w.id)
+      + testDot(w, c)
       + '</div>';
     /* Filter row reaches every collapsed state — aggregation costs no
        capability. Filtered rows still count in the totals (stated in foot). */
@@ -7053,7 +7296,14 @@ function gateHealthAudit(){
     dieOff.episodes++;
     if (e.rec != null && e.rec - e.t <= H24){ dieOff.rec24++; dieOff.recHs.push((e.rec - e.t) / 3600e3); }
     else if (e.rec == null && dNow - e.t < H24) dieOff.watching++;
-    else dieOff.faded++;   // still under the floor at +24h (a later recovery still grades the 24h window as a fade)
+    /* NOT "faded" — "not confirmed recovered" (audit fix, Aug 11 2026).
+       Recovery is closed only by a confirmed healthy 5m sample, which needs
+       the app running; an episode whose 24h window elapsed while the tab was
+       closed lands here having proved nothing. Counting that as the die-off
+       tag being RIGHT would be the machine grading its own homework on
+       evidence it never gathered — the exact bias the metric-honesty rule
+       names. The bucket keeps the count and the copy drops the claim. */
+    else dieOff.faded++;   // not confirmed recovered inside 24h — includes windows nobody observed
   }
   return { rows, fundedCount: funded.size, fundedTraded, fundedNet, dieOff };
 }
@@ -7163,7 +7413,8 @@ function renderAuditInline(){
     const d0 = gh.dieOff, med = medianOf(d0.recHs);
     secs.push('<div><b>die-off detected</b> — 5m-confirmed die-off against a passing 1h book; ' + d0.episodes
       + ' episode' + (d0.episodes === 1 ? '' : 's') + ' in 30d: ' + d0.rec24 + ' recovered within 24h'
-      + (med != null ? ' (median ' + fmtHrs(med) + ')' : '') + ' · ' + d0.faded + ' still under the floor at +24h · '
+      + (med != null ? ' (median ' + fmtHrs(med) + ')' : '') + ' · ' + d0.faded
+      + ' <span title="Recovery is closed only by a confirmed healthy 5m sample, which requires the app to be running. Episodes whose 24h window elapsed while the tab was closed land in this bucket having proved nothing — so this is NOT evidence the gate was right.">not confirmed recovered in 24h (includes unobserved windows — not proof of a fade)</span> · '
       + d0.watching + ' inside the window now'
       + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. The tag builds its own track record — nothing changes from here.</div></div>');
   }
@@ -7201,7 +7452,8 @@ function prospectingInline(){
     a.samp += s.samp || 0; a.nm += s.nm || 0; a.pass += s.pass || 0;
     a.trips += s.trips || 0; a.net += s.net || 0; return a;
   }, { samp: 0, nm: 0, pass: 0, trips: 0, net: 0 });
-  const secs = ['<div class="nexthead"><b>5 · Prospecting</b> — the discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&L is <b>simulated</b> screening data, never evidence. Strata are name-pattern classifications (the mapping carries no categories) — approximate by construction, and they steer sampling only.</div>'];
+  const secs = ['<div class="nexthead"><b>5 · Prospecting</b> — the discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&L is <b>simulated</b> screening data, never evidence.</div>',
+    '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>'];
   if (!tot.samp){
     secs.push('<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
     return secs.join("");
@@ -7215,8 +7467,11 @@ function prospectingInline(){
   const rows = keys.map(k => Object.assign({ k }, DB.strataStats[k]))
     .sort((a, b) => (b.net || 0) - (a.net || 0));
   for (const r of rows){
+    /* A per-stratum verdict IS a finding about a region, so the moment it
+       reads as anything other than "can't say" it carries the tripwire. */
     const edge = r.trips >= 5
-      ? (r.net > 0 ? '<b class="pos">prospects</b>' : '<b class="neg">barren so far</b>')
+      ? (r.net > 0 ? '<b class="pos">prospects</b>' + (r.k === "gap" ? "" : STRATUM_TRIPWIRE)
+                   : '<b class="neg">barren so far</b>' + (r.k === "gap" ? "" : STRATUM_TRIPWIRE))
       : '<span class="dim">too few closed trips to say</span>';
     secs.push('<div style="margin:2px 0">' + esc(STRATUM_LAB(r.k)) + ' — ' + (r.samp || 0) + ' sampled · '
       + (r.nm || 0) + ' near-miss · ' + (r.pass || 0) + ' clean · ' + (r.trips || 0) + ' closed ('
@@ -7231,8 +7486,8 @@ function prospectingInline(){
       + ' closed, net ' + gp(Math.round(g.net || 0)) + ' sim · ' + (g.pass || 0) + ' clean passer' + ((g.pass || 0) === 1 ? '' : 's')
       + '. ' + ((g.trips || 0) >= 5
         ? ((g.net || 0) > 0
-          ? '<b>The band prints.</b> On this evidence it has earned a scanner of its own — a proposal for your ruling; nothing here builds one.'
-          : '<b>The band is proven empty</b>, not assumed empty — that is the finding, and it is worth as much as the other answer.')
+          ? '<b>The band prints.</b> On this evidence it has earned a scanner of its own — a proposal for your ruling; nothing here builds one. <span class="dim">(No classifier caveat on this one: gap-band membership is an exact price range, not a name-pattern guess.)</span>'
+          : '<b>The band is proven empty</b>, not assumed empty — that is the finding, and it is worth as much as the other answer. <span class="dim">(Exact price-range membership — no classifier caveat applies.)</span>')
         : 'Not enough closed trips to rule either way yet; the band keeps accruing.'))
     : 'no samples ledgered yet — 5 items per cycle accrue as the scanner runs') + '</div>');
   return secs.join("");
@@ -9718,6 +9973,7 @@ const CHECKLISTS = {
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
     ["Read the shadow book", "The screening column: per-gate shadow P&L with fill reality baked in, and the three ROI-regime curves side by side — all simulated, ranking probation candidates for live half-size tests, never evidence:", null, "shadowbook"],
+    ["Check data freshness", "Every background stream reports when it last accrued. Nothing collects while the tab is closed, and a stalled stream looks exactly like a quiet one on a chart — so this says which is which before you read any of the numbers below:", null, "freshness"],
     ["Read the hours ledger", "Time-structure prospecting: post-tax spread by hour-of-day (market stream, unbiased by when you're awake) against simulated fill rates (shadow stream, biased toward hours you observe). The overnight question answered with data:", null, "hours"],
     ["Read the recipe basis table", "Processing margins on high-volume recipes — a basis breaking wide is both a flip signal on the mispriced leg and a manipulation tell, since pumps distort one leg before the other:", null, "recipes"],
     ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
@@ -9917,6 +10173,8 @@ function renderRoutine(){
       inline = attentionGovernanceInline();
     } else if (s[3] === "shadowbook"){
       inline = shadowAuditInline();
+    } else if (s[3] === "freshness"){
+      inline = freshnessInline();
     } else if (s[3] === "hours"){
       inline = hoursLedgerInline();
     } else if (s[3] === "recipes"){
@@ -10113,7 +10371,7 @@ function homeDeltaLines(){
     .map(f => f.name).filter(n => !pumps.includes(n));
   if (freshFlags.length) line("⚑ " + freshFlags.length + " new accumulation flag"
     + (freshFlags.length === 1 ? "" : "s") + ": " + freshFlags.join(", "), "sleeve#anomPanel");
-  const closed = (DB.shadowBook || []).filter(p => p.state !== "open" && (p.closedAt || 0) > since);
+  const closed = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > since);
   if (closed.length){
     const net = closed.reduce((a, p) => a + (p.net || 0), 0);
     line("👻 shadow book: " + closed.length + " trip" + (closed.length === 1 ? "" : "s")
@@ -10175,7 +10433,7 @@ function renderHomeDelta(){
   /* Flat-book standing line (user-directed Aug 11 2026): a monitoring visit
      reads like a ticker — the flat state and what accrued while flat lead. */
   if (DB.flatSince){
-    const n = (DB.shadowBook || []).filter(p => p.state !== "open" && (p.closedAt || 0) > DB.flatSince).length;
+    const n = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > DB.flatSince).length;
     L.unshift({ txt: "▭ book flat since " + new Date(DB.flatSince).toLocaleDateString("en-CA")
       + " — shadow book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckstep-shadowbook" });
   }

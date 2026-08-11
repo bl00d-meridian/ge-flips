@@ -38,6 +38,13 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   clear an entry — not even a margin test.
 - **Automated decisions show their work.** Every bench, clamp, and cap states its reason
   inline where the user reads it.
+- **Every aggregate decomposes to its rows, in one click** (user ruling, Aug 11 2026).
+  Any statistic, verdict, score, or summary the tool renders must open to the constituent
+  rows that produced it — which items, which events, with the per-item evidence. A number
+  that cannot be audited is a number that cannot be ruled on, and the operator's job here
+  is auditing reasoning, not accepting conclusions. The collection layer has consistently
+  outrun the display layer in this project: aggregates are cheap to build and expensive to
+  use, so the drill-down is part of the feature, not a follow-up to it.
 - **Every allocator-touched entity states where it stands** (user ruling, Aug 11 2026).
   An unexplained state reads as a broken feature even when the machinery underneath is
   correct — the F18 incident: held items passed all gates, appeared in no bucket, and
@@ -123,7 +130,16 @@ defects**.
    Write-only data and read-never surfaces are findings.
 3. **Redundancy scan:** concepts implemented twice under different names (cluster
    baskets vs catalyst item-links was exactly this) — propose merges.
-4. **Output:** a findings report with proposed restructurings, ruled like everything
+4. **Interrogability scan** (user ruling, Aug 11 2026): for every aggregate, statistic,
+   verdict, score, or summary the tool renders, check that it opens to its constituent
+   rows in one click — which items, which events, with the per-item evidence behind the
+   number. Findings are: any number that cannot be opened; any expansion showing a subset
+   without saying so; any verdict whose stated reason doesn't name the specific items or
+   thresholds behind it; and any surface reporting a conclusion where the underlying rows
+   would teach more than the conclusion does. **This is distinct from the orphan scan** —
+   a surface can be fully connected, reading real data and feeding real decisions, and
+   still be opaque. Connected-but-unauditable is a finding.
+5. **Output:** a findings report with proposed restructurings, ruled like everything
    else. No findings is a valid result and says so.
 
 ## Verification

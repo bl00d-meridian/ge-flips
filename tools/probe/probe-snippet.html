@@ -2086,7 +2086,7 @@
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
     const evd18 = shadowRegimeEvidence();
     ok("[R18.4] 5-of-7 loose wins with fill-reality = evidence, numbers cited, nothing applied",
-       !!evd18 && evd18.dir === "loosen" && /out-earned current on 5 of the last 7 days/.test(evd18.html)
+       !!evd18 && evd18.dir === "loosen" && /out-earned current on 5 of the last 7 readings/.test(evd18.html)
        && /nothing changes without it/.test(evd18.html),
        JSON.stringify(evd18));
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n === 1 ? 300e3 : 90e3, tight: 80e3 }));
@@ -2439,10 +2439,19 @@
     S.wDetail = new Set(); renderWatch();
     const allRows22 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"));
     const row9001 = allRows22.find(r => /Probe alpha/.test(r.textContent));
-    ok("[R22.7] no row renders more than four indicators",
-       allRows22.every(r => !r.querySelector(".tags") || r.querySelector(".tags").children.length <= 4)
-       && row9001.querySelector(".tags").children.length === 4,
-       row9001 ? String(row9001.querySelector(".tags").children.length) : "row missing");
+    /* Slots, not DOM children: the dot cluster (shadow + test) is ONE slot —
+       adjacent, shape-distinct, fixed positions — and a reserved empty dot
+       slot is not an indicator at all. Counting raw children would make the
+       fixed-position ruling (Aug 11 2026) look like a budget breach. */
+    const slotCount = r => {
+      const tags = r.querySelector(".tags");
+      if (!tags) return 0;
+      return tags.querySelectorAll(".badge").length
+           + (tags.querySelectorAll(".sdot, .tdot").length ? 1 : 0);
+    };
+    ok("[R22.7] no row renders more than four indicator slots (dots share the fourth; empty slots are not indicators)",
+       allRows22.every(r => slotCount(r) <= 4) && slotCount(row9001) === 4,
+       row9001 ? "slots=" + slotCount(row9001) + " children=" + row9001.querySelector(".tags").children.length : "row missing");
     const chip22 = row9001.querySelector(".tags [data-wdetail]");
     ok("[R22.7] the ⚠ chip aggregates with hard-flag severity tint and the full list in its title",
        !!chip22 && /b-risk/.test(chip22.className) && /SUSPECTED PUMP/.test(chip22.title), chip22 ? chip22.title : "no chip");
@@ -2615,8 +2624,8 @@
     ok("[R25.2] the per-item slice aggregates trips, fills, net, and span from existing collection",
        s25.n === 5 && s25.bought === 5 && s25.net === 40000 && s25.fillRate === 1 && s25.spanD >= 7, JSON.stringify(s25));
     ok("[R25.2] shadow dot: solid green when shadow-profitable, hollow under 40% fill rate, quarantine-labeled",
-       /sdot pos/.test(shadowDot(9002)) && /●/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
-       && /◌/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
+       /sdot pos/.test(shadowDot(9002)) && /◉/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
+       && /◎/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
     ok("[R25.4] the citation puts the counterfactual in the bench sentence — probation candidate when profitable, agreeing when not",
        /\(shadow screen: 5 trips, would-have-filled 5 at 50% participation, net .+sim — screening: probation candidate/.test(shadowCite(9002))
        && /bench agrees/.test(shadowCite(9004)), shadowCite(9002) + " | " + shadowCite(9004));
@@ -2641,6 +2650,111 @@
     const scanA25 = Array.from(document.querySelectorAll("#scanBody tr")).find(r => /Probe alpha/.test(r.textContent));
     ok("[R25.1] the scanner row for a watched item carries the same toxic-flow flag",
        !!scanA25 && /TOXIC FLOW/.test(scanA25.innerHTML), scanA25 ? "found row" : "no scanner row for alpha");
+    // R25.6 — ANY shadow activity renders a dot; below threshold it says "accruing".
+    // Asserted on COMPUTED VISIBILITY, not DOM presence (user ruling): the whole
+    // defect class here is a surface that exists but shows the user nothing.
+    const dotVisible = id => {
+      setTab("trade"); S.sub = "watch"; renderWatch();
+      const row = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"))
+        .find(r => r.textContent.includes(itemName(id)));
+      const dot = row && row.querySelector(".tags .sdot");
+      if (!dot) return { ok: false, why: "no .sdot in the row's tag slot" };
+      const cs = getComputedStyle(dot);
+      const r = dot.getBoundingClientRect();
+      return { ok: dot.offsetParent !== null && cs.display !== "none" && cs.visibility !== "hidden"
+                   && parseFloat(cs.opacity) > 0.05 && r.width > 0 && r.height > 0,
+               why: JSON.stringify({ off: dot.offsetParent !== null, display: cs.display,
+                                     vis: cs.visibility, opacity: cs.opacity, w: r.width, h: r.height }),
+               cls: dot.className, title: dot.title };
+    };
+    /* The live machinery opens its own shadow positions for watched items on
+       every render, so these assert the STATE the dot reports, not exact
+       counts the suite does not control. */
+    DB.shadowBook = [mkShadow(9001, 500, "filled", 1200, now25 - 2 * 86400e3, "ROI floor")];
+    const d1 = dotVisible(9001);
+    ok("[R25.6] ONE closed shadow trip renders a visibly-rendered accruing dot — not silence",
+       d1.ok && /sdot acc/.test(d1.cls || "") && /ACCRUING/.test(d1.title || "")
+       && /\d+ closed, \d+ still open/.test(d1.title || "") && /no verdict until 3 have closed/.test(d1.title || ""),
+       d1.why + " :: " + (d1.cls || "") + " :: " + (d1.title || "").slice(0, 160));
+    /* Unfillable by construction: a bid of 1 never sees a print at-or-below it,
+       so the tick cannot close this record mid-assertion (the fixture market
+       fills anything realistic instantly). */
+    DB.shadowBook = [{ id: 96001, fam: "openonly", itemId: 9001, name: "Probe alpha", qty: 10, bid: 1,
+      ask: 999999, t: now25, buyQ: 0, sellQ: 0, buyDone: 0, obsMs: 1, lastObs: now25,
+      state: "open", regimes: [] }];
+    const d2 = dotVisible(9001);
+    ok("[R25.6] an item with only OPEN shadow trips still renders — open activity is activity",
+       d2.ok && /sdot acc/.test(d2.cls || "") && /0 closed, \d+ still open/.test(d2.title || ""),
+       d2.why + " :: " + (d2.title || "").slice(0, 160));
+    ok("[R25.6] absence: an item with NO shadow history renders its reserved slot but no dot in it",
+       (() => { const html = shadowDot(999999);   // an id the book has never touched
+                return /class="dslot"/.test(html) && !/sdot/.test(html); })(),
+       shadowDot(999999));
+    for (let i = 0; i < 4; i++)
+      DB.shadowBook.push(mkShadow(9001, 510 + i, "filled", 1200, now25 - (6 - i) * 86400e3, "ROI floor"));
+    const d4 = dotVisible(9001);
+    ok("[R25.6] at the threshold the dot promotes from accruing to a verdict, still visible",
+       d4.ok && /sdot pos/.test(d4.cls || "") && !/ACCRUING/.test(d4.title || ""),
+       d4.why + " :: " + (d4.cls || ""));
+    // R25.7 — the two dot families must be unmistakable: shape, colour, slot, tooltip, legend
+    ok("[R25.7] shape carries identity: every shadow state is circle-in-circle, the test dot stays a plain circle",
+       (() => { const all = [shadowDot(9001)];
+                DB.shadowBook = [];
+                for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(9001, 520 + i, "unfilled", 0, now25 - (6 - i) * 86400e3, "ROI floor"));
+                all.push(shadowDot(9001));   // hollow: fills missing
+                DB.shadowBook = [];
+                for (let i = 0; i < 4; i++) DB.shadowBook.push(mkShadow(9001, 530 + i, "filled", -900, now25 - (6 - i) * 86400e3, "ROI floor"));
+                all.push(shadowDot(9001));   // losing
+                const shadowGlyphs = all.join("");
+                const t = testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: Date.now() }, { tested: true })
+                        + testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: 0 }, { tested: false });
+                return /[◉◎◌]/.test(shadowGlyphs) && !/[●○]/.test(shadowGlyphs)
+                    && /[●○]/.test(t) && !/[◉◎◌]/.test(t); })());
+    /* Computed colour, not stylesheet text: the requirement is that the two
+       families never LOOK like they share a state meaning. */
+    ok("[R25.7] no shared colour semantics: green/red belong to the shadow family, the test dot is neutral steel",
+       (() => { const lg = document.querySelector("#dotLegend");
+                if (!lg) return false;
+                const col = sel => { const el = lg.querySelector(sel); return el ? getComputedStyle(el).color : null; };
+                const sPos = col(".sdot.pos"), sNeg = col(".sdot.neg"), tOn = col(".tdot.on"), tOff = col(".tdot");
+                if (!sPos || !sNeg || !tOn) return false;
+                const rgb = c => (c.match(/\d+/g) || []).map(Number);
+                const isGreen = c => { const [r, g, b] = rgb(c); return g > r + 20 && g > b + 20; };
+                return isGreen(sPos) && !isGreen(tOn) && !isGreen(tOff)
+                    && tOn !== sPos && tOn !== sNeg && tOff !== sPos && tOff !== sNeg; })(),
+       (() => { const lg = document.querySelector("#dotLegend");
+                return lg ? JSON.stringify({ sPos: getComputedStyle(lg.querySelector(".sdot.pos")).color,
+                                             tOn: getComputedStyle(lg.querySelector(".tdot.on")).color }) : "no legend"; })());
+    ok("[R25.7] tooltips name themselves first, so a hover resolves the ambiguity immediately",
+       /^Shadow screen:/.test((() => { const m = shadowDot(9001).match(/title="([^"]*)"/); return m ? m[1] : ""; })())
+       && /^Margin test:/.test((() => { const m = testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: Date.now() }, { tested: true }).match(/title="([^"]*)"/); return m ? m[1] : ""; })()));
+    ok("[R25.7] fixed slots: both dots always emit their slot, so a missing dot leaves its space",
+       (() => { DB.shadowBook = [];
+                const empty = shadowDot(9001), noTest = testDot({ id: 9001 }, { tested: false });
+                return /class="dslot"/.test(empty) && !/sdot/.test(empty)
+                    && /class="dslot"/.test(noTest) && !/tdot/.test(noTest); })());
+    ok("[R25.7] the legend shows both glyph families and all their states side by side",
+       (() => { const lg = document.querySelector("#dotLegend");
+                if (!lg || lg.offsetParent === null) return false;
+                const t = lg.textContent;
+                return /◉/.test(t) && /◎/.test(t) && /◌/.test(t) && /●/.test(t) && /○/.test(t)
+                    && /shadow-profitable/.test(t) && /margin test verified/i.test(t)
+                    && /not good-vs-bad/.test(t); })(),
+       (document.querySelector("#dotLegend") || {}).textContent);
+    DB.shadowBook = [];
+    for (let i = 0; i < 4; i++)
+      DB.shadowBook.push(mkShadow(9001, 540 + i, "filled", 1200, now25 - (6 - i) * 86400e3, "ROI floor"));
+    dotVisible(9001);
+    ok("[R25.6] the shadow dot leads the dot slot — it is the primary dot, never lost behind the test dot",
+       (() => { const row = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"))
+                  .find(r => r.textContent.includes("Probe alpha"));
+                const dots = row ? Array.from(row.querySelectorAll(".tags .sdot, .tags .tdot")) : [];
+                return dots.length >= 1 && /sdot/.test(dots[0].className); })());
+    DB.shadowBook = [];
+    for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(9002, i, "filled", 8000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
+    DB.shadowBook.push(mkShadow(9003, 10, "filled", 2000, now25 - 5 * 86400e3, "volume floor"));
+    for (let i = 11; i < 15; i++) DB.shadowBook.push(mkShadow(9003, i, "unfilled", 0, now25 - (i - 9) * 86400e3, "volume floor"));
+    for (let i = 20; i < 23; i++) DB.shadowBook.push(mkShadow(9004, i, "filled", -3000, now25 - (5 - (i - 20)) * 86400e3, "ROI floor"));
     // R25.3 — the expand view answers "what would have happened" in one tap
     S.wDetail = new Set([9002]); renderWatch();
     const det25 = document.querySelector("#watchBody tr.wdet");
@@ -2725,6 +2839,28 @@
     ok("[R29.3] the per-stratum map accumulates durably and names each region's verdict",
        /equipment · ring —/.test(prosp25) && /Gap band 250k–1m/.test(prosp25),
        prosp25.slice(0, 400));
+    // R29.6 — classifier honesty: standing caveat + promotion tripwire
+    ok("[R29.6] the per-stratum map carries the standing caveat, with counts derived from the strata table",
+       /19 of 21 strata are name-pattern approximations — directional, not a census\./.test(prosp25)
+       && STRATA_APPROX_N === STRATA.filter(s => !!s.rx).length && STRATA.length === 21,
+       STRATUM_CAVEAT);
+    ok("[R29.6] a per-stratum VERDICT carries the promotion tripwire to the point of decision",
+       (() => { DB.strataStats = { "equip:ring": { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6,
+                                                   filled: 5, net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
+                const p = prospectingInline();
+                return /prospects/.test(p)
+                    && /Depends on approximate stratum classification — verify before ruling\./.test(p); })(),
+       prospectingInline().slice(0, 900));
+    ok("[R29.6] the gap band is exempt and says why — its membership is an exact price range, not a guess",
+       (() => { DB.strataStats = { gap: { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6, filled: 5,
+                                          net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
+                const p = prospectingInline();
+                const gapLine = p.slice(p.indexOf("Gap band"));
+                return /The band prints/.test(gapLine)
+                    && /exact price range/.test(gapLine)
+                    && !/Depends on approximate stratum classification/.test(gapLine); })(),
+       prospectingInline().slice(prospectingInline().indexOf("Gap band"), prospectingInline().indexOf("Gap band") + 420));
+    DB.strataStats = {};
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     DB.strataStats = {};
 
@@ -3066,6 +3202,91 @@
     save();
   } catch(e){
     out.push("FAIL shadow-screening :: " + (e && e.stack || e));
+  }
+  try {
+    // ═══ R32 DATA FRESHNESS · R33 COLD-START (pre-quiet-period audit, Aug 11 2026) ═══
+    const now32 = Date.now();
+    // R32.1 — a stalled scheduled stream is VISIBLE, and event-driven silence is not a stall
+    DB.shadowBook = [{ id: 32001, fam: "f32", itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001, ask: 4399,
+      t: now32 - 9 * 86400e3, buyQ: 0, sellQ: 0, buyDone: 0, obsMs: 1, lastObs: now32 - 9 * 86400e3,
+      state: "filled", closedAt: now32 - 9 * 86400e3, net: 100, regimes: [] }];
+    DB.shadowDivLog = []; DB.strataStats = {}; DB.dieOffLog = []; DB.recipeFlags = [];
+    DB.lastCoScanAt = now32 - 20 * 86400e3;
+    const fr32 = freshnessRows();
+    const byName = n => fr32.find(r => r.name === n);
+    ok("[R32.1] a scheduled stream that stopped accruing reads STALE with its age, not as a quiet stream",
+       byName("Shadow trips (fill sim)").stale === true
+       && byName("Coherence readings").stale === true,
+       JSON.stringify(fr32.filter(r => r.stale).map(r => r.name)));
+    ok("[R32.1] event-driven streams are never marked stale — silence there is data, not a fault",
+       fr32.filter(r => r.kind === "event").every(r => r.stale === false),
+       JSON.stringify(fr32.filter(r => r.kind === "event").map(r => r.name + ":" + r.stale)));
+    const fi32 = freshnessInline();
+    ok("[R32.1] the review panel names the stalled streams and states the open-and-visible dependency",
+       /streams? behind schedule/.test(fi32) && /Shadow trips/.test(fi32)
+       && /VISIBLE/.test(fi32) && /skips entirely while the tab is hidden/.test(fi32),
+       fi32.slice(0, 700));
+    ok("[R32.1] event-driven rows say silence is a valid state rather than showing a false verdict",
+       /event-driven — silence is a valid state/.test(fi32));
+    // R32.2 — the timeseries circuit breaker trips, is visible, and releases
+    S.tsFail = 0; S.tsPauseUntil = 0; S.tsNeg = new Map(); clearWarn("ts");
+    ok("[R32.2] the breaker is open by default and does not interfere",
+       !tsPaused() && !document.querySelector("#warnbox").textContent.match(/timeseries/i));
+    S.tsFail = TS_FAIL_TRIP; S.tsPauseUntil = now32 + TS_PAUSE_MS;
+    warn("ts", "⚠ Price-history (/timeseries) requests are failing — probe-forced.");
+    ok("[R32.2] a tripped breaker suspends timeseries fetching behind a VISIBLE banner",
+       tsPaused() && /timeseries/i.test(document.querySelector("#warnbox").textContent),
+       document.querySelector("#warnbox").textContent.slice(0, 120));
+    ok("[R32.2] a paused breaker serves stale cached series instead of re-requesting",
+       (async () => true)() && !!S.spark.get(9001),
+       "cache present for 9001");
+    ok("[R32.2] the freshness panel surfaces the paused breaker where the data is read",
+       /Price-history fetching is paused/.test(freshnessInline()));
+    S.tsFail = 0; S.tsPauseUntil = 0; clearWarn("ts");
+    // ═══ R33 — FRESH-EYES COLD START: sparse store, nothing crashes or renders broken ═══
+    const snap33 = JSON.stringify(DB);
+    const keep33 = DB.watch.slice(0, 1);
+    for (const k of ["flips","positions","invLots","shadowBook","shadowDivLog","shadowExceptions","gateLog",
+                     "dieOffLog","deployLog","decisionLog","scoutLog","touchLog","frictionLog","bankSnaps",
+                     "gameLedger","clusters","clusterCands","catalysts","anomalyFlags","intel","flagArchive",
+                     "rampFlags","walkupLoad","sleeve","sleeveExits","holds","recipeFlags","blacklist",
+                     "planPriority","planDemoted"]) DB[k] = [];
+    for (const k of ["strataStats","recipeLog","qual","seedAt","sibBorn","audRuled","cohLog","featTouch",
+                     "entryWatchState","rulingSnooze","nudgeSnooze"]) DB[k] = {};
+    DB.cohProps = []; DB.watch = keep33; DB.bank = 0; DB.bankAsOf = 0;
+    DB.prevOpenAt = 0; DB.flatSince = 0; DB.lastCoScanAt = 0; DB.lastAnomalyScanAt = 0;
+    const broke33 = [];
+    const tryRender = (label, fn) => { try { const r = fn(); return typeof r === "string" ? r : ""; }
+                                       catch(e){ broke33.push(label + ": " + (e && e.message || e)); return ""; } };
+    const surfaces33 = {};
+    for (const [label, fn] of [["freshness", freshnessInline], ["prospecting", prospectingInline],
+                               ["hours", hoursLedgerInline], ["recipes", recipeBasisInline],
+                               ["shadowbook", shadowAuditInline], ["audit", renderAuditInline],
+                               ["attention", attentionGovernanceInline], ["intelscore", intelScorecardInline]])
+      surfaces33[label] = tryRender(label, fn);
+    for (const t of ["home", "trade", "sleeve", "review"])
+      tryRender("tab:" + t, () => { setTab(t); renderAll(); return ""; });
+    ok("[R33.1] a cold, near-empty store renders every review surface and all four tabs without throwing",
+       broke33.length === 0, JSON.stringify(broke33));
+    const junk33 = Object.entries(surfaces33)
+      .filter(([, html]) => /NaN|undefined|\[object Object\]|Infinity/.test(html))
+      .map(([k, html]) => k + ": " + (html.match(/.{0,40}(NaN|undefined|\[object Object\]|Infinity).{0,40}/) || [""])[0]);
+    ok("[R33.1] no cold surface renders NaN, undefined, [object Object] or Infinity into the copy",
+       junk33.length === 0, JSON.stringify(junk33));
+    ok("[R33.2] empty streams say so in words rather than rendering an empty-but-broken panel",
+       /never accrued|nothing yet/.test(surfaces33.freshness)
+       && /No slice samples ledgered yet/.test(surfaces33.prospecting)
+       && /No hour-of-day data yet|no two-sided price/.test(surfaces33.hours + surfaces33.recipes),
+       surfaces33.prospecting.slice(0, 200));
+    ok("[R33.2] the plan and vitals survive a one-item watchlist with no bank, no flips and no history",
+       (() => { try { const P = buildPlan();
+                      return Array.isArray(P.picks) && Array.isArray(P.bench) && Array.isArray(P.nextUp); }
+                catch(e){ broke33.push("buildPlan: " + e.message); return false; } })(),
+       JSON.stringify(broke33));
+    DB = JSON.parse(snap33);
+    setTab("home");
+  } catch(e){
+    out.push("FAIL freshness/cold-start :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
