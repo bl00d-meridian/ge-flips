@@ -594,9 +594,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
           One story, many tickers: correlated positions are one bet. A basket <b>attached to a calendar
           catalyst</b> is that catalyst's item basket — its coherence renders in the catalyst's entry watch
           above. A basket with <b>no catalyst</b> is a STANDING BASKET, kept for the two jobs that need no
-          date: exposure caps and update-day blast-radius warnings. The weekly detector, wiki categories and
-          the seed list only <b>propose</b> into the review queue below — <b>nothing caps capital until you
-          confirm</b>. (Formerly the Clusters tab — merged here Aug 2026; membership ratification unchanged.)
+          date: exposure caps and update-day blast-radius warnings. The weekly detector, wiki categories,
+          the seed list, and the coherence screen only <b>propose</b> into the review queue below —
+          <b>nothing caps capital until you confirm</b>. Coherence-driven membership (ruled Aug 2026):
+          adds need excess corr &gt; 0.5 vs the basket composite in ≥3 of the last 4 weekly readings,
+          drops need &lt; 0.25 for 4 straight — <b>persistence, not snapshots, and net of the market
+          factor, precisely because chasing raw co-movement admits coincidences</b>. A basket groomed
+          purely by realized correlation converges on describing the past, not the thesis — so
+          statistical members (co-movement without a story) cap at 40% of membership and are excluded
+          from entry-watch narratives and laggard logic while still counting toward the exposure cap.
+          (Formerly the Clusters tab — merged here Aug 2026; membership ratification unchanged.)
         </span>
       </div>
       <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
@@ -1040,7 +1047,9 @@ let DB = {
   sibStats: { washed: 0, graduated: 0 },   // lifetime counters (scout log only keeps 72h)
   targets: ["Twisted bow","Avernic defender","Primordial boots"],
   holds: [],          // long-term bank assets tracked for an exit thesis — never part of the flipping stack
-  clusters: [],       // RATIFIED thesis clusters [{id,name,members,capPct|null,story,src,confirmedAt}] — the only layer that caps capital
+  clusters: [],       // RATIFIED thesis clusters/baskets [{id,name,members,capPct|null,story,src,confirmedAt,mclass:{id:"s"|"t"}}] — the only layer that caps capital; mclass "s" = statistical member (coherence-admitted, no story), absent/"t" = thesis
+  cohLog: {},         // coherence readings (ruled Aug 10 2026): "basketId:itemId" → [{w:weekIndex,c:corr}] last 6 weekly readings of excess corr vs the basket composite
+  cohProps: [],       // coherence membership proposals [{id,kind:"add"|"drop",basketId,itemId,mclass,trend:[],note,status:"pending"|"dismissed",at}] — ride the ratification queue, dismissal remembered per basket:item
   clusterCands: [],   // advisory queue [{id,sig,status,src,members,story,evidence,at}] — suspected/dormant/seeded until the user rules
   clusterCapPct: 15,  // default exposure cap per confirmed cluster, % of working capital
   clusterCorr: 0.5,   // excess-correlation threshold for the co-movement detector
@@ -1084,7 +1093,8 @@ function load(){
     for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    if (!Array.isArray(DB.cohProps)) DB.cohProps = [];
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time (sustained qualification, Aug 10 2026): items already on the
        watchlist earned tenure through past evaluations — the seasoning gate
@@ -2406,6 +2416,135 @@ async function wikiCatsFor(names){
 }
 
 let cluScanBusy = false;
+/* ═══ COHERENCE-DRIVEN MEMBERSHIP (ruled Aug 10 2026) ═══
+   Basket composition trends toward measured correlation via PROPOSALS —
+   silent recomposition stays banned. Ruled dials: add at excess corr > 0.5
+   vs the basket composite in ≥3 of the last 4 weekly readings; drop at
+   < 0.25 for 4 consecutive readings; statistical members ≤ 40% of any
+   basket. A "weekly window" is one weekly scan's reading over the shared
+   31-day series — persistence lives across scans, not inside one. */
+const COH_ADD_C = 0.5, COH_ADD_HITS = 3, COH_WINDOWS = 4, COH_DROP_C = 0.25, COH_STAT_CAP = 0.4;
+const cohWeek = () => Math.floor(Date.now() / (7 * 86400e3));
+const memberIsStat = (cl, id) => ((cl.mclass || {})[id]) === "s";
+const basketStatShare = cl => cl.members.length ? cl.members.filter(m => memberIsStat(cl, m)).length / cl.members.length : 0;
+
+/* One weekly reading: excess corr of every candidate series against the
+   basket composite (average member excess return per date), same market-
+   factor construction as the detector — the two can never disagree. */
+function cohComposite(cl, excess){
+  const comp = new Map(), cnt = new Map();
+  for (const m of cl.members){
+    for (const [d, v] of (excess.get(m) || new Map())){
+      comp.set(d, (comp.get(d) || 0) + v);
+      cnt.set(d, (cnt.get(d) || 0) + 1);
+    }
+  }
+  const out = new Map();
+  for (const [d, s] of comp) if (cnt.get(d) >= 2) out.set(d, s / cnt.get(d));
+  return out;
+}
+function cohCorrTo(comp, series, minDays){
+  const xs = [], ys = [];
+  for (const [d, v] of (series || new Map())) if (comp.has(d)){ xs.push(v); ys.push(comp.get(d)); }
+  return xs.length >= minDays ? pearson(xs, ys) : null;
+}
+/* Pure evaluator over the reading log — probe-tested. */
+function cohEvaluate(cl, log, candidateIds){
+  const readings = key => (log[key] || []).slice(-COH_WINDOWS);
+  const adds = [], drops = [];
+  for (const id of candidateIds){
+    if (cl.members.includes(id)) continue;
+    const r = readings(cl.id + ":" + id);
+    if (r.length < COH_WINDOWS) continue;
+    const hits = r.filter(x => x.c != null && x.c > COH_ADD_C).length;
+    if (hits >= COH_ADD_HITS) adds.push({ id, trend: r.map(x => x.c) });
+  }
+  for (const m of cl.members){
+    const r = readings(cl.id + ":" + m);
+    if (r.length < COH_WINDOWS) continue;
+    if (r.every(x => x.c != null && x.c < COH_DROP_C)) drops.push({ id: m, trend: r.map(x => x.c) });
+  }
+  return { adds, drops };
+}
+/* Story source for membership class: an analyst record naming the item, or
+   a rare wiki category shared with an existing member. Statistical
+   otherwise — risk without a claimed driver. */
+function cohThesisSource(cl, itemId, catsById, catCount, rareMax){
+  const rec = (DB.intel || []).find(r => r.status !== "dismissed" && (r.items || []).includes(itemId));
+  if (rec) return "analyst record: " + rec.title;
+  const mine = catsById && catsById.get(itemId);
+  if (mine && mine.length){
+    for (const m of cl.members){
+      const shared = mine.filter(cat => ((catsById.get(m) || []).includes(cat)) && (catCount.get(cat) || 0) <= rareMax);
+      if (shared.length) return "wiki category: " + shared[0];
+    }
+  }
+  return null;
+}
+/* Proposal upsert with dismissal memory: one live entry per kind·basket·item;
+   a dismissed proposal stays dismissed (trend refreshes silently) — the
+   singleton-set case of the Jaccard rule. */
+function upsertCohProp(kind, cl, itemId, mclass, trend, note){
+  const hit = DB.cohProps.find(p => p.kind === kind && p.basketId === cl.id && p.itemId === itemId);
+  if (hit){
+    hit.trend = trend; hit.note = note; if (mclass) hit.mclass = mclass;
+    return hit.status === "dismissed" ? null : hit;
+  }
+  const p = { id: Date.now() + DB.cohProps.length, kind, basketId: cl.id, itemId,
+    mclass: mclass || "t", trend, note, status: "pending", at: Date.now() };
+  DB.cohProps.push(p);
+  DB.cohProps = DB.cohProps.slice(-60);
+  return p;
+}
+function cohRecordAndPropose(excess, minDays, catsById, catCount, rareMax){
+  const w = cohWeek();
+  const withheld = [];
+  for (const cl of DB.clusters || []){
+    if (cl.members.length < 2) continue;
+    const comp = cohComposite(cl, excess);
+    const candidateIds = [...new Set([...excess.keys(), ...cl.members])];
+    for (const id of candidateIds){
+      /* a member's own reading excludes itself from the composite it's judged
+         against — otherwise every member correlates with its own echo */
+      const ownComp = cl.members.includes(id)
+        ? cohComposite({ ...cl, members: cl.members.filter(m => m !== id) }, excess) : comp;
+      if (cl.members.includes(id) && cl.members.length < 3) continue;   // 1-other-member composite is just the pair — detector territory
+      const c = cohCorrTo(ownComp, excess.get(id), minDays);
+      if (c == null) continue;
+      const key = cl.id + ":" + id;
+      const log = DB.cohLog[key] = (DB.cohLog[key] || []).filter(x => x.w !== w);
+      log.push({ w, c: Math.round(c * 100) / 100 });
+      DB.cohLog[key] = log.slice(-6);
+    }
+    const ev = cohEvaluate(cl, DB.cohLog, [...excess.keys()]);
+    /* Statistical cap: propose highest-corr first, stop where the cap binds;
+       withheld candidates are said out loud, never silently truncated. */
+    let statN = cl.members.filter(m => memberIsStat(cl, m)).length;
+    let total = cl.members.length;
+    for (const a of ev.adds.sort((x, y) => (y.trend[y.trend.length - 1] || 0) - (x.trend[x.trend.length - 1] || 0))){
+      const src = cohThesisSource(cl, a.id, catsById, catCount, rareMax);
+      const mclass = src ? "t" : "s";
+      if (mclass === "s" && (statN + 1) / (total + 1) > COH_STAT_CAP){
+        withheld.push(itemName(a.id) + " → " + cl.name);
+        continue;
+      }
+      const p = upsertCohProp("add", cl, a.id, mclass, a.trend,
+        src ? "story source names it — " + src
+            : "statistical co-movement alone — counts toward the exposure cap (risk is risk), excluded from entry-watch narratives and laggard logic (no claimed driver, no relative-value read)");
+      if (p && mclass === "s"){ statN++; total++; } else if (p){ total++; }
+    }
+    for (const dr of ev.drops){
+      upsertCohProp("drop", cl, dr.id, null, dr.trend,
+        memberIsStat(cl, dr.id)
+          ? "statistical member — drops on the numbers alone"
+          : "story may still bind — decorrelation can be temporary (idiosyncratic supply event)");
+    }
+  }
+  S.cohNote = withheld.length
+    ? withheld.length + " statistical candidate" + (withheld.length === 1 ? "" : "s") + " withheld by the 40% cap: " + withheld.join(", ")
+    : "";
+}
+
 async function runClusterScan(force){
   if (cluScanBusy) return;
   if (!force && Date.now() - (DB.lastCoScanAt || 0) < 7 * 86400e3) return;
@@ -2504,6 +2643,10 @@ async function runClusterScan(force){
                           story: "all: " + cat + " — story without smoke (no co-movement yet)",
                           evidence: { cat } });
     }
+    /* Coherence-driven membership (ruled Aug 10 2026): record this week's
+       basket-composite correlations and evaluate add/drop proposals from
+       PERSISTENCE across weekly readings, never this snapshot alone. */
+    cohRecordAndPropose(excess, minDays, catsById, catCount, rareMax);
     DB.lastCoScanAt = Date.now();
     S.cluMsg = "";
     save();
@@ -5026,8 +5169,14 @@ function renderClusters(){
     const mems = cl.members.map(id =>
       '<span class="memchip' + (watchIds.has(id) ? '' : ' off') + '"'
       + (watchIds.has(id) ? '' : ' title="not on the watchlist — the cap still counts it whenever it holds capital"') + '>'
-      + esc(itemName(id)) + '</span>'
+      + esc(itemName(id))
+      + (memberIsStat(cl, id) ? ' <b title="STATISTICAL member (coherence-admitted, no story): counts toward the exposure cap — risk is risk — but excluded from entry-watch narratives and laggard logic.">·S</b>' : '')
+      + '</span>'
     ).join("");
+    const statShare = basketStatShare(cl);
+    const diluted = statShare > COH_STAT_CAP
+      ? ' <span class="badge b-warn" title="Statistical members exceed the 40% membership cap — a basket groomed purely by realized correlation converges on describing the past, not the thesis.">thesis diluted — this is a correlation cluster now; consider renaming or splitting</span>'
+      : '';
     /* Catalyst-attached vs standing (clusters merge, ruled Aug 10 2026):
        attached baskets belong to their calendar entry — coherence renders in
        the catalyst's card; standing baskets exist for caps + blast radius. */
@@ -5036,6 +5185,7 @@ function renderClusters(){
       + (attachedTo.length
         ? attachedTo.map(c => '<span class="badge b-ok" title="Attached to calendar catalyst \'' + esc(c.name) + '\' — this is that catalyst\'s item basket; its coherence and entry watch render on the catalyst card above.">⚡ ' + esc(c.name) + '</span>').join(" ")
         : '<span class="badge b-seed" title="No catalyst attached — a STANDING BASKET, kept for the two jobs that need no date: exposure caps and update-day blast-radius warnings.">standing</span>')
+      + diluted
       /* td inherits white-space:nowrap — without the explicit normal, max-width
          can't wrap the story and it runs the row off the screen edge. */
       + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px;white-space:normal">' + esc(cl.story) + '</div>' : '')
@@ -5053,7 +5203,9 @@ function renderClusters(){
   const dismissedCands = DB.clusterCands.filter(c => c.status === "dismissed");
   const dismissed = dismissedCands.length;
   const absorbed = dismissedCands.reduce((s, c) => s + (c.variants || 0), 0);
+  const cohN = (DB.cohProps || []).filter(p => p.status === "pending" && DB.clusters.some(cl => cl.id === p.basketId)).length;
   $("#cluQueueSum").textContent = "Review queue — " + pending.length + " candidate" + (pending.length === 1 ? "" : "s")
+    + (cohN ? " + " + cohN + " coherence membership proposal" + (cohN === 1 ? "" : "s") : "")
     + (dismissed ? " (" + dismissed + " dismissed"
         + (absorbed ? ", " + absorbed + " variant" + (absorbed === 1 ? "" : "s") + " absorbed" : "") + ")" : "");
   const BADGES = {
@@ -5061,7 +5213,26 @@ function renderClusters(){
     dormant:   '<span class="badge b-seed" title="Story without smoke: these items share a rare wiki category but have not co-moved yet.">dormant</span>',
     seeded:    '<span class="badge b-ok" title="Seeded from game knowledge at build time — unconfirmed until the market co-moves or you ratify it.">seeded — unconfirmed</span>'
   };
-  $("#cluQueueBody").innerHTML = pending.length ? pending.map(c => {
+  /* Coherence membership proposals ride the same review queue (ruled Aug 10
+     2026): trend attached, class stated, dismissals remembered. */
+  const cohPending = (DB.cohProps || []).filter(p => p.status === "pending" && DB.clusters.some(cl => cl.id === p.basketId));
+  const cohHTML = cohPending.map(p => {
+    const cl = DB.clusters.find(x => x.id === p.basketId);
+    const trend = p.trend.map(c => c == null ? "·" : c.toFixed(2)).join(" → ");
+    const isAdd = p.kind === "add";
+    return '<div class="bench-row"><span>'
+      + (isAdd
+        ? '<span class="badge ' + (p.mclass === "s" ? "b-warn" : "b-ok") + '">' + (p.mclass === "s" ? "add STATISTICAL" : "add THESIS") + '</span>'
+        : '<span class="badge b-risk">drop</span>')
+      + ' <b>' + esc(itemName(p.itemId)) + '</b> ' + (isAdd ? '→' : '←') + ' ⬡ ' + esc(cl.name)
+      + '<div class="dim">excess corr vs composite, last ' + p.trend.length + ' weekly readings: ' + esc(trend)
+      + (isAdd ? ' (add rule: > 0.5 in ≥3 of 4)' : ' (drop rule: < 0.25 for 4 straight — decay sparkline above)') + '</div>'
+      + (p.note ? '<div class="dim" style="white-space:normal;max-width:460px">' + esc(p.note) + '</div>' : '') + '</span>'
+      + '<span class="r" style="white-space:nowrap"><button class="sm" data-cohconfirm="' + p.id + '">'
+      + (isAdd ? 'admit as ' + (p.mclass === "s" ? 'statistical' : 'thesis') + ' member' : 'remove member') + '</button>'
+      + '<button class="sm ghost" data-cohdismiss="' + p.id + '">dismiss</button></span></div>';
+  }).join("");
+  $("#cluQueueBody").innerHTML = (cohHTML || "") + (pending.length ? pending.map(c => {
     const ev = [];
     if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + " overlapping days");
     if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
@@ -5073,7 +5244,7 @@ function renderClusters(){
       + '<span class="r" style="white-space:nowrap"><button class="sm" data-clconfirm="' + c.id + '" title="Ratify: name the cluster and activate its exposure cap">confirm…</button>'
       + '<button class="sm" data-clmerge="' + c.id + '" title="Fold these members into an existing confirmed cluster">merge…</button>'
       + '<button class="sm ghost" data-cldismiss="' + c.id + '" title="Not a real cluster — silence this candidate for good">dismiss</button></span></div>';
-  }).join("") : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories and the seed list refill it as evidence appears.</span></div>';
+  }).join("") : (cohHTML ? "" : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories, the seed list, and the coherence screen refill it as evidence appears.</span></div>'));
 }
 
 /* ═══ THESIS DETAIL — is the correlation holding? ═══
@@ -5128,10 +5299,14 @@ function clusterDetailHTML(cl, excess){
     for (const [d, v] of ea) if (eb.has(d)){ xs.push(v); ys.push(eb.get(d)); }
     return { c: xs.length >= 5 ? pearson(xs, ys) : null, n: xs.length };
   };
+  /* Member class rides the coherence view (ruled Aug 10 2026): [S] =
+     statistical member — in the cap, out of the narratives. */
+  const mLabel = m => esc(itemName(m)) + (memberIsStat(cl, m)
+    ? ' <b title="STATISTICAL member — coherence-admitted, no story; counts toward the exposure cap, excluded from entry-watch narratives and laggard logic.">[S]</b>' : '');
   let matrix = '<div class="tw"><table><thead><tr><th></th>'
-    + M.map(m => '<th>' + esc(itemName(m)) + '</th>').join("") + '</tr></thead><tbody>';
+    + M.map(m => '<th>' + mLabel(m) + '</th>').join("") + '</tr></thead><tbody>';
   for (const a of M){
-    matrix += '<tr><td><b>' + esc(itemName(a)) + '</b></td>';
+    matrix += '<tr><td><b>' + mLabel(a) + '</b></td>';
     for (const b of M){
       if (a === b){ matrix += '<td class="dim">—</td>'; continue; }
       const { c, n } = pairCorr(a, b);
@@ -6265,7 +6440,10 @@ const catLinkedIds = cat => {
   const ids = new Set(cat.items || []);
   for (const clId of (cat.clusters || [])){
     const cl = (DB.clusters || []).find(x => x.id === clId);
-    if (cl) for (const m of cl.members) ids.add(m);
+    /* Statistical members are excluded here by rule (Aug 10 2026): no
+       claimed driver, no relative-value read — they count toward the
+       exposure cap but never enter entry-watch narratives or laggard logic. */
+    if (cl) for (const m of cl.members) if (!memberIsStat(cl, m)) ids.add(m);
   }
   return [...ids];
 };
@@ -7130,6 +7308,42 @@ document.addEventListener("click", e => {
           () => { r.status = "pending"; delete r.ruledAt; save(); renderSleeve(); });
     return;
   }
+  const cc = t.closest("[data-cohconfirm]");
+  if (cc){
+    const p = (DB.cohProps || []).find(x => x.id === +cc.dataset.cohconfirm);
+    const cl = p && DB.clusters.find(x => x.id === p.basketId);
+    if (!p || !cl || p.status !== "pending") return;
+    if (p.kind === "add"){
+      if (!cl.members.includes(p.itemId)){
+        cl.members.push(p.itemId);
+        if (!cl.mclass) cl.mclass = {};
+        cl.mclass[p.itemId] = p.mclass === "s" ? "s" : "t";
+      }
+      logDecision("basket", cl.name, "coherence-admit " + itemName(p.itemId),
+        (p.mclass === "s" ? "STATISTICAL member (caps yes, narratives no)" : "THESIS member") + " — trend " + p.trend.map(c => c == null ? "·" : c).join("→"));
+    } else {
+      cl.members = cl.members.filter(m => m !== p.itemId);
+      if (cl.mclass) delete cl.mclass[p.itemId];
+      logDecision("basket", cl.name, "coherence-drop " + itemName(p.itemId),
+        "corr decayed < 0.25 for 4 straight readings — " + p.note);
+    }
+    p.status = "dismissed"; p.ruledAt = Date.now(); p.applied = 1;
+    save(); renderClusters(); if (S.tab === "routine") renderRoutine(); updatePendBadge();
+    toast(p.kind === "add" ? "Admitted to ⬡ " + cl.name + " — exposure cap now counts it." : "Removed from ⬡ " + cl.name + ".");
+    return;
+  }
+  const cd = t.closest("[data-cohdismiss]");
+  if (cd){
+    const p = (DB.cohProps || []).find(x => x.id === +cd.dataset.cohdismiss);
+    if (!p || p.status !== "pending") return;
+    p.status = "dismissed"; p.ruledAt = Date.now();
+    logDecision("basket", itemName(p.itemId), "dismiss coherence-" + p.kind,
+      "dismissal remembered — this " + p.kind + " proposal will not re-raise for this basket:item; the reading log keeps recording");
+    save(); renderClusters(); if (S.tab === "routine") renderRoutine(); updatePendBadge();
+    toast("Dismissed — remembered per basket:item. The weekly readings keep accruing regardless.",
+          () => { p.status = "pending"; delete p.ruledAt; save(); renderClusters(); });
+    return;
+  }
   const th2 = t.closest("[data-intelteeth]");
   if (th2){
     const r = DB.intel.find(x => x.id === th2.dataset.intelteeth);
@@ -7205,6 +7419,17 @@ function pendingRulingItems(){
     items.push({ key, pri: 1, sort: 0, snoozed: rulingSnoozed(key),
       html: '⚑ sleeve rung armed: <b>' + full(c.qty) + ' ' + esc(itemName(c.pos.itemId, c.pos.name)) + '</b> — '
         + esc(c.st.why) + ' <button class="sm" data-slvexit="' + c.pos.id + ':' + c.i + '">sold…</button>' });
+  }
+  for (const p of (DB.cohProps || []).filter(x => x.status === "pending" && (DB.clusters || []).some(cl => cl.id === x.basketId))){
+    const key = "coh:" + p.id;
+    const cl = DB.clusters.find(x => x.id === p.basketId);
+    const ageD = Math.floor((now - (p.at || now)) / day);
+    items.push({ key, pri: 2, sort: -ageD, snoozed: rulingSnoozed(key),
+      html: '⬡ coherence ' + p.kind + ': <b>' + esc(itemName(p.itemId)) + '</b> '
+        + (p.kind === "add" ? (p.mclass === "s" ? '→ statistical member of ' : '→ thesis member of ') : '← out of ')
+        + esc(cl.name) + stale(ageD, "dismiss")
+        + ' <button class="sm" data-cohconfirm="' + p.id + '">' + (p.kind === "add" ? 'admit' : 'remove') + '</button>'
+        + ' <button class="sm ghost" data-cohdismiss="' + p.id + '">dismiss</button>' });
   }
   for (const c of (DB.clusterCands || []).filter(x => ["suspected", "dormant", "seeded"].includes(x.status))){
     const key = "clu:" + c.id;
@@ -9460,8 +9685,31 @@ function validateImport(d){
             const o = { id: num(cl.id) || uid(), name, members, capPct: null, story: String(cl.story || ""),
                         src: String(cl.src || "manual"), confirmedAt: num(cl.confirmedAt) || Date.now() };
             if (num(cl.capPct) >= 1 && num(cl.capPct) <= 100) o.capPct = num(cl.capPct);
+            if (cl.mclass && typeof cl.mclass === "object" && !Array.isArray(cl.mclass)){
+              const mc = {};
+              for (const m of members) if (cl.mclass[m] === "s" || cl.mclass[m] === "t") mc[m] = cl.mclass[m];
+              if (Object.keys(mc).length) o.mclass = mc;
+            }
             return o;
           }).filter(Boolean),
+          cohLog: (d.cohLog && typeof d.cohLog === "object" && !Array.isArray(d.cohLog))
+            ? Object.fromEntries(Object.entries(d.cohLog)
+                .filter(([k, v]) => /^\d+:\d+$/.test(k) && Array.isArray(v))
+                .map(([k, v]) => [k, v.filter(x => x && num(x.w) > 0)
+                  .map(x => ({ w: num(x.w), c: num(x.c) != null ? num(x.c) : null })).slice(-6)])
+                .slice(0, 400)) : {},
+          cohProps: (Array.isArray(d.cohProps) ? d.cohProps : []).map(p => {
+            const itemId = num(p && p.itemId), basketId = num(p && p.basketId);
+            if (!(itemId > 0) || !(basketId > 0) || !["add", "drop"].includes(p.kind)) return null;
+            const o2 = { id: num(p.id) || uid(), kind: p.kind, basketId, itemId,
+              mclass: p.mclass === "s" ? "s" : "t",
+              trend: (Array.isArray(p.trend) ? p.trend : []).map(x => num(x) != null ? num(x) : null).slice(-6),
+              note: String(p.note || "").slice(0, 300),
+              status: p.status === "dismissed" ? "dismissed" : "pending", at: num(p.at) || Date.now() };
+            if (num(p.ruledAt) > 0) o2.ruledAt = num(p.ruledAt);
+            if (p.applied) o2.applied = 1;
+            return o2;
+          }).filter(Boolean).slice(-60),
           clusterCands: (Array.isArray(d.clusterCands) ? d.clusterCands : []).map(c => {
             const members = [...new Set((Array.isArray(c && c.members) ? c.members : []).map(x => num(x)).filter(x => x > 0))];
             const status = ["suspected","dormant","seeded","dismissed","confirmed","merged"].includes(c && c.status) ? c.status : null;

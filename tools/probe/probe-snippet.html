@@ -1801,6 +1801,112 @@
     ok("[R16.2] renderDeploy stamps the reading's timestamp",
        S.depProposalAt != null && Date.now() - S.depProposalAt < 60e3, String(S.depProposalAt));
     DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+
+    // ─── §17: COHERENCE-DRIVEN MEMBERSHIP (ruled Aug 10 2026) ───
+    DB.clusters = [{ id: 31, name: "coh-basket", members: [9001, 9002, 9003], capPct: null,
+      story: "", src: "manual", confirmedAt: Date.now(), mclass: {} }];
+    DB.cohProps = []; DB.cohLog = {}; DB.intel = [];
+    const wNow = cohWeek();
+    // R17.1 — pure evaluator: persistence, not snapshots
+    DB.cohLog["31:9004"] = [{ w: wNow - 3, c: 0.6 }, { w: wNow - 2, c: 0.4 }, { w: wNow - 1, c: 0.7 }, { w: wNow, c: 0.55 }];
+    DB.cohLog["31:9005"] = [{ w: wNow - 3, c: 0.6 }, { w: wNow - 2, c: 0.6 }, { w: wNow - 1, c: 0.3 }, { w: wNow, c: 0.3 }];
+    DB.cohLog["31:9006"] = [{ w: wNow - 1, c: 0.9 }, { w: wNow, c: 0.9 }];   // hot but young — no persistence yet
+    let ev17 = cohEvaluate(DB.clusters[0], DB.cohLog, [9004, 9005, 9006]);
+    ok("[R17.1] add needs >0.5 in ≥3 of 4 readings — one qualifier, snapshot-hot and 2-of-4 both refused",
+       ev17.adds.length === 1 && ev17.adds[0].id === 9004 && ev17.adds[0].trend.join() === "0.6,0.4,0.7,0.55",
+       JSON.stringify(ev17.adds));
+    // R17.2 — drop: 4 straight under 0.25; one good week resets the streak
+    DB.cohLog["31:9002"] = [{ w: wNow - 3, c: 0.2 }, { w: wNow - 2, c: 0.1 }, { w: wNow - 1, c: 0.24 }, { w: wNow, c: 0.05 }];
+    DB.cohLog["31:9003"] = [{ w: wNow - 3, c: 0.2 }, { w: wNow - 2, c: 0.4 }, { w: wNow - 1, c: 0.1 }, { w: wNow, c: 0.1 }];
+    ev17 = cohEvaluate(DB.clusters[0], DB.cohLog, [9004]);
+    ok("[R17.2] drop needs 4 consecutive readings under 0.25 — a 0.4 week resets the streak",
+       ev17.drops.length === 1 && ev17.drops[0].id === 9002, JSON.stringify(ev17.drops));
+    // R17.1/17.2 — end-to-end: synthetic excess series, class assignment, notes
+    const mkExcess = (flip) => { const m = new Map();
+      for (let i = 0; i < 14; i++) m.set(new Date(Date.parse("2026-07-20T00:00:00Z") + i * 86400e3).toISOString().slice(0, 10),
+        (i % 2 ? 0.01 : -0.01) * (flip ? -1 : 1));
+      return m; };
+    /* 9002 anti-correlates so each scan's live reading (-1) continues its
+       seeded decay streak; 9001/9003 then see a zero-variance composite of
+       each other + flipped 9002 → null reading → no phantom drop rows. */
+    const excess17 = new Map([[9001, mkExcess(false)], [9002, mkExcess(true)], [9003, mkExcess(false)],
+      [9004, mkExcess(false)], [9005, mkExcess(true)]]);
+    DB.cohLog["31:9004"] = [{ w: wNow - 3, c: 0.6 }, { w: wNow - 2, c: 0.55 }, { w: wNow - 1, c: 0.7 }];   // this scan supplies the 4th
+    DB.clusterMinDays = 10;
+    cohRecordAndPropose(excess17, 10, new Map(), new Map(), 3);
+    const pAdd = DB.cohProps.find(p => p.kind === "add" && p.itemId === 9004);
+    ok("[R17.1] scan records the reading and proposes the persistent candidate as STATISTICAL (no story source)",
+       !!pAdd && pAdd.mclass === "s" && pAdd.trend.length === 4 && pAdd.trend[3] > 0.5
+       && /statistical co-movement alone/.test(pAdd.note) && /excluded from entry-watch narratives/.test(pAdd.note),
+       JSON.stringify({ pAdd, log: DB.cohLog["31:9004"] }));
+    DB.intel = [{ id: "r-coh", type: "demand-context", confidence: "hinted", title: "Coh story", thesis: "t",
+      direction: "up", items: [9004], sources: [{ url: "https://example.test/coh", tier: 1 }], sourceTier: 1,
+      validUntil: inDays(20), importedAt: Date.now(), status: "pending", teeth: 0, outcome: null }];
+    DB.cohProps = [];
+    cohRecordAndPropose(excess17, 10, new Map(), new Map(), 3);
+    const pAddT = DB.cohProps.find(p => p.kind === "add" && p.itemId === 9004);
+    ok("[R17.1] an analyst record naming the item upgrades the class to THESIS with the source cited",
+       !!pAddT && pAddT.mclass === "t" && /analyst record: Coh story/.test(pAddT.note), JSON.stringify(pAddT));
+    const pDropT = DB.cohProps.find(p => p.kind === "drop" && p.itemId === 9002);
+    ok("[R17.2] thesis-member drop carries the story-may-still-bind note",
+       !!pDropT && /story may still bind/.test(pDropT.note) && /decorrelation can be temporary/.test(pDropT.note),
+       JSON.stringify(pDropT));
+    DB.clusters[0].mclass = { 9002: "s" };
+    DB.cohProps = [];
+    cohRecordAndPropose(excess17, 10, new Map(), new Map(), 3);
+    const pDropS = DB.cohProps.find(p => p.kind === "drop" && p.itemId === 9002);
+    ok("[R17.2] statistical-member drop goes on the numbers alone",
+       !!pDropS && /numbers alone/.test(pDropS.note), JSON.stringify(pDropS));
+    // R17.3 — the 40% cap withholds out loud; the ledger flags dilution
+    DB.intel = [];
+    DB.clusters[0].members = [9001, 9002]; DB.clusters[0].mclass = { 9002: "s" };   // 1 of 2 statistical
+    DB.cohProps = [];
+    cohRecordAndPropose(excess17, 10, new Map(), new Map(), 3);
+    ok("[R17.3] a statistical add that would breach 40% is withheld and said out loud",
+       !DB.cohProps.some(p => p.kind === "add" && p.itemId === 9004)
+       && /withheld by the 40% cap/.test(S.cohNote || "") && /Probe delta|9004/.test(S.cohNote || ""),
+       JSON.stringify({ props: DB.cohProps, note: S.cohNote }));
+    S.tab = "sleeve"; renderSleeve(); renderClusters();
+    ok("[R17.3] a mostly-statistical basket is flagged thesis-diluted in the ledger",
+       /thesis diluted/.test(document.querySelector("#cluBody").innerHTML)
+       && /correlation cluster now/.test(document.querySelector("#cluBody").innerHTML),
+       document.querySelector("#cluBody").innerHTML.slice(0, 400));
+    // R17.4 — queue, confirm-applies, dismissal memory, narrative exclusion, class display
+    DB.clusters[0].members = [9001, 9002, 9003]; DB.clusters[0].mclass = {};
+    DB.cohProps = [];
+    const pQ = upsertCohProp("add", DB.clusters[0], 9004, "s", [0.6, 0.55, 0.7, 0.6], "statistical co-movement alone");
+    ok("[R17.4] proposal appears in the walk-up ruling lines",
+       pendingRulingItems().some(x => x.key === "coh:" + pQ.id && /coherence add/.test(x.html)),
+       JSON.stringify(pendingRulingItems().map(x => x.key)));
+    renderClusters();
+    const btn17 = document.querySelector('[data-cohconfirm="' + pQ.id + '"]');
+    ok("[R17.4] proposal renders in the review queue with class badged", !!btn17
+       && /add STATISTICAL/.test(document.querySelector("#cluQueueBody").innerHTML));
+    btn17.click();
+    ok("[R17.4] confirm admits the member with its class and decision-logs the ruling",
+       DB.clusters[0].members.includes(9004) && DB.clusters[0].mclass[9004] === "s"
+       && DB.decisionLog.some(x => x.kind === "basket" && /coherence-admit/.test(x.action)),
+       JSON.stringify({ m: DB.clusters[0].members, mc: DB.clusters[0].mclass }));
+    ok("[R17.4] statistical member is excluded from catalyst-linked narratives but chips show ·S",
+       !catLinkedIds({ items: [], clusters: [31] }).includes(9004)
+       && catLinkedIds({ items: [], clusters: [31] }).includes(9001)
+       && /·S/.test(document.querySelector("#cluBody") ? (renderClusters(), document.querySelector("#cluBody").innerHTML) : ""),
+       JSON.stringify(catLinkedIds({ items: [], clusters: [31] })));
+    DB.clusters[0].members = [9001, 9002, 9003]; delete DB.clusters[0].mclass[9004];
+    const pD = upsertCohProp("drop", DB.clusters[0], 9002, null, [0.1, 0.1, 0.1, 0.1], "numbers alone");
+    pD.status = "dismissed";
+    ok("[R17.4] a dismissed proposal stays dismissed on re-upsert — trend refreshes silently",
+       upsertCohProp("drop", DB.clusters[0], 9002, null, [0.2, 0.1, 0.1, 0.05], "numbers alone") === null
+       && pD.trend.join() === "0.2,0.1,0.1,0.05" && pD.status === "dismissed",
+       JSON.stringify(pD));
+    const vCoh = validateImport({ clusters: [{ id: 31, name: "coh-basket", members: [9001, 9004], mclass: { 9004: "s" } }],
+      cohLog: { "31:9004": [{ w: wNow, c: 0.6 }] },
+      cohProps: [{ id: 1, kind: "add", basketId: 31, itemId: 9005, mclass: "s", trend: [0.6], note: "n", status: "dismissed", at: Date.now() }] });
+    ok("[R17.4] mclass, cohLog, and cohProps (with dismissal state) survive export→import",
+       vCoh.db.clusters[0].mclass && vCoh.db.clusters[0].mclass[9004] === "s"
+       && vCoh.db.cohLog["31:9004"].length === 1 && vCoh.db.cohProps[0].status === "dismissed",
+       JSON.stringify({ cl: vCoh.db.clusters[0], log: vCoh.db.cohLog, props: vCoh.db.cohProps }));
+    DB.clusters = []; DB.cohProps = []; DB.cohLog = {}; DB.intel = [];
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }
