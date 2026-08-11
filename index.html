@@ -260,7 +260,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="hstat">
       <span class="dot load" id="dot"></span>
       <span id="status">starting…</span>
-      <button class="sm ghost" id="pendBadge" style="display:none" title="Rulings pending across all queues — briefing proposals, cluster candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from the walk-up list."></button>
+      <button class="sm ghost" id="pendBadge" style="display:none" title="Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from the walk-up list."></button>
       <button class="sm" id="refresh">↻ Refresh</button>
     </div>
   </div>
@@ -275,7 +275,6 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
   <nav class="tabs" id="tabs">
     <button data-tab="watch" class="on">Watchlist</button>
-    <button data-tab="clusters">Clusters</button>
     <button data-tab="sleeve">Sleeve</button>
     <button data-tab="routine">Routine</button>
     <button data-tab="log">Flip Log</button>
@@ -289,8 +288,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>Filters</h2><span class="sub" id="fPresetState"></span>
         <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
           <span class="seg" id="scanSeg">
-            <button data-st="t1" class="on" title="Tier-1 scanner: 400–5k consumables, unit volume floor. Its filter state is its own.">Scanner T1</button>
-            <button data-st="t2" title="Tier-2 scanner: 5k–100k, volume floor in thin-side gp-flow. Its filter state is its own.">Scanner T2</button>
+            <button data-st="t1" class="on" title="Tier-1 scanner: 400–8k (net-widened Aug 2026; consumables-only toggle available), unit volume floor under 5k, gp-flow above. Its filter state is its own.">Scanner T1</button>
+            <button data-st="t2" title="Tier-2 scanner: 5k–250k (net-widened Aug 2026), volume floor in thin-side gp-flow. Its filter state is its own.">Scanner T2</button>
           </span>
           <button class="sm" id="fReset" title="Reset THIS scanner's filters to its tier defaults — the other scanner is untouched">Reset to defaults</button>
         </span>
@@ -337,6 +336,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         </tr></thead>
         <tbody id="scanBody"></tbody>
       </table></div>
+    </div>
+
+    <div class="panel">
+      <details id="beyondNet">
+        <summary title="Rotating discovery slice (ruled Aug 10 2026): each scan cycle, 15 random items from the full item universe that pass only basic sanity — tradeable, price in either tier band, nonzero volume. The filters encode what you believe works; this slice tests that belief against the whole universe for free. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
+        <div class="tw"><table>
+          <thead><tr><th>Item</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th><th>Limit</th><th>Vol (thin side)</th><th>Age</th><th></th></tr></thead>
+          <tbody id="beyondNetBody"></tbody>
+        </table></div>
+      </details>
     </div>
 
   </section>
@@ -507,49 +516,6 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
   </section>
 
-  <!-- ═══════════ THESIS CLUSTERS ═══════════ -->
-  <section class="tab" id="tab-clusters">
-    <div class="panel" id="clusterPanel">
-      <div class="ph"><h2>Thesis clusters</h2><span class="sub" id="cluSub"></span>
-        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-          <button class="sm" id="cluNew" title="Create an empty named cluster, then tag members with the ⬡ button on watchlist rows.">+ new cluster</button>
-          <button class="sm" id="cluScan" title="Runs weekly on its own; this button runs it now.">↻ find co-moving groups</button>
-        </span>
-      </div>
-      <div class="row" style="margin-bottom:8px">
-        <label class="f" title="Default exposure cap per confirmed cluster, as a share of working capital — enforced by the allocator across all members regardless of family. Override per cluster in its Cap % cell.">Cluster cap %<input type="number" id="clCap" min="1" max="100" style="width:56px"></label>
-        <label class="f" title="Pairwise correlation of daily returns, net of the all-item average, must exceed this before two items link up in the detector.">Excess corr<input type="number" id="clCorr" min="0.1" max="0.95" step="0.05" style="width:60px"></label>
-        <label class="f" title="Overlapping trading days a pair needs before it can be flagged at all — below this the verdict is 'insufficient data', never a guess.">Min days<input type="number" id="clDays" min="5" max="30" style="width:52px"></label>
-        <span class="note" style="align-self:center;max-width:560px">
-          One story, many tickers: correlated positions are one bet. The weekly detector, the wiki categories
-          and the seed list only <b>propose</b> into the review queue below — <b>nothing caps capital until you
-          confirm a cluster</b>. Confirmed clusters cap combined exposure, report per-cluster P&L in the review,
-          and get named in the Wednesday update-day advisory.
-        </span>
-      </div>
-      <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
-      <div class="tw"><table>
-        <thead><tr><th>Cluster</th><th>Members</th>
-          <th title="Capital committed to members right now (open positions + inventory lots at cost) against this cluster's cap. Today's Plan draws the remainder down line by line.">Exposure / cap</th>
-          <th title="Cap override for this cluster in % of working capital — blank uses the default from the row above">Cap %</th>
-          <th title="Realized profit across member flips, last 14 days">P&L 14d</th>
-          <th title="Realized profit across member flips, all time">P&L all</th><th></th></tr></thead>
-        <tbody id="cluBody"></tbody>
-      </table></div>
-      <details id="cluQueueBox" style="margin-top:8px">
-        <summary style="cursor:pointer" id="cluQueueSum"></summary>
-        <div id="cluQueueBody" style="margin-top:6px"></div>
-      </details>
-    </div>
-
-    <div class="panel">
-      <div class="ph"><h2>Thesis detail</h2><span class="sub" id="cluDetSub"></span></div>
-      <div id="cluDetail"><span class="dim">Pick a confirmed cluster's <b>detail…</b> button above to see whether — and to
-        what extent — its correlation is holding: the pairwise excess-correlation matrix, a rolling correlation-over-time
-        view to watch the thesis decay, and the members' normalized 31-day charts overlaid.</span></div>
-    </div>
-  </section>
-
   <!-- ═══════════ THESIS SLEEVE ═══════════ -->
   <section class="tab" id="tab-sleeve">
     <div class="panel" id="sleevePanel">
@@ -611,6 +577,50 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         liquidity. Proposes only — nothing enters the sleeve without your press on the form below.
       </div>
       <div id="catBody"></div>
+    </div>
+
+    <div class="panel" id="clusterPanel">
+      <div class="ph"><h3>Item baskets — exposure caps & blast radius</h3><span class="sub" id="cluSub"></span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="sm" id="cluNew" title="Create an empty named standing basket, then tag members with the ⬡ button on watchlist rows.">+ new basket</button>
+          <button class="sm" id="cluScan" title="Runs weekly on its own; this button runs it now.">↻ find co-moving groups</button>
+        </span>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" title="Default exposure cap per confirmed basket, as a share of working capital — enforced by the allocator across all members regardless of family. Override per basket in its Cap % cell.">Basket cap %<input type="number" id="clCap" min="1" max="100" style="width:56px"></label>
+        <label class="f" title="Pairwise correlation of daily returns, net of the all-item average, must exceed this before two items link up in the detector.">Excess corr<input type="number" id="clCorr" min="0.1" max="0.95" step="0.05" style="width:60px"></label>
+        <label class="f" title="Overlapping trading days a pair needs before it can be flagged at all — below this the verdict is 'insufficient data', never a guess.">Min days<input type="number" id="clDays" min="5" max="30" style="width:52px"></label>
+        <span class="note" style="align-self:center;max-width:560px">
+          One story, many tickers: correlated positions are one bet. A basket <b>attached to a calendar
+          catalyst</b> is that catalyst's item basket — its coherence renders in the catalyst's entry watch
+          above. A basket with <b>no catalyst</b> is a STANDING BASKET, kept for the two jobs that need no
+          date: exposure caps and update-day blast-radius warnings. The weekly detector, wiki categories and
+          the seed list only <b>propose</b> into the review queue below — <b>nothing caps capital until you
+          confirm</b>. (Formerly the Clusters tab — merged here Aug 2026; membership ratification unchanged.)
+        </span>
+      </div>
+      <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
+      <div class="tw"><table>
+        <thead><tr><th>Basket</th><th>Members</th>
+          <th title="Capital committed to members right now (open positions + inventory lots at cost) against this basket's cap. Today's Plan draws the remainder down line by line.">Exposure / cap</th>
+          <th title="Cap override for this basket in % of working capital — blank uses the default from the row above">Cap %</th>
+          <th title="Realized profit across member flips, last 14 days">P&L 14d</th>
+          <th title="Realized profit across member flips, all time">P&L all</th><th></th></tr></thead>
+        <tbody id="cluBody"></tbody>
+      </table></div>
+      <details id="cluQueueBox" style="margin-top:8px">
+        <summary style="cursor:pointer" id="cluQueueSum"></summary>
+        <div id="cluQueueBody" style="margin-top:6px"></div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Basket coherence — is it still moving as one?</h3><span class="sub" id="cluDetSub"></span></div>
+      <div id="cluDetail"><span class="dim">Pick a basket's <b>detail…</b> button (or a catalyst's <b>basket
+        coherence…</b> button above) to see whether — and to what extent — its correlation is holding: the
+        pairwise excess-correlation matrix, a rolling correlation-over-time view to watch the thesis decay,
+        and the members' normalized 31-day charts overlaid. Thesis health is a question that lives next to
+        the thesis.</span></div>
     </div>
 
     <div class="panel" id="anomPanel">
@@ -862,13 +872,16 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         ensouled heads, nests) are the classic targets for price manipulation. They flip great — until the pump
         ends. The plan half-sizes them and allows one slot per category until your own log proves an item out
         (3 profitable flips in 14 days).</p>
-        <p><b>Thesis clusters.</b> Items that move on one story — wilderness gear, raid supplies, clue rewards —
+        <p><b>Item baskets.</b> Items that move on one story — wilderness gear, raid supplies, clue rewards —
         are a single bet wearing several names, and the family rule can't see it (different production lines,
-        same patch note). Tag them yourself, or confirm what the weekly co-movement scan (daily returns net of
-        the all-item average), shared rare wiki categories, and the built-in seed list propose. A <em>confirmed</em>
-        cluster's combined exposure is capped at a share of working capital by the allocator, its P&L is reported
-        per cluster in the review, and the Wednesday update-day advisory names its members. Candidates — suspected,
-        dormant, or seeded — never cap anything until you ratify them.</p>
+        same patch note). A basket attached to a calendar catalyst is that catalyst's item basket; one with no
+        catalyst is a standing basket kept for exposure caps and update-day blast-radius warnings. Tag members
+        yourself, or confirm what the weekly co-movement scan (daily returns net of the all-item average),
+        shared rare wiki categories, and the built-in seed list propose. A <em>confirmed</em> basket's combined
+        exposure is capped at a share of working capital by the allocator, its P&L is reported per basket in
+        the review, and the Wednesday update-day advisory names its members. Candidates — suspected, dormant,
+        or seeded — never cap anything until you ratify them. Baskets live on the Sleeve tab, under the
+        calendar (formerly their own Clusters tab).</p>
         <p><b>Undercut to exit.</b> A sell that won't fill: relist it 1 gp under the current low sell price and
         take the small loss. Hoping is how a 2% edge becomes a 10% hole.</p>
         <p><b>Capture rate & horizons.</b> Sizing assumes a standing offer captures ~15% of the item's flow —
@@ -966,8 +979,14 @@ const K = "gef.v1";
 const DEFAULT_FILTERS = { vol:1000, gpvol:2_000_000, min:400, max:100_000, roi:0, margin:1, age:60, mem:"any", rows:50, lim:true, cons:false };
 /* Split scanners (user-set): each tier scanner keeps its own persisted
    filter state — no shared values. These are the per-tab reset targets. */
-const SCAN_T1_DEFAULTS = { ...DEFAULT_FILTERS, vol:1000, min:400, max:5000, cons:true, margin:15 };
-const SCAN_T2_DEFAULTS = { ...DEFAULT_FILTERS, gpvol:2_000_000, min:5000, max:100_000, cons:false, margin:15 };
+/* Net-widening (user ruling, Aug 10 2026) — discovery only; plan gates, seasoning,
+   and allocator tier bands unchanged. T1 max 5k→8k (upper-potion / mid-gear seam),
+   consumables-only OFF by default (the checkbox was hiding repair kits, tablets,
+   jars). T2 ceiling 100k→250k (150–250k books are thin-but-real), gp-flow floor
+   2m→1.2m/hr (the 2m floor predates gp-flow price-scaling and double-punished
+   mid-band items). */
+const SCAN_T1_DEFAULTS = { ...DEFAULT_FILTERS, vol:1000, min:400, max:8000, cons:false, margin:15 };
+const SCAN_T2_DEFAULTS = { ...DEFAULT_FILTERS, gpvol:1_200_000, min:5000, max:250_000, cons:false, margin:15 };
 const SF = () => DB.scanTab === "t2" ? DB.filtersT2 : DB.filtersT1;
 let DB = {
   filters: {...DEFAULT_FILTERS},   // legacy single-scanner state — migrates into filtersT1
@@ -1037,7 +1056,12 @@ let DB = {
   sleeveExits: [],    // realized sleeve exits [{t,d,posId,itemId,name,qty,price,basis,net,rung}] — never mixed into DB.flips or any flipping stat
   sleeveRungPct: 5,   // a price rung arms when the exit-guidance price is within this % of its trigger
   catalysts: [],      // catalyst calendar [{id,name,windowStart,windowEnd,items:[ids],clusters:[ids],notes,src,createdAt}] — the user's (or ratified briefings')
-  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v,dismissed?}] — "reason unknown; find the catalyst"; 30d retention; dismissed (ms stamp) silences the tape-question reminder only, never the pump fingerprint
+  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v,dismissed?,noStory?,storyId?}] — "reason unknown; find the catalyst"; 30d retention; dismissed (ms stamp) silences the tape-question reminder only, never the pump fingerprint; noStory = consecutive no-story sweeps (analyst feedback), storyId = the intel record that answered it
+  flagArchive: [],    // story-resolution feedback (ruled Aug 10 2026): explained flags archive with their market signature [{itemId,name,flagAt,storyId,storyType,storyConf,peakToFlagD,retracePct,at}] — builds the LAG PROFILE the anomaly scan displays; attention only, never authority
+  rampFlags: [],      // entry-watch DISCOUNTED→RAMPING transitions on calendar items [{catId,catName,itemId,name,at,runwayD}] — a tape question about the CATALYST ("is the window moving up?"); 30d retention
+  entryWatchState: {},// "catId:itemId" → last entry-watch verdict, so transitions are detectable across sessions
+  walkupLoad: [],     // walk-up attention instrumentation [{d,n}] — distinct decisions presented per day, 30d retention; the ≤7 budget is probe-asserted
+  featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
@@ -1057,10 +1081,10 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time (sustained qualification, Aug 10 2026): items already on the
        watchlist earned tenure through past evaluations — the seasoning gate
@@ -1144,8 +1168,35 @@ function load(){
       DB.holds = stay;
       DB.sleeveMigV1 = 1;
     }
+    /* One-time (clusters → catalyst merge, user ruling Aug 10 2026): the
+       Clusters tab is removed; a cluster is now the ITEM BASKET attached to a
+       catalyst, and catalyst-less ones are STANDING BASKETS (kept for exposure
+       caps and blast-radius warnings). Data, caps, dismissed-cluster memory,
+       and Jaccard absorption carry over UNCHANGED — this only records the
+       restructuring. Basket management lives on the Sleeve tab. */
+    if (!DB.basketMergeV1){
+      const standing = (DB.clusters || []).filter(cl => !(DB.catalysts || []).some(c => (c.clusters || []).includes(cl.id))).length;
+      DB.decisionLog.push({ t: Date.now(), d: today(), kind: "settings",
+        subject: "clusters → catalyst baskets", action: "merge (tab removed)",
+        reason: "ruled: one object, one name — " + ((DB.clusters || []).length - standing) + " basket(s) catalyst-attached, "
+          + standing + " standing; caps, memberships, dismissal memory unchanged; walk-up surface shrinks by one tab" });
+      DB.basketMergeV1 = 1;
+    }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
+    /* One-time (net-widening, user ruling Aug 10 2026): stored filter state at
+       the OLD defaults moves to the new ruled dials; deliberate custom values
+       are left alone. Discovery only — no gate, budget, or band changed. */
+    if (!DB.netWidenV1){
+      if (DB.filtersT1.max === 5000) DB.filtersT1.max = 8000;
+      DB.filtersT1.cons = false;
+      if (DB.filtersT2.max === 100_000) DB.filtersT2.max = 250_000;
+      if (DB.filtersT2.gpvol === 2_000_000) DB.filtersT2.gpvol = 1_200_000;
+      DB.decisionLog.push({ t: Date.now(), d: today(), kind: "settings",
+        subject: "scanner net-widening", action: "T1 max 5k→8k, consumables-only off; T2 max 100k→250k, gp-flow 2m→1.2m/hr; discovery slice on",
+        reason: "ruled: filters were hiding the upper-potion/mid-gear seam, non-consumable winners, and thin-but-real 150–250k books; the discovery slice tests the filters against the whole universe" });
+      DB.netWidenV1 = 1;
+    }
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
   } catch(e){ console.warn("state load failed", e); }
 }
@@ -1765,6 +1816,7 @@ function renderScan(){
     " · prices " + ago(S.latestAt) + " · volumes " + (S.hourAt ? ago(S.hourAt) : "—");
   if (!shown.length){
     $("#scanBody").innerHTML = '<tr><td colspan="13" class="empty">Nothing passes these filters. Loosen the volume floor or raise max buy price.</td></tr>';
+    renderBeyondNet(new Set(DB.watch.map(w => w.id)));   // the slice matters most when the net catches nothing
     return;
   }
   const watched = new Set(DB.watch.map(w => w.id));
@@ -1809,6 +1861,54 @@ function renderScan(){
       + (watched.has(c.id) ? '✓' : '+ watch') + '</button></td>'
       + '</tr>';
   }).join("");
+  renderBeyondNet(watched);
+}
+
+/* ── rotating discovery slice (ruled Aug 10 2026) ──────────────
+   15 random items per scan cycle from the FULL mapping universe, gated on
+   basic sanity only: tradeable (buy-limited GE item), live two-sided price
+   in either tier band, nonzero thin-side volume. The sample rotates with
+   each price refresh (seeded by its timestamp, so re-renders within a cycle
+   are stable). Pure exploration — the slice admits nothing and feeds
+   nothing; anything interesting gets manually watched. */
+const BEYOND_NET_N = 15;
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function renderBeyondNet(watched){
+  const body = $("#beyondNetBody"), sub = $("#beyondNetSub");
+  if (!body) return;
+  const lo = Math.min(DB.filtersT1.min || 400, DB.filtersT2.min || 5000);
+  const hi = Math.max(DB.filtersT1.max || 8000, DB.filtersT2.max || 250_000);
+  const pool = [];
+  for (const it of S.items){
+    if (!it.l) continue;                       // sanity: tradeable on the GE
+    const c = calc(it.i);
+    if (!c || c.buy == null || c.sell == null) continue;
+    if (c.buy < lo || c.buy > hi) continue;    // sanity: price in either tier band
+    if (!(c.volSide > 0)) continue;            // sanity: nonzero volume
+    pool.push(c);
+  }
+  const rnd = mulberry32((S.latestAt || 0) % 2147483647);
+  /* partial Fisher–Yates: draw BEYOND_NET_N without bias */
+  const n = Math.min(BEYOND_NET_N, pool.length);
+  for (let i = 0; i < n; i++){
+    const j = i + Math.floor(rnd() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const pick = pool.slice(0, n);
+  sub.textContent = n + " of " + pool.length + " sanity-passing items, resampled each price cycle — the filters never saw these";
+  body.innerHTML = pick.length ? pick.map(c => '<tr>'
+      + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span></td>'
+      + '<td class="num">'+full(c.buy)+'</td>'
+      + '<td class="num">'+full(c.sell)+'</td>'
+      + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
+      + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
+      + '<td class="num dim">'+(c.limit ? full(c.limit) : "?")+'</td>'
+      + '<td class="num dim">'+gp(c.volSide)+'</td>'
+      + '<td class="num dim">'+(c.age != null ? Math.round(c.age)+'m' : "—")+'</td>'
+      + '<td><button class="sm" data-add="'+c.id+'"'+(watched.has(c.id)?' disabled title="already watched"':'')+'>'
+      + (watched.has(c.id) ? '✓' : '+ watch') + '</button></td>'
+      + '</tr>').join("")
+    : '<tr><td colspan="9" class="empty">No sanity-passing items yet — waiting on price data.</td></tr>';
 }
 
 /* ═══════════ SIZING ═══════════ */
@@ -2289,7 +2389,7 @@ async function runClusterScan(force){
   if (!force && Date.now() - (DB.lastCoScanAt || 0) < 7 * 86400e3) return;
   const ids = DB.watch.map(w => w.id);
   if (ids.length < 3){
-    if (force){ S.cluMsg = "Needs 3+ watchlist items — nothing to correlate."; if (S.tab === "watch") renderClusters(); }
+    if (force){ S.cluMsg = "Needs 3+ watchlist items — nothing to correlate."; renderClusters(); }
     return;
   }
   cluScanBusy = true;
@@ -2297,7 +2397,7 @@ async function runClusterScan(force){
     const minDays = Math.max(5, DB.clusterMinDays || 20);
     const thr = Math.max(0.1, Math.min(0.95, DB.clusterCorr || 0.5));
     S.cluMsg = "Fetching daily history for " + ids.length + " items…";
-    if (S.tab === "watch") renderClusters();
+    renderClusters();
     const rets = new Map();
     for (const id of ids){
       try { rets.set(id, dailyRetMap((await dailyFor(id)).days)); } catch(e){ rets.set(id, new Map()); }
@@ -2354,7 +2454,7 @@ async function runClusterScan(force){
     }
     /* Enrichment: wiki categories for the whole watchlist, one batched pull. */
     S.cluMsg = "Fetching wiki categories…";
-    if (S.tab === "watch") renderClusters();
+    renderClusters();
     const catsByName = await wikiCatsFor(ids.map(id => itemName(id)));
     const catsById = new Map(ids.map(id => [id, catsByName.get(itemName(id)) || []]));
     const catCount = new Map();
@@ -2387,7 +2487,7 @@ async function runClusterScan(force){
     save();
   } finally {
     cluScanBusy = false;
-    if (S.tab === "watch") renderClusters();
+    renderClusters();
   }
 }
 
@@ -4188,7 +4288,10 @@ function scanScreenTier(t){
     if (f.cons && !CONSUMABLE_RX.test(it.n)) continue;
     const c = calc(it.i);
     if (!c || c.buy == null || c.sell == null) continue;
-    if (c.buy < Math.max(150, f.min) || c.buy > Math.min(f.max, TIER2_MAX)) continue;
+    /* Net-widening (ruled Aug 10 2026): the scout admits up to the tier scanner's
+       own ceiling — 150–250k T2 admissions stamp scoutTier 2 and ride the existing
+       T2 budget and gates; no allocator band moved. */
+    if (c.buy < Math.max(150, f.min) || c.buy > f.max) continue;
     if (c.buy < TIER1_MAX ? c.volSide < f.vol : c.volSide * c.buy < (f.gpvol || 2e6)) continue;
     if (c.margin == null || c.margin < f.margin) continue;
     if (c.age == null || c.age > f.age) continue;
@@ -4628,7 +4731,7 @@ function renderWatch(){
     const pl = provenLoser(w.id, w);
     if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column). The unbench lasts only while the test is fresh (16h).">proven loser — re-test to unbench</span>');
     for (const cl of clustersFor(w.id))
-      flags.push('<span class="badge b-seed" title="Member of ratified thesis cluster \''+esc(cl.name)+'\' — combined exposure across all its members is capped at '+clusterCapPctOf(cl)+'% of working capital by the allocator, regardless of family. Manage it in the Thesis clusters panel below.">⬡ '+esc(cl.name)+'</span>');
+      flags.push('<span class="badge b-seed" title="Member of ratified basket \''+esc(cl.name)+'\' — combined exposure across all its members is capped at '+clusterCapPctOf(cl)+'% of working capital by the allocator, regardless of family. Manage it in the Item baskets panel (Sleeve tab).">⬡ '+esc(cl.name)+'</span>');
     /* Ratified-intel tags: advisory display only — the tag never benches or
        resizes (an optional 0.5× haircut exists solely as a per-record user
        toggle and announces itself on the plan line). */
@@ -4870,7 +4973,14 @@ function renderClusters(){
       + (watchIds.has(id) ? '' : ' title="not on the watchlist — the cap still counts it whenever it holds capital"') + '>'
       + esc(itemName(id)) + '</span>'
     ).join("");
-    return '<tr><td><b>⬡ ' + esc(cl.name) + '</b>'
+    /* Catalyst-attached vs standing (clusters merge, ruled Aug 10 2026):
+       attached baskets belong to their calendar entry — coherence renders in
+       the catalyst's card; standing baskets exist for caps + blast radius. */
+    const attachedTo = (DB.catalysts || []).filter(c => (c.clusters || []).includes(cl.id));
+    return '<tr><td><b>⬡ ' + esc(cl.name) + '</b> '
+      + (attachedTo.length
+        ? attachedTo.map(c => '<span class="badge b-ok" title="Attached to calendar catalyst \'' + esc(c.name) + '\' — this is that catalyst\'s item basket; its coherence and entry watch render on the catalyst card above.">⚡ ' + esc(c.name) + '</span>').join(" ")
+        : '<span class="badge b-seed" title="No catalyst attached — a STANDING BASKET, kept for the two jobs that need no date: exposure caps and update-day blast-radius warnings.">standing</span>')
       /* td inherits white-space:nowrap — without the explicit normal, max-width
          can't wrap the story and it runs the row off the screen edge. */
       + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px;white-space:normal">' + esc(cl.story) + '</div>' : '')
@@ -6109,6 +6219,23 @@ const catRunwayD = cat => {
   return Number.isFinite(a) ? Math.ceil((a - Date.now()) / 86400e3) : null;
 };
 
+/* DISCOUNTED→RAMPING transition = a tape question about the CATALYST
+   (ruled Aug 10 2026): someone is front-running a known window. Flags it
+   for the analyst export; one flag per cat·item per 30 days. Restraint-side
+   intel — it deploys nothing. Pure state transition, probe-tested. */
+function noteEntryVerdict(cat, id, verdict, runwayD){
+  if (!DB.entryWatchState) DB.entryWatchState = {};
+  const ek = cat.id + ":" + id;
+  const prev = DB.entryWatchState[ek];
+  if (prev === "DISCOUNTED" && verdict === "RAMPING"
+      && !(DB.rampFlags || []).some(rf => rf.catId === cat.id && rf.itemId === id && Date.now() - rf.at < 30 * 86400e3)){
+    DB.rampFlags.push({ catId: cat.id, catName: cat.name, itemId: id,
+      name: itemName(id), at: Date.now(), runwayD });
+    DB.rampFlags = DB.rampFlags.filter(rf => Date.now() - rf.at < 30 * 86400e3).slice(-20);
+  }
+  if (verdict) DB.entryWatchState[ek] = verdict;
+}
+
 /* Entry watch: fetch-per-member, polite, cached 20h. Results live in S —
    a screen is a reading, not state. */
 let entryWatchBusy = false;
@@ -6124,13 +6251,16 @@ async function runEntryWatch(catId){
       let st = null, thin = false;
       try { st = slvSeriesStats((await slvDailyFor(id)).days); } catch(e){ /* polite: skip */ }
       if (!st) thin = true;
-      rows.push({ id, st, thin, verdict: entryVerdict(st),
+      const verdict = entryVerdict(st);
+      noteEntryVerdict(cat, id, verdict, runway);
+      rows.push({ id, st, thin, verdict,
         score: slvRankScore(st, runway),
         liqWarn: st ? exitLiqWarn(slvIntendGp(), st.gpVolDay) : false });
       await new Promise(r => setTimeout(r, 250));
     }
     rows.sort((a, b) => b.score - a.score);
     S.entryWatch.set(cat.id, { at: Date.now(), runway, rows });
+    save();
   } finally {
     entryWatchBusy = false;
     if (S.tab === "sleeve") renderSleeve();
@@ -6268,7 +6398,11 @@ function renderSleeveEngine(){
       + '<span style="float:right;white-space:nowrap">'
       + '<button class="sm" data-catwatch="' + cat.id + '"' + (entryWatchBusy ? ' disabled' : '') + '>↻ screen entries</button> '
       + '<button class="sm" data-cataddi="' + cat.id + '">+ item</button> '
-      + '<button class="sm" data-cataddcl="' + cat.id + '">+ cluster</button> '
+      + '<button class="sm" data-cataddcl="' + cat.id + '">+ basket</button> '
+      + (cat.clusters || []).map(clId => {
+          const cl = (DB.clusters || []).find(x => x.id === clId);
+          return cl ? '<button class="sm" data-cldetail="' + cl.id + '" title="Is this basket still moving as one? Renders the coherence view (correlation decay, laggards) below — a thesis-health question, next to the thesis.">⬡ ' + esc(cl.name) + ' coherence…</button> ' : '';
+        }).join("")
       + '<button class="sm ghost" data-catdel="' + cat.id + '">✕</button></span></div>'
       + '<div style="margin-top:3px;white-space:normal">' + (chips || '<span class="dim">no items linked yet</span>') + '</div>'
       + (cat.notes ? '<div class="dim" style="white-space:normal">' + esc(cat.notes) + '</div>' : '')
@@ -6278,12 +6412,17 @@ function renderSleeveEngine(){
   const fresh = (DB.anomalyFlags || []).filter(f => Date.now() - f.at < 30 * 86400e3);
   $("#anomSub").textContent = (DB.lastAnomalyScanAt ? "last scan " + ago(DB.lastAnomalyScanAt) : "never run")
     + (S.anomScanned != null ? " · screened top " + S.anomScanned + " of " + S.anomPool + " >1m items by gp flow" : "");
+  const lagP = flagLagProfile();
   $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f => {
     const pf = suspectedPump(f.itemId);
     return '<div class="bench-row"' + (f.dismissed ? ' style="opacity:.55"' : '') + '><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
     + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
     + (f.dismissed ? ' <span class="badge b-warn" title="Dismissed by you — this silences the tape-question briefing reminder for this flag only. It never lifts a pump defense; only dismissing the warning record does that.">dismissed</span>' : '')
-    + '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position</div>'
+    + (f.storyId ? '<div class="dim">answered by the analyst: record ' + esc(f.storyId) + '</div>'
+      : '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position'
+        + (f.noStory ? ' · <b>' + f.noStory + '× no public story</b>' + (f.noStory >= 2 ? ' — watch-note escalation due' : ' — wider-net re-hearing due') : '') + '</div>')
+    + (!f.storyId && lagP ? '<div class="dim" title="Lag profile from ' + lagP.n + ' explained flags: attention only — it re-ranks nothing and blocks nothing.">signature note: past explained flags peaked a median '
+        + lagP.medianD + 'd before the scan tripped — if this one matches that class, the move is likely post-peak</div>' : '')
     + (pf ? '<div class="neg">⚠ ' + esc(pf.why) + '</div>' : '') + '</span>'
     + '<span class="r">' + esc(f.d)
     + (f.dismissed ? '' : ' <button class="sm ghost" data-anomdismiss="' + f.id + '" title="Silences the tape-question briefing reminder for this flag. Does NOT lift any pump defense — that takes dismissing the warning record itself.">dismiss</button>')
@@ -6394,7 +6533,7 @@ $("#anomRun").onclick = () => { runAnomalyScan(true); toast("Anomaly scan starte
    blacklist, the proven-loser bench, realized metrics, gate constants, or
    the reserve — structurally (nothing here writes them) and in the copy
    (where intel and realized history disagree, history wins and says so). */
-const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag", "promotion-warning"];
+const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag", "promotion-warning", "long-catalyst", "watch-note"];
 const CONF_RANK = { rumor: 0, hinted: 1, polled: 2, confirmed: 3 };
 const CONF_BADGE = { confirmed: "b-tax", polled: "b-ok", hinted: "b-warn", rumor: "b-risk" };
 const INTEL_DIRS = ["up", "down", "unclear", "caution"];
@@ -6436,6 +6575,11 @@ function intelTagText(id){
         + r.confidence + (r.sourceTier != null ? ", T" + r.sourceTier : "") + "]");
       continue;
     }
+    if (r.type === "watch-note"){
+      tags.push("watch-note: " + r.title + " — no public story after 2 sweeps; posture: absence ["
+        + r.confidence + "]");
+      continue;
+    }
     let t = (r.type === "demand-context" ? "demand context: " : "update-sensitive: ") + r.title
       + (r.catalyst && r.catalyst.windowStart ? ", window " + r.catalyst.windowStart + " → " + r.catalyst.windowEnd
          : ", until " + r.validUntil)
@@ -6455,6 +6599,7 @@ function intelTagText(id){
 function importIntelligence(d){
   if (!d || typeof d !== "object" || !Array.isArray(d.records)) throw new Error("not an intelligence.json (no records array)");
   let added = 0, updated = 0, absorbed = 0, noSource = 0, malformed = 0, resurfaced = 0, tierRejected = 0;
+  const acceptedRecs = [];   // records that actually entered/updated the queue — rejected or absorbed ones never stamp a story
   for (const raw of d.records){
     if (!raw || typeof raw !== "object"){ malformed++; continue; }
     const type = INTEL_TYPES.includes(raw.type) ? raw.type : null;
@@ -6478,17 +6623,22 @@ function importIntelligence(d){
     /* Catalyst/thesis records require a T0/T1 primary in the citations —
        T3 can trigger investigation, never BE the record. Untiered legacy
        files fail this on purpose: re-run the briefing, don't grandfather. */
-    if ((type === "catalyst" || type === "catalyst-update") && !(sourceTier != null && sourceTier <= 1)){
+    if ((type === "catalyst" || type === "catalyst-update" || type === "long-catalyst") && !(sourceTier != null && sourceTier <= 1)){
       tierRejected++; continue;
     }
     const items = [...new Set((Array.isArray(raw.items) ? raw.items : [])
       .map(x => +((x && x.id) != null ? x.id : x)).filter(x => x > 0))];
-    const rec = { id, type, confidence: conf, title: String(raw.title || "").slice(0, 200),
+    const rec = { id, type,
+      confidence: (type === "long-catalyst" && CONF_RANK[conf] > CONF_RANK.hinted) ? "hinted" : conf,
+      title: String(raw.title || "").slice(0, 200),
       thesis: String(raw.thesis || ""),
       /* Promotion is not information: a promotion-warning's direction is
          caution by definition — a "buy" arriving under that type is coerced,
-         never honored. */
-      direction: type === "promotion-warning" ? "caution"
+         never honored. A watch-note (no-story escalation) is likewise always
+         caution. A long-catalyst's confidence is capped at hinted until the
+         content is officially dated (ruled Aug 10 2026) — coerced on import
+         regardless of what the file claims. */
+      direction: (type === "promotion-warning" || type === "watch-note") ? "caution"
         : INTEL_DIRS.includes(raw.direction) ? raw.direction : "unclear",
       sourceTier, community: raw.community ? String(raw.community)
         : (sources.find(s => s.community) || {}).community || null,
@@ -6510,13 +6660,13 @@ function importIntelligence(d){
     if (conflicts.length) rec.conflict = conflicts.join(", ");
     const existing = DB.intel.find(x => x.id === id);
     if (existing){
-      if (existing.status === "pending"){ Object.assign(existing, rec, { importedAt: existing.importedAt }); updated++; continue; }
+      if (existing.status === "pending"){ Object.assign(existing, rec, { importedAt: existing.importedAt }); updated++; acceptedRecs.push(existing); continue; }
       if (existing.status === "dismissed"
           && (CONF_RANK[conf] > CONF_RANK[existing.confidence] || rec.direction !== existing.direction)){
         rec.resurfaced = "material change: " + (CONF_RANK[conf] > CONF_RANK[existing.confidence]
           ? existing.confidence + " → " + conf : "direction " + existing.direction + " → " + rec.direction);
         DB.intel = DB.intel.filter(x => x.id !== id);
-        DB.intel.push(rec); resurfaced++; continue;
+        DB.intel.push(rec); resurfaced++; acceptedRecs.push(rec); continue;
       }
       absorbed++; continue;
     }
@@ -6530,12 +6680,62 @@ function importIntelligence(d){
       return !(CONF_RANK[conf] > CONF_RANK[x.confidence]);
     }) : null;
     if (variantOf){ variantOf.variants = (variantOf.variants || 0) + 1; absorbed++; continue; }
-    DB.intel.push(rec); added++;
+    DB.intel.push(rec); added++; acceptedRecs.push(rec);
   }
   DB.intel = DB.intel.slice(-200);
   DB.lastBriefImportAt = Date.now();
+  /* ── story-resolution feedback (ruled Aug 10 2026 — attention, never
+     authority): each active anomaly flag is checked against the records that
+     just arrived. Named in a record → archive the flag WITH its market
+     signature (story class, peak-to-flag lag, retrace) so the scan learns
+     its own latency. Named in nothing → its no-story counter ticks, which
+     the next flags export carries back to the analyst (escalation rule). */
+  const namedBy = new Map();   // itemId → first ACCEPTED record naming it this import
+  for (const r of acceptedRecs){
+    if (r.type === "watch-note") continue;   // a watch-note records the ABSENCE of a story
+    for (const iid of (r.items || []))
+      if (iid > 0 && !namedBy.has(iid)) namedBy.set(iid, r);
+  }
+  const nowMs = Date.now();
+  for (const f of DB.anomalyFlags || []){
+    if (f.dismissed || nowMs - f.at >= 30 * 86400e3) continue;
+    if (f.storyId) continue;   // already answered — later imports neither re-archive nor tick the counter
+    const r = namedBy.get(f.itemId);
+    if (r){
+      {
+        f.storyId = String(r.id || ""); f.noStory = 0;
+        /* Signature from the cached 90d series when present; nulls otherwise —
+           the profile fills as data allows, it never guesses. */
+        let peakToFlagD = null, retracePct = null;
+        const rec = slvDailyCache.get(f.itemId);
+        if (rec && rec.days.length >= 21){
+          let peak = null;
+          for (const day of rec.days) if (!peak || day.mid > peak.mid) peak = day;
+          const flagD = new Date(f.at).toISOString().slice(0, 10);
+          peakToFlagD = Math.round((Date.parse(flagD) - Date.parse(peak.d)) / 86400e3);
+          const cur = rec.days[rec.days.length - 1].mid;
+          retracePct = peak.mid > 0 ? +((cur / peak.mid - 1) * 100).toFixed(1) : null;
+        }
+        DB.flagArchive.push({ itemId: f.itemId, name: f.name, flagAt: f.at,
+          storyId: f.storyId, storyType: String(r.type || ""), storyConf: String(r.confidence || ""),
+          peakToFlagD, retracePct, at: nowMs });
+        DB.flagArchive = DB.flagArchive.slice(-60);
+      }
+    } else {
+      f.noStory = (f.noStory || 0) + 1;
+    }
+  }
   save();
   return { added, updated, absorbed, noSource, malformed, resurfaced, tierRejected };
+}
+
+/* LAG PROFILE from the flag archive: median peak-to-flag lag over explained
+   flags. Displayed on new flags so the scan states its own latency —
+   "signature matches a story-driven run; if so, likely post-peak." */
+function flagLagProfile(){
+  const lags = (DB.flagArchive || []).map(a => a.peakToFlagD).filter(x => x != null && x >= 0);
+  if (lags.length < 2) return null;
+  return { n: lags.length, medianD: Math.round(medianOf(lags)) };
 }
 
 /* ═══ PUMP FINGERPRINT — market structure meets narrative ═══
@@ -6588,7 +6788,9 @@ function suspectedPump(id){
 /* Activation on ratify — per type, and only then. Returns the effect line
    for the decision log so the ruling records what it actually did. */
 function activateIntel(r){
-  if (r.type === "catalyst" || r.type === "catalyst-update"){
+  if (r.type === "watch-note")
+    return "watch-note active on " + (r.items || []).length + " item(s) — advisory caution tag; posture is absence, lifted by dismissal or expiry";
+  if (r.type === "catalyst" || r.type === "catalyst-update" || r.type === "long-catalyst"){
     const nm = (r.catalyst && r.catalyst.name) || r.updatesCatalyst || r.title;
     const hit = DB.catalysts.find(c => c.name.toLowerCase() === String(nm).toLowerCase()
       || (r.updatesCatalyst && c.name.toLowerCase() === r.updatesCatalyst.toLowerCase()));
@@ -6602,8 +6804,11 @@ function activateIntel(r){
     DB.catalysts.push({ id: Date.now(), name: String(nm),
       windowStart: r.catalyst && r.catalyst.windowStart ? r.catalyst.windowStart : r.validUntil,
       windowEnd: r.catalyst && r.catalyst.windowEnd ? r.catalyst.windowEnd : r.validUntil,
-      items: (r.items || []).slice(), clusters: [], notes: r.thesis, src: "intel", createdAt: Date.now() });
-    return "catalyst \"" + nm + "\" added to the calendar";
+      items: (r.items || []).slice(), clusters: [], notes: r.thesis, src: "intel", createdAt: Date.now(),
+      estWindow: r.type === "long-catalyst" ? 1 : 0 });
+    return r.type === "long-catalyst"
+      ? "long-catalyst \"" + nm + "\" added to the calendar (window is an ESTIMATE until officially dated) — entry-watch screens its basket like any other entry"
+      : "catalyst \"" + nm + "\" added to the calendar";
   }
   if (r.type === "cluster-membership"){
     const members = (r.cluster && r.cluster.addMembers && r.cluster.addMembers.length
@@ -6731,6 +6936,38 @@ function intelScorecardInline(){
   }
   return '<div class="inline">' + (lines.length ? lines.join("")
     : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';
+}
+
+/* Complexity-governance report (ruled Aug 10 2026): walk-up attention trend
+   against the ≤7 budget, and 90-day feature dormancy. Proposals only — a
+   demotion happens when the user rules it, in a tooling session. */
+function attentionGovernanceInline(){
+  const lines = [];
+  const wl = (DB.walkupLoad || []).slice().sort((a, b) => a.d.localeCompare(b.d));
+  if (wl.length){
+    const wk = wl.slice(-7), prior = wl.slice(-14, -7);
+    const avg = a => a.length ? a.reduce((s, x) => s + x.n, 0) / a.length : null;
+    const a7 = avg(wk), aPrior = avg(prior);
+    const peak = Math.max(...wl.map(x => x.n));
+    lines.push('<div>Walk-up attention: last-7 avg <b>' + a7.toFixed(1) + '</b> decisions'
+      + (aPrior != null ? ' (prior week ' + aPrior.toFixed(1) + ')' : '')
+      + ' · 30d peak ' + peak + ' · budget ≤ 7'
+      + (peak > 7 ? ' <span class="badge b-risk">budget breached — something must displace, not stack</span>' : ' <span class="badge b-tax">within budget</span>')
+      + '</div>');
+  } else lines.push('<div class="dim">No walk-up load readings yet — the count records on each walk-up render.</div>');
+  const nowMs = Date.now();
+  const dormant = Object.entries(DB.featTouch || {})
+    .filter(([k, v]) => v && v.last && nowMs - v.last > 90 * 86400e3 && nowMs - (v.first || v.last) > 90 * 86400e3)
+    .sort((a, b) => a[1].last - b[1].last);
+  if (dormant.length)
+    lines.push('<div><b>Dormancy report</b> — untouched 90+ days, proposed for demotion behind a "more" disclosure (never deleted; your ruling): '
+      + dormant.slice(0, 8).map(([k, v]) => esc(k) + ' (last ' + ago(v.last) + ')').join(' · ')
+      + (dormant.length > 8 ? ' · +' + (dormant.length - 8) + ' more' : '') + '</div>');
+  else if (Object.keys(DB.featTouch || {}).length)
+    lines.push('<div class="dim">No features dormant 90+ days — everything instrumented has been touched.</div>');
+  else
+    lines.push('<div class="dim">Feature-touch instrumentation is collecting — the dormancy report needs 90 days of readings before it can accuse anything.</div>');
+  return '<div class="inline">' + lines.join("") + '</div>';
 }
 
 /* Wednesday advisory, intel-aware: names what's shipping and which
@@ -6948,6 +7185,17 @@ function updatePendBadge(){
   el.style.display = n ? "" : "none";
   el.textContent = "⚖ " + n + " pending";
 }
+/* Distinct decisions the walk-up presents: ruling lines actually shown
+   (post-snooze, post-cap) plus the briefing reminder when it renders.
+   Checklist steps are actions, not decisions — they don't count. */
+function walkupDecisionCount(){
+  let rulings = 0;
+  try { rulings = Math.min(pendingRulingItems().filter(x => !x.snoozed).length,
+    Math.min(10, Math.max(1, DB.rulingsCap || 5))); } catch(e){ rulings = 0; }
+  let brf = 0;
+  try { brf = briefReminderInfo() ? 1 : 0; } catch(e){ brf = 0; }
+  return rulings + brf;
+}
 
 /* ── briefing reminder — the tracker→desk handoff cue ──
    The tracker cannot run the briefing itself; the reminder is a function of
@@ -6984,6 +7232,13 @@ function tapeQuestionFlags(){
     if (i >= 0) out.splice(i, 1);
     out.push({ kind: "suspected-pump", itemId: id, name: itemName(id), firstSeen: pf.firstSeen, detail: pf.why });
   }
+  /* Calendar-item ramping transitions are tape questions too (ruled Aug 10
+     2026): front-running of a known catalyst asks "is the window moving up?" */
+  for (const rf of DB.rampFlags || []){
+    if (now - rf.at >= 30 * 86400e3 || rf.at <= last) continue;
+    out.push({ kind: "catalyst-ramping", itemId: rf.itemId, name: rf.name + " (" + rf.catName + ")",
+      firstSeen: rf.at, detail: "calendar basket item flipped DISCOUNTED→RAMPING — is the window moving up?" });
+  }
   return out.sort((a, b) => b.firstSeen - a.firstSeen);
 }
 /* Handshake export: EVERY active flag (not just new-since-brief), so the
@@ -6996,6 +7251,7 @@ function analystFlagsPending(){
     if (f.dismissed || now - f.at >= 30 * 86400e3) continue;
     flags.push({ kind: "anomaly", itemId: f.itemId, name: f.name,
       firstSeen: new Date(f.at).toISOString(), newSinceBrief: f.at > last,
+      noStorySweeps: f.noStory || 0,   // consecutive sweeps the analyst found no public story — ≥1 triggers the wider-net re-hearing, ≥2 the watch-note escalation
       detail: "price +" + f.rise14p + "% / volume +" + f.rise14v + "% vs 2–3wk ago · strength " + f.strength });
   }
   const promoted = new Set();
@@ -7006,8 +7262,62 @@ function analystFlagsPending(){
     if (pf) flags.push({ kind: "suspected-pump", itemId: id, name: itemName(id),
       firstSeen: new Date(pf.firstSeen).toISOString(), newSinceBrief: pf.firstSeen > last, detail: pf.why });
   }
+  /* Ramping transitions on calendar items ride along as their own kind —
+     a question about the CATALYST ("is the window moving up?"), per ruling. */
+  for (const rf of DB.rampFlags || []){
+    if (now - rf.at >= 30 * 86400e3) continue;
+    flags.push({ kind: "catalyst-ramping", itemId: rf.itemId, name: rf.name,
+      firstSeen: new Date(rf.at).toISOString(), newSinceBrief: rf.at > last,
+      detail: "\"" + rf.catName + "\" basket item flipped DISCOUNTED→RAMPING "
+        + (rf.runwayD != null && rf.runwayD > 0 ? rf.runwayD + "d before the window" : "inside/past the window")
+        + " — front-running of a known catalyst is news about the catalyst: is the window moving up?" });
+  }
   return { exportedAt: new Date().toISOString(),
-    lastBriefImportAt: last ? new Date(last).toISOString() : null, flags };
+    lastBriefImportAt: last ? new Date(last).toISOString() : null, flags,
+    /* Digest block (ruled Aug 10 2026): the analyst reads these before
+       sweeping — hit rates steer effort, revealed rulings shape proposals.
+       Attention only; every briefing honesty rule still binds. */
+    scorecardDigest: intelScorecardDigest(),
+    rulingsDigest: intelRulingsDigest() };
+}
+/* Scorecard digest for the analyst: graded outcomes by confidence tier and
+   by source tier/community — same math the weekly scorecard renders. */
+function intelScorecardDigest(){
+  const graded = (DB.intel || []).filter(r => r.outcome);
+  if (!graded.length) return null;
+  const by = keyOf => {
+    const m = {};
+    for (const r of graded){
+      const k = keyOf(r);
+      if (!k) continue;
+      m[k] = m[k] || { n: 0, right: 0, wrong: 0 };
+      m[k].n++;
+      if (r.outcome === "right") m[k].right++;
+      if (r.outcome === "wrong") m[k].wrong++;
+    }
+    return m;
+  };
+  return { graded: graded.length,
+    byConfidence: by(r => r.confidence),
+    bySourceTier: by(r => r.sourceTier != null ? "T" + r.sourceTier + (r.community ? " (" + r.community + ")" : "") : null),
+    byType: by(r => r.type) };
+}
+/* Rulings digest: revealed preferences from the user's ratify/dismiss/edit
+   history, by record type, with the latest logged reasons. */
+function intelRulingsDigest(){
+  const ruled = (DB.intel || []).filter(r => r.status === "ratified" || r.status === "dismissed");
+  if (!ruled.length) return null;
+  const byType = {};
+  for (const r of ruled){
+    const g = byType[r.type] = byType[r.type] || { ratified: 0, dismissed: 0, edited: 0, expiredUnruled: 0 };
+    if (r.status === "ratified") g.ratified++;
+    else if (r.expiredUnruled) g.expiredUnruled++;
+    else g.dismissed++;
+    if (r.edited) g.edited++;
+  }
+  const reasons = (DB.decisionLog || []).filter(x => x.kind === "intel").slice(-12)
+    .map(x => ({ d: x.d, subject: String(x.subject || "").slice(0, 80), action: x.action, reason: String(x.reason || "").slice(0, 160) }));
+  return { byType, recentRulings: reasons };
 }
 /* CATALYST-WINDOW check: any calendar window live, or starting within
    catWinTightenD days. Picks the most pressing (live with soonest end, else
@@ -7579,10 +7889,11 @@ const CHECKLISTS = {
     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
     ["Compute gp per minute of attention", "Walk-ups × your minutes-per-visit default. Compare against just playing content you enjoy.", "log#eqPanel"],
     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
-    ["Read the cluster ledger", "Correlated positions are one bet wearing several names — per-cluster exposure vs cap and P&L, and any candidates awaiting your ruling:", "clusters#clusterPanel", "clusters"],
+    ["Read the basket ledger", "Correlated positions are one bet wearing several names — per-basket exposure vs cap and P&L, and any membership candidates awaiting your ruling (baskets live on the Sleeve tab, under the calendar):", "sleeve#clusterPanel", "clusters"],
     ["Read the SLEEVE section", "Catalyst positions, judged at exit: set each thesis-health light by hand (intact / watch / broken — never inferred), read the realized exits, and the sleeve stats stay fully separate from every flipping metric:", "sleeve#sleevePanel", "sleeve"],
     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
     ["Run the discovery audit", "Decisions, not stats — every card ends in confirm / modify / dismiss, nothing auto-applies, and each ruling lands in the decision log:", null, "audit"],
+    ["Read the attention & dormancy report", "Complexity governance: the walk-up decision-count trend against its ≤7 budget, and features untouched 90+ days proposed for demotion — you ratify demotions like anything else:", null, "attention"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
@@ -7623,11 +7934,24 @@ function renderRoutine(){
   $("#ckFoot").textContent = list.foot + (wed ? " 🔧 " + wed : "");
   /* Briefing reminder — elevated, dismissible per occurrence (§ handoff cue). */
   const br = m === "walkup" ? briefReminderInfo() : null;
-  $("#briefRemind").innerHTML = br
+  /* Walk-up attention budget (ruled Aug 10 2026): count the distinct
+     decisions this surface presents, log the daily reading for the weekly
+     trend, and say so inline. The ≤7 budget is probe-asserted; a feature
+     that would breach it must displace something, not stack. */
+  let attnLine = "";
+  if (m === "walkup"){
+    const n = walkupDecisionCount();
+    const wl = DB.walkupLoad.find(x => x.d === today());
+    if (wl) wl.n = Math.max(wl.n, n); else { DB.walkupLoad.push({ d: today(), n }); save(); }
+    DB.walkupLoad = DB.walkupLoad.filter(x => (Date.now() - Date.parse(x.d + "T00:00:00")) < 31 * 86400e3);
+    attnLine = '<div class="dim" style="margin-bottom:6px" title="Distinct decisions this walk-up presents (ruling lines shown + briefing reminder). Budget ≤ 7, probe-asserted; the weekly review reports the trend.">walk-up attention: '
+      + n + ' decision' + (n === 1 ? '' : 's') + ' of ≤7 budgeted</div>';
+  }
+  $("#briefRemind").innerHTML = (br
     ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
       + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
-    : "";
+    : "") + attnLine;
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   $("#ckList").innerHTML = list.steps.map((s,i) => {
     const isDone = done.includes(i);
@@ -7709,13 +8033,15 @@ function renderRoutine(){
       if (pend) lines.push('<div class="dim">' + pend + ' candidate' + (pend === 1 ? '' : 's')
         + ' in the review queue await your ruling — advisory only until confirmed.</div>');
       inline = '<div class="inline">' + (lines.length ? lines.join("")
-        : '<div class="dim">No confirmed clusters — correlated positions are currently treated as independent bets. The Thesis clusters panel (Watchlist tab) collects candidates.</div>') + '</div>';
+        : '<div class="dim">No confirmed baskets — correlated positions are currently treated as independent bets. The Item baskets panel (Sleeve tab, under the calendar) collects candidates.</div>') + '</div>';
     } else if (s[3] === "rulings"){
       inline = rulingsInline();
     } else if (s[3] === "sleeve"){
       inline = sleeveWeeklyInline();
     } else if (s[3] === "intelscore"){
       inline = intelScorecardInline();
+    } else if (s[3] === "attention"){
+      inline = attentionGovernanceInline();
     } else if (s[3] === "audit"){
       inline = renderAuditInline();
     } else if (s[3] === "fricin"){
@@ -8003,8 +8329,7 @@ function renderNow(){
 function renderAll(){
   if (S.tab === "scan")    renderScan();
   if (S.tab === "watch")   renderWatch();
-  if (S.tab === "clusters") renderClusters();
-  if (S.tab === "sleeve")  renderSleeve();
+  if (S.tab === "sleeve"){ renderSleeve(); renderClusters(); }   // baskets live on the Sleeve tab (clusters merge, Aug 2026)
   if (S.tab === "log")     renderLog();
   if (S.tab === "routine") renderRoutine();
   if (S.tab === "shadow")  renderShadow();
@@ -8012,11 +8337,29 @@ function renderAll(){
 }
 function setTab(t){
   S.tab = t;
+  featTouchMark("tab:" + t);
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $$("section.tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + t));
   renderAll();
   if (t === "watch" || t === "shadow") fillSparks();
 }
+
+/* ── feature-touch instrumentation (complexity governance, ruled Aug 10
+   2026): which surfaces actually get used, per 30 days rolling into the
+   90-day dormancy report. Observation only — it changes nothing. */
+function featTouchMark(key){
+  if (!DB.featTouch) DB.featTouch = {};
+  const now = Date.now();
+  const v = DB.featTouch[key];
+  if (v) v.last = now; else DB.featTouch[key] = { first: now, last: now };
+  save();
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[id], details[id] > summary");
+  if (!b) return;
+  const key = b.tagName === "SUMMARY" ? "panel:" + b.parentElement.id : "btn:" + b.id;
+  featTouchMark(key);
+}, true);
 
 const FMAP = { fVol:"vol", fGpVol:"gpvol", fMin:"min", fMax:"max", fRoi:"roi", fMar:"margin", fAge:"age", fMem:"mem", fRows:"rows", fLim:"lim", fCons:"cons" };
 
@@ -8895,8 +9238,11 @@ function validateImport(d){
           briefTightStaleD: Math.min(7, Math.max(1, num(d.briefTightStaleD) != null ? num(d.briefTightStaleD) : 3)),
           intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
             const id = String((r && r.id) || "").trim();
-            const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag","promotion-warning"].includes(r && r.type) ? r.type : null;
-            const conf = ["confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
+            const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag","promotion-warning","long-catalyst","watch-note"].includes(r && r.type) ? r.type : null;
+            const conf0 = ["confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
+            /* long-catalyst confidence stays capped at hinted (ruled) — the cap
+               must survive a round trip, not just first import */
+            const conf = (type === "long-catalyst" && (conf0 === "confirmed" || conf0 === "polled")) ? "hinted" : conf0;
             const sources = (Array.isArray(r && r.sources) ? r.sources : [])
               .filter(s => s && /^https?:\/\//.test(String(s.url || ""))).map(s => {
                 const o2 = { url: String(s.url), note: String(s.note || "") };
@@ -8907,7 +9253,7 @@ function validateImport(d){
             if (!id || !type || !conf || !sources.length){ rejected++; return null; }
             const o = { id, type, confidence: conf, title: String(r.title || "").slice(0, 200),
               thesis: String(r.thesis || ""),
-              direction: type === "promotion-warning" ? "caution"
+              direction: (type === "promotion-warning" || type === "watch-note") ? "caution"
                 : ["up","down","unclear","caution"].includes(r.direction) ? r.direction : "unclear",
               sourceTier: [0,1,2,3].includes(num(r.sourceTier)) ? num(r.sourceTier) : null,
               community: r.community ? String(r.community) : null,
@@ -8939,7 +9285,7 @@ function validateImport(d){
               items: [...new Set((Array.isArray(c.items) ? c.items : []).map(x => num(x)).filter(x => x > 0))],
               clusters: [...new Set((Array.isArray(c.clusters) ? c.clusters : []).map(x => num(x)).filter(x => x > 0))],
               notes: String(c.notes || ""), src: c.src === "intel" ? "intel" : "manual",
-              createdAt: num(c.createdAt) || Date.now() };
+              createdAt: num(c.createdAt) || Date.now(), estWindow: c.estWindow ? 1 : 0 };
           }).filter(Boolean),
           anomalyFlags: (Array.isArray(d.anomalyFlags) ? d.anomalyFlags : []).map(f => {
             const itemId = num(f && f.itemId), at = num(f && f.at);
@@ -8947,8 +9293,43 @@ function validateImport(d){
             return { id: num(f.id) || uid(), itemId, name: String(f.name || itemName(itemId)),
               at, d: String(f.d || "").slice(0, 10), strength: num(f.strength) || 0,
               rise14p: num(f.rise14p) || 0, rise14v: num(f.rise14v) || 0,
-              ...(num(f.dismissed) > 0 ? { dismissed: num(f.dismissed) } : {}) };
+              ...(num(f.dismissed) > 0 ? { dismissed: num(f.dismissed) } : {}),
+              ...(num(f.noStory) > 0 ? { noStory: Math.min(20, num(f.noStory)) } : {}),
+              ...(f.storyId ? { storyId: String(f.storyId).slice(0, 80) } : {}) };
           }).filter(Boolean).slice(-40),
+          /* Closed-loop state (ruled Aug 10 2026) — attention data, revalidated */
+          flagArchive: (Array.isArray(d.flagArchive) ? d.flagArchive : []).map(a => {
+            const itemId = num(a && a.itemId), flagAt = num(a && a.flagAt);
+            if (!(itemId > 0) || !(flagAt > 0)) return null;
+            return { itemId, name: String(a.name || itemName(itemId)), flagAt,
+              storyId: String(a.storyId || "").slice(0, 80), storyType: String(a.storyType || "").slice(0, 30),
+              storyConf: String(a.storyConf || "").slice(0, 12),
+              peakToFlagD: num(a.peakToFlagD) != null ? num(a.peakToFlagD) : null,
+              retracePct: num(a.retracePct) != null ? num(a.retracePct) : null,
+              at: num(a.at) || Date.now() };
+          }).filter(Boolean).slice(-60),
+          rampFlags: (Array.isArray(d.rampFlags) ? d.rampFlags : []).map(rf => {
+            const itemId = num(rf && rf.itemId), at = num(rf && rf.at);
+            if (!(itemId > 0) || !(at > 0)) return null;
+            return { catId: num(rf.catId) || 0, catName: String(rf.catName || "").slice(0, 120),
+              itemId, name: String(rf.name || itemName(itemId)), at,
+              runwayD: num(rf.runwayD) != null ? num(rf.runwayD) : null };
+          }).filter(Boolean).slice(-20),
+          entryWatchState: (d.entryWatchState && typeof d.entryWatchState === "object" && !Array.isArray(d.entryWatchState))
+            ? Object.fromEntries(Object.entries(d.entryWatchState)
+                .filter(([k, v]) => ["DISCOUNTED", "RAMPING", "neutral"].includes(v)).slice(0, 400)) : {},
+          walkupLoad: (Array.isArray(d.walkupLoad) ? d.walkupLoad : []).map(x => {
+            const dd = String((x && x.d) || "");
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dd) || !(num(x.n) >= 0)) return null;
+            return { d: dd, n: Math.min(99, num(x.n)) };
+          }).filter(Boolean).slice(-31),
+          featTouch: (d.featTouch && typeof d.featTouch === "object" && !Array.isArray(d.featTouch))
+            ? Object.fromEntries(Object.entries(d.featTouch)
+                .filter(([k, v]) => v && num(v.last) > 0)
+                .map(([k, v]) => [String(k).slice(0, 60), { first: num(v.first) || num(v.last), last: num(v.last) }])
+                .slice(0, 300)) : {},
+          netWidenV1: d.netWidenV1 ? 1 : 0,
+          basketMergeV1: d.basketMergeV1 ? 1 : 0,
           sleeveExits: (Array.isArray(d.sleeveExits) ? d.sleeveExits : []).map(x => {
             const qty = num(x && x.qty), price = num(x && x.price), itemId = num(x && x.itemId);
             if (!(qty > 0) || !(price > 0) || !(itemId > 0)) return null;

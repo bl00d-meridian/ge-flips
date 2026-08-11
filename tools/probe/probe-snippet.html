@@ -113,7 +113,7 @@
     ok("panel renders confirmed clusters", /probe-cluster/.test(cluHTML) && /probe-ratified/.test(cluHTML));
     ok("watch row shows cluster badge", /probe-cluster<\/span>/.test(document.querySelector("#watchBody").innerHTML));
     S.tab = "routine"; S.mode = "weekly"; renderRoutine();
-    ok("weekly review has cluster ledger", /cluster ledger/i.test(document.querySelector("#ckList").innerHTML)
+    ok("weekly review has basket ledger", /basket ledger/i.test(document.querySelector("#ckList").innerHTML)
        && /probe-cluster/.test(document.querySelector("#ckList").innerHTML));
 
     // ---- advisory pieces (day-independent) ----
@@ -1481,6 +1481,209 @@
        && vSlv.db.intel[1].community === "merch-discord-x" && vSlv.db.intel[1].direction === "caution"
        && vSlv.db.pumpWindowD === 21 && vSlv.db.pumpThinGp === 5e6,
        JSON.stringify(vSlv.db.intel.map(r => [r.sourceTier, r.direction])));
+
+    // ─── §11: SCANNER NET-WIDENING + DISCOVERY SLICE (ruled Aug 10 2026) ───
+    ok("[R11.1] ruled scanner defaults: T1 max 8k cons-off, T2 5k–250k gp-flow 1.2m",
+       SCAN_T1_DEFAULTS.max === 8000 && SCAN_T1_DEFAULTS.cons === false
+       && SCAN_T2_DEFAULTS.max === 250000 && SCAN_T2_DEFAULTS.gpvol === 1200000 && SCAN_T2_DEFAULTS.min === 5000,
+       JSON.stringify({ t1: SCAN_T1_DEFAULTS, t2: SCAN_T2_DEFAULTS }));
+    ok("[R11.1] allocator tier bands UNCHANGED — discovery only, no gate moved",
+       TIER1_MIN === 400 && TIER1_MAX === 5000 && TIER2_MAX === 100000,
+       JSON.stringify([TIER1_MIN, TIER1_MAX, TIER2_MAX]));
+    // scout screen honors the widened T2 ceiling (150–250k admits, stamps tier 2)
+    DB.watch = []; DB.blacklist = [];
+    const wid = 9061;
+    const itW = { i: wid, n: "Probe widecap", l: 8, m: 0, v: 0, a: 0 };
+    S.items.push(itW); S.byId.set(wid, itW);
+    S.latest[wid] = { high: 180000, low: 170000, highTime: nowS - 60, lowTime: nowS - 120 };
+    S.hour[wid] = { avgHighPrice: 180000, avgLowPrice: 170000, highPriceVolume: 200, lowPriceVolume: 200 };
+    S.min5[wid] = { highPriceVolume: 20, lowPriceVolume: 20 };
+    DB.filtersT2 = { ...SCAN_T2_DEFAULTS };
+    const wideHits = scanScreenTier(2);
+    ok("[R11.1] scout T2 screen admits a 175k item under the widened ceiling",
+       wideHits.some(x => x.id === wid), JSON.stringify(wideHits.map(x => x.id)));
+    // discovery slice: sanity-only, ≤15, rotates with the price stamp, collapsed markup
+    const bnDet = document.querySelector("#beyondNet");
+    ok("[R11.2] beyond-the-net section exists collapsed (details element, closed by default)",
+       !!bnDet && bnDet.tagName === "DETAILS" && !bnDet.open, bnDet ? bnDet.tagName : "missing");
+    renderBeyondNet(new Set());
+    const bnRows1 = document.querySelectorAll("#beyondNetBody tr").length;
+    const bnHTML1 = document.querySelector("#beyondNetBody").innerHTML;
+    ok("[R11.2] slice renders ≤15 sanity-passing rows with full stats and a manual +watch",
+       bnRows1 >= 1 && bnRows1 <= 15 && /data-add=/.test(bnHTML1), "rows=" + bnRows1);
+    const savedAt = S.latestAt;
+    renderBeyondNet(new Set());
+    ok("[R11.2] sample is stable within one price cycle (seeded by the price stamp)",
+       document.querySelector("#beyondNetBody").innerHTML === bnHTML1);
+    let bnRotated = false;
+    for (const dSeed of [987654, 192837465, 55511777]){
+      S.latestAt = savedAt + dSeed;
+      renderBeyondNet(new Set());
+      if (document.querySelector("#beyondNetBody").innerHTML !== bnHTML1){ bnRotated = true; break; }
+    }
+    ok("[R11.2] sample rotates when the price cycle advances", bnRotated,
+       "slice never changed across 3 cycles — pool=" + S.items.length);
+    S.latestAt = savedAt;
+
+    // ─── §12: CLOSED-LOOP EDGES (attention, never authority) ───
+    DB.intel = []; DB.catalysts = []; DB.anomalyFlags = []; DB.flagArchive = []; DB.rampFlags = [];
+    // R12.1 — new types, coercions, tier gate
+    const impLC = importIntelligence({ records: [
+      mkRec({ id: "r-lc", type: "long-catalyst", confidence: "polled", direction: "down",
+        catalyst: { name: "Far Event", windowStart: inDays(60), windowEnd: inDays(200) },
+        sources: [{ url: "https://example.test/wiki", note: "poll passed, undated", tier: 1 }] }),
+      mkRec({ id: "r-lc-t3", type: "long-catalyst",
+        sources: [{ url: "https://example.test/disc", note: "t3 only", tier: 3, community: "merch-discord-x" }] }),
+      mkRec({ id: "r-wn", type: "watch-note", direction: "up", confidence: "rumor",
+        sources: [{ url: "https://example.test/tape", note: "tape only", tier: 1 }] })
+    ] });
+    const rLC = DB.intel.find(x => x.id === "r-lc"), rWN = DB.intel.find(x => x.id === "r-wn");
+    ok("[R12.1] long-catalyst imports with confidence capped at hinted; T3-only long-catalyst rejected",
+       !!rLC && rLC.confidence === "hinted" && impLC.tierRejected === 1 && !DB.intel.some(x => x.id === "r-lc-t3"),
+       JSON.stringify({ conf: rLC && rLC.confidence, rej: impLC.tierRejected }));
+    ok("[R12.1] watch-note direction coerced to caution",
+       !!rWN && rWN.direction === "caution", JSON.stringify(rWN && rWN.direction));
+    // R12.2 — ratified long-catalyst joins the calendar as an estimate window
+    const effLC = activateIntel(rLC);
+    const catLC = DB.catalysts.find(c => c.name === "Far Event");
+    ok("[R12.2] ratified long-catalyst creates an estimate-window calendar entry",
+       !!catLC && catLC.estWindow === 1 && /ESTIMATE/.test(effLC), effLC);
+    // R12.3 — story-resolution + no-story counters
+    DB.anomalyFlags = [
+      { id: 8101, itemId: 9001, name: "Probe alpha", at: Date.now() - 3600e3, d: today(), strength: 9, rise14p: 10, rise14v: 90 },
+      { id: 8102, itemId: 9002, name: "Probe beta", at: Date.now() - 3600e3, d: today(), strength: 7, rise14p: 8, rise14v: 70 }
+    ];
+    importIntelligence({ records: [ mkRec({ id: "r-story", items: [{ id: 9001 }],
+      sources: [{ url: "https://example.test/story", note: "the story", tier: 1 }] }) ] });
+    const fStory = DB.anomalyFlags.find(f => f.itemId === 9001), fNo = DB.anomalyFlags.find(f => f.itemId === 9002);
+    ok("[R12.3] named flag stamps storyId and archives with its signature; unnamed flag ticks noStory",
+       fStory.storyId === "r-story" && (fStory.noStory || 0) === 0
+       && DB.flagArchive.some(a => a.itemId === 9001 && a.storyId === "r-story")
+       && fNo.noStory === 1 && !fNo.storyId,
+       JSON.stringify({ fStory, fNo, arch: DB.flagArchive }));
+    importIntelligence({ records: [ mkRec({ id: "r-unrelated", items: [{ id: 9003 }],
+      sources: [{ url: "https://example.test/u", note: "n", tier: 1 }] }) ] });
+    ok("[R12.3] second storyless import escalates the counter to the watch-note threshold",
+       DB.anomalyFlags.find(f => f.itemId === 9002).noStory === 2, JSON.stringify(DB.anomalyFlags));
+    const hs12 = analystFlagsPending();
+    ok("[R12.3] export carries noStorySweeps per anomaly flag",
+       hs12.flags.find(f => f.itemId === 9002).noStorySweeps === 2
+       && hs12.flags.find(f => f.itemId === 9001).noStorySweeps === 0, JSON.stringify(hs12.flags));
+    // R12.4 — digests ride the handshake export
+    DB.intel.push({ id: "r-graded12", type: "catalyst", confidence: "polled", title: "G", thesis: "t",
+      direction: "up", items: [], sources: [{ url: "https://example.test/g", tier: 0 }], sourceTier: 0,
+      validUntil: yd2, importedAt: Date.now() - 10 * 86400e3, status: "ratified", teeth: 0, outcome: "right" });
+    rWN.status = "dismissed"; rWN.ruledAt = Date.now();
+    logDecision("intel", "G", "ratify", "probe reason");
+    const hs12b = analystFlagsPending();
+    ok("[R12.4] scorecard digest: graded outcomes by confidence and source tier",
+       !!hs12b.scorecardDigest && hs12b.scorecardDigest.graded === 1
+       && hs12b.scorecardDigest.byConfidence.polled.right === 1
+       && hs12b.scorecardDigest.bySourceTier["T0"].n === 1,
+       JSON.stringify(hs12b.scorecardDigest));
+    ok("[R12.4] rulings digest: per-type ratify/dismiss counts + recent reasons",
+       !!hs12b.rulingsDigest && hs12b.rulingsDigest.byType["watch-note"].dismissed === 1
+       && hs12b.rulingsDigest.byType["catalyst"].ratified === 1
+       && hs12b.rulingsDigest.recentRulings.some(x => x.reason === "probe reason"),
+       JSON.stringify(hs12b.rulingsDigest));
+    // R12.5 — DISCOUNTED→RAMPING transition = catalyst-ramping tape question
+    DB.rampFlags = []; DB.entryWatchState = {}; DB.lastBriefImportAt = Date.now() - 60e3;
+    const catRamp = { id: 4242, name: "Ramp Event" };
+    noteEntryVerdict(catRamp, 9001, "DISCOUNTED", 40);
+    ok("[R12.5] a first DISCOUNTED verdict records state, flags nothing",
+       DB.rampFlags.length === 0 && DB.entryWatchState["4242:9001"] === "DISCOUNTED");
+    noteEntryVerdict(catRamp, 9001, "RAMPING", 38);
+    noteEntryVerdict(catRamp, 9001, "RAMPING", 37);   // dedup inside 30d
+    ok("[R12.5] DISCOUNTED→RAMPING writes ONE catalyst-ramping flag per cat·item·30d",
+       DB.rampFlags.length === 1 && DB.rampFlags[0].catName === "Ramp Event" && DB.rampFlags[0].runwayD === 38,
+       JSON.stringify(DB.rampFlags));
+    const hs12c = analystFlagsPending();
+    const rampRow = hs12c.flags.find(f => f.kind === "catalyst-ramping");
+    ok("[R12.5] the export and the tape question both ask about the CATALYST",
+       !!rampRow && /is the window moving up\?/.test(rampRow.detail)
+       && tapeQuestionFlags().some(f => f.kind === "catalyst-ramping"),
+       JSON.stringify({ rampRow, tq: tapeQuestionFlags() }));
+    DB.rampFlags = []; DB.entryWatchState = {};
+    // R12.6 — lag profile: median of explained-flag lags, silent under 2 points
+    DB.flagArchive = [{ itemId: 1, name: "a", flagAt: 1, storyId: "x", storyType: "demand-context", storyConf: "confirmed", peakToFlagD: 5, retracePct: -4, at: 1 }];
+    ok("[R12.6] one data point is not a profile — display stays silent",
+       flagLagProfile() === null);
+    DB.flagArchive.push({ itemId: 2, name: "b", flagAt: 1, storyId: "y", storyType: "demand-context", storyConf: "confirmed", peakToFlagD: 9, retracePct: -2, at: 1 });
+    const lp = flagLagProfile();
+    ok("[R12.6] two explained flags yield a median peak-to-flag lag",
+       !!lp && lp.n === 2 && lp.medianD === 7, JSON.stringify(lp));
+    DB.anomalyFlags = [{ id: 8103, itemId: 9003, name: "Probe gamma", at: Date.now(), d: today(), strength: 5, rise14p: 6, rise14v: 50 }];
+    S.tab = "sleeve"; renderSleeve(); renderClusters();
+    ok("[R12.6] unexplained flag renders the signature note as attention-only copy",
+       /median 7d before the scan tripped/.test(document.querySelector("#anomBody").innerHTML)
+       && /likely post-peak/.test(document.querySelector("#anomBody").innerHTML),
+       document.querySelector("#anomBody").innerHTML.slice(0, 400));
+    DB.flagArchive = []; DB.anomalyFlags = []; DB.intel = []; DB.catalysts = [];
+
+    // ─── §13: COMPLEXITY GOVERNANCE ───
+    // R13.1 — the decision count is structurally ≤ cap(≤10→5 here)+1 and the seeded overload stays ≤7
+    DB.rulingsCap = 5; DB.rulingSnooze = {};
+    DB.intel = Array.from({ length: 9 }, (_, i) => ({ id: "r-load" + i, type: "demand-context",
+      confidence: "hinted", title: "L" + i, thesis: "t", direction: "up", items: [],
+      sources: [{ url: "https://example.test/l" + i, tier: 1 }], sourceTier: 1,
+      validUntil: inDays(2), importedAt: Date.now(), status: "pending", teeth: 0, outcome: null }));
+    DB.lastBriefImportAt = Date.now() - 9 * 86400e3;   // stale → reminder line renders
+    DB.briefRemindDismissKey = "";
+    const wdc = walkupDecisionCount();
+    ok("[R13.1] seeded overload (9 pending + stale reminder) presents ≤7 decisions",
+       wdc <= 7 && wdc === 6, "count=" + wdc);
+    DB.walkupLoad = [];
+    S.tab = "routine"; S.mode = "walkup"; renderRoutine();
+    ok("[R13.1] walk-up render records the daily attention reading and states the budget inline",
+       DB.walkupLoad.length === 1 && DB.walkupLoad[0].n === wdc
+       && /walk-up attention: 6 decisions of ≤7 budgeted/.test(document.querySelector("#briefRemind").innerHTML),
+       JSON.stringify({ load: DB.walkupLoad, html: document.querySelector("#briefRemind").innerHTML.slice(0, 300) }));
+    // R13.2 — touch instrumentation + dormancy report
+    DB.featTouch = {};
+    featTouchMark("tab:probe");
+    featTouchMark("tab:probe");
+    ok("[R13.2] touch marks record first/last stamps",
+       DB.featTouch["tab:probe"] && DB.featTouch["tab:probe"].first <= DB.featTouch["tab:probe"].last);
+    DB.featTouch["btn:oldFeature"] = { first: Date.now() - 200 * 86400e3, last: Date.now() - 120 * 86400e3 };
+    DB.walkupLoad = [{ d: today(), n: 3 }];
+    const attn = attentionGovernanceInline();
+    ok("[R13.2] dormancy report proposes 90d-untouched features for demotion — never deletes",
+       /btn:oldFeature/.test(attn) && /proposed for demotion/.test(attn) && /never deleted/.test(attn)
+       && /within budget/.test(attn),
+       attn);
+    S.mode = "weekly"; renderRoutine();
+    ok("[R13.2] the attention & dormancy step renders in the weekly review",
+       /attention &amp; dormancy/i.test(document.querySelector("#ckList").innerHTML)
+       && /btn:oldFeature/.test(document.querySelector("#ckList").innerHTML),
+       document.querySelector("#ckList").innerHTML.slice(0, 200));
+    DB.intel = []; DB.featTouch = {}; DB.walkupLoad = []; DB.lastBriefImportAt = Date.now();
+
+    // ─── §14: CLUSTERS → CATALYST BASKETS MERGE ───
+    ok("[R14.1] the Clusters tab is gone — no tab button, no orphan section",
+       !document.querySelector('#tabs button[data-tab="clusters"]') && !document.querySelector("#tab-clusters"));
+    ok("[R14.1] the basket ledger lives on the Sleeve tab, under the calendar",
+       !!document.querySelector("#tab-sleeve #clusterPanel") && !!document.querySelector("#tab-sleeve #cluDetail")
+       && (() => { const kids = [...document.querySelectorAll("#tab-sleeve > .panel")].map(p => p.id);
+            return kids.indexOf("clusterPanel") > kids.indexOf("catPanel"); })(),
+       [...document.querySelectorAll("#tab-sleeve > .panel")].map(p => p.id).join(","));
+    // R14.2 — attached vs standing presentation + per-catalyst coherence button
+    DB.clusters = [
+      { id: 21, name: "attached-basket", members: [9001, 9002], capPct: null, story: "", src: "manual", confirmedAt: Date.now() },
+      { id: 22, name: "standing-basket", members: [9002, 9003], capPct: null, story: "", src: "manual", confirmedAt: Date.now() }
+    ];
+    DB.catalysts = [{ id: 4300, name: "Basket Event", windowStart: inDays(10), windowEnd: inDays(20),
+      items: [], clusters: [21], notes: "", src: "manual", createdAt: Date.now(), estWindow: 0 }];
+    S.tab = "sleeve"; renderSleeve(); renderClusters();
+    const ledger14 = document.querySelector("#cluBody").innerHTML;
+    const cat14 = document.querySelector("#catBody").innerHTML;
+    ok("[R14.2] catalyst-attached basket badges its catalyst; catalyst-less basket reads standing",
+       /attached-basket/.test(ledger14) && /⚡ Basket Event/.test(ledger14)
+       && new RegExp('standing-basket</b> <span class="badge b-seed"[^>]*>standing').test(ledger14),
+       ledger14.slice(0, 600));
+    ok("[R14.2] the catalyst card offers the basket-coherence button feeding the coherence panel",
+       new RegExp('data-cldetail="21"').test(cat14) && /coherence…/.test(cat14),
+       cat14.slice(0, 400));
+    DB.clusters = []; DB.catalysts = []; DB.watch = [];
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

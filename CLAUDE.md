@@ -38,6 +38,10 @@ faster than 60s.
   the browser and repo can't reach each other (`intelligence.json` in,
   `flags-pending.json` out), the human carries the file. This is architecture, not a
   workaround — do not propose sync infrastructure to replace deliberate human handoffs.
+- **Feedback edges tune ATTENTION, never AUTHORITY** (closed-loop constitution — user
+  ruling, Aug 10 2026). Learning loops (story-resolution signatures, lag profiles,
+  scorecard priors, rulings digests, ramping triggers) may change what gets watched,
+  flagged, and prioritized; gates, sizing, and deployment still move only by ruling.
 - **Concur-recommended proposals skip the ruling ceremony** (user ruling, Aug 10 2026).
   A proposal that argues FOR keeping an existing rule against softer data is the correct
   default posture, not a decision point: flag it "concur-recommended", batch such entries
@@ -57,6 +61,40 @@ exactly what is measured and no more. Gate health is the reference implementatio
 "traded while still benched" (the user overrode the gate — clean evidence for or against
 it) is never conflated with "traded after unbenching" (re-admission latency only — the
 gate eventually agreeing with itself is not the user being right against it).
+
+## Complexity governance (standing — user ruling, Aug 10 2026)
+
+- **Attention budget as a probe.** The walk-up targets ≤2 min of rulings, enforced by
+  instrumentation: the walk-up surface reports its distinct-decision count, and the
+  probe suite asserts it stays **≤ 7**. A new surface that would breach the budget must
+  displace something, not stack. Every feature proposal states its walk-up attention
+  cost. Weekly review reports the trend.
+- **Usage-based pruning.** Feature touches (panels opened, buttons pressed, settings
+  changed) are instrumented per 30 days. Quarterly, the review renders a DORMANCY
+  report: features untouched in 90 days are proposed for demotion — collapsed behind a
+  "more" disclosure, not deleted (code is cheap; screen space and mental inventory are
+  not). Demotions are ratified like anything else.
+- **Feature freeze with a price tag.** Every new capability proposal (the agent's
+  included) answers in one line: "what existing surface does this replace or absorb?"
+  Additive-only proposals get the ledger-will-make-the-case treatment. The complexity
+  budget is zero-based: growth is paid for in consolidation.
+
+## Integration audit (standing discipline — user ruling, Aug 10 2026)
+
+Run by the agent weekly or on the user's demand. Distinct from probes (parts work) and
+friction review (reported pain): this hunts **unreported composition defects**.
+
+1. **Workflow walks:** trace each real workflow end-to-end through the actual code
+   paths — walk-up, briefing cycle, sleeve entry-to-exit, weekly review — and for every
+   surface touched answer: what feeds it, what does it feed, when in the workflow does
+   it earn its render. Any missing answer is a finding.
+2. **Orphan scan:** every panel, queue, record type, and setting gets a connectivity
+   check — who writes it, who reads it, what decision changes because it exists.
+   Write-only data and read-never surfaces are findings.
+3. **Redundancy scan:** concepts implemented twice under different names (cluster
+   baskets vs catalyst item-links was exactly this) — propose merges.
+4. **Output:** a findings report with proposed restructurings, ruled like everything
+   else. No findings is a valid result and says so.
 
 ## Verification
 

@@ -83,6 +83,57 @@ minimum bar for a source — and it is a bar, not a guarantee of honesty.
    it. (For suspected pumps the incentive heuristic governs: the answer is a
    promotion-warning or a caution record, never a buy story.)
 
+   **9a. Unexplained-flag escalation (user ruling, Aug 10 2026).** A flag marked
+   no-public-story that is **still elevated at the next sweep** gets an automatic
+   re-hearing with a **wider net**: search the specific item name + "osrs" across the
+   open web, not just the standing sources. A **second** no-story finding while still
+   elevated makes the flag itself a `watch-note` record (see type list). Flags of kind
+   `catalyst-ramping` in the export (a ratified catalyst's linked items flipping
+   DISCOUNTED→RAMPING) are a tape question about the CATALYST, not just the price —
+   answer "is the window moving up?" from the sources.
+10. **Read the digests before sweeping (user ruling, Aug 10 2026).** When the flags
+    export carries a scorecard digest and a rulings digest, they steer the sweep:
+    source tiers and catalyst classes with proven hit rates get deeper reads; classes
+    grading 0-for-N get one-line treatment; record types the user consistently
+    dismisses arrive pre-demoted to watch notes; edits the user repeatedly makes
+    (e.g. tightening windows) become the default shape. Digests tune the analyst's
+    ATTENTION, never its honesty rules — every standing rule above still binds.
+
+## Long-horizon catalyst research (standing — user ruling, Aug 10 2026)
+
+Beyond the news window: a **quarterly deep-sweep** (plus a light check each weekly run)
+of long-dated catalyst sources:
+
+- Official roadmap / Summer & Winter **Summit** announcements (Summits announce new
+  projects; Campfires update known ones)
+- Poll blogs for content 3–12 months out
+- **Leagues / Deadman season timing** (historically ~annual; league announcements have
+  come at Winter Summits)
+- Game jam / "what we're working on" posts
+- The wiki's update-history pages for the **recurring calendar** (seasonal events,
+  anniversary, F2P promos)
+
+**Historical-analog requirement** — the receipt that separates a thesis from a vibe:
+every long-horizon proposal must cite at least one prior instance of the same catalyst
+class and what comparable items did, measured via the timeseries endpoint around the
+historical date. The 24h timeseries reaches ~365 days back; an analog outside that
+range is out of reach and must be said so. **No analog, no record — emit a watch note
+instead.** Ratified long-catalysts get entry-watch screening like any other calendar
+entry, so DISCOUNTED/RAMPING tells the user when a far catalyst starts being front-run
+— that is the entry signal for long bets, not the proposal itself.
+
+## Basket vocabulary (shared map between tape and analyst — user ruling, Aug 10 2026)
+
+The tracker's item **baskets** (catalyst-attached, plus catalyst-less standing baskets)
+are the analyst's working map of the market:
+
+- Membership proposals target baskets by name ("add X to the Raids 4 basket, named in
+  the rewards blog") — `cluster-membership` records carry the basket name.
+- `long-catalyst` proposals arrive WITH a proposed basket.
+- The flags hearing checks every unexplained flag against basket membership first:
+  "in no basket" means either the map is missing a story or the accumulation is
+  idiosyncratic — say which reading the evidence supports.
+
 ## Sources to sweep (in order)
 
 | Source | How |
@@ -124,7 +175,7 @@ stalled one.
   "records": [
     {
       "id": "2026-08-10-example-slug",
-      "type": "catalyst | catalyst-update | cluster-membership | demand-context | deflation-flag | promotion-warning",
+      "type": "catalyst | catalyst-update | cluster-membership | demand-context | deflation-flag | promotion-warning | long-catalyst | watch-note",
       "confidence": "confirmed | polled | hinted | rumor",
       "title": "one line",
       "thesis": "neutral, factual statement of the mechanism",
@@ -158,6 +209,20 @@ Type-specific extras:
 - `promotion-warning` — per the incentive heuristic above: someone is promoting the
   item; `direction` is always `caution`; `community` names the venue. Feeds the pump
   fingerprint cross-check and the T3 scorecard.
+- `long-catalyst` — long-horizon proposal (see the standing section below): the
+  `catalyst.windowStart/End` may be an **estimate** for undated content (say so in the
+  copy), confidence is **capped at `hinted` until officially dated** (note the true
+  evidence tier in the thesis), `validUntil` = window end, and the thesis carries a
+  mandatory **HISTORICAL ANALOG** (prior instance of the same catalyst class with
+  measured numbers) and a mandatory **ASYMMETRY** line (entry price vs analog move vs
+  downside if the catalyst slips a year). Arrives WITH a proposed item basket. Max
+  [4] per deep-sweep, ranked by asymmetry.
+- `watch-note` — the unexplained-flag escalation shape (standing rule 9a): an item on
+  its **second consecutive no-story sweep, still elevated**, becomes its own record —
+  "sustained accumulation, no public story after 2 sweeps — either early information
+  or coordinated quiet accumulation; posture remains absence unless the catalyst can
+  be named." `direction: caution`, candidate mechanisms may be cited but never claimed.
+  Also used for deep-sweep candidates that fail the analog requirement.
 
 The tracker's scorecard grades expired records by **source tier and named community**
 as well as confidence — over time it shows whether anything T3 has ever produced a
