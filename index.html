@@ -1184,6 +1184,11 @@ function load(){
     }
     DB.filtersT1 = Object.assign({...SCAN_T1_DEFAULTS}, DB.filtersT1 || {});
     DB.filtersT2 = Object.assign({...SCAN_T2_DEFAULTS}, DB.filtersT2 || {});
+    /* One-time (audit F6b, ratified Aug 10 2026): committed() now counts
+       unfilled standing quote buy legs at cost. If any are standing at
+       migration, displayed free capital drops by exactly that gp — not a
+       regression, an accounting correction, logged as such. */
+    if (!DB.quoteCommitV1) migrateQuoteCommit();
     /* One-time (net-widening, user ruling Aug 10 2026): stored filter state at
        the OLD defaults moves to the new ruled dials; deliberate custom values
        are left alone. Discovery only — no gate, budget, or band changed. */
@@ -1199,6 +1204,20 @@ function load(){
     }
     DB.scanTab = DB.scanTab === "t2" ? "t2" : "t1";
   } catch(e){ console.warn("state load failed", e); }
+}
+
+/* Audit F6b migration (probe-tested): the accounting correction announces
+   itself in the decision log when it actually moves a number. */
+function migrateQuoteCommit(){
+  const standing = (DB.watch || []).reduce((a, w) => {
+    const qp = w && w.quotePlaced;
+    return a + (qp ? Math.max(0, (qp.buyQty || 0) - (qp.buyFilled || 0)) * (qp.bid || 0) : 0);
+  }, 0);
+  if (standing > 0)
+    DB.decisionLog.push({ t: Date.now(), d: today(), kind: "settings",
+      subject: "committed-capital accounting", action: "accounting corrected",
+      reason: "unfilled standing quote buy legs (" + standing + " gp) now count as committed — gp standing in an offer is deployed gp; free capital display drops by that amount, correctly" });
+  DB.quoteCommitV1 = 1;
 }
 
 let saveTimer = null, dirty = false;
@@ -1668,7 +1687,14 @@ const gameNet   = () => DB.gameLedger.reduce((a,g) => a + g.v, 0);
 const gameSince = ts => DB.gameLedger.reduce((a,g) => a + (g.t > ts ? g.v : 0), 0);
 const gameUpTo  = d  => DB.gameLedger.reduce((a,g) => a + (g.d <= d ? g.v : 0), 0);
 const stack = () => (DB.bank || 0) + realizedSince(DB.bankAsOf || 0) + gameSince(DB.bankAsOf || 0);
-const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0);
+/* Committed capital = positions at cost PLUS unfilled standing quote buy
+   legs at cost (audit F6b, ratified Aug 10 2026): gp standing in an offer is
+   deployed gp — the one-third rule was lying by omission. */
+const committed = () => DB.positions.reduce((a,p) => a + p.qty * p.buy, 0)
+  + DB.watch.reduce((a,w) => {
+      const qp = w.quotePlaced;
+      return a + (qp ? Math.max(0, (qp.buyQty || 0) - (qp.buyFilled || 0)) * (qp.bid || 0) : 0);
+    }, 0);
 
 /* A walk-up session = one physical visit to the GE, whenever it happens —
    no schedule is assumed. Stamped on real interaction; a 2h quiet gap starts
@@ -2916,6 +2942,17 @@ function buildPlan(){
   let pass = all.filter(x => !x.failed).sort((a,b) => b.score - a.score);
   pass = applyFamilyRule(pass, bench);
 
+  /* One item, one mandate — inside flipping too (audit F6a, ratified Aug 10
+     2026): an inventory-mode item is owned by the quote cycle, which sizes
+     both legs itself. A parallel plan line would double-commit the same
+     item's capital and attention. */
+  pass = pass.filter(x => {
+    const w = DB.watch.find(v => v.id === x.id);
+    if (!(w && w.invTarget > 0)) return true;
+    bench.push({ ...x, failed: "inventory mode owns this item — the quote cycle handles both legs; one item, one mandate. Clear the mm buffer to return it to the plan" });
+    return false;
+  });
+
   /* Untiered items don't allocate — they're outside both bands. The reason
      is stated, and a manual tier override on the watch row re-admits them. */
   pass = pass.filter(x => {
@@ -3427,15 +3464,28 @@ function standingOrders(itemId){
 }
 /* Self-cross guard: a proposed price that would trade against your own
    standing opposite order fills you against yourself — you pay the tax for
-   the privilege of moving items between your own offers. */
+   the privilege of moving items between your own offers.
+   UNIVERSAL (audit F5, ratified Aug 10 2026): the guard reads every standing
+   leg regardless of which store it lives in — positions AND placed quote
+   legs — both directions. The one-directional build was a dropped half of
+   the original spec, and the spec itself was never rowed in REQUIREMENTS
+   (ledger gap, closed as R9.4). */
 function crossWarn(itemId, side, price){
   const o = standingOrders(itemId);
+  const w = DB.watch.find(x => x.id === itemId);
+  const qp = w && w.quotePlaced;
+  const qBuyRem = qp ? Math.max(0, qp.buyQty - qp.buyFilled) : 0;
+  const qSellRem = qp ? Math.max(0, qp.sellQty - qp.sellFilled) : 0;
   if (side === "sell"){
     const b = o.buys.find(x => price <= x.buy);
     if (b) return "CANCEL your buy at " + full(b.buy) + " FIRST — a sell at " + full(price) + " would cross it";
+    if (qBuyRem > 0 && price <= qp.bid)
+      return "CANCEL your standing quote BUY at " + full(qp.bid) + " FIRST — a sell at " + full(price) + " would cross it";
   } else {
     const s = o.sells.find(x => Number.isFinite(x.ask) && price >= x.ask);
     if (s) return "CANCEL your sell at " + full(s.ask) + " FIRST — a buy at " + full(price) + " would cross it";
+    if (qSellRem > 0 && price >= qp.ask)
+      return "CANCEL your standing quote SELL at " + full(qp.ask) + " FIRST — a buy at " + full(price) + " would cross it";
   }
   return null;
 }
@@ -4118,6 +4168,13 @@ function renderDeploy(plan){
   const allStages = stages.concat(post, alloc);
   const heldResidual = N - allStages.reduce((s, x) => s + x.kill, 0) - P.picks.length;
   if (heldResidual > 0) allStages.push({ label: "live position / inventory — capital already committed", kill: heldResidual });
+  /* Audit F8 (ratified Aug 10 2026): a negative residual means a stage
+     double-counted a kill. An error detector that hides when it fires is
+     wired backwards — render it red instead. It should never appear. */
+  const residualErr = heldResidual < 0
+    ? '<div class="funrow"><span class="neg">⚠ accounting error: stages over-count by ' + (-heldResidual)
+      + ' — the funnel\'s first-fail attribution double-counted somewhere; funnel math needs a look</span></div>'
+    : '';
   const ranked = allStages.slice().sort((a, b) => b.kill - a.kill);
   const top = new Set(ranked.slice(0, 2).filter(s => s.kill > 1 || (s.kill === 1 && N <= 3)).map(s => s.label));
   let remain = N;
@@ -4130,6 +4187,7 @@ function renderDeploy(plan){
   const funnel =
     '<div class="funrow fen"><span><b>' + N + ' candidates enter</b></span><span class="fbar"><i style="width:100%"></i></span><span class="fn">' + N + '</span></div>'
     + allStages.map(funRow).join("")
+    + residualErr
     + '<div class="funrow fen"><span><b>funded</b></span><span class="fbar"><i style="width:'
     + Math.round(P.picks.length / Math.max(1, N) * 100) + '%"></i></span><span class="fn">' + P.picks.length + '</span></div>'
     + (top.size ? '<div class="dim" style="font-size:12px;margin-top:2px">⚑ = the two biggest killers this refresh.</div>' : '');
@@ -4219,6 +4277,7 @@ function renderDeploy(plan){
     + ' waives any of them now. No constant change proposed: the gate is new today and has no realized track record yet.' });
   const ruleProps = props.filter(p => !p.concur), concurProps = props.filter(p => p.concur);
   S.depProposalCount = ruleProps.length;   // the walk-up's RULINGS PENDING block counts change-proposals ONLY — concur-recommended needs no ruling ceremony (ruled Aug 10 2026)
+  S.depProposalAt = Date.now();            // audit F7: the count is a reading from THIS render — the walk-up line states its age instead of posing as live
   const propRow = p => '<div class="plan-note" style="margin-top:4px">' + p.html + '</div>';
   const propHTML = '<div class="dep-h">Proposals — house convention: nothing changes without your per-gate ruling</div>'
     + (ruleProps.length ? ruleProps.map(propRow).join("")
@@ -7179,7 +7238,9 @@ function pendingRulingItems(){
     const key = "funnel";
     items.push({ key, pri: 3, sort: 1, snoozed: rulingSnoozed(key),
       html: '⚖ ' + S.depProposalCount + ' deployment-gate proposal' + (S.depProposalCount === 1 ? '' : 's')
-        + ' await your per-gate ruling — <a href="#" data-goto="watch#deployPanel">read the evidence</a>' });
+        + ' await your per-gate ruling'
+        + (S.depProposalAt ? ' <span class="dim">(as of the last Plan refresh, ' + esc(ago(S.depProposalAt)) + ')</span>' : '')
+        + ' — <a href="#" data-goto="watch#deployPanel">read the evidence</a>' });
   }
   return items;
 }

@@ -1731,6 +1731,76 @@
        new RegExp('data-cldetail="21"').test(cat14) && /coherence…/.test(cat14),
        cat14.slice(0, 400));
     DB.clusters = []; DB.catalysts = []; DB.watch = [];
+
+    // ─── §9.4 + §16: SECOND-AUDIT FIXES (F5–F8, ratified Aug 10 2026) ───
+    // R9.4 — universal self-cross guard; the previously-missing directions
+    DB.positions = [];
+    DB.watch = [{ id: 9001, qty: null, invTarget: 500,
+      quotePlaced: { t: Date.now() - 3600e3, bid: 4000, ask: 4400, buyQty: 100, buyFilled: 20, sellQty: 50, sellFilled: 0 } }];
+    ok("[R9.4] a proposed sell at/under the standing quote BUY warns CANCEL-FIRST (the missing direction)",
+       /CANCEL your standing quote BUY at 4,?000/.test(crossWarn(9001, "sell", 3900) || ""),
+       String(crossWarn(9001, "sell", 3900)));
+    ok("[R9.4] a proposed buy at/over the standing quote SELL warns CANCEL-FIRST (the missing direction)",
+       /CANCEL your standing quote SELL at 4,?400/.test(crossWarn(9001, "buy", 4500) || ""),
+       String(crossWarn(9001, "buy", 4500)));
+    ok("[R9.4] prices inside the quote spread cross nothing",
+       crossWarn(9001, "sell", 4100) === null && crossWarn(9001, "buy", 4100) === null);
+    DB.watch[0].quotePlaced.buyFilled = 100;
+    ok("[R9.4] a fully-filled leg is not a standing order — no warning",
+       crossWarn(9001, "sell", 3900) === null);
+    DB.watch[0].quotePlaced.buyFilled = 20;
+    DB.positions = [{ id: 77, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4200, placedAt: Date.now() }];
+    ok("[R9.4] the position direction still warns first (existing behavior intact)",
+       /CANCEL your buy at 4,?200/.test(crossWarn(9001, "sell", 4150) || ""),
+       String(crossWarn(9001, "sell", 4150)));
+    DB.positions = [];
+    // R16.1 — committed() counts unfilled quote buy legs; plan benches inv-mode items
+    ok("[R16.1] committed() counts the unfilled quote buy leg at cost",
+       committed() === 80 * 4000, String(committed()));
+    DB.qual = { 9001: qualified() }; S.qualStamp = S.latestAt + "|" + S.hourAt;
+    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
+    const planF6 = buildPlan();
+    const benchF6 = planF6.bench.find(b => b.id === 9001);
+    ok("[R16.1] inventory-mode item benches from the plan — one item, one mandate",
+       !planF6.picks.some(p => p.id === 9001) && !!benchF6 && /inventory mode owns this item/.test(benchF6.failed),
+       JSON.stringify({ picks: planF6.picks.map(p => p.id), bench: benchF6 && benchF6.failed }));
+    // migration announces itself only when it moves a number
+    DB.decisionLog = DB.decisionLog.filter(x => x.subject !== "committed-capital accounting");
+    DB.quoteCommitV1 = 0;
+    migrateQuoteCommit();
+    ok("[R16.1] migration logs 'accounting corrected' when standing legs exist",
+       DB.quoteCommitV1 === 1 && DB.decisionLog.some(x => x.action === "accounting corrected" && /320000 gp/.test(x.reason)),
+       JSON.stringify(DB.decisionLog.slice(-1)));
+    DB.watch = []; DB.decisionLog = DB.decisionLog.filter(x => x.subject !== "committed-capital accounting");
+    DB.quoteCommitV1 = 0;
+    migrateQuoteCommit();
+    ok("[R16.1] migration is silent when nothing was standing — no phantom correction",
+       DB.quoteCommitV1 === 1 && !DB.decisionLog.some(x => x.action === "accounting corrected"));
+    // R16.2 — the walk-up funnel line states its reading's age
+    S.depProposalCount = 2; S.depProposalAt = Date.now() - 5 * 60e3;
+    const funLine = pendingRulingItems().find(x => x.key === "funnel");
+    ok("[R16.2] funnel ruling line carries 'as of the last Plan refresh' with age",
+       !!funLine && /as of the last Plan refresh/.test(funLine.html) && /ago/.test(funLine.html),
+       funLine ? funLine.html : "no funnel line");
+    S.depProposalCount = 0;
+    // R16.3 — a negative funnel residual renders red instead of hiding
+    const fakeAll = [
+      { id: 9001, name: "Probe alpha", failed: "sustained ROI too low", fails: [{ g: "ROI floor", short: "roi", detail: "d" }] },
+      { id: 9002, name: "Probe beta", failed: "sustained ROI too low", fails: [{ g: "ROI floor", short: "roi", detail: "d" }] }
+    ];
+    DB.watch = [{ id: 9001, qty: null }];   // renderDeploy needs a non-empty watchlist
+    renderDeploy({ all: fakeAll, bench: [], pass: [], picks: [{ id: 9003 }], nextUp: [], qualifying: [],
+      t1Pool: 1e6, t2Pool: 0, deployed: 0 });
+    ok("[R16.3] stage over-count renders the red accounting-error row",
+       /accounting error: stages over-count by 1/.test(document.querySelector("#depBody").innerHTML),
+       document.querySelector("#depBody").innerHTML.slice(0, 300));
+    renderDeploy({ all: fakeAll, bench: [], pass: [], picks: [], nextUp: [], qualifying: [],
+      t1Pool: 1e6, t2Pool: 0, deployed: 0 });
+    ok("[R16.3] balanced funnel shows no error row — the detector only fires on a real over-count",
+       !/accounting error/.test(document.querySelector("#depBody").innerHTML));
+    ok("[R16.2] renderDeploy stamps the reading's timestamp",
+       S.depProposalAt != null && Date.now() - S.depProposalAt < 60e3, String(S.depProposalAt));
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }
