@@ -116,7 +116,10 @@
     S.tab = "watch"; renderWatch();
     const cluHTML = document.querySelector("#cluBody").innerHTML;
     ok("panel renders confirmed clusters", /probe-cluster/.test(cluHTML) && /probe-ratified/.test(cluHTML));
-    ok("watch row shows cluster badge", /probe-cluster<\/span>/.test(document.querySelector("#watchBody").innerHTML));
+    S.wDetail = new Set([9001]); renderWatch();
+    ok("watch row expand view shows the basket chip (tag consolidation moved it off the row)",
+       /probe-cluster/.test(document.querySelector("#watchBody tr.wdet") ? document.querySelector("#watchBody tr.wdet").innerHTML : ""));
+    S.wDetail = new Set(); renderWatch();
     S.tab = "routine"; S.mode = "weekly"; renderRoutine();
     ok("weekly review has basket ledger", /basket ledger/i.test(document.querySelector("#ckList").innerHTML)
        && /probe-cluster/.test(document.querySelector("#ckList").innerHTML));
@@ -2271,6 +2274,119 @@
     document.querySelector("#ckList li[data-step]").click();
     ok("[R21.4] review interaction stamps the visit (lastReviewAt)",
        Date.now() - DB.lastReviewAt < 10e3);
+
+    // ═══ R22 INTERFACE FIXES (Aug 11 2026) — first-tap, scoping, ruling path,
+    //     plan status, auto-promote, beyond-net tags, four-slot rows ═══
+    const now22 = Date.now();
+    // R22.1 — stable DOM: unchanged re-renders keep the control node, first tap lands
+    DB.positions = [{ id: 60, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, placedAt: now22, stage: "buying" }];
+    DB.intel = []; DB.anomalyFlags = []; DB.sleeve = []; DB.clusterCands = []; DB.cohProps = [];
+    DB.clusters = []; S.depProposalCount = 0;
+    DB.ckPref = ""; DB.ckDismissAt = 0; DB.reviewEngagedAt = 0; S.ckExpandOverride = false;
+    DB.visitStartAt = now22; DB.lastReviewAt = now22; DB.lastBriefImportAt = now22; DB.briefRemindDismissKey = "";
+    S.wFilter = ""; S.wDetail = new Set();
+    S.tab = "home"; S.mode = "walkup"; renderHome();
+    const dismiss22 = document.querySelector("#ckDismiss");
+    renderRoutine();   // the 60s background tick that used to clobber the node
+    ok("[R22.1] a background re-render with unchanged state keeps the control node (setHTML)",
+       !!dismiss22 && document.querySelector("#ckDismiss") === dismiss22);
+    dismiss22.click();
+    ok("[R22.1] the first tap on the collapse control responds",
+       /dismissed for this visit/.test(document.querySelector("#ckList").innerHTML));
+    DB.ckDismissAt = 0;
+    // R22.2 — vitals global; digest/delta/checklist Home-scoped
+    setTab("watch");
+    ok("[R22.2] the vitals strip is global — outside the Home section, live on Trade",
+       !document.querySelector("#tab-home #homeVitals")
+       && document.querySelectorAll("#homeVitals .vit").length === 4
+       && document.querySelector("#tab-trade").classList.contains("on"));
+    ok("[R22.2] rulings digest, delta block, and checklist are Home-scoped",
+       !!document.querySelector("#tab-home #homeRulingsPanel") && !!document.querySelector("#tab-home #homeDeltaPanel")
+       && !!document.querySelector("#homeCkSlot #ckPanel"));
+    // R22.3 — ruling from the Home digest lands visibly, badge included
+    DB.intel = [{ id: "r22-p", type: "demand-context", confidence: "hinted", title: "R22 pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/r22" }],
+      validUntil: inDays(10), importedAt: now22 - 86400e3, status: "pending", teeth: 0, outcome: null }];
+    setTab("home");
+    ok("[R22.3] the pending line renders on Home with its inline actions visible (no hover gating)",
+       /data-intelrat="r22-p"/.test(document.querySelector("#homeRulings").innerHTML)
+       && /data-inteldis="r22-p"/.test(document.querySelector("#homeRulings").innerHTML));
+    document.querySelector('#homeRulings [data-intelrat="r22-p"]').click();
+    ok("[R22.3] ruling from Home lands visibly — the line leaves the digest, the ⚖ badge updates",
+       DB.intel[0].status === "ratified"
+       && !/data-intelrat="r22-p"/.test(document.querySelector("#homeRulings").innerHTML)
+       && document.querySelector("#pendBadge").style.display === "none");
+    // R22.4 — explicit plan status on every row; NEXT UP states its reason
+    DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
+    DB.positions = []; DB.planPriority = []; DB.planDemoted = []; DB.intel = []; DB.blacklist = [];
+    DB.slots = 2;
+    DB.qual = { 9001: qualified(), 9002: qualified(), 9003: qualified() };
+    S.tab = "watch"; setTab("watch"); renderWatch();
+    const rows22 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"));
+    ok("[R22.4] every watchlist row leads with an explicit plan-status badge",
+       rows22.length === 3 && rows22.every(r => r.querySelector(".tags .badge")), "rows=" + rows22.length);
+    const P22 = buildPlan();
+    ok("[R22.4] slots=2 funds 2; the third passes every gate and states its exact unfunded reason",
+       P22.picks.length === 2 && P22.nextUp.length === 1 && /plan is full at 2 offers/.test(P22.nextUp[0].why),
+       JSON.stringify({ picks: P22.picks.map(p => p.id), nu: P22.nextUp.map(x => x.id + ":" + x.why) }));
+    ok("[R22.4] the NEXT UP row's badge says so on the watchlist",
+       /NEXT UP #1/.test(document.querySelector("#watchBody").innerHTML));
+    // R22.5 — auto-promote: freed capacity funds the NEXT UP passer, no press
+    const nuId22 = P22.nextUp[0].id;
+    const prio22 = DB.planPriority.slice();
+    DB.positions = [{ id: 61, itemId: P22.picks[0].id, name: "held", qty: 10, buy: 4000, placedAt: Date.now(), stage: "buying" }];
+    const P22b = buildPlan();
+    ok("[R22.5] a freed slot auto-promotes the gate-passing NEXT UP item at recompute — no press, order untouched",
+       P22b.picks.some(p => p.id === nuId22) && DB.planPriority.join() === prio22.join()
+       && !P22b.picks.some(p => p.id === DB.positions[0].itemId),
+       JSON.stringify(P22b.picks.map(p => p.id)));
+    DB.positions = []; DB.slots = 7;
+    // R22.6 — beyond-net gate tags: honest about charts, one-tap +watch
+    const it301 = { i: 9301, n: "Probe slice", l: 25000, m: 0, v: 0, a: 0 };
+    S.items.push(it301); S.byId.set(9301, it301);
+    S.latest[9301] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
+    S.hour[9301] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    ok("[R22.6] a slice item without chart data says gates pending chart — never nothing",
+       /gates pending chart/.test(gateTag(9301)), gateTag(9301));
+    ok("[R22.6] a chart-loaded full passer reads ✓ gates", /✓ gates/.test(gateTag(9001)), gateTag(9001));
+    renderBeyondNet(new Set());
+    ok("[R22.6] every slice row carries a gate tag and a one-tap +watch",
+       Array.from(document.querySelectorAll("#beyondNetBody tr")).every(r => r.querySelector(".badge") && r.querySelector("[data-add]")));
+    // R22.7 — four-slot rows: ≤4 indicators, chip expands, filter reaches collapsed states
+    DB.clusters = [{ id: 1, name: "probe-cluster", members: [9001, 9002], capPct: null, story: "", src: "manual", confirmedAt: now22 }];
+    DB.intel = [{ id: "r22-pump", type: "promotion-warning", confidence: "rumor", title: "alpha promoted",
+      thesis: "t", direction: "caution", items: [9001], sources: [{ url: "https://example.test/r22p", tier: 3, community: "merch-x" }],
+      sourceTier: 3, community: "merch-x", validUntil: inDays(10), status: "ratified", importedAt: now22 - 60e3 }];
+    DB.anomalyFlags = [{ id: 7301, itemId: 9001, name: "Probe alpha", at: now22 - 60e3, d: today(),
+      strength: 8, rise14p: 20, rise14v: 150 }];
+    const w22 = DB.watch.find(x => x.id === 9001);
+    w22.tBuy = 4000; w22.tSell = 4400; w22.tAt = now22;
+    S.wDetail = new Set(); renderWatch();
+    const allRows22 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"));
+    const row9001 = allRows22.find(r => /Probe alpha/.test(r.textContent));
+    ok("[R22.7] no row renders more than four indicators",
+       allRows22.every(r => !r.querySelector(".tags") || r.querySelector(".tags").children.length <= 4)
+       && row9001.querySelector(".tags").children.length === 4,
+       row9001 ? String(row9001.querySelector(".tags").children.length) : "row missing");
+    const chip22 = row9001.querySelector(".tags [data-wdetail]");
+    ok("[R22.7] the ⚠ chip aggregates with hard-flag severity tint and the full list in its title",
+       !!chip22 && /b-risk/.test(chip22.className) && /SUSPECTED PUMP/.test(chip22.title), chip22 ? chip22.title : "no chip");
+    S.wDetail = new Set([9001]); renderWatch();
+    const det22 = document.querySelector("#watchBody tr.wdet");
+    ok("[R22.7] the expand view lists every active flag plus baskets, intel, mm, and test",
+       !!det22 && /SUSPECTED PUMP/.test(det22.textContent) && /probe-cluster/.test(det22.textContent)
+       && /⚡/.test(det22.textContent) && /Test:/.test(det22.textContent) && /mm:/.test(det22.textContent),
+       det22 ? det22.textContent.slice(0, 300) : "no detail row");
+    S.wDetail = new Set();
+    S.wFilter = "pump"; renderWatch();
+    const filtered22 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"));
+    ok("[R22.7] the filter row reaches collapsed states — aggregation costs no capability",
+       filtered22.length === 1 && /Probe alpha/.test(filtered22[0].textContent)
+       && /hidden by the pump filter/.test(document.querySelector("#watchFoot").innerHTML),
+       "shown=" + filtered22.length);
+    S.wFilter = ""; DB.intel = []; DB.anomalyFlags = [];
+    delete w22.tBuy; delete w22.tSell; delete w22.tAt;
+    renderWatch();
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

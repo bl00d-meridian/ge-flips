@@ -82,10 +82,16 @@ nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--go
 /* what-changed delta lines */
 #homeDelta .dl{padding:3px 0;font-size:12.5px;border-bottom:1px solid #262017;font-variant-numeric:tabular-nums}
 #homeDelta .dl:last-child{border-bottom:none}
-/* flat-book posture: WHAT CHANGED and vitals lead when nothing is working */
+/* four-slot row scheme: test dot + expand view */
+.tdot{font-size:10px;margin-left:4px;color:var(--dim);cursor:default}
+.tdot.on{color:var(--green)}
+tr.wdet td{background:#221c13;white-space:normal;text-align:left}
+.wdetbox{padding:4px 6px;font-size:12.5px;line-height:1.6;border-left:2px solid var(--gold-dim)}
+.wdetbox .memchip{margin:0 4px 0 0}
+/* flat-book posture: WHAT CHANGED leads when nothing is working (the vitals
+   strip is global, above the tabs, in every posture) */
 #tab-home{display:flex;flex-direction:column}
-#tab-home.flat #homeDeltaPanel{order:-2}
-#tab-home.flat #homeVitals{order:-1}
+#tab-home.flat #homeDeltaPanel{order:-1}
 
 /* ---- panels ---- */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px;margin-bottom:14px}
@@ -291,6 +297,9 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   <div id="toast" role="status" aria-live="polite"></div>
 
   <div id="nowBar" class="nowbar"></div>
+  <!-- vitals are GLOBAL (user-directed, Aug 11 2026): every tab gets the NOW
+       bar and this strip; the digest/delta/checklist blocks are Home's own. -->
+  <div class="vitals" id="homeVitals" style="margin-top:10px"></div>
 
   <nav class="tabs" id="tabs">
     <button data-tab="home" class="on">Home</button>
@@ -312,7 +321,6 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <div class="ph"><h2>What changed</h2><span class="sub" id="homeDeltaSub"></span></div>
       <div id="homeDelta"></div>
     </div>
-    <div class="vitals" id="homeVitals"></div>
     <div id="homeCkSlot">
       <div class="panel" id="ckPanel">
         <div class="ph"><h2 id="ckHead">Walk-up routine</h2><span class="sub" id="ckDate"></span>
@@ -398,7 +406,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <details id="beyondNet">
         <summary title="Rotating discovery slice (ruled Aug 10 2026): each scan cycle, 15 random items from the full item universe that pass only basic sanity — tradeable, price in either tier band, nonzero volume. The filters encode what you believe works; this slice tests that belief against the whole universe for free. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
         <div class="tw"><table>
-          <thead><tr><th>Item</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th><th>Limit</th><th>Vol (thin side)</th><th>Age</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th title="The full plan gate chain, run on every slice item each cycle — the slice exists to gauge the universe beyond your filters, and untagged rows would defeat it.">Gates</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th><th>Limit</th><th>Vol (thin side)</th><th>Age</th><th></th></tr></thead>
           <tbody id="beyondNetBody"></tbody>
         </table></div>
       </details>
@@ -531,6 +539,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       </details>
       <div class="row" style="margin-bottom:10px">
         <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
+        <label class="f" title="Show only rows in a given plan state or carrying a given collapsed flag — the ⚠ chip aggregates them on the row; this reaches each one.">Filter<select id="wFlagFilter" style="width:130px"></select></label>
         <label class="f" title="How many scout·T1 candidates the pipeline maintains on the watchlist">T1 cand<input type="number" id="scT1Cap" min="0" max="20" style="width:52px"></label>
         <label class="f" title="How many scout·T2 candidates the pipeline maintains on the watchlist">T2 cand<input type="number" id="scT2Cap" min="0" max="20" style="width:52px"></label>
         <label class="f" title="Profitable trips in 14 days that make an item a discovery SEED — deliberately below the 4-trip reliability floor: discovery may act on hints, funding may not">Seed trips<input type="number" id="scSeedN" min="1" max="10" style="width:48px"></label>
@@ -1367,6 +1376,15 @@ const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clampNum = (v, d) => Number.isFinite(+v) ? +v : d;
+/* Write innerHTML only when it actually changed (first-tap bug, Aug 11 2026):
+   every 60s poll — and the boot data arrival a second after open — rebuilt
+   identical checklist markup, and a tap whose pointerdown landed on a node
+   the rebuild had just replaced never becomes a click. Unchanged content now
+   keeps its DOM nodes, so the tap always lands on a live element. */
+function setHTML(el, html){
+  const n = typeof el === "string" ? $(el) : el;
+  if (n && n.__h !== html){ n.__h = html; n.innerHTML = html; }
+}
 
 /* ── what an item becomes, and why it trades every day ──────────
    Rule-based over name patterns: covers the classes that dominate GE volume.
@@ -1949,30 +1967,33 @@ function renderScan(){
     return;
   }
   const watched = new Set(DB.watch.map(w => w.id));
+  const P = buildPlan();   // watched rows state their real plan status, same read as the watchlist
   $("#scanBody").innerHTML = shown.map(c => {
-    const flags = [];
-    flags.push(tierBadge(itemTier(c.id, c)));   // computed tier, override-aware
-    if (isBlk(c.id))
-      flags.push('<span class="badge b-risk" title="On your blacklist — never admitted by the scout, never funded by the allocator. Only you can remove it (Blacklist box on the Watchlist tab).">blacklisted</span>');
-    /* Gate-mismatch badge: passes this scanner's filters but would fail the
-       full plan gate chain — so the pipeline won't admit it and the plan
-       would bench it. Suppressed while the verdict is only "chart still
-       loading": unknown is not failing. Blacklist shows its own badge. */
-    const cand = isBlk(c.id) ? null : candidateFor(DB.watch.find(x => x.id === c.id) || { id: c.id, qty: null });
-    if (cand && cand.failed && !/no chart yet/.test(cand.failed))
-      flags.push('<span class="badge b-warn" title="Passes this scanner but would FAIL Today\'s Plan gates — '
-        + esc(gateName(cand.failed)) + ': ' + esc(cand.failed) + ' The scout pipeline won\'t admit it either.">✗ gates</span>');
-    if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
-    if (c.roi > 12 && c.volSide < 20000) flags.push('<span class="badge b-warn" title="Fat ROI on modest volume — manipulation, dying item, or stale data. Margin-test before sizing.">check me</span>');
-    if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — everyone\'s flipping tool recommends this item, so expect the spread compressed to the tax floor. Volume is safety, not margin.">crowded #'+c.crowdRank+'</span>');
+    /* Four-slot scheme (tag consolidation, Aug 11 2026), same as watch rows:
+       1 plan status (watched) or gate verdict (unwatched) · 2 identity ·
+       3 aggregated ⚠ risk · 4 test dot. Full flag list in the chip title. */
+    const w = DB.watch.find(x => x.id === c.id);
+    const slot1 = w ? planStatusBadge(c.id, P) : gateTag(c.id);
+    const risks = [];
+    if (c.roi > 12 && c.volSide < 20000) risks.push({ k: "checkme", hard: true, label: "CHECK ME",
+      why: "fat ROI on modest volume — manipulation, dying item, or stale data; margin-test before sizing" });
+    if (c.crowdRank && c.crowdRank <= 100) risks.push({ k: "crowded", hard: false, label: "CROWDED #" + c.crowdRank,
+      why: "top-100 by 24h volume — every flipping tool recommends it; expect the spread pinned at the tax floor" });
     const slow = c.limit && c.volSide && c.limit > c.volSide * 4;
-    if (slow) flags.push('<span class="badge b-warn" title="The thin side of the book trades ~'+full(c.volSide*4)+' in 4h but your buy limit is '+full(c.limit)+' — profit/limit is a ceiling you cannot reach.">slow fill</span>');
+    if (slow) risks.push({ k: "slowfill", hard: false, label: "SLOW FILL",
+      why: "the thin side trades ~" + full(c.volSide * 4) + " in 4h vs a " + full(c.limit) + " buy limit — profit/limit is a ceiling you cannot reach" });
     if (c.margin1h != null && c.margin > 0 && c.margin1h < c.margin * 0.7)
-      flags.push('<span class="badge b-warn" title="The 1h-average spread is '+full(c.margin1h)+' vs '+full(c.margin)+' live — the live margin is partly an artifact of two unrelated trades.">thin on 1h</span>');
+      risks.push({ k: "thin1h", hard: false, label: "THIN ON 1H",
+        why: "1h-average spread " + full(c.margin1h) + " vs " + full(c.margin) + " live — the live margin is partly two unrelated trades" });
     if (c.skewMin != null && c.skewMin > 30)
-      flags.push('<span class="badge b-warn" title="'+Math.round(c.skewMin)+' min between the last buy and last sell — one side of the book is asleep.">one-sided</span>');
+      risks.push({ k: "onesided", hard: false, label: "ONE-SIDED",
+        why: Math.round(c.skewMin) + " min between the last buy and last sell — one side of the book is asleep" });
+    const chip = !risks.length ? ""
+      : '<span class="badge ' + (risks.some(f => f.hard) ? "b-risk" : "b-warn") + '" title="'
+        + esc(risks.map(f => f.label + ": " + f.why).join("\n")) + '">⚠ ' + risks.length + '</span>';
     return '<tr>'
-      + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'+flags.join("")+'</td>'
+      + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
+      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? testDot(w, c) : '') + '</div></td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num dim sec">'+full(c.tax)+'</td>'
@@ -2027,6 +2048,10 @@ function renderBeyondNet(watched){
   sub.textContent = n + " of " + pool.length + " sanity-passing items, resampled each price cycle — the filters never saw these";
   body.innerHTML = pick.length ? pick.map(c => '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span></td>'
+      /* Gate verdict per slice item (user-directed Aug 11 2026): the same
+         chain and language as watchlist rows; chart-dependent gates say
+         "pending chart" honestly rather than rendering nothing. */
+      + '<td style="text-align:left">'+gateTag(c.id)+'</td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num '+sign(c.margin)+'">'+full(c.margin)+'</td>'
@@ -2037,7 +2062,7 @@ function renderBeyondNet(watched){
       + '<td><button class="sm" data-add="'+c.id+'"'+(watched.has(c.id)?' disabled title="already watched"':'')+'>'
       + (watched.has(c.id) ? '✓' : '+ watch') + '</button></td>'
       + '</tr>').join("")
-    : '<tr><td colspan="9" class="empty">No sanity-passing items yet — waiting on price data.</td></tr>';
+    : '<tr><td colspan="10" class="empty">No sanity-passing items yet — waiting on price data.</td></tr>';
 }
 
 /* ═══════════ SIZING ═══════════ */
@@ -3962,7 +3987,7 @@ function renderFamilyDebug(){
     : '<div class="fam-row"><span class="dim">Nothing on the watchlist yet.</span></div>';
 }
 
-function renderPlan(){
+function renderPlan(P0){
   const list = $("#planList"), foot = $("#planFoot"), hint = $("#planHint");
   $$("#planMode button").forEach(b => b.classList.toggle("on", b.dataset.pm === S.planMode));
   renderFamilyDebug();
@@ -4037,7 +4062,7 @@ function renderPlan(){
     return;
   }
   const { picks, nextUp, qualifying, bench, pass, remaining, st, avail, deployable, deployed,
-          t1Budget, t2Budget, t1Spent, t2Spent, t1Pool, t2Pool, shadowReserve } = buildPlan();
+          t1Budget, t2Budget, t1Spent, t2Spent, t1Pool, t2Pool, shadowReserve } = P0 || buildPlan();
 
   /* Auto-graduation is informational — sizing already read tierProven. The
      toast fires once per item, flagged on the watch entry. */
@@ -4214,8 +4239,9 @@ function renderPlan(){
 
   let nextHTML = "";
   if (nextUp.length){
-    nextHTML = '<div class="nexthead"><b>Next up</b> — passed gates, unfunded. '
-      + 'These are substitutes for failed margin-tests or dead offers, not additional buys — total deployed never exceeds the stack.</div>'
+    nextHTML = '<div class="nexthead"><b>Next up</b> — passed gates, unfunded, each line stating exactly why. '
+      + 'When slots or budget free up, these fund AUTOMATICALLY at the next recompute — no press required; '
+      + 'promote only jumps the ORDER. Total deployed never exceeds the stack.</div>'
       + nextUp.map(x => {
           n++;
           /* Reason-aware picker: only demotions that free the binding resource
@@ -4262,7 +4288,7 @@ function renderPlan(){
             + '<div class="why">passed gates, unfunded — ' + esc(x.why) + ' · ' + esc(whyTag(x)) + '</div>'
             + picker + '</div>'
             + '<span class="plan-actions">'
-            + '<button class="sm" data-promote="'+x.id+'">promote</button>'
+            + '<button class="sm" data-promote="'+x.id+'" title="Jump the funding ORDER — gate-passers fund on their own when capacity frees; this only overrides which one goes first.">promote</button>'
             + '<button class="sm" data-place="'+x.id+'" data-q="'+x.wouldQty+'" data-b="'+x.c.buy+'" title="You executed this substitute in-game — track it as a position">placed</button>'
             + '<button class="sm ghost" data-ignore="'+x.id+'" title="Not worth your time — drops to the bench for the rest of today. Blacklist it for permanence.">ignore</button>'
             + '</span></li>';
@@ -5212,10 +5238,176 @@ function renderInv(){
   $("#invSub").textContent = ids.length + " item" + (ids.length === 1 ? "" : "s") + " · " + gp(totCost) + " at cost";
 }
 
+/* ═══════════ ROW SCHEME — four fixed indicator slots (user-directed,
+   Aug 11 2026): badge-soup → semantics. Every row renders AT MOST four
+   indicators, each owning one question — 1 plan status, 2 identity,
+   3 aggregated risk (⚠ N), 4 test state (dot). Everything else lives in
+   the row's expand view; the filter row reaches every collapsed state, so
+   aggregation costs no capability. ═══════════ */
+
+/* Slot 1 — plan status: every row states it, no silent unfunded states
+   (user-directed Aug 11 2026). The full reason is the title. */
+function planStatusInfo(id, P){
+  if (isBlk(id)) return { key: "blacklisted", cls: "b-risk", label: "blacklisted",
+    why: "On your blacklist — never scouted, funded, or quoted; no automated path can clear it. The 🚫 button reverses it." };
+  if (DB.positions.some(p => p.itemId === id)) return { key: "live", cls: "b-tax", label: "live position",
+    why: "Open position — capital already committed; the plan re-funds after the round trip completes." };
+  const w = DB.watch.find(x => x.id === id);
+  if (w && w.invTarget > 0) return { key: "mm", cls: "b-tax", label: "mm cycle",
+    why: "Inventory mode owns this item — the quote cycle sizes both legs; no plan line (one item, one mandate)." };
+  const pk = P && P.picks.find(x => x.id === id);
+  if (pk) return { key: "funded", cls: "b-tax", label: "funded " + full(pk.allocQty),
+    why: "FUNDED this recompute: " + full(pk.allocQty) + " units (" + gp(pk.allocQty * pk.c.buy) + ")"
+      + (pk.sizeNotes && pk.sizeNotes.length ? " · " + pk.sizeNotes.join("; ") : "") };
+  const nuIdx = P ? P.nextUp.findIndex(x => x.id === id) : -1;
+  if (nuIdx >= 0) return { key: "nextup", cls: "b-ok", label: "NEXT UP #" + (nuIdx + 1),
+    why: P.nextUp[nuIdx].why + ". Passes every gate — it auto-promotes at the next recompute when the binding resource frees; the promote button only jumps the ORDER." };
+  const q = P && P.qualifying.find(x => x.id === id);
+  if (q) return { key: "qualifying", cls: "b-seed", label: "qualifying " + q.qual.n + "/" + QUAL_PASSES,
+    why: "Seasoning: " + q.qual.n + "/" + QUAL_PASSES + " sustained full-gate passes spanning 2h+ before first funding"
+      + (q.qual.eta ? " — qualifies ~" + new Date(q.qual.eta).toTimeString().slice(0, 5) + " if it holds" : "")
+      + ". A fresh margin test funds it now." };
+  const b = P && P.bench.find(x => x.id === id);
+  if (b){
+    const fl = Array.isArray(b.fails) ? b.fails : [];
+    if (fl.length) return { key: "fails", cls: "b-warn", label: "fails " + fl.length + " gate" + (fl.length === 1 ? "" : "s"),
+      why: fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · ") };
+    return { key: "benched", cls: "b-warn", label: "benched", why: b.failed };
+  }
+  return { key: "pending", cls: "b-warn", label: "gates pending",
+    why: "Not in this recompute's candidate set — usually the chart is still loading; the verdict improves on its own." };
+}
+const planStatusBadge = (id, P) => { const s = planStatusInfo(id, P);
+  return '<span class="badge ' + s.cls + '" title="' + esc(s.why) + '">' + esc(s.label) + '</span>'; };
+
+/* Slot 2 — identity: tier + provenance + proof merged into ONE badge that
+   is still the tier-override cycle control. ·M marks a manual override. */
+function identityBadge(w, c){
+  const tv = itemTier(w.id, c);
+  const prov = w.src === "scout" ? (w.sib != null ? "·sib" : "·scout") : "";
+  const provWhy = w.src === "scout"
+    ? (w.sib != null
+      ? " · sibling of " + itemName(w.sib) + " (" + (w.sibRing === 0 ? "family ring" : "microstructure ring") + "), admitted " + ago(w.sibAt) + " on scanner sanity only — watching is free, funding still passes every gate"
+      : " · scout-added " + ago(w.addedAt) + (w.sibGrad ? " (graduated sibling)" : "") + " — removes itself after 48h of failed gates")
+    : "";
+  return '<button class="badge ' + (tv.t === 1 ? (tv.proven ? "b-tax" : "b-ok") : tv.t === 2 ? "b-seed" : "b-warn")
+    + '" data-tierov="' + w.id + '" title="' + esc(tv.why)
+    + (tv.t === 1 ? (tv.proven ? ' · PROVEN (2+ net-positive round trips) — full clamp' : ' · unproven — half-sized until 2 net-positive round trips') : '')
+    + (tv.t === 2 ? (tv.proven ? ' · graduated to full clamp' : ' · ramping at one-third until 2 clean trips') : '')
+    + esc(provWhy)
+    + ' — click to cycle the tier override: auto → T1 → T2 → untiered">'
+    + (tv.t === 0 ? "untiered" : "T" + tv.t + (tv.proven ? "✓" : "")) + esc(prov) + (tv.manual ? "·M" : "") + '</button>';
+}
+
+/* Slot 3 — aggregated risk: every cautionary state collapses to one ⚠ N
+   chip. Any hard-bench-class flag reds it; advisory-only ambers it. The
+   title lists every flag; tapping opens the row's expand view. */
+function rowRiskFlags(w, c, sp, P){
+  const out = [];
+  const push = (k, hard, label, why) => out.push({ k, hard, label, why });
+  if (c.volSide < volFloorFor(c.buy))
+    push("thin", false, "THIN", "thin side " + gp(c.volSide) + "/h under the price-scaled " + full(volFloorFor(c.buy)) + "/h floor — fills run slow");
+  const hv = sp ? hourVerdict(sp.byHour) : null;
+  if (hv && hv.thin) push("quiet", false, "QUIET HOUR", "this hour trades at " + hv.ratio.toFixed(2) + "× the daily average — fills run slow right now");
+  const tr = sp ? trendPct(sp.pts) : null;
+  if (tr != null && tr <= -5)
+    push("falling", tr <= -8, "FALLING", "7-day drift " + tr.toFixed(1) + "% — a wide margin on a plunge is catching a knife (the plan benches under −5%)");
+  if (c.crowdRank && c.crowdRank <= 100)
+    push("crowded", false, "CROWDED", "#" + c.crowdRank + " by 24h volume — every flipping tool recommends it; expect the spread pinned at the tax floor");
+  const au = P && P.all ? P.all.find(x => x.id === w.id) : null;
+  if (au && au.caution && !au.cautionProven)
+    push("seed", false, "SEED-CLASS", au.caution.why + " — half-sized, one slot per category until your log proves it");
+  const pl = provenLoser(w.id, w);
+  if (pl) push("loser", true, "PROBATION (proven loser)", "net " + gp(pl.net) + " over your last " + pl.n + " completed flips — benched until a fresh one-unit margin test is recorded");
+  const pmp = suspectedPump(w.id);
+  if (pmp) push("pump", true, "SUSPECTED PUMP", pmp.why);
+  const dieoff = (DB.dieOffLog || []).filter(e => e.id === w.id).pop();
+  if (dieoff && dieoff.rec == null && Date.now() - dieoff.t < 24 * 3600e3)
+    push("dieoff", true, "DIE-OFF", "confirmed 5m die-off against a passing 1h book — 24h episode open, watching for a confirmed healthy sample");
+  for (const cl of clustersFor(w.id)){
+    const capG = clusterCapGp(cl), room = capG - clusterExposure(cl);
+    if (capG > 0 && room <= capG * 0.2)
+      push("clunear", false, "BASKET NEAR CAP", "⬡ " + cl.name + " — " + gp(Math.max(0, room)) + " of its " + gp(capG) + " exposure cap left");
+  }
+  const pq = planQty(w, c);
+  if (pq.cap === 0) push("toobig", true, "TOO BIG", "a single unit costs more than one-third of working capital");
+  else if (pq.auto) push("clamped", false, "⅓-CLAMP", "plan qty auto-clamped to " + full(pq.cap) + " by " + capReason(c, pq.cap));
+  return out;
+}
+const riskChip = (id, flags) => !flags.length ? ""
+  : '<button class="badge ' + (flags.some(f => f.hard) ? "b-risk" : "b-warn") + '" data-wdetail="' + id
+    + '" title="' + esc(flags.map(f => f.label + ": " + f.why).join("\n")) + '">⚠ ' + flags.length + '</button>';
+
+/* Slot 4 — test state: a dot, not a badge. Solid = fresh, hollow = expired,
+   absent = never tested. The numbers live in the tooltip. */
+function testDot(w, c){
+  if (!(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell))) return "";
+  return c.tested
+    ? '<span class="tdot on" title="Margin-tested ' + ago(w.tAt) + ': buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + ' — your fills override live prices for 16h.">●</span>'
+    : '<span class="tdot" title="Test EXPIRED (' + ago(w.tAt) + '): buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + ' — live prices are back in charge; ↻ in the Tested column re-tests.">○</span>';
+}
+
+/* Gate tag for rows OUTSIDE the watch pipeline (scanner, discovery slice):
+   the same verdict language as slot 1, honest about missing charts. */
+function gateTag(id){
+  if (isBlk(id)) return '<span class="badge b-risk" title="On your blacklist — never admitted, never funded. Only you can clear it.">blacklisted</span>';
+  const cand = candidateFor(DB.watch.find(x => x.id === id) || { id, qty: null });
+  if (!cand.failed) return '<span class="badge b-tax" title="Passes every plan gate this cycle — the pipeline would admit it.">✓ gates</span>';
+  const fl = (cand.fails || []).filter(f => f.g !== "chart still loading");
+  const chartPend = (cand.fails || []).some(f => f.g === "chart still loading");
+  if (!fl.length && chartPend)
+    return '<span class="badge b-warn" title="Every price gate passes; trend and momentum need the 7-day series, which only watchlist items fetch — +watch to load it.">gates pending chart</span>';
+  if (!fl.length) return '<span class="badge b-warn" title="' + esc(cand.failed) + '">' + esc(gateName(cand.failed) || "benched") + '</span>';
+  return '<span class="badge b-warn" title="' + esc(fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · "))
+    + (chartPend ? " · chart still loading for the remaining gates" : "") + '">fails ' + fl.length + ' gate' + (fl.length === 1 ? '' : 's') + '</span>';
+}
+
+/* The expand view — the single home for full row context: plan reason,
+   every risk flag with its meaning, provenance, baskets, intel, mm, test. */
+function watchDetailRow(w, c, sp, P, risks){
+  const bits = [];
+  const s = planStatusInfo(w.id, P);
+  bits.push('<div><b>Plan:</b> ' + esc(s.label) + ' — ' + esc(s.why) + '</div>');
+  if (risks.length) bits.push(risks.map(f =>
+    '<div><span class="' + (f.hard ? "neg" : "") + '">⚠ ' + esc(f.label) + '</span> — ' + esc(f.why) + '</div>').join(""));
+  const prov = w.src === "scout"
+    ? (w.sib != null
+      ? "scout sibling of " + itemName(w.sib) + " (" + (w.sibRing === 0 ? "family ring" : "microstructure ring") + "), admitted " + ago(w.sibAt) + " — watching is free, funding still passes every gate"
+      : "scout-added " + ago(w.addedAt) + (w.sibGrad ? " (graduated sibling)" : "") + " — removes itself after 48h of failed gates")
+    : "added by you";
+  const cold = w.lastPass && Date.now() - w.lastPass > SCOUT_EVICT_MS;
+  bits.push('<div><b>Provenance:</b> ' + esc(prov)
+    + (cold ? ' · <span class="neg">cold — hasn\'t passed the scout screen in ' + esc(ago(w.lastPass).replace(" ago", "")) + '; consider cutting it</span>' : '') + '</div>');
+  const clus = clustersFor(w.id);
+  if (clus.length) bits.push('<div><b>Baskets:</b> ' + clus.map(cl =>
+    '<span class="memchip">⬡ ' + esc(cl.name) + ' · cap ' + clusterCapPctOf(cl) + '%</span>').join(" ") + '</div>');
+  for (const tx of intelTagText(w.id)) bits.push('<div>⚡ ' + esc(tx) + '</div>');
+  if (c.exempt) bits.push('<div class="dim">tax-exempt — no GE tax on sells; the margin floor is already halved for it</div>');
+  const mv = w.invTarget > 0 ? null : mmVerdict(w.id);
+  bits.push('<div><b>mm:</b> ' + (w.invTarget > 0 ? "ON — target buffer " + full(w.invTarget)
+    : mv.ready ? "log-qualified (mm-ready) — suggested buffer " + full(mv.target) + "; the mm button sets it"
+    : "not yet — " + esc(mv.lacks[0])) + '</div>');
+  const hv = sp ? hourVerdict(sp.byHour) : null;
+  if (hv) bits.push('<div class="dim">hour-of-day: this hour runs ' + hv.ratio.toFixed(2) + '× the item\'s daily average</div>');
+  if (Number.isFinite(w.tBuy)) bits.push('<div><b>Test:</b> buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell)
+    + ' · ' + ago(w.tAt) + (c.tested ? ' <span class="pos">(ACTIVE — overrides live prices for 16h)</span>' : ' (expired)') + '</div>');
+  return '<tr class="wdet"><td colspan="16"><div class="wdetbox">' + bits.join("") + '</div></td></tr>';
+}
+const WFILTER_OPTS = [["", "all rows"], ["funded", "funded"], ["nextup", "NEXT UP"], ["qualifying", "qualifying"],
+  ["fails", "fails gates"], ["benched", "benched"], ["live", "live position"], ["mm", "mm cycle"],
+  ["blacklisted", "blacklisted"], ["pending", "gates pending"],
+  ["thin", "⚠ thin"], ["quiet", "⚠ quiet hour"], ["falling", "⚠ falling"], ["crowded", "⚠ crowded"],
+  ["seed", "⚠ seed-class"], ["loser", "⚠ probation"], ["pump", "⚠ pump"], ["dieoff", "⚠ die-off"],
+  ["clunear", "⚠ basket near cap"], ["clamped", "⚠ ⅓-clamp"], ["toobig", "⚠ too big"],
+  ["tested", "tested (fresh)"], ["untested", "untested"], ["basket", "basket member"], ["intel", "intel-tagged"]];
+
 /* ═══════════ WATCHLIST ═══════════ */
 function renderWatch(){
   const body = $("#watchBody");
   const st = workingStack(), third = st/3;
+  /* One plan read feeds the whole surface: row statuses, the plan panel,
+     and the deploy funnel all describe the SAME recompute. */
+  const P = buildPlan();
   $("#watchStack").textContent = "working " + gp(st) + " (reserve " + gp(Math.min(DB.shadowReserve||0, stack())) + " excluded) · free " + gp(Math.max(0, st - committed())) + " · one-third cap " + gp(third);
   const scT1 = DB.watch.filter(w => w.src === "scout" && (w.scoutTier || 1) === 1).length;
   const scT2 = DB.watch.filter(w => w.src === "scout" && w.scoutTier === 2).length;
@@ -5231,10 +5423,16 @@ function renderWatch(){
   if (!DB.watch.length){
     body.innerHTML = '<tr><td colspan="16" class="empty">Empty. Guide §7: seed with the top 5 consumables from the scanner that pass every filter.</td></tr>';
     $("#watchFoot").innerHTML = "";
-    renderPlan(); renderPositions();
+    renderPlan(P); renderPositions();
     return;
   }
-  let totalPos = 0, totalProfit = 0, priced = 0;
+  let totalPos = 0, totalProfit = 0, priced = 0, hiddenN = 0;
+  if (!S.wDetail) S.wDetail = new Set();
+  /* Filter row (tag consolidation): reaches every collapsed state. */
+  const wf = $("#wFlagFilter");
+  if (wf && !wf.options.length)
+    wf.innerHTML = WFILTER_OPTS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join("");
+  if (wf) wf.value = S.wFilter || "";
   /* Display order: click a column head to sort, click again to flip hi/lo
      (scanner idiom); default is post-tax ROI, best first. Scout appends in
      discovery order, which means nothing to a human scanning the list; the
@@ -5272,66 +5470,40 @@ function renderWatch(){
     const sp = S.spark.get(w.id);
     const tr = sp ? trendPct(sp.pts) : null;
     const hv = sp ? hourVerdict(sp.byHour) : null;
-    const flags = [];
-    if (w.src === "scout" && w.sib != null)
-      flags.push('<span class="badge b-seed" title="Sibling of '+esc(itemName(w.sib))+' ('+(w.sibRing === 0 ? "family ring" : "microstructure ring")+'), admitted '+ago(w.sibAt)+' on scanner-level sanity only — WATCHING is free, funding still passes every gate. Washes out after 5 days without a gate pass; graduates on a completed trip.">scout·sib('+esc(itemName(w.sib))+')</span>');
-    else if (w.src === "scout") flags.push('<span class="badge b-ok" title="Added by the scout pipeline '+ago(w.addedAt)+' after passing its tier scanner AND every plan gate — it removes itself if it fails the gates for 48h straight. Margin-test it to claim it as yours.">scout·T'+(w.scoutTier || tierFromPrice(c.buy) || "?")+(w.sibGrad ? ' ·grad' : '')+'</span>');
-    else if (w.lastPass && Date.now() - w.lastPass > SCOUT_EVICT_MS)
-      flags.push('<span class="badge b-warn" title="Hasn\'t passed the scout screen in '+ago(w.lastPass).replace(" ago","")+'. Yours, so it stays — but §5 says consider cutting it.">cold</span>');
-    if (c.exempt) flags.push('<span class="badge b-tax">no tax</span>');
-    if (c.tested) flags.push('<span class="badge b-ok" title="Using your margin-tested prices from '+ago(w.tAt)+'">tested</span>');
-    if (cap === 0) flags.push('<span class="badge b-risk" title="A single unit costs more than a third of your working capital (shadow reserve excluded)">too big</span>');
-    if (c.volSide < volFloorFor(c.buy)) flags.push('<span class="badge b-warn" title="Thin side of the book is below the volume floor (price-scaled: '+full(volFloorFor(c.buy))+'/h at this price) — fills will be slow">thin</span>');
-    if (c.crowdRank && c.crowdRank <= 100) flags.push('<span class="badge b-ok" title="#'+c.crowdRank+' by 24h volume — crowded item, spread likely pinned at the tax floor">crowded</span>');
-    if (tr != null && tr <= -8) flags.push('<span class="badge b-risk" title="Falling chart — a wide margin on a plunge is catching a knife">falling</span>');
-    if (isBlk(w.id)) flags.push('<span class="badge b-risk" title="On your blacklist — never funded, never quoted, never scout-admitted. Only you can remove it (🚫 button or the Blacklist box).">blacklisted</span>');
-    const pl = provenLoser(w.id, w);
-    if (pl) flags.push('<span class="badge b-risk" title="Net '+gp(pl.net)+' across your last '+pl.n+' completed flips — benched from Today\'s Plan until a fresh one-unit margin test is recorded (set/re-test in the Tested column). The unbench lasts only while the test is fresh (16h).">proven loser — re-test to unbench</span>');
-    for (const cl of clustersFor(w.id))
-      flags.push('<span class="badge b-seed" title="Member of ratified basket \''+esc(cl.name)+'\' — combined exposure across all its members is capped at '+clusterCapPctOf(cl)+'% of working capital by the allocator, regardless of family. Manage it in the Item baskets panel (Sleeve tab).">⬡ '+esc(cl.name)+'</span>');
-    /* Ratified-intel tags: advisory display only — the tag never benches or
-       resizes (an optional 0.5× haircut exists solely as a per-record user
-       toggle and announces itself on the plan line). */
-    for (const tx of intelTagText(w.id))
-      flags.push('<span class="badge ' + (/^(sell-on-drop|being promoted)/.test(tx) ? 'b-risk' : 'b-ok') + '" title="' + esc(tx) + '">⚡ '
-        + (/^sell-on-drop/.test(tx) ? 'sell-on-drop' : /^being promoted/.test(tx) ? 'promoted — caution'
-           : /^demand context/.test(tx) ? 'demand context' : 'update-sensitive') + '</span>');
-    const pmpW = suspectedPump(w.id);
-    if (pmpW) flags.push('<span class="badge b-risk" title="' + esc(pmpW.why) + '">⚠ suspected pump</span>');
-    /* Tier badge doubles as the manual-override control: click cycles
-       auto → T1 → T2 → untiered → auto. Overrides are marked ·M. */
-    const tv = itemTier(w.id, c);
-    flags.push('<button class="badge ' + (tv.t === 1 ? (tv.proven ? "b-tax" : "b-ok") : tv.t === 2 ? "b-seed" : "b-warn")
-      + '" data-tierov="' + w.id + '" title="' + esc(tv.why)
-      + (tv.t === 1 ? (tv.proven ? ' · PROVEN (2+ net-positive round trips) — full clamp' : ' · unproven — half-sized until 2 net-positive round trips') : '')
-      + (tv.t === 2 ? (tv.proven ? ' · graduated to full clamp' : ' · ramping at one-third until 2 clean trips') : '')
-      + ' — click to cycle the tier override: auto → T1 → T2 → untiered">'
-      + (tv.t === 0 ? "untiered" : "T" + tv.t + (tv.proven && tv.t === 1 ? " ✓" : "")) + (tv.manual ? " ·M" : "") + '</button>');
-    /* mm state lives in the Item cell too — the Actions column sits behind a
-       horizontal scroll on a 17-column table, so the one decision the log
-       automates must be visible without scrolling. Buttons, not spans: the
-       tap-to-explain handler skips buttons, so the click reaches the prompt. */
-    const mv = w.invTarget > 0 ? null : mmVerdict(w.id);
-    if (w.invTarget > 0)
-      flags.push('<button class="badge b-tax" data-inv="'+w.id+'" title="Inventory (market-maker) mode ON — target buffer '+full(w.invTarget)+'. Click to change or clear it.">mm '+full(w.invTarget)+'</button>');
-    else if (mv.ready)
-      flags.push('<button class="badge b-ok" data-inv="'+w.id+'" title="Log-qualified for inventory mode: '+mv.n+' completed flips in 30d, net '+gp(mv.net)+', clean markouts, fills inside the horizon. Click to set the suggested '+full(mv.target)+'-unit buffer — nothing is placed or logged for you.">mm-ready</button>');
+    /* Four fixed slots (tag consolidation, Aug 11 2026): plan status ·
+       identity · aggregated ⚠ risk · test dot. Full context lives in the
+       expand view (▸ / tap the chip); the filter reaches collapsed states. */
+    const status = planStatusInfo(w.id, P);
+    const risks = rowRiskFlags(w, c, sp, P);
+    const slots = '<div class="tags">'
+      + '<span class="badge ' + status.cls + '" title="' + esc(status.why) + '">' + esc(status.label) + '</span>'
+      + identityBadge(w, c)
+      + riskChip(w.id, risks)
+      + testDot(w, c)
+      + '</div>';
+    /* Filter row reaches every collapsed state — aggregation costs no
+       capability. Filtered rows still count in the totals (stated in foot). */
+    const keys = [status.key, ...risks.map(f => f.k),
+      c.tested ? "tested" : (Number.isFinite(w.tBuy) ? "untested" : "untested"),
+      clustersFor(w.id).length ? "basket" : null, intelTagText(w.id).length ? "intel" : null].filter(Boolean);
+    if (S.wFilter && !keys.includes(S.wFilter)){ hiddenN++; return ""; }
+    const detail = S.wDetail && S.wDetail.has(w.id) ? watchDetailRow(w, c, sp, P, risks) : "";
+    const mv2 = w.invTarget > 0 ? null : mmVerdict(w.id);
     const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
-    /* Compact tested cell: exact fills in small type, icon buttons, state
-       details in the title — the old inline badge + word-buttons made this
-       the widest column on the row. */
+    /* Tested column is pure ACTIONS now — the state moved into the slot-4
+       dot, whose tooltip carries the numbers. */
     const testCell = c.tested
-      ? '<span class="num" style="font-size:11px" title="Margin-tested '+ago(w.tAt)+' — these fills override live prices for 16h.">'+full(w.tBuy)+'/'+full(w.tSell)+'</span>'
-        + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
+      ? '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : hasTest
-      ? '<span class="num dim" style="font-size:11px" title="Tested '+ago(w.tAt)+' — over 16h old (EXPIRED), live prices are back in charge. ↻ records a fresh test.">'+full(w.tBuy)+'/'+full(w.tSell)+'</span>'
-        + '<button class="sm" data-test="'+w.id+'" title="Re-run the one-unit margin test and record the new fills">↻</button>'
+      ? '<button class="sm" data-test="'+w.id+'" title="Re-run the one-unit margin test and record the new fills">↻</button>'
         + '<button class="sm ghost" data-untest="'+w.id+'" title="clear tested prices">✕</button>'
       : '<button class="sm" data-test="'+w.id+'" title="Record the prices your one-unit margin test actually filled at">set</button>';
     return '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
       + ' <a href="https://oldschool.runescape.wiki/w/'+encodeURIComponent(c.name.replace(/ /g,"_"))+'" target="_blank" rel="noopener" class="dim" style="text-decoration:none" title="Open the OSRS wiki page — full uses, sources and sinks">↗</a>'
-      + (flags.length ? '<div class="tags">'+flags.join("")+'</div>' : '')+'</td>'
+      + ' <button class="sm ghost" data-wdetail="'+w.id+'" title="Full context — plan reason, every risk flag, provenance, baskets, intel, mm, test">'
+      + (S.wDetail && S.wDetail.has(w.id) ? '▾' : '▸') + '</button>'
+      + slots + '</td>'
       + '<td class="sec">'+(sp ? sparkSVG(sp.pts) : '<span class="dim">…</span>')+'</td>'
       /* Margin and ticks are the same number (1 tick = 1 gp) — one column,
          colored and ✓/✗-marked by the tick-floor verdict. */
@@ -5345,17 +5517,16 @@ function renderWatch(){
       + '<td class="num '+sign(c.roi)+'">'+(c.roi != null ? c.roi.toFixed(2) : "—")+'</td>'
       + '<td class="num sec '+sign(profit)+'">'+gp(profit)+'</td>'
       + '<td class="sec" title="'+(hv ? "this hour is "+hv.ratio.toFixed(2)+"× the daily average" : "no history")+'">'
-      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>')
-      + (hv && hv.thin ? '<span class="badge b-warn">quiet</span>' : '') + '</td>'
+      + (sp ? hourSVG(sp.byHour) : '<span class="dim">…</span>') + '</td>'
       + '<td class="num dim sec" title="buy-side '+full(c.volLow)+' · sell-side '+full(c.volHigh)+'">'+gp(c.volSide)+'</td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td style="white-space:nowrap"><button class="sm" data-log="'+w.id+'" title="Log a completed flip, prefilled from this row">+ log</button>'
       + '<button class="sm'+(w.invTarget > 0 ? ' primary' : '')+'" data-inv="'+w.id+'" title="'+(w.invTarget > 0
           ? 'Inventory mode ON — target buffer '+full(w.invTarget)+'. The plan quotes both legs each touch. Click to change or clear the target.'
-          : mv.ready
-          ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv.target)+' units.'
-          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv.lacks[0])+'.')+'">mm</button>'
+          : mv2.ready
+          ? 'Turn on inventory (market-maker) mode — your log qualifies this item. Suggested buffer: '+full(mv2.target)+' units.'
+          : 'Turn on inventory (market-maker) mode: keep a standing buffer and quote both sides each touch. Your log doesn\'t qualify it yet — '+esc(mv2.lacks[0])+'.')+'">mm</button>'
       + '<button class="sm ghost" data-blk="'+w.id+'" title="'+(isBlk(w.id)
           ? 'Remove from YOUR blacklist — it becomes eligible for gates, scout and funding again.'
           : 'Blacklist this item: never scout-admitted, never funded, never quoted, and no automated path (not even a margin test) can clear it. Yours alone to reverse.')+'">'+(isBlk(w.id) ? '🚫✕' : '🚫')+'</button>'
@@ -5368,12 +5539,13 @@ function renderWatch(){
       + '<td class="num dim sec">'+(c.limit ? full(c.limit) : "?")+'</td>'
       + '<td class="num sec '+(tr == null ? "dim" : sign(tr))+'">'+(tr == null ? "—" : (tr>0?"+":"") + tr.toFixed(1) + "%")+'</td>'
       + '<td><button class="sm ghost" data-del="'+w.id+'" title="remove">✕</button></td>'
-      + '</tr>';
+      + '</tr>' + detail;
   }).join("");
 
   const over = st > 0 && totalPos > st;
   $("#watchFoot").innerHTML = '<tr>'
     + '<td colspan="4">Total across '+priced+' item'+(priced===1?"":"s")
+    + (hiddenN ? ' <span class="dim">(' + hiddenN + ' hidden by the ' + esc(S.wFilter) + ' filter — totals count them)</span>' : '')
     + (over ? ' <span class="badge b-risk" title="Combined positions exceed your entire working capital">over stack</span>' : '') + '</td>'
     + '<td class="num sec '+sign(totalProfit)+'" title="expected profit per full cycle at plan sizes">'+gp(totalProfit)+'</td>'
     + '<td colspan="7" class="dim">of '+gp(st)+' working capital'
@@ -5382,7 +5554,7 @@ function renderWatch(){
     + '<td colspan="3"></td>'
     + '</tr>';
 
-  renderPlan();
+  renderPlan(P);
   renderPositions();
   renderNow();
 }
@@ -7684,6 +7856,7 @@ document.addEventListener("click", e => {
     logDecision("intel", r.title, "ratify", effect + " · " + r.confidence + ", until " + r.validUntil);
     save(); renderSleeve();
     if (onWatch()) renderWatch();
+    rerenderCk(); updatePendBadge();   // the Home digest is a ruling surface — it must show the ruling landed
     toast("Ratified — " + effect + ".");
     return;
   }
@@ -7705,6 +7878,7 @@ document.addEventListener("click", e => {
     logDecision("intel", r.title, "edit-ratify", (edits.join("; ") || "ratified unchanged") + " · " + effect);
     save(); renderSleeve();
     if (onWatch()) renderWatch();
+    rerenderCk(); updatePendBadge();
     toast("Edited and ratified — " + effect + ".");
     return;
   }
@@ -7715,8 +7889,9 @@ document.addEventListener("click", e => {
     r.status = "dismissed"; r.ruledAt = Date.now();
     logDecision("intel", r.title, "dismiss", r.confidence + " — dismissal remembered; overlapping variants absorb at Jaccard ≥ 0.6");
     save(); renderSleeve();
+    rerenderCk(); updatePendBadge();
     toast("Dismissed — remembered. It resurfaces only on material change (confidence upgrade or direction flip).",
-          () => { r.status = "pending"; delete r.ruledAt; save(); renderSleeve(); });
+          () => { r.status = "pending"; delete r.ruledAt; save(); renderSleeve(); rerenderCk(); updatePendBadge(); });
     return;
   }
   const cc = t.closest("[data-cohconfirm]");
@@ -7868,14 +8043,14 @@ function pendingRulingItems(){
       const key = "aud:seed:" + a.id;
       items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
         html: '🔍 seed audit: <b>' + esc(itemName(a.id)) + '</b> recommends ' + esc(a.rec)
-          + ' — <a href="#" data-goto="review">rule it in the review\'s audit</a>' });
+          + ' — <a href="#" data-goto="review#ckPanel">rule it in the review\'s audit</a>' });
     }
     const zz = sibAudit();
     for (const r of (zz.rows || []).filter(x => x.zombie && !audRuledInfo("sib:" + x.id))){
       const key = "aud:sib:" + r.id;
       items.push({ key, pri: 3, sort: 0, snoozed: rulingSnoozed(key),
         html: '🔍 sibling audit: <b>' + esc(itemName(r.id)) + '</b> flagged zombie watcher'
-          + ' — <a href="#" data-goto="review">rule it in the review\'s audit</a>' });
+          + ' — <a href="#" data-goto="review#ckPanel">rule it in the review\'s audit</a>' });
     }
   } catch(e){ /* advisory only */ }
   if (S.depProposalCount > 0){
@@ -8685,7 +8860,7 @@ function renderRoutine(){
   /* Review-due renders as ONE line, never a second checklist — starting it
      replaces this visit's walk-up with the review flow. */
   const revN = (S.tab === "home" && m === "walkup" && !reviewEngaged()) ? reviewDue() : 0;
-  $("#briefRemind").innerHTML = (revN
+  setHTML("#briefRemind", (revN
     ? '<div class="plan-note" style="margin-bottom:10px">📓 weekly review ready — ' + revN
       + ' days of data. Starting it makes the review this visit\'s checklist (the walk-up\'s execution steps ride along as step zero).'
       + ' <button class="sm" id="reviewStart">start review</button></div>'
@@ -8693,7 +8868,7 @@ function renderRoutine(){
     ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
       + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
-    : "") + attnLine;
+    : "") + attnLine);
   $("#ckBar").parentElement.style.display = min ? "none" : "";
   $("#ckBar").style.width = (done.length / list.steps.length * 100) + "%";
   if (min){
@@ -8704,12 +8879,12 @@ function renderRoutine(){
       ? "auto-minimized: no open positions, no armed rungs, no pending rulings — nothing to walk through"
       : min === "visit" ? "dismissed for this visit — returns next visit"
       : "minimized (standing preference)";
-    $("#ckList").innerHTML = '<li style="cursor:default"><span style="flex:1"><span class="t">' + esc(list.title)
+    setHTML("#ckList", '<li style="cursor:default"><span style="flex:1"><span class="t">' + esc(list.title)
       + '</span><span class="d">' + done.length + ' of ' + list.steps.length + ' steps done · ' + reason + '</span></span>'
       + '<button class="sm" id="ckExpand" title="Expand the checklist for this view.">expand</button>'
       + (min === "pref" ? ' <button class="sm ghost" id="ckPrefPin" title="Clear the standing minimize preference — the checklist renders expanded by default again.">pin open</button>' : '')
-      + '</li>';
-  } else $("#ckList").innerHTML = list.steps.map((s,i) => {
+      + '</li>');
+  } else setHTML("#ckList", list.steps.map((s,i) => {
     const isDone = done.includes(i);
     let inline = "";
     /* The exact lines you're about to execute, inline — no tab-hopping mid-touch. */
@@ -8827,18 +9002,18 @@ function renderRoutine(){
       + '<span class="n">'+(isDone ? "✓" : i+1)+'</span>'
       + '<span style="flex:1"><span class="t">'+esc(s[0])+'</span><span class="d">'+esc(s[1])
       + (s[2] ? ' <a href="#" data-goto="'+s[2]+'">→ open</a>' : '') + '</span>' + inline + '</span></li>';
-  }).join("");
+  }).join(""));
   $("#ckHead").textContent = m === "walkup" ? "Walk-up routine" : "Weekly review";
   const ckCtl = (S.tab === "home" && !min)
     ? '<button class="sm ghost" id="ckDismiss" style="margin-left:8px" title="Collapse the checklist for THIS visit — it returns automatically next visit. The NOW bar, rulings digest, WHAT CHANGED, and vitals stay regardless.">– this visit</button>'
       + (m === "walkup" ? '<button class="sm ghost" id="ckPrefMin" title="Minimize the checklist as a standing preference — a one-line summary with expand, every visit, until you pin it open.">⌄ always</button>' : '')
     : "";
-  $("#modeExtras").innerHTML = min ? "" : ((m === "walkup")
+  setHTML("#modeExtras", min ? "" : ((m === "walkup")
     ? '<label class="f" title="How long one GE touch honestly takes, door to door. Feeds the Couch-Minute Sharpe on Trade ▸ Flip Log — keep it honest rather than flattering.">Min / touch'
       + '<input type="number" data-eqmins min="1" value="' + Math.max(1, DB.minsPerTouch || 10) + '" style="width:64px"></label>'
       + '<label class="f" style="margin-left:8px" title="Max rulings-pending lines shown per walk-up — overflow is counted out loud, never hidden silently. Target: under two added minutes.">Rulings cap'
       + '<input type="number" data-rulecap min="1" max="10" value="' + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + '" style="width:52px"></label>'
-    : "") + ckCtl;
+    : "") + ckCtl);
   renderNow();
 }
 
@@ -9036,16 +9211,16 @@ function renderHomeDelta(){
       + " — shadow book accruing, " + n + " trip" + (n === 1 ? "" : "s") + " closed since", goto: "review#ckPanel" });
   }
   if (!L.length){
-    box.innerHTML = first
+    setHTML(box, first
       ? '<div class="dim">First visit with the delta tracker — changes accrue from now.</div>'
-      : '<div class="dim">Nothing moved since your last visit — only nonzero deltas ever render here.</div>';
+      : '<div class="dim">Nothing moved since your last visit — only nonzero deltas ever render here.</div>');
     return;
   }
   const show = S.homeDeltaAll ? L : L.slice(0, HOME_DELTA_CAP);
-  box.innerHTML = show.map(d => '<div class="dl"'
+  setHTML(box, show.map(d => '<div class="dl"'
       + (d.goto ? ' data-goto="' + d.goto + '" style="cursor:pointer"' : '') + '>' + esc(d.txt) + '</div>').join("")
     + (L.length > HOME_DELTA_CAP && !S.homeDeltaAll
-      ? '<div class="dl dim" data-deltamore="1" style="cursor:pointer">+' + (L.length - HOME_DELTA_CAP) + ' more…</div>' : "");
+      ? '<div class="dl dim" data-deltamore="1" style="cursor:pointer">+' + (L.length - HOME_DELTA_CAP) + ' more…</div>' : ""));
 }
 
 /* Vitals: four compact always-visible tiles, each a click-through to its
@@ -9115,7 +9290,7 @@ function renderHomeVitals(){
   const vit = (k, v, goto, title) =>
     '<div class="vit" data-goto="' + goto + '" title="' + esc(title) + '"><div class="k">' + k
     + '</div><div class="v">' + v + '</div></div>';
-  box.innerHTML =
+  setHTML(box,
       vit("Funnel", esc(funnel), "watch#deployPanel",
         "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
     + vit("Shadow book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
@@ -9126,7 +9301,7 @@ function renderHomeVitals(){
         "Catalyst positions: nearest exit rung and nearest catalyst window. Click for the sleeve.")
     + vit("Capital", "working " + gp(work) + " · reserve " + gp(DB.reserve || 0)
         + " · shadow " + gp(Math.min(DB.shadowReserve || 0, have)) + esc(fund), "review#tab-shadow",
-        "What the allocator sizes against, the named reserves it never touches, and Shadow-purchase progress. Click for the full fund bars on Review.");
+        "What the allocator sizes against, the named reserves it never touches, and Shadow-purchase progress. Click for the full fund bars on Review."));
 }
 function renderHomeRulings(){
   let n = 0;
@@ -9134,7 +9309,7 @@ function renderHomeRulings(){
   $("#homeRulSub").textContent = n
     ? n + " pending — capped at " + Math.min(10, Math.max(1, DB.rulingsCap || 5)) + " lines, nothing blocks"
     : "";
-  $("#homeRulings").innerHTML = rulingsInline();
+  setHTML("#homeRulings", rulingsInline());
 }
 function renderHomeBlocks(){
   try { trackFlat(); } catch(e){}
@@ -9170,6 +9345,21 @@ document.addEventListener("click", e => {
     return;
   }
   if (e.target.closest("#reviewStart")){ engageReview(); rerenderCk(); return; }
+  const wd = e.target.closest("[data-wdetail]");
+  if (wd){
+    if (!S.wDetail) S.wDetail = new Set();
+    const id = +wd.dataset.wdetail;
+    if (S.wDetail.has(id)) S.wDetail.delete(id); else S.wDetail.add(id);
+    if (onWatch()) renderWatch();
+    return;
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "wFlagFilter"){
+    S.wFilter = e.target.value || "";
+    featTouchMark("btn:wFlagFilter");
+    if (onWatch()) renderWatch();
+  }
 });
 
 /* ═══════════ SHADOW FUND ═══════════ */
@@ -9435,6 +9625,7 @@ function renderNow(){
 }
 
 function renderAll(){
+  if (S.tab !== "home") renderHomeVitals();   // the strip is global; Home refreshes it inside its own block pass
   if (S.tab === "home")    renderHome();
   if (S.tab === "trade"){
     if (S.sub === "scan")     renderScan();
