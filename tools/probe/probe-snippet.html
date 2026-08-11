@@ -2,6 +2,11 @@
 (async function(){
   const out = [];
   const ok = (name, cond, extra) => out.push((cond ? "PASS " : "FAIL ") + name + (cond ? "" : " :: " + (extra || "")));
+  /* The early stub traps app-script parse errors, but its beacon is overwritten
+     by this report — so surface them HERE, first. Without this a syntax error
+     in index.html reads as a cascade of "x is not defined" with no cause. */
+  if (window.__probeErrs && window.__probeErrs.length)
+    for (const e of window.__probeErrs) out.push("FAIL app script error (nothing below ran) :: " + e);
   try {
     window.prompt = () => null; window.confirm = () => true;
 
@@ -27,6 +32,7 @@
     DB.reviewEngagedAt = 0; DB.ckPref = ""; DB.ckDismissAt = 0; DB.flatSince = 0;
     DB.visitStartAt = Date.now(); S.ckExpandOverride = false; S.mode = "walkup";
     DB.shadowExceptions = [];   // exception-lane rulings persist — a prior run's must not leak in
+    DB.strataStats = {}; DB.recipeLog = {}; DB.recipeFlags = [];   // prospecting ledgers are durable by design — a prior run's must not leak in either
     /* Sustained qualification: freeze streak upkeep (the suite controls
        DB.qual by hand) and pre-qualify the core fixture items so allocator
        tests exercise the allocator, not the seasoning clock. */
@@ -506,7 +512,7 @@
     const dep84b = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
     ok("[R8.4] ledger-backed proposal cites persistence and traces the next stage per admitted item",
        S.depProposalCount === 1 && /ledger persistence/.test(dep84b) && /4\+ of the last 7 days/.test(dep84b)
-       && /Both evidence streams agree/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
+       && /Realized overrides make the case and the shadow screen concurs/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84b.slice(-800));
     // restore fixture volumes and ledgers for the next block
     for (const id of [9001, 9002, 9003])
@@ -719,7 +725,7 @@
     const dep2 = document.querySelector("#depBody").innerHTML;
     ok("proposal indicts the ROI floor with numbers, propose-only",
        /ROI floor<\/b> alone blocks 3 items this refresh, 3 with ledger persistence/.test(dep2)
-       && /Both evidence streams agree/.test(dep2)
+       && /Realized overrides make the case and the shadow screen concurs/.test(dep2)
        && /Propose: sustained-ROI floor 1\.2% → 1\.1%/.test(dep2) && /Your ruling/.test(dep2)
        && /Next stage per admitted item/.test(dep2)
        && /nothing changes without your per-gate ruling/i.test(dep2), dep2);
@@ -1529,28 +1535,73 @@
     const wideHits = scanScreenTier(2);
     ok("[R11.1] scout T2 screen admits a 175k item under the widened ceiling",
        wideHits.some(x => x.id === wid), JSON.stringify(wideHits.map(x => x.id)));
-    // discovery slice: sanity-only, ≤15, rotates with the price stamp, collapsed markup
+    // discovery slice: stratified rotation (R29.1 amends R11.2's uniform draw)
     const bnDet = document.querySelector("#beyondNet");
     ok("[R11.2] beyond-the-net section exists collapsed (details element, closed by default)",
        !!bnDet && bnDet.tagName === "DETAILS" && !bnDet.open, bnDet ? bnDet.tagName : "missing");
+    const savedAt = S.latestAt;
+    /* Stratum rotation is a pure function of the price cycle, so the probe
+       can PIN a stratum and give it members instead of hoping the live
+       rotation lands somewhere populated. */
+    const cyc0 = Math.floor(savedAt / POLL_MS);
+    const pinStratum = key => {
+      const idx = STRATA.findIndex(s => s.k === key);
+      S.latestAt = (cyc0 - (cyc0 % STRATA.length) + idx + STRATA.length) * POLL_MS;
+      return idx;
+    };
+    for (const [id, nm] of [[9401, "Probe ring alpha"], [9402, "Probe ring beta"], [9403, "Probe ring gamma"]]) mkItem(id, nm);
+    pinStratum("equip:ring");
+    ok("[R29.1] the rotation lands on the pinned stratum and the pool is stratum-filtered",
+       currentStratum().k === "equip:ring"
+       && beyondNetSample().pick.every(c => /ring/i.test(c.name)),
+       currentStratum().k + " :: " + JSON.stringify(beyondNetSample().pick.map(c => c.name)));
     renderBeyondNet(new Set());
     const bnRows1 = document.querySelectorAll("#beyondNetBody tr").length;
     const bnHTML1 = document.querySelector("#beyondNetBody").innerHTML;
-    ok("[R11.2] slice renders ≤15 sanity-passing rows with full stats and a manual +watch",
-       bnRows1 >= 1 && bnRows1 <= 15 && /data-add=/.test(bnHTML1), "rows=" + bnRows1);
-    const savedAt = S.latestAt;
+    ok("[R11.2] slice renders sanity-passing rows with full stats and a manual +watch, ≤15 stratum + ≤5 gap",
+       bnRows1 >= 1 && bnRows1 <= BEYOND_NET_N + GAP_BAND_N && /data-add=/.test(bnHTML1), "rows=" + bnRows1);
+    ok("[R29.1] every row is stratum-stamped and the header names the cycle's stratum",
+       Array.from(document.querySelectorAll("#beyondNetBody tr")).every(r => /equipment · ring|gap band/.test(r.textContent))
+       && /this cycle's stratum: equipment · ring/.test(document.querySelector("#beyondNetSub").textContent),
+       document.querySelector("#beyondNetSub").textContent);
     renderBeyondNet(new Set());
     ok("[R11.2] sample is stable within one price cycle (seeded by the price stamp)",
        document.querySelector("#beyondNetBody").innerHTML === bnHTML1);
-    let bnRotated = false;
-    for (const dSeed of [987654, 192837465, 55511777]){
-      S.latestAt = savedAt + dSeed;
+    const pinnedAt = S.latestAt;
+    let bnRotated = false, stratumRotated = false;
+    for (let k = 1; k <= 3; k++){
+      S.latestAt = pinnedAt + k * POLL_MS;
       renderBeyondNet(new Set());
-      if (document.querySelector("#beyondNetBody").innerHTML !== bnHTML1){ bnRotated = true; break; }
+      if (currentStratum().k !== "equip:ring") stratumRotated = true;
+      if (document.querySelector("#beyondNetBody").innerHTML !== bnHTML1) bnRotated = true;
     }
     ok("[R11.2] sample rotates when the price cycle advances", bnRotated,
        "slice never changed across 3 cycles — pool=" + S.items.length);
+    ok("[R29.1] the STRATUM itself rotates cycle to cycle — every corner sampled on a clock, not by luck",
+       stratumRotated);
+    // R29.2 — the gap band: its own 250k–1m sample, nothing else watches that range
+    mkItem(9404, "Probe gapband");
+    S.latest[9404] = { high: 520000, low: 500000, highTime: nowS - 60, lowTime: nowS - 120 };
+    S.hour[9404]  = { avgHighPrice: 520000, avgLowPrice: 500000, highPriceVolume: 5000, lowPriceVolume: 5000 };
+    S.latestAt = pinnedAt;
+    const gb = gapBandSample();
+    ok("[R29.2] the gap-band slice samples 250k–1m — the band between the T2 ceiling and the anomaly scan's >1m floor",
+       gb.pick.some(c => c.id === 9404) && gb.pick.every(c => c.buy >= GAP_LO && c.buy <= GAP_HI)
+       && gb.pick.length <= GAP_BAND_N,
+       JSON.stringify(gb.pick.map(c => c.name + ":" + c.buy)));
+    renderBeyondNet(new Set());
+    ok("[R29.2] gap-band rows render in the same table, stamped as their own stratum",
+       /gap band 250k–1m/.test(document.querySelector("#beyondNetBody").innerHTML)
+       && /gap band 250k–1m: [1-9]/.test(document.querySelector("#beyondNetSub").textContent),
+       document.querySelector("#beyondNetSub").textContent);
     S.latestAt = savedAt;
+    /* Teardown: these fixtures exist only to populate a pinned stratum — left
+       in the universe they would leak into every later scanner assertion. */
+    for (const id of [9401, 9402, 9403, 9404]){
+      S.items = S.items.filter(it => it.i !== id); S.byId.delete(id);
+      delete S.latest[id]; delete S.hour[id]; delete S.min5[id]; S.spark.delete(id);
+    }
+    DB.strataStats = {};
 
     // ─── §12: CLOSED-LOOP EDGES (attention, never authority) ───
     DB.intel = []; DB.catalysts = []; DB.anomalyFlags = []; DB.flagArchive = []; DB.rampFlags = [];
@@ -2065,7 +2116,7 @@
     renderDeploy(nearPlan);
     let depHTML = document.querySelector("#depBody").innerHTML;
     ok("[R19.2] streams agree → change-proposal cites both, counts as a ruling",
-       /Both evidence streams agree/.test(depHTML) && /\[real fills/.test(depHTML) && /\[simulated/.test(depHTML)
+       /Realized overrides make the case and the shadow screen concurs/.test(depHTML) && /\[real fills/.test(depHTML) && /\[simulated/.test(depHTML)
        && S.depProposalCount === 1,
        JSON.stringify({ count: S.depProposalCount, html: depHTML.slice(depHTML.indexOf("Proposals"), depHTML.indexOf("Proposals") + 600) }));
     DB.flips = [{ id: Date.now(), itemId: 9002, name: "Probe beta", qty: 10, buy: 4400, sell: 4000, date: dstr(2), note: "" }];
@@ -2359,16 +2410,23 @@
        JSON.stringify(P22b.picks.map(p => p.id)));
     DB.positions = []; DB.slots = 7;
     // R22.6 — beyond-net gate tags: honest about charts, one-tap +watch
-    const it301 = { i: 9301, n: "Probe slice", l: 25000, m: 0, v: 0, a: 0 };
+    const it301 = { i: 9301, n: "Probe ring slice", l: 25000, m: 0, v: 0, a: 0 };   // name carries a stratum so the rotation can draw it
     S.items.push(it301); S.byId.set(9301, it301);
     S.latest[9301] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
     S.hour[9301] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
     ok("[R22.6] a slice item without chart data says gates pending chart — never nothing",
        /gates pending chart/.test(gateTag(9301)), gateTag(9301));
     ok("[R22.6] a chart-loaded full passer reads ✓ gates", /✓ gates/.test(gateTag(9001)), gateTag(9001));
+    /* Pin the rotation to the stratum this fixture belongs to — otherwise the
+       cycle's stratum decides whether the table has rows at all. */
+    const at226 = S.latestAt, cyc226 = Math.floor(at226 / POLL_MS);
+    S.latestAt = (cyc226 - (cyc226 % STRATA.length) + STRATA.findIndex(s => s.k === "equip:ring") + STRATA.length) * POLL_MS;
     renderBeyondNet(new Set());
+    const bnRows226 = Array.from(document.querySelectorAll("#beyondNetBody tr"));
     ok("[R22.6] every slice row carries a gate tag and a one-tap +watch",
-       Array.from(document.querySelectorAll("#beyondNetBody tr")).every(r => r.querySelector(".badge") && r.querySelector("[data-add]")));
+       bnRows226.length > 0 && bnRows226.every(r => r.querySelector(".badge") && r.querySelector("[data-add]")),
+       "rows=" + bnRows226.length);
+    S.latestAt = at226;
     // R22.7 — four-slot rows: ≤4 indicators, chip expands, filter reaches collapsed states
     DB.clusters = [{ id: 1, name: "probe-cluster", members: [9001, 9002], capPct: null, story: "", src: "manual", confirmedAt: now22 }];
     DB.intel = [{ id: "r22-pump", type: "promotion-warning", confidence: "rumor", title: "alpha promoted",
@@ -2559,8 +2617,8 @@
     ok("[R25.2] shadow dot: solid green when shadow-profitable, hollow under 40% fill rate, quarantine-labeled",
        /sdot pos/.test(shadowDot(9002)) && /●/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
        && /◌/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
-    ok("[R25.4] the citation puts the counterfactual in the bench sentence — accruing when profitable, agreeing when not",
-       /\(shadow: 5 trips, would-have-filled 5, net .+sim — evidence accruing toward a proposal\)/.test(shadowCite(9002))
+    ok("[R25.4] the citation puts the counterfactual in the bench sentence — probation candidate when profitable, agreeing when not",
+       /\(shadow screen: 5 trips, would-have-filled 5 at 50% participation, net .+sim — screening: probation candidate/.test(shadowCite(9002))
        && /bench agrees/.test(shadowCite(9004)), shadowCite(9002) + " | " + shadowCite(9004));
     // R25.1 — toxic flow: crafted markout series, 3 marked-out fills, adverse > threshold
     const sellAt25 = now25 - 6 * 3600e3;
@@ -2593,24 +2651,82 @@
     S.wDetail = new Set();
     // R25.5 — discovery-slice near-misses shadow-trade, capped, blacklist excluded
     delete S.latest[9301]; delete S.latest[9099];
+    /* Names carry the pinned stratum (equipment · ring) so the stratified
+       rotation actually draws them; volume 40 makes each a single-gate
+       (volume floor) near-miss. */
     for (let k = 0; k < 7; k++){
-      const id = 9310 + k, itk = { i: id, n: "Probe slice " + k, l: 25000, m: 0, v: 0, a: 0 };
+      const id = 9310 + k, itk = { i: id, n: "Probe ring slice " + k, l: 25000, m: 0, v: 0, a: 0 };
       S.items.push(itk); S.byId.set(id, itk);
       S.latest[id] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 40, lowPriceVolume: 40 };
     }
     DB.blacklist.push(9316);
-    S.latestAt = now25;
+    DB.strataStats = {};
+    const cyc25 = Math.floor(now25 / POLL_MS), ringIdx25 = STRATA.findIndex(s => s.k === "equip:ring");
+    S.latestAt = (cyc25 - (cyc25 % STRATA.length) + ringIdx25 + STRATA.length) * POLL_MS;
     /* Earlier renders already ran the slice scan (it rides every plan read) —
        isolate ONE cycle so the per-cycle cap is what gets measured. */
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     shadowScan(buildPlan());
     const slice25 = DB.shadowBook.filter(p => p.slice);
-    ok("[R25.5] slice near-misses accrue counterfactuals — capped at 5/cycle, single-gate stamped, blacklist excluded",
-       slice25.length === 5 && slice25.every(p => p.benchedBy && p.benchedBy.length === 1)
+    ok("[R25.5] slice near-misses accrue counterfactuals — single-gate stamped, blacklist excluded, ledger bound held",
+       slice25.length && slice25.length <= SLICE_SHADOW_CAP
+       && slice25.every(p => p.slicePass || (p.benchedBy && p.benchedBy.length === 1))
        && !slice25.some(p => p.itemId === 9316),
-       JSON.stringify(slice25.map(p => p.itemId + ":" + p.benchedBy[0])));
+       JSON.stringify(slice25.map(p => p.itemId + ":" + (p.slicePass ? "CLEAN" : p.benchedBy[0]))));
+    ok("[R29.1] every slice counterfactual carries its stratum stamp, and the sampling ledger counts DISTINCT items only",
+       slice25.every(p => p.stratum === "equip:ring" || p.stratum === "gap")
+       && (DB.strataStats["equip:ring"] || {}).samp > 0
+       && (() => {
+            /* The ledger grows while new items are still being drawn, then
+               CONVERGES: a re-draw of an item already evaluated is not a
+               second test. Scan until the pool is exhausted, then assert the
+               count stops moving and matches the distinct-id set exactly. */
+            for (let k = 0; k < 6; k++) shadowScan(buildPlan());
+            const st = DB.strataStats["equip:ring"], before = st.samp;
+            shadowScan(buildPlan()); shadowScan(buildPlan());
+            return st.samp === before && st.samp === st.ids.length
+                && new Set(st.ids).size === st.ids.length
+                && !st.ids.includes(9316);   // blacklisted items are never even sampled
+          })(),
+       JSON.stringify({ strat: slice25.map(p => p.itemId + ":" + p.stratum),
+                        ring: DB.strataStats["equip:ring"] }));
+    // R29.5(a) — a clean gate-passer from a random draw enters at FULL eligibility
     DB.blacklist = DB.blacklist.filter(x => x !== 9316);
+    DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
+    DB.strataStats = {};
+    for (let k = 0; k < 7; k++)   // healthy volume: these now clear every gate
+      S.hour[9310 + k] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    for (let k = 0; k < 7; k++){
+      const id = 9310 + k, pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+      for (let j = 0; j < 168; j++){ const mid = 4200 + ((j % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS - (168 - j) * 3600, mid }); }
+      S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
+      DB.qual[id] = { n: 3, firstAt: Date.now() - 3 * 3600e3, lastAt: Date.now() - 3600e3 };
+    }
+    S.qualStamp = S.latestAt + "|" + S.hourAt;
+    shadowScan(buildPlan());
+    const clean25 = DB.shadowBook.filter(p => p.slicePass);
+    ok("[R29.5] a slice item clearing EVERY gate enters the shadow cohort at full eligibility — no bench stamp",
+       clean25.length > 0 && clean25.every(p => !p.benchedBy && p.slice && p.cleanFind > 0)
+       && (DB.strataStats["equip:ring"] || {}).pass > 0,
+       JSON.stringify({ n: clean25.length, stats: DB.strataStats["equip:ring"] }));
+    DB.prevOpenAt = now25 - 3600e3;
+    const dlClean = homeDeltaLines() || [];
+    ok("[R29.5] the clean gate-passer surfaces in WHAT CHANGED, named, with its stratum",
+       dlClean.some(l => /discovery slice found a clean gate-passer: Probe ring slice/.test(l.txt)
+                      && /equipment · ring/.test(l.txt)),
+       JSON.stringify(dlClean.map(l => l.txt).slice(0, 6)));
+    // R29.5(b) — the slice's yield is a number in the review's discovery section
+    const prosp25 = prospectingInline();
+    ok("[R29.5] the weekly discovery section states the slice hit rate: sampled, near-misses, clean passers, slice-cohort sim P&L",
+       /Slice hit rate/.test(prosp25) && /distinct items sampled/.test(prosp25)
+       && /clean gate-passer/.test(prosp25) && /slice-cohort trip/.test(prosp25),
+       prosp25.slice(prosp25.indexOf("Slice hit rate"), prosp25.indexOf("Slice hit rate") + 320));
+    ok("[R29.3] the per-stratum map accumulates durably and names each region's verdict",
+       /equipment · ring —/.test(prosp25) && /Gap band 250k–1m/.test(prosp25),
+       prosp25.slice(0, 400));
+    DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
+    DB.strataStats = {};
 
     // ═══ R26 SHADOW-BACKED EXCEPTION LANE (Aug 11 2026) — per-item, evidence-gated, ruled ═══
     exemptIds.add(9320); exemptIds.add(9321);
@@ -2638,7 +2754,7 @@
     setTab("home");
     ok("[R26.1] the proposal rides the rulings digest with its one-tap grant",
        /data-excgrant="9320"/.test(document.querySelector("#homeRulings").innerHTML)
-       && /shadow evidence contradicts the bench/.test(document.querySelector("#homeRulings").innerHTML));
+       && /shadow screen ranks a probation candidate/.test(document.querySelector("#homeRulings").innerHTML));
     document.querySelector('#homeRulings [data-excgrant="9320"]').click();
     ok("[R26.2] one tap grants — decision-logged, probation active",
        DB.shadowExceptions.length === 1 && DB.shadowExceptions[0].status === "active"
@@ -2689,6 +2805,267 @@
     renderWatch();
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
+  }
+  try {
+    // ═══ R18.5 HAIRCUT · R27 SCREENING REWEIGHT · R28 SCANNER COHORT (Aug 11 2026) ═══
+    const now27 = Date.now(), nowS27 = Math.floor(now27 / 1000);
+    /* local clone of the main block's mkItem — that const is scoped to the first try */
+    const mkItem27 = (id, n) => {
+      const it = { i: id, n, l: 25000, m: 0, v: 0, a: 0 };
+      S.items.push(it); S.byId.set(id, it);
+      S.latest[id] = { high: 4400, low: 4000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
+      S.hour[id]  = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+      S.min5[id]  = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+      const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+      for (let k = 0; k < 168; k++){ const mid = 4200 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS27 - (168 - k) * 3600, mid }); }
+      S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
+    };
+    DB.shadowPartPct = 50; DB.markoutX = 0.5;
+    DB.anomalyFlags = []; DB.intel = []; DB.rampFlags = [];
+    // R18.5 — the conservative leg and the 100%-participation reading accrue together
+    DB.shadowBook = [{ id: 9701, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
+      qty: 20, bid: 4001, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0,
+      obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
+    S.latest[9002] = { high: 4500, low: 4000, highTime: nowS27, lowTime: nowS27 };
+    S.min5[9002] = { highPriceVolume: 40, lowPriceVolume: 40 };
+    shadowTick();
+    const sb27 = DB.shadowBook[0];
+    const tape27 = Math.max(1, Math.floor(40 * GATE.capture));
+    const cons27 = Math.max(1, Math.floor(tape27 * 0.5));
+    ok("[R18.5] participation haircut: conservative leg claims capture × 50% of the tape, the 100% reading accrues beside it",
+       sb27.buyQ === cons27 && sb27.buyQFull === tape27 && sb27.buyQFull > sb27.buyQ,
+       JSON.stringify({ buyQ: sb27.buyQ, buyQFull: sb27.buyQFull, tape: tape27 }));
+    ok("[R18.5] the participation knob clamps to [10,100]%",
+       (() => { DB.shadowPartPct = 5; const lo = shadowPart(); DB.shadowPartPct = 200; const hi = shadowPart();
+                DB.shadowPartPct = 50; return lo === 0.1 && hi === 1; })());
+    // R18.5 — both readings render in the ledger; the conservative number leads
+    const mk27 = (id, i, state, net, tOff, gate, extra) => Object.assign({ id: 9710 + i, fam: "t27:" + id + ":" + i,
+      itemId: id, name: itemName(id), qty: 10, bid: 4001, ask: 4399, t: now27 - tOff, buyQ: state === "unfilled" ? 0 : 10,
+      sellQ: state === "filled" ? 10 : 0, buyDone: state === "unfilled" ? 0 : now27 - tOff, obsMs: 3600e3, lastObs: 1,
+      state, regimes: [], benchedBy: [gate], closedAt: now27 - tOff + 3600e3, net }, extra || {});
+    DB.shadowBook = [
+      mk27(9002, 0, "filled", 8000, 9 * 86400e3, "ROI floor", { buyQFull: 10 }),
+      mk27(9002, 1, "filled", 8000, 5 * 86400e3, "ROI floor", { buyQFull: 10 }),
+      mk27(9002, 2, "unfilled", 0, 1 * 86400e3, "ROI floor", { buyQFull: 10 })   // the tape at 100% would have covered it
+    ];
+    ok("[R18.5] the cite reports both readings — filled at 50% participation / would also fill at 100%",
+       /would-have-filled 2 at 50% participation \(3 at 100%\)/.test(shadowCite(9002)), shadowCite(9002));
+    // R27.1 — screening labels everywhere; standing self-impact caveat on the panel
+    ok("[R27.1] a profitable slice reads probation candidate, never evidence accruing",
+       /screening: probation candidate/.test(shadowCite(9002)) && !/evidence accruing/.test(shadowCite(9002)), shadowCite(9002));
+    ok("[R27.1] the row dot labels the screen, not evidence",
+       /ranks probation candidates, not evidence/.test(shadowDot(9002)), shadowDot(9002));
+    const shAud27 = shadowAuditInline();
+    ok("[R27.1] the shadow panel carries the standing self-impact caveat",
+       /Screening tool, not evidence/.test(shAud27) && /thin books change when you post/.test(shAud27)
+       && /ranked shortlist of probation candidates/.test(shAud27), shAud27.slice(0, 500));
+    ok("[R18.5] the per-gate ledger line reports both participation readings",
+       /at 50% participation \(would also fill \d+ at 100%\)/.test(shAud27), shAud27.slice(0, 1200));
+    // R27.3 — regime divergence: probation slots, never "the regime is right"
+    const dst27 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
+    DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dst27(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
+    const evd27 = shadowRegimeEvidence();
+    ok("[R27.3] regime divergence reads 'candidates earned probation slots', never 'the regime is right'",
+       !!evd27 && /earned probation slots/.test(evd27.html) && /not proof the regime is right/.test(evd27.html)
+       && /moves only on your ruling/.test(evd27.html), evd27 && evd27.html);
+    DB.shadowDivLog = [];
+    // R27.3 — exception proposals are a RANKED shortlist (conservative sim net, best first)
+    DB.shadowExceptions = []; DB.shadowBook = [];
+    for (let i = 0; i < 5; i++) DB.shadowBook.push(mk27(9331, 20 + i, "filled", 9000, (9 - i * 2) * 86400e3, "ROI floor"));
+    for (let i = 0; i < 5; i++) DB.shadowBook.push(mk27(9330, 30 + i, "filled", 2000, (9 - i * 2) * 86400e3, "ROI floor"));
+    const rank27 = exceptionProposals();
+    ok("[R27.3] the exception shortlist ranks by conservative sim net, best case first",
+       rank27.length === 2 && rank27[0].id === 9331 && rank27[1].id === 9330,
+       JSON.stringify(rank27.map(x => x.id + ":" + Math.round(x.s.net))));
+    // R27.2 — adjudication names adverse markout: profitable-but-toxic revokes
+    const sellAt27 = now27 - 6 * 3600e3;
+    const ser27 = [];
+    for (let t = now27 - 48 * 3600e3; t <= now27; t += 1800e3)
+      ser27.push({ t: Math.floor(t / 1000), mid: t <= sellAt27 - 1700e3 ? 5000 : t >= sellAt27 + 1700e3 ? 5700 : 5350 });
+    const it27 = { i: 9322, n: "Probe markout", l: 25000, m: 0, v: 0, a: 0 };
+    S.items.push(it27); S.byId.set(9322, it27);
+    S.spark.set(9322, { at: now27, pts: [], vols: [], byHour: new Array(24).fill(0), series: ser27, noData: false });
+    DB.shadowExceptions = [{ id: 9322, gate: "ROI floor", grantedAt: sellAt27 - 10e3, trips: 0, status: "active",
+      evidence: { n: 5, filled: 5, net: 30000 } }];
+    DB.flips = [0, 1, 2].map(k => ({ id: sellAt27 + k * 1000, itemId: 9322, name: "Probe markout", qty: 10,
+      buy: 5100, sell: 5450, bh: 1, sh: 1, date: today(), note: "" }));
+    adjudicateExceptions();
+    const e27 = DB.shadowExceptions[0];
+    ok("[R27.2] profitable probation trips with toxic markouts REVOKE — adverse markout is a named criterion beside net P&L",
+       e27.status === "revoked" && e27.divergence === 1 && e27.realNet > 0 && e27.mkAdverse < 0
+       && DB.decisionLog.some(x => x.kind === "exception" && /profitable but markout-toxic/.test(x.action)),
+       JSON.stringify(e27));
+    ok("[R27.2] untimed probation trips adjudicate on net alone and the log says so (earlier waiver's record)",
+       DB.decisionLog.some(x => x.kind === "exception" && /markout unavailable \(untimed trips\)/.test(x.reason || "")
+         && /standing waiver/.test(x.action)),
+       JSON.stringify(DB.decisionLog.filter(x => x.kind === "exception").slice(-4)));
+    DB.flips = []; DB.shadowExceptions = [];
+    // R28.2 — populations separate: gate reads exclude the scanner cohort; provenance labels the slice
+    DB.shadowBook = [
+      mk27(9002, 40, "filled", 5000, 3 * 86400e3, "ROI floor"),
+      Object.assign(mk27(9330, 41, "filled", 7000, 3 * 86400e3, "ROI floor"), { cohort: "scanner", scanTier: 1, score: 100 })
+    ];
+    const bg28 = shadowByGate().get("ROI floor");
+    ok("[R28.2] the per-gate counterfactual reads watchlist+slice only — scanner trips never mix into a gate verdict",
+       !!bg28 && bg28.n === 1, JSON.stringify(bg28 && { n: bg28.n }));
+    ok("[R28.2] scanner provenance labels the item's book",
+       (shadowSlice(9330).regs || []).includes("scanner·T1"), JSON.stringify(shadowSlice(9330).regs));
+    const aud28 = shadowAuditInline();
+    ok("[R28.2] FILTER OPPORTUNITY COST compares scanner-cohort vs watchlist-cohort net over the same window",
+       /Filter opportunity cost/.test(aud28) && /scanner-cohort shadow trips closed: 1/.test(aud28)
+       && /scanner·T1 1/.test(aud28) && /vs watchlist-cohort net/.test(aud28)
+       && /No filter-opportunity signal/.test(aud28), aud28.slice(0, 1600));
+    // R28.4 — one stage per move: scanner evidence nominates admission, never probation
+    DB.shadowBook = [];
+    for (let i = 0; i < 5; i++) DB.shadowBook.push(Object.assign(
+      mk27(9331, 50 + i, "filled", 9000, (9 - i * 2) * 86400e3, "ROI floor"), { cohort: "scanner", scanTier: 2, score: 50 }));
+    ok("[R28.4] scanner-cohort trips never ground a probation proposal",
+       exceptionEvidence(9331) === null && exceptionProposals().length === 0,
+       JSON.stringify(exceptionProposals().map(x => x.id)));
+    ok("[R28.4] ≥3 profitable scanner-cohort trips earn the scout attention boost — and only then",
+       scannerShadowBoost().has(9331) && !scannerShadowBoost().has(9002));
+    // R28.1 — the cohort scan opens ranked unwatched passers/near-misses, provenance-stamped, bounded
+    DB.shadowBook = [];
+    S.latestAt = S.latestAt || Date.now(); S.hourAt = S.hourAt || Date.now();
+    S.lastShadowScan = 0; S.shadowScanBusy = false;
+    // dedicated UNWATCHED screen-passers (same market shape as the 9001 fixture, sparks pre-set by the item maker)
+    mkItem27(9340, "Probe cohort a"); mkItem27(9341, "Probe cohort b"); mkItem27(9342, "Probe cohort c"); mkItem27(9343, "Probe cohort d");
+    const passers28 = [...new Set([1, 2].flatMap(t => scanScreenTier(t, SHADOW_LOOSE).map(x => x.id))
+      .filter(id => !DB.watch.some(w => w.id === id)))];
+    ok("[R28.1] the loose screen offers the unwatched fixture items to the cohort",
+       [9340, 9341, 9342, 9343].every(id => passers28.includes(id)), JSON.stringify(passers28.slice(0, 20)));
+    const spark28 = S.spark.get(9001);
+    for (const id of passers28) if (!S.spark.get(id)) S.spark.set(id, Object.assign({}, spark28, { at: Date.now() }));
+    await scannerShadowScan();
+    const coh28 = DB.shadowBook.filter(p => p.cohort === "scanner");
+    ok("[R28.1] the scanner cohort opens top-ranked unwatched gate-passers/single-near-misses, ≤8 per tier, provenance-stamped",
+       coh28.length > 0
+       && coh28.every(p => (p.scanTier === 1 || p.scanTier === 2) && !DB.watch.some(w => w.id === p.itemId)
+            && (!p.benchedBy || p.benchedBy.length === 1) && !isBlk(p.itemId))
+       && coh28.filter(p => p.scanTier === 1).length <= 8 && coh28.filter(p => p.scanTier === 2).length <= 8,
+       JSON.stringify(coh28.map(p => p.itemId + ":T" + p.scanTier + ":" + (p.benchedBy || ["pass"])[0])));
+    const n28 = DB.shadowBook.length;
+    await scannerShadowScan();
+    ok("[R28.1] the cohort scan self-throttles to the scout cadence", DB.shadowBook.length === n28);
+    // R28.3 — at the 40-open cap the scanner cohort evicts its own lowest score; other cohorts untouched
+    DB.shadowBook = [];
+    for (let i = 0; i < SHADOW_MAX_OPEN - 1; i++)
+      DB.shadowBook.push(Object.assign(mk27(9002, 100 + i, "filled", 0, 3600e3, "ROI floor"),
+        { id: 98000 + i, fam: "wl27:" + i, itemId: 80000 + i, state: "open", closedAt: undefined, buyQ: 0, sellQ: 0 }));
+    DB.shadowBook.push(Object.assign(mk27(9002, 200, "filled", 0, 3600e3, "ROI floor"),
+      { id: 98999, fam: "scanlow", itemId: 81000, state: "open", closedAt: undefined, buyQ: 0, sellQ: 0,
+        cohort: "scanner", scanTier: 1, score: 1 }));
+    S.lastShadowScan = 0;
+    await scannerShadowScan();
+    const open28 = shadowOpen();
+    ok("[R28.3] eviction: lowest-score scanner position yields to a better-scored candidate; watch-cohort positions never evicted",
+       open28.length <= SHADOW_MAX_OPEN && !open28.some(p => p.itemId === 81000)
+       && open28.filter(p => p.cohort !== "scanner").length === SHADOW_MAX_OPEN - 1,
+       JSON.stringify({ open: open28.length, scanner: open28.filter(p => p.cohort === "scanner").length }));
+    // ═══ R29.4 DURABLE PROSPECTING LEDGER · R30 HOURS · R31 RECIPE BASIS ═══
+    // R29.4 — the per-stratum ledger must outlive the shadow book's 30d pruning
+    DB.shadowBook = []; DB.strataStats = {};
+    /* The record is ALREADY past the retention window when the tick runs, so
+       this only passes if the roll happens BEFORE the prune — the ordering is
+       the requirement, and a same-tick roll would pass either way. */
+    DB.shadowBook.push(Object.assign(mk27(9002, 300, "filled", 4200, 3600e3, "volume floor"),
+      { stratum: "equip:ring", slice: 1, closedAt: now27 - 45 * 86400e3 }));
+    shadowTick();
+    ok("[R29.4] closed slice outcomes roll into the durable ledger BEFORE the 30d pruning — an outcome is never lost to retention",
+       !DB.shadowBook.some(p => p.stratum === "equip:ring")
+       && (DB.strataStats["equip:ring"] || {}).trips === 1
+       && DB.strataStats["equip:ring"].net === 4200 && DB.strataStats["equip:ring"].filled === 1,
+       JSON.stringify({ ledger: DB.strataStats["equip:ring"], book: DB.shadowBook.length }));
+    ok("[R29.4] a rolled record never double-counts on a later tick",
+       (() => { DB.shadowBook = [Object.assign(mk27(9002, 301, "filled", 1000, 3600e3, "volume floor"),
+                  { stratum: "gap", slice: 1 })];
+                shadowTick(); shadowTick(); shadowTick();
+                return DB.strataStats.gap.trips === 1 && DB.strataStats.gap.net === 1000; })(),
+       JSON.stringify(DB.strataStats.gap));
+    // R30 — hours ledger: two streams, natures separated
+    DB.shadowBook = [];
+    const at3 = new Date(now27); at3.setHours(3, 0, 0, 0);
+    const sp30 = S.spark.get(9001);
+    const roiH = new Array(24).fill(1.0); roiH[3] = 5.0; roiH[4] = 4.5; roiH[2] = 4.2;
+    S.spark.set(9001, Object.assign({}, sp30, { roiHour: roiH }));
+    for (let i = 0; i < 4; i++)
+      DB.shadowBook.push(Object.assign(mk27(9002, 310 + i, i < 3 ? "filled" : "unfilled", i < 3 ? 900 : 0, 0, "volume floor"),
+        { t: at3.getTime() }));
+    const hl30 = hoursLedger();
+    ok("[R30.1] the hours ledger buckets the market stream (post-tax spread, presence-independent) and the shadow stream by hour",
+       hl30[3].mkt === 5.0 && hl30[3].items === 1 && hl30[3].n === 4 && hl30[3].filled === 3
+       && Math.abs(hl30[3].fillRate - 0.75) < 1e-9 && hl30[12].n === 0,
+       JSON.stringify({ h3: hl30[3], h12: hl30[12] }));
+    const hi30 = hoursLedgerInline();
+    ok("[R30.1] the panel separates the streams by nature and calls unobserved hours no-data, never bad hours",
+       /Market<\/b> \(post-tax spread by hour/.test(hi30) && /unbiased one/.test(hi30)
+       && /only accrues while the tracker is open/.test(hi30)
+       && /no data|never observed/.test(hi30) && /03:00/.test(hi30),
+       hi30.slice(0, 700));
+    ok("[R30.2] the overnight question is answered from both streams, with the sizing case stated as a proposal",
+       /Overnight \(00:00–06:00\)/.test(hi30) && /WIDER than your waking hours/.test(hi30)
+       && /Shadow corroboration: 3 of 4 overnight sim trips filled/.test(hi30)
+       && /sizing the standing overnight book heavier/.test(hi30) && /never applied from here/.test(hi30),
+       hi30.slice(hi30.indexOf("Overnight"), hi30.indexOf("Overnight") + 500));
+    S.spark.set(9001, sp30);
+    // R31 — recipe basis: name-resolved, patient convention, break flagged with leg attribution
+    DB.shadowBook = []; DB.recipeLog = {}; DB.recipeFlags = [];
+    for (const [id, nm, hi, lo] of [[9500, "Ranarr weed", 10000, 9900], [9501, "Grimy ranarr weed", 9900, 9800],
+                                    [9502, "Snapdragon", 20000, 19800], [9503, "Grimy snapdragon", 19900, 19700]]){
+      const itr = { i: id, n: nm, l: 11000, m: 1, v: 0, a: 0 };
+      S.items.push(itr); S.byId.set(id, itr);
+      S.latest[id] = { high: hi, low: lo, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
+      S.hour[id] = { avgHighPrice: hi, avgLowPrice: lo, highPriceVolume: 90000, lowPriceVolume: 90000 };
+    }
+    const b31 = recipeBasis(RECIPES.find(r => r.k === "clean:ranarr"));
+    const want31 = 10000 - geTax(10000, 9500) - 9800;
+    ok("[R31.1] recipes resolve by NAME against the live mapping and price on the patient convention (output ask net of tax − input bids)",
+       b31.m === want31 && b31.outId === 9500 && b31.inIds[0] === 9501,
+       JSON.stringify({ got: b31.m, want: want31 }));
+    ok("[R31.1] an unresolvable leg renders unresolved rather than a confidently wrong number",
+       (() => { const u = recipeBasis({ k: "x", out: "Ranarr weed", ins: ["No such item at all"] });
+                return !!u.unresolved && u.unresolved.includes("No such item at all"); })());
+    const dstr31 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
+    DB.recipeLog["clean:ranarr"] = [6, 5, 4, 3, 2].map(n => ({ d: dstr31(n), m: want31, l: [10000, 9800] }));
+    recipeTick();
+    ok("[R31.1] the daily ledger writes one row per day, last write wins, and the baseline excludes today's own reading",
+       DB.recipeLog["clean:ranarr"].length === 6
+       && DB.recipeLog["clean:ranarr"][5].d === today()
+       && recipeBaseline("clean:ranarr").n === 5 && !DB.recipeFlags.length,
+       JSON.stringify(DB.recipeLog["clean:ranarr"].slice(-2)));
+    S.latest[9501] = { high: 9900, low: 5000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };   // the input leg collapses
+    recipeTick();
+    const f31 = (DB.recipeFlags || [])[0];
+    ok("[R31.2] a basis at 2× its own normal flags, with the mispriced leg named — the flip signal and the pump tell in one line",
+       !!f31 && f31.k === "clean:ranarr" && f31.leg && f31.leg.name === "Grimy ranarr weed"
+       && f31.leg.movePct < -40 && f31.m >= RECIPE_FLAG_X * f31.base,
+       JSON.stringify(f31));
+    const ri31 = recipeBasisInline();
+    ok("[R31.2] the basis table states the convention, the break, and both readings of it",
+       /output sold at its ask net of tax, inputs bought at their bid/.test(ri31)
+       && /basis break/.test(ri31) && /widest-moving leg/.test(ri31)
+       && /manipulation tell/.test(ri31) && /caps nothing/.test(ri31),
+       ri31.slice(0, 600));
+    ok("[R31.2] a recipe without enough history says its baseline is accruing instead of flagging noise",
+       /baseline accruing/.test(ri31), ri31.slice(ri31.indexOf("baseline accruing") - 120, ri31.indexOf("baseline accruing") + 80));
+    DB.prevOpenAt = now27 - 3600e3;
+    const dl31 = homeDeltaLines() || [];
+    ok("[R31.2] a fresh break surfaces in WHAT CHANGED with the leg that moved",
+       dl31.some(l => /recipe basis break: Ranarr weed/.test(l.txt) && /Grimy ranarr weed moved/.test(l.txt)),
+       JSON.stringify(dl31.map(l => l.txt).slice(0, 6)));
+    for (const id of [9500, 9501, 9502, 9503]){
+      S.items = S.items.filter(it => it.i !== id); S.byId.delete(id);
+      delete S.latest[id]; delete S.hour[id];
+    }
+    DB.recipeLog = {}; DB.recipeFlags = []; DB.strataStats = {};
+    // teardown
+    DB.shadowBook = []; DB.flips = []; DB.shadowExceptions = []; DB.shadowPartPct = 50;
+    S.items = S.items.filter(it => it.i !== 9322); S.byId.delete(9322);
+    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.latest[9002] = { high: 4400, low: 4000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
+    save();
+  } catch(e){
+    out.push("FAIL shadow-screening :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
