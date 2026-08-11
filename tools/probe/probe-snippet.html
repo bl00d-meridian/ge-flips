@@ -2935,6 +2935,36 @@
                              { id: 9004, gate: "ROI floor", grantedAt: Date.now(), trips: 0, status: "active", evidence: { n: 5, filled: 5, net: 1 } });
     ok("[R26.4] at the cap (2 active) no further proposals render — probes of the gate's edges, not a permission system",
        exceptionProposals().length === 0);
+    // R26.5 — a ruling that outlived its justification must be RE-MADE, not inherited
+    DB.shadowExceptions = [{ id: 9320, gate: "ROI floor", grantedAt: Date.now() - 3 * 86400e3, trips: 0,
+      status: "active", evidence: { n: 5, filled: 5, net: 30000 }, evidenceVoid: 1 }];
+    DB.shadowBook = [];
+    setTab("home");
+    const voidHTML = document.querySelector("#homeRulings").innerHTML;
+    ok("[R26.5] a void-basis exception raises its own walk-up ruling line with both ways out",
+       /was granted on discarded evidence/.test(voidHTML)
+       && /data-excreaffirm="9320"/.test(voidHTML) && /data-excrevoke="9320"/.test(voidHTML)
+       && /no new-epoch evidence yet/.test(voidHTML),
+       voidHTML.slice(voidHTML.indexOf("discarded evidence") - 160, voidHTML.indexOf("discarded evidence") + 260));
+    document.querySelector('#homeRulings [data-excreaffirm="9320"]').click();
+    ok("[R26.5] re-affirming with no new-epoch evidence clears the flag and logs it as JUDGMENT, not evidence",
+       !DB.shadowExceptions[0].evidenceVoid && DB.shadowExceptions[0].reaffirmedAt > 0
+       && DB.decisionLog.some(x => x.kind === "exception" && /no new-epoch evidence yet/.test(x.action)
+                                && /your judgment, not the sim's/.test(x.reason || "")),
+       JSON.stringify(DB.shadowExceptions[0]));
+    ok("[R26.5] the line leaves the digest once ruled — it does not nag after the decision is made",
+       (() => { setTab("home"); return !/was granted on discarded evidence/.test(document.querySelector("#homeRulings").innerHTML); })());
+    // and with new-epoch evidence it re-affirms ON that evidence, said differently
+    DB.shadowExceptions = [{ id: 9320, gate: "ROI floor", grantedAt: Date.now() - 3 * 86400e3, trips: 0,
+      status: "active", evidence: { n: 5, filled: 5, net: 30000 }, evidenceVoid: 1 }];
+    for (let i = 0; i < 5; i++)
+      DB.shadowBook.push(mkShadow(9320, 600 + i, "filled", 6000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
+    reaffirmException(9320);
+    ok("[R26.5] with a qualifying new epoch it re-affirms ON that evidence, and the log says which case it was",
+       !DB.shadowExceptions[0].evidenceVoid
+       && DB.decisionLog.some(x => x.kind === "exception" && /re-affirmed on the new epoch's evidence/.test(x.action))
+       && DB.shadowExceptions[0].evidence.n === 5,
+       JSON.stringify(DB.shadowExceptions[0]));
     DB.shadowExceptions = []; DB.flips = []; DB.shadowBook = [];
     DB.watch = DB.watch.filter(w => w.id !== 9320 && w.id !== 9321);
     S.spark.set(9001, sp25);

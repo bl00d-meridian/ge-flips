@@ -5185,6 +5185,46 @@ function grantException(id){
   rerenderCk(); updatePendBadge();
   if (onWatch()) renderWatch();
 }
+/* VOID-BASIS RE-RULING (user ruling, Aug 11 2026). The purge discarded the
+   paper evidence that grounded every granted exception, and "a ruling that
+   survives its own justification should have to be re-made, not just persist
+   by inertia". So a void-basis exception raises a ruling line every walk-up
+   until it is either revoked or deliberately re-affirmed. Re-affirming is the
+   user's call, not the sim's — but the decision log records exactly which
+   case it was, because "re-made on new evidence" and "re-made on judgment
+   with no evidence yet" are different claims and must not read alike. */
+const excVoidBasis = () => (DB.shadowExceptions || [])
+  .filter(e => e.evidenceVoid && (e.status === "active" || e.status === "waived"));
+/* Does the CURRENT epoch's paper record clear the same bar the original grant
+   needed? Cap-blind and grant-blind, so it can be asked about a live one. */
+function excNewEpochEvidence(id){
+  const s = shadowSlice(id, true);
+  return (s && s.n >= EXC_MIN_TRIPS && s.fillRate >= EXC_FILLRATE && s.net > 0 && s.spanD >= EXC_MIN_DAYS)
+    ? s : null;
+}
+function reaffirmException(id){
+  const e = excFor(id);
+  if (!e || !e.evidenceVoid) return;
+  const s = excNewEpochEvidence(id);
+  delete e.evidenceVoid;
+  e.reaffirmedAt = Date.now();
+  if (s){
+    e.evidence = { n: s.n, filled: s.bought, net: Math.round(s.net) };
+    logDecision("exception", itemName(id), "re-affirmed on the new epoch's evidence",
+      e.gate + " — the original grant's paper evidence was discarded with the corrupted book; the new epoch independently clears the same bar ("
+      + s.n + " trips, " + s.bought + " filled, net " + gp(Math.round(s.net))
+      + " sim over " + Math.round(s.spanD) + " days). The exception stands on evidence that exists.");
+  } else {
+    const cur = shadowSlice(id, true);
+    logDecision("exception", itemName(id), "re-affirmed by hand — no new-epoch evidence yet",
+      e.gate + " — the original grant's paper evidence was discarded with the corrupted book, and the new epoch does not yet clear the bar ("
+      + (cur ? cur.n + " closed trip" + (cur.n === 1 ? "" : "s") : "no closed trips") + " since the reset). "
+      + "This is your judgment, not the sim's: the exception continues because you re-made the call, not because the evidence was re-established.");
+  }
+  save(); rerenderCk(); updatePendBadge();
+  if (onWatch()) renderWatch();
+  toast("Exception re-affirmed for " + itemName(id) + (s ? " — new-epoch evidence clears the bar." : " — recorded as your judgment; no new-epoch evidence yet."));
+}
 function revokeException(id){
   const e = excFor(id);
   if (!e) return;
@@ -6521,6 +6561,10 @@ function watchDetailRow(w, c, sp, P, risks){
         + exc.trips + '/' + EXC_ADJ_TRIPS + ' adjudication trips logged'
       : 'STANDING WAIVER — ' + esc(exc.gate) + ' (adjudicated: ' + EXC_ADJ_TRIPS + ' probation trips net '
         + gp(exc.realNet || 0) + ' realized)')
+    + (exc.evidenceVoid
+      ? ' <span class="badge b-risk" title="The paper evidence this grant rested on was discarded with the corrupted book (force-exit defect). The ruling stands until you re-make it — it is queued in the rulings digest.">basis void — re-rule</span>'
+        + ' <button class="sm" data-excreaffirm="' + w.id + '" title="Re-affirm this exception. Logged as re-made ON the new epoch\'s evidence if it clears the bar, or as YOUR judgment if it does not.">re-affirm</button>'
+      : '')
     + ' <button class="sm ghost" data-excrevoke="' + w.id + '" title="Revoke the exception — the item returns to the gate\'s normal verdict. Decision-logged.">revoke</button></div>');
   return '<tr class="wdet"><td colspan="16"><div class="wdetbox">' + bits.join("") + '</div></td></tr>';
 }
@@ -9261,6 +9305,22 @@ function pendingRulingItems(){
   } catch(e){ /* advisory only */ }
   /* Exception-lane proposals ride the same queue as every ruling (one tap
      from Home). Suppressed at the cap — the bench line says so instead. */
+  /* An exception whose grounding evidence was discarded must be re-made, not
+     inherited (user ruling, Aug 11 2026) — it holds its line in the digest
+     until ruled either way. */
+  try {
+    for (const e0 of excVoidBasis()){
+      const key = "excvoid:" + e0.id;
+      const fresh = excNewEpochEvidence(e0.id);
+      items.push({ key, pri: 2, sort: 0, snoozed: rulingSnoozed(key),
+        html: '⚖ exception for <b>' + esc(itemName(e0.id)) + '</b> was granted on discarded evidence — revoke, or re-grant on the new epoch\'s data? '
+          + '<span class="dim">(' + esc(e0.gate) + ' waived ' + esc(ago(e0.grantedAt)) + '; '
+          + (fresh ? 'the new epoch independently clears the bar — ' + fresh.n + ' trips, net ' + gp(Math.round(fresh.net)) + ' sim'
+                   : 'no new-epoch evidence yet — re-affirming records it as your judgment, not the sim\'s') + ')</span>'
+          + ' <button class="sm" data-excreaffirm="' + e0.id + '" title="Re-affirm this exception. Decision-logged as re-made ON the new epoch\'s evidence if it clears the bar, or as YOUR judgment with no evidence yet if it does not — the two are different claims and the log keeps them apart.">re-affirm</button>'
+          + ' <button class="sm ghost" data-excrevoke="' + e0.id + '" title="Revoke — the item returns to the gate\'s normal verdict. Decision-logged.">revoke</button>' });
+    }
+  } catch(e){ /* advisory only */ }
   try {
     for (const ev of exceptionProposals()){
       const key = "exc:" + ev.id;
@@ -10646,6 +10706,8 @@ document.addEventListener("click", e => {
   if (eg){ grantException(+eg.dataset.excgrant); return; }
   const er = e.target.closest("[data-excrevoke]");
   if (er){ revokeException(+er.dataset.excrevoke); return; }
+  const ea = e.target.closest("[data-excreaffirm]");
+  if (ea){ reaffirmException(+ea.dataset.excreaffirm); return; }
   const wd = e.target.closest("[data-wdetail]");
   if (wd){
     if (!S.wDetail) S.wDetail = new Set();
