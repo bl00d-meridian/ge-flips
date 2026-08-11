@@ -2327,10 +2327,11 @@
        /data-intelrat="r22-p"/.test(document.querySelector("#homeRulings").innerHTML)
        && /data-inteldis="r22-p"/.test(document.querySelector("#homeRulings").innerHTML));
     document.querySelector('#homeRulings [data-intelrat="r22-p"]').click();
-    ok("[R22.3] ruling from Home lands visibly — the line leaves the digest, the ⚖ badge updates",
+    ok("[R22.3] ruling from Home lands visibly — the line leaves the digest, the ⚖ badge drops to its empty glyph",
        DB.intel[0].status === "ratified"
        && !/data-intelrat="r22-p"/.test(document.querySelector("#homeRulings").innerHTML)
-       && document.querySelector("#pendBadge").style.display === "none");
+       && document.querySelector("#pendBadge").textContent === "⚖"
+       && document.querySelector("#pendBadge").classList.contains("ghost"));
     // R22.4 — explicit plan status on every row; NEXT UP states its reason
     DB.watch = [{ id: 9001, qty: null }, { id: 9002, qty: null }, { id: 9003, qty: null }];
     DB.positions = []; DB.planPriority = []; DB.planDemoted = []; DB.intel = []; DB.blacklist = [];
@@ -2419,6 +2420,53 @@
          lis: document.querySelectorAll("#ckList li").length }));
     ok("[R22.8] the attention reading survives in the summary tooltip, not as a stacked line",
        /walk-up attention: \d+ of ≤7/.test(document.querySelector("#ckList li .d").title));
+
+    // ═══ R23 FINDABILITY (Aug 11 2026) — badge always renders; standing flags export ═══
+    // R23.1 — zero pending: a subtle inert glyph on EVERY tab, never nothing
+    const badge23 = document.querySelector("#pendBadge");
+    for (const t23 of ["watch", "sleeve", "review", "home"]){
+      setTab(t23);
+      ok("[R23.1] ⚖ badge renders its empty glyph on " + t23 + " at zero pending — absence is never ambiguous",
+         badge23.offsetParent !== null && badge23.textContent === "⚖" && badge23.classList.contains("ghost"),
+         JSON.stringify({ tab: t23, txt: badge23.textContent, ghost: badge23.classList.contains("ghost") }));
+    }
+    // nonzero: prominent count on every tab, click-through to Home's queue
+    DB.intel = [{ id: "r23-p", type: "demand-context", confidence: "hinted", title: "R23 pending",
+      thesis: "t", direction: "up", items: [], sources: [{ url: "https://example.test/r23" }],
+      validUntil: inDays(10), importedAt: Date.now() - 3600e3, status: "pending", teeth: 0, outcome: null }];
+    for (const t23 of ["watch", "sleeve", "review"]){
+      setTab(t23);
+      ok("[R23.1] ⚖ badge shows the live count on " + t23 + ", not ghosted",
+         badge23.offsetParent !== null && /⚖ 1 pending/.test(badge23.textContent) && !badge23.classList.contains("ghost"),
+         JSON.stringify({ tab: t23, txt: badge23.textContent }));
+    }
+    badge23.click();
+    ok("[R23.1] the badge clicks through to Home's queue", S.tab === "home"
+       && /data-intelrat="r23-p"/.test(document.querySelector("#homeRulings").innerHTML));
+    // R23.2 — standing flags export: honest empty docket vs active flags
+    DB.intel = []; DB.anomalyFlags = []; DB.rampFlags = [];
+    const fpEmpty = analystFlagsPending();
+    ok("[R23.2] a quiet tape exports an honest empty docket — zero flags, confirmed",
+       fpEmpty.flags.length === 0 && /zero flags, confirmed/.test(fpEmpty.note || ""), String(fpEmpty.note));
+    DB.lastBriefImportAt = Date.now() - 3600e3;   // flag postdates the last sweep → newSinceBrief
+    DB.anomalyFlags = [{ id: 7401, itemId: 9002, name: "Probe beta", at: Date.now() - 60e3, d: today(),
+      strength: 5, rise14p: 10, rise14v: 50 }];
+    const fpFull = analystFlagsPending();
+    ok("[R23.2] an active tape exports flags with newSinceBrief marks and no empty-note",
+       fpFull.flags.length === 1 && fpFull.flags[0].newSinceBrief === true && fpFull.note === undefined,
+       JSON.stringify({ n: fpFull.flags.length, note: fpFull.note }));
+    DB.anomalyFlags = [];
+    // standing placements — present with NO active reminder, in both homes
+    DB.lastBriefImportAt = Date.now(); DB.briefRemindDismissKey = "";
+    DB.positions = [{ id: 70, itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, placedAt: Date.now(), stage: "buying" }];
+    setTab("home");
+    ok("[R23.2] the walk-up carries the standing export line even with no reminder firing",
+       !/run the briefing/.test(document.querySelector("#briefRemind").innerHTML)
+       && /data-flagsexport/.test(document.querySelector("#briefRemind").innerHTML),
+       document.querySelector("#briefRemind").innerHTML.slice(0, 200));
+    ok("[R23.2] the Review scorecard area carries the standing export",
+       /data-flagsexport/.test(intelScorecardInline()));
+    DB.positions = [];
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));
   }

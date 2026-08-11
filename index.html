@@ -289,7 +289,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="hstat">
       <span class="dot load" id="dot"></span>
       <span id="status">starting…</span>
-      <button class="sm ghost" id="pendBadge" style="display:none" title="Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from the walk-up list."></button>
+      <button class="sm ghost" id="pendBadge" title="Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from Home's digest.">⚖</button>
       <button class="sm" id="refresh">↻ Refresh</button>
     </div>
   </div>
@@ -7717,6 +7717,10 @@ function renderIntel(){
    only. Renders in the weekly review. */
 function intelScorecardInline(){
   const lines = [];
+  /* Standing flags export — the Review-side on-demand path (ruled Aug 11
+     2026). Same file as the walk-up line and the reminder's escalation copy. */
+  lines.push('<div><button class="sm" data-flagsexport="1" title="Downloads flags-pending.json regardless of reminder state — active flags with newSinceBrief marks, or an honest \'zero flags, confirmed\' file when the tape is quiet.">⭳ flags for analyst</button>'
+    + ' <span class="dim">— standing export for the next /briefing run; the tape-question reminder remains the escalation path.</span></div>');
   for (const r of intelToGrade())
     lines.push('<div>' + esc(r.title) + ' [' + r.confidence + '] — window passed — call was: '
       + '<button class="sm" data-intelgrade="' + esc(r.id) + ':right">right</button> '
@@ -7748,8 +7752,9 @@ function intelScorecardInline(){
     lines.push('<div class="dim">Standing revisit (ruled Aug 10 2026): the ' + gp(DB.pumpThinGp != null ? DB.pumpThinGp : 10e6)
       + '/day thin-book floor is a starting value — at the first monthly read, check it against the flagged items\' actual books and rule on a correction.</div>');
   }
-  return '<div class="inline">' + (lines.length ? lines.join("")
-    : '<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>') + '</div>';
+  if (lines.length === 1)   // only the standing export line — say the scorecard itself is empty
+    lines.push('<div class="dim">No expired intel to grade and nothing graded yet — the scorecard fills as windows pass.</div>');
+  return '<div class="inline">' + lines.join("") + '</div>';
 }
 
 /* Click-depth audit (reorg Aug 11 2026): tier assignments vs the last 30
@@ -8079,13 +8084,22 @@ function rulingsInline(){
   return '<div class="inline">' + (lines.length ? lines.join("")
     : '<div class="dim">Nothing pending — every queue is ruled up to date.</div>') + '</div>';
 }
+/* The badge ALWAYS renders (ruled Aug 11 2026 — load-bearing navigation):
+   count > 0 → prominent count, click-through to Home's digest; count = 0 →
+   a subtle inert glyph. An empty state that renders proves the mechanism
+   lives — "no badge" must never be ambiguous between "nothing pending"
+   and "badge broken". */
 function updatePendBadge(){
   const el = $("#pendBadge");
   if (!el) return;
   let n = 0;
   try { n = pendingRulingItems().filter(x => !x.snoozed).length; } catch(e){ n = 0; }
-  el.style.display = n ? "" : "none";
-  el.textContent = "⚖ " + n + " pending";
+  el.style.display = "";
+  el.classList.toggle("ghost", !n);
+  el.textContent = n ? "⚖ " + n + " pending" : "⚖";
+  el.title = n
+    ? "Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; click for Home's digest."
+    : "No rulings pending — every queue is ruled up to date. The glyph stays so an empty queue is never mistaken for a broken badge.";
 }
 /* Distinct decisions the walk-up presents: ruling lines actually shown
    (post-snooze, post-cap) plus the briefing reminder when it renders.
@@ -8180,6 +8194,10 @@ function analystFlagsPending(){
   }
   return { exportedAt: new Date().toISOString(),
     lastBriefImportAt: last ? new Date(last).toISOString() : null, flags,
+    /* An honest empty docket (ruled Aug 11 2026): the analyst reading "zero
+       flags, confirmed" is different from the analyst reading nothing. */
+    note: flags.length ? undefined
+      : "no active flags as of " + new Date().toISOString() + " — zero flags, confirmed (a deliberate export, not an absent one)",
     /* Digest block (ruled Aug 10 2026): the analyst reads these before
        sweeping — hit rates steer effort, revealed rulings shape proposals.
        Attention only; every briefing honesty rule still binds. */
@@ -8876,7 +8894,13 @@ function renderRoutine(){
     ? '<div class="plan-note" style="margin-bottom:10px">' + esc(br.msg)
       + (br.export ? ' <button class="sm" data-flagsexport="1" title="Downloads flags-pending.json — save it into briefings/ so the analyst answers each flag by name (sourced story, or an explicit \'no public story found\').">⭳ flags for analyst</button>' : '')
       + ' <button class="sm ghost" data-briefdismiss="' + esc(br.key) + '">dismiss</button></div>'
-    : "") + attnLine);
+    : "") + attnLine
+    /* Standing flags export (ruled Aug 11 2026): the on-demand path — it no
+       longer vanishes with the reminder; a quiet tape exports an honest
+       empty docket. The reminder-line copy stays as the escalation path. */
+    + (m === "walkup" && !min
+      ? '<div class="dim" style="margin-bottom:6px"><button class="sm" data-flagsexport="1" title="Downloads flags-pending.json for the desk analyst regardless of reminder state — active flags with newSinceBrief marks, or an honest \'zero flags, confirmed\' file when the tape is quiet. Save it into briefings/ (the /briefing run also fetches it from Downloads itself).">⭳ flags for analyst</button> — standing export, works with a quiet tape</div>'
+      : ""));
   /* Minimized = ONE line total (ruled Aug 11 2026): the panel header, the
      section title, and the attention line all hide with the steps — only
      the summary line (and any genuinely active cue, like an elevated

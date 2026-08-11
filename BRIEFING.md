@@ -246,6 +246,25 @@ remains unexplained."
 
 ## Run procedure
 
+0. **Fetch the flags file from Downloads** (user ruling, Aug 11 2026 — the browser
+   cannot write to the repo, so the desk absorbs the hop). Resolve the user's
+   Downloads folder via the known-folder registry, never a hardcoded path (some
+   machines relocate it; must work on any box):
+   `powershell -NoProfile -Command "(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders').'{374DE290-123F-4565-9164-39C4925E467B}'"`
+   (expand any `%USERPROFILE%` in the result). Look for `flags-pending*.json` there —
+   including the browser's `flags-pending (2).json` accumulation. If any exist: take
+   the NEWEST by modified time, move it to `briefings/flags-pending.json`
+   (overwriting), and delete the older `flags-pending*.json` copies from Downloads —
+   the numbered-duplicate mess is part of what this step cleans. Log the outcome in
+   the brief's header, one line: `flags file: moved from Downloads, exported
+   <exportedAt>` / `used existing briefings/ copy` / `none found — no active flags
+   assumed? verify with the user`.
+   **Staleness guard:** if the newest available flags file's `exportedAt` is older
+   than **24h**, proceed — an old docket gets heard — but label it in the header AND
+   the Flags Addressed section: "flags export is Nh old — tape questions may have
+   moved; re-export for a current hearing." A file with the `note` field ("zero
+   flags, confirmed") is a deliberate empty docket: say so in the header rather than
+   treating it as no file.
 1. Read `briefings/flags-pending.json` if it exists (standing rule 9) — the flags it
    names are questions this run must answer, by name, before anything else is drafted.
 2. Sweep the sources above for the window since the last brief (check `briefings/` for

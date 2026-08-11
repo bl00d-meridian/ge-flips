@@ -13,6 +13,13 @@ the exact `intelligence.json` record schema, and the run procedure.
 
 Then execute its "Run procedure" section end to end:
 
+0. **Fetch the flags file** (BRIEFING.md step 0): resolve the Downloads folder via the
+   known-folder registry value (never a hardcoded path), move the newest
+   `flags-pending*.json` into `briefings/flags-pending.json`, delete older numbered
+   copies from Downloads, and log what happened in the brief header. If the newest
+   export is older than 24h, proceed but label the docket stale in the header and the
+   Flags Addressed section. A file whose `note` says "zero flags, confirmed" is a
+   deliberate empty docket — report it as such, not as "no file".
 1. Read `briefings/flags-pending.json` if it exists — the tracker's exported unexplained
    flags (anomalies, suspected pumps). Each must be addressed **by name** this run:
    a sourced record, or an explicit "no public story found — flag remains unexplained"
