@@ -1899,13 +1899,41 @@
        upsertCohProp("drop", DB.clusters[0], 9002, null, [0.2, 0.1, 0.1, 0.05], "numbers alone") === null
        && pD.trend.join() === "0.2,0.1,0.1,0.05" && pD.status === "dismissed",
        JSON.stringify(pD));
+    // R17.5 — material-change resurface for dismissed adds (ruled Aug 11 2026)
+    const pR = upsertCohProp("add", DB.clusters[0], 9006, "s", [0.52, 0.55, 0.51, 0.52], "statistical co-movement alone");
+    pR.status = "dismissed"; pR.ruledAt = Date.now();
+    pR.dismissedC = 0.52;   // what the dismiss handler stamps (last non-null reading)
+    ok("[R17.5] sub-threshold drift never re-nags — +0.10 is not material",
+       upsertCohProp("add", DB.clusters[0], 9006, "s", [0.6, 0.62, 0.61, 0.62], "n") === null
+       && pR.status === "dismissed", JSON.stringify(pR));
+    ok("[R17.5] over the bar but not held — 2 of 4 readings ≥ +0.15 stays dismissed",
+       upsertCohProp("add", DB.clusters[0], 9006, "s", [0.5, 0.68, 0.69, 0.55], "n") === null
+       && pR.status === "dismissed", JSON.stringify(pR.trend));
+    const pRes = upsertCohProp("add", DB.clusters[0], 9006, "s", [0.55, 0.68, 0.7, 0.68], "n");
+    ok("[R17.5] ≥ +0.15 held for 3 of 4 resurfaces with both numbers in the copy",
+       pRes === pR && pR.status === "pending"
+       && /dismissed at 0\.52 — now 0\.68 for 3 readings, resurfacing on material change/.test(pR.resurfaced),
+       JSON.stringify({ status: pR.status, resurfaced: pR.resurfaced }));
+    renderClusters();
+    ok("[R17.5] the resurfaced proposal renders its badge and the materiality copy",
+       /resurfaced/.test(document.querySelector("#cluQueueBody").innerHTML)
+       && /dismissed at 0\.52/.test(document.querySelector("#cluQueueBody").innerHTML),
+       document.querySelector("#cluQueueBody").innerHTML.slice(0, 400));
+    const pRD = upsertCohProp("drop", DB.clusters[0], 9003, null, [0.1, 0.1, 0.1, 0.1], "numbers alone");
+    pRD.status = "dismissed"; pRD.dismissedC = 0.1;
+    ok("[R17.5] drops have no resurface path — the shape is scoped to adds by ruling",
+       upsertCohProp("drop", DB.clusters[0], 9003, null, [0.9, 0.9, 0.9, 0.9], "n") === null
+       && pRD.status === "dismissed", JSON.stringify(pRD));
     const vCoh = validateImport({ clusters: [{ id: 31, name: "coh-basket", members: [9001, 9004], mclass: { 9004: "s" } }],
       cohLog: { "31:9004": [{ w: wNow, c: 0.6 }] },
-      cohProps: [{ id: 1, kind: "add", basketId: 31, itemId: 9005, mclass: "s", trend: [0.6], note: "n", status: "dismissed", at: Date.now() }] });
+      cohProps: [{ id: 1, kind: "add", basketId: 31, itemId: 9005, mclass: "s", trend: [0.6], note: "n", status: "dismissed", at: Date.now(), dismissedC: 0.52, resurfaced: "dismissed at 0.52 — now 0.68" }] });
     ok("[R17.4] mclass, cohLog, and cohProps (with dismissal state) survive export→import",
        vCoh.db.clusters[0].mclass && vCoh.db.clusters[0].mclass[9004] === "s"
        && vCoh.db.cohLog["31:9004"].length === 1 && vCoh.db.cohProps[0].status === "dismissed",
        JSON.stringify({ cl: vCoh.db.clusters[0], log: vCoh.db.cohLog, props: vCoh.db.cohProps }));
+    ok("[R17.5] the materiality bar and resurface copy survive export→import",
+       vCoh.db.cohProps[0].dismissedC === 0.52 && /dismissed at 0\.52/.test(vCoh.db.cohProps[0].resurfaced),
+       JSON.stringify(vCoh.db.cohProps[0]));
     DB.clusters = []; DB.cohProps = []; DB.cohLog = {}; DB.intel = [];
   } catch(e){
     out.push("FAIL exception :: " + (e && e.stack || e));

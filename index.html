@@ -2424,6 +2424,12 @@ let cluScanBusy = false;
    basket. A "weekly window" is one weekly scan's reading over the shared
    31-day series — persistence lives across scans, not inside one. */
 const COH_ADD_C = 0.5, COH_ADD_HITS = 3, COH_WINDOWS = 4, COH_DROP_C = 0.25, COH_STAT_CAP = 0.4;
+/* Resurface rule for dismissed ADD proposals (ruled Aug 11 2026): material
+   change for a scalar signal = correlation exceeds the level AT DISMISSAL by
+   ≥ 0.15, held in ≥3 of the last 4 readings. The existing dismissal doctrine
+   quantified — dismissals never re-nag below that bar. Scoped to coherence
+   adds ONLY by ruling; do not generalize to other dismissal types. */
+const COH_RES_DELTA = 0.15, COH_RES_HITS = 3;
 const cohWeek = () => Math.floor(Date.now() / (7 * 86400e3));
 const memberIsStat = (cl, id) => ((cl.mclass || {})[id]) === "s";
 const basketStatShare = cl => cl.members.length ? cl.members.filter(m => memberIsStat(cl, m)).length / cl.members.length : 0;
@@ -2488,7 +2494,24 @@ function upsertCohProp(kind, cl, itemId, mclass, trend, note){
   const hit = DB.cohProps.find(p => p.kind === kind && p.basketId === cl.id && p.itemId === itemId);
   if (hit){
     hit.trend = trend; hit.note = note; if (mclass) hit.mclass = mclass;
-    return hit.status === "dismissed" ? null : hit;
+    if (hit.status === "dismissed"){
+      /* Material-change resurface, adds only (ruled Aug 11 2026): the level
+         at dismissal is the bar; +0.15 held in ≥3 of 4 readings clears it. */
+      if (kind === "add" && hit.dismissedC != null){
+        const recent = trend.slice(-COH_WINDOWS).filter(c => c != null);
+        const over = recent.filter(c => c >= hit.dismissedC + COH_RES_DELTA);
+        if (recent.length >= COH_RES_HITS && over.length >= COH_RES_HITS){
+          const nowC = recent[recent.length - 1];
+          hit.status = "pending";
+          hit.resurfaced = "dismissed at " + hit.dismissedC.toFixed(2) + " — now " + nowC.toFixed(2)
+            + " for " + over.length + " readings, resurfacing on material change (≥ +" + COH_RES_DELTA + " held for " + COH_RES_HITS + " of " + COH_WINDOWS + ")";
+          delete hit.ruledAt;
+          return hit;
+        }
+      }
+      return null;
+    }
+    return hit;
   }
   const p = { id: Date.now() + DB.cohProps.length, kind, basketId: cl.id, itemId,
     mclass: mclass || "t", trend, note, status: "pending", at: Date.now() };
@@ -5225,6 +5248,8 @@ function renderClusters(){
         ? '<span class="badge ' + (p.mclass === "s" ? "b-warn" : "b-ok") + '">' + (p.mclass === "s" ? "add STATISTICAL" : "add THESIS") + '</span>'
         : '<span class="badge b-risk">drop</span>')
       + ' <b>' + esc(itemName(p.itemId)) + '</b> ' + (isAdd ? '→' : '←') + ' ⬡ ' + esc(cl.name)
+      + (p.resurfaced ? ' <span class="badge b-warn" title="' + esc(p.resurfaced) + '">resurfaced</span>' : '')
+      + (p.resurfaced ? '<div class="dim" style="white-space:normal">' + esc(p.resurfaced) + '</div>' : '')
       + '<div class="dim">excess corr vs composite, last ' + p.trend.length + ' weekly readings: ' + esc(trend)
       + (isAdd ? ' (add rule: > 0.5 in ≥3 of 4)' : ' (drop rule: < 0.25 for 4 straight — decay sparkline above)') + '</div>'
       + (p.note ? '<div class="dim" style="white-space:normal;max-width:460px">' + esc(p.note) + '</div>' : '') + '</span>'
@@ -7337,8 +7362,16 @@ document.addEventListener("click", e => {
     const p = (DB.cohProps || []).find(x => x.id === +cd.dataset.cohdismiss);
     if (!p || p.status !== "pending") return;
     p.status = "dismissed"; p.ruledAt = Date.now();
+    delete p.resurfaced;
+    /* Stamp the level at dismissal (ruled Aug 11 2026) — the materiality bar
+       for adds. No reading at dismissal → no bar → it cannot resurface. */
+    const lastC = (p.trend || []).filter(c => c != null).slice(-1)[0];
+    if (p.kind === "add" && lastC != null) p.dismissedC = lastC;
     logDecision("basket", itemName(p.itemId), "dismiss coherence-" + p.kind,
-      "dismissal remembered — this " + p.kind + " proposal will not re-raise for this basket:item; the reading log keeps recording");
+      "dismissal remembered — re-raises only on material change"
+      + (p.kind === "add" && lastC != null
+        ? " (corr ≥ " + (lastC + COH_RES_DELTA).toFixed(2) + " held for " + COH_RES_HITS + " of " + COH_WINDOWS + " readings; dismissed at " + lastC.toFixed(2) + ")"
+        : "; drops have no resurface path (ruled)"));
     save(); renderClusters(); if (S.tab === "routine") renderRoutine(); updatePendBadge();
     toast("Dismissed — remembered per basket:item. The weekly readings keep accruing regardless.",
           () => { p.status = "pending"; delete p.ruledAt; save(); renderClusters(); });
@@ -9708,6 +9741,8 @@ function validateImport(d){
               status: p.status === "dismissed" ? "dismissed" : "pending", at: num(p.at) || Date.now() };
             if (num(p.ruledAt) > 0) o2.ruledAt = num(p.ruledAt);
             if (p.applied) o2.applied = 1;
+            if (num(p.dismissedC) != null) o2.dismissedC = num(p.dismissedC);
+            if (p.resurfaced) o2.resurfaced = String(p.resurfaced).slice(0, 200);
             return o2;
           }).filter(Boolean).slice(-60),
           clusterCands: (Array.isArray(d.clusterCands) ? d.clusterCands : []).map(c => {
