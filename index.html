@@ -440,7 +440,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
        weekly read; the review keeps a one-line summary linking here) ── -->
   <div class="tsub" id="tab-paper">
     <div class="panel" id="paperRegimePanel">
-      <div class="ph"><h2>Paper book — ROI regimes</h2><span class="sub" id="paperRegimeSub"></span></div>
+      <div class="ph"><h2>Paper book — ROI regimes</h2><span class="sub" id="paperRegimeSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="paper" title="Downloads analysis-paper-&lt;date&gt;.json: every closed trip with its provenance, the per-gate rollups and the three regime curves as series. A curated file for handing to an analyst � not the state backup.">⭳ export for analysis</button></span></div>
       <div id="paperRegime"></div>
     </div>
     <div class="panel" id="paperGatePanel">
@@ -457,7 +457,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
        (hours ledger), and recipe-space (processing basis) in one place ── -->
   <div class="tsub" id="tab-prospect">
     <div class="panel" id="prospectStrataPanel">
-      <div class="ph"><h2>Per-stratum map</h2><span class="sub" id="prospectStrataSub"></span></div>
+      <div class="ph"><h2>Per-stratum map</h2><span class="sub" id="prospectStrataSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="prospecting" title="Downloads analysis-prospecting-&lt;date&gt;.json: per-stratum rows with their sampled items and verdicts, the gap-band sample, and the hours ledger with both streams.">⭳ export for analysis</button></span></div>
       <div id="prospectStrata"></div>
     </div>
     <div class="panel" id="prospectGapPanel">
@@ -474,7 +474,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
        the exception lane's standing ── -->
   <div class="tsub" id="tab-gates">
     <div class="panel" id="gateStreamPanel">
-      <div class="ph"><h2>Gate health — two streams</h2><span class="sub" id="gateStreamSub"></span></div>
+      <div class="ph"><h2>Gate health — two streams</h2><span class="sub" id="gateStreamSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="gates" title="Downloads analysis-gates-&lt;date&gt;.json: both streams per gate with their constituent items and outcomes, die-off episodes with their 24h results, and the exception lane with its evidence.">⭳ export for analysis</button></span></div>
       <div id="gateStreams"></div>
     </div>
     <div class="panel" id="gateDieOffPanel">
@@ -6374,7 +6374,9 @@ function paperSummaryLine(){
     + gp(Math.round(net)) + '</span> simulated · '
     + (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence')
     + ' — <a href="#" data-goto="paper#paperRegimePanel">open the paper book →</a></div>'
-    + '<div class="dim">Screening evidence, never a verdict. The working surface carries the three regime curves, the divergence ledger, the per-gate table and every trip behind each number.</div></div>';
+    + '<div class="dim">Screening evidence, never a verdict. The working surface carries the three regime curves, the divergence ledger, the per-gate table and every trip behind each number.</div>'
+    + '<div style="margin-top:5px"><button class="sm" data-analysis="all" title="Downloads analysis-all-&lt;date&gt;.json — the paper book, gate health and prospecting exports in one envelope, each keeping its own header so the three truncate independently and visibly. A curated file for handing to an analyst; the state backup on the Flip Log tab is a different thing and is for restoring this browser.">⭳ export all three for analysis</button>'
+    + ' <span class="dim">evidence with its provenance, not just aggregates — capped, with the truncation stated in each header</span></div></div>';
 }
 /* ═══ HOURS LEDGER — TIME-STRUCTURE PROSPECTING (user-directed, Aug 11 2026) ═══
    Everything else in this tool samples ITEMS; nothing sampled HOURS. Two
@@ -11391,6 +11393,8 @@ document.addEventListener("click", e => {
     toast("Dismissed for this occurrence — the reminder returns on the next trigger (a new flag on the tape, a catalyst window, next update Wednesday, or staleness).");
     return;
   }
+  const ax = e.target.closest("[data-analysis]");
+  if (ax){ analysisExport(ax.dataset.analysis); return; }
   const fx = e.target.closest("[data-flagsexport]");
   if (fx){
     const blob = new Blob([JSON.stringify(analystFlagsPending(), null, 2)], { type: "application/json" });
@@ -12466,6 +12470,18 @@ const GLOSSARY = [
         + "stamp, the reason, and the date you ruled.",
     do: "Check the decision log entry says why, not merely that. The asymmetry is deliberate: dismissing drops an "
         + "advisory record, while ratifying arms one, and arming stays a press in the tool." },
+  { id: "gov-analysis-export", term: "Export for analysis",
+    what: "A curated JSON download of one pull surface — paper book, gate health or prospecting — or all three at once, "
+        + "written for someone to READ. It carries evidence with its provenance (every closed trip, every gate item, "
+        + "every stratum sample) rather than the aggregates those numbers roll up to, and every row resolves its own "
+        + "references: if a row names an item, the item's name is in the row.",
+    from: "The ⭳ button on each of the three sub-views, and the combined one in the weekly review.",
+    do: "Use it when you want a second opinion on the evidence rather than on the conclusion. Read the header FIRST — it "
+        + "states the epoch, the counts by cohort, grade and horizon, the constants that were in force, and exactly what "
+        + "was truncated.",
+    caveat: "This is NOT the state backup. \"Export the log\" writes the whole store so this browser can be restored; "
+          + "this writes a capped, readable slice and is not a restore point. Rows are capped newest-first and the cap is "
+          + "declared in the header — a file too big to paste is useless, one that silently truncates is worse." },
   { id: "gov-export", term: "Export the log",
     what: "The full store as JSON. Your flip log exists only in this browser's localStorage.",
     from: "The export button on the Flip Log tab.",
@@ -13631,6 +13647,280 @@ function renderNow(){
   $("#nowBar").innerHTML = '<span class="k">' + (n.idle ? "done" : "now") + '</span><span class="m">' + esc(n.msg) + '</span>'
     + (n.tab ? '<button class="sm" data-nowgo="' + n.tab + '"' + (n.mode ? ' data-nowmode="' + n.mode + '"' : '') + '>→ go</button>' : '')
     + (n.snoozeKey ? '<button class="sm ghost" data-nowsnooze="' + n.snoozeKey + '" title="Not now — hides this nudge for the rest of today. It returns tomorrow if still true.">✕ today</button>' : '');
+}
+
+/* ═══════════ ANALYSIS EXPORT (user ruling, Aug 12 2026) ═══════════
+   A curated download for handing to an analyst in chat — deliberately NOT
+   the state backup. The backup exists to restore this browser; this exists
+   to be READ, so it carries evidence with its provenance rather than
+   aggregates, and it resolves its own references: if a row names an item,
+   the item's name is in the row. An export whose numbers cannot be audited
+   is the same defect as a number that cannot be opened.
+
+   Four disciplines, all of them learned rules rather than preferences:
+     • every section is a flat array of objects with named fields — no
+       internal ids that resolve nowhere, no nesting for its own sake;
+     • every export carries a header stating what was in force when it was
+       made, so nothing is assessed as fresh when it is stale or thin;
+     • rows are capped, newest kept, and the truncation is STATED in the
+       header — a file too big to paste is useless, one that silently
+       truncates is worse;
+     • standing caveats travel with the data, because the reader is remote
+       from the surface where those caveats normally render. */
+const ANALYSIS_CAPS = { trips: 500, gateItems: 400, dieOff: 200, strataIds: 300, flips: 12 };
+const iso = t => Number.isFinite(t) && t > 0 ? new Date(t).toISOString() : null;
+const r2 = n => Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+/* Newest-first, capped, and the caller is told what it lost. */
+function analysisCap(rows, cap, label, sink, orderNote){
+  const total = rows.length;
+  const kept = rows.slice(0, cap);
+  sink.push({ section: label, kept: kept.length, total,
+    truncated: total > kept.length,
+    note: total > kept.length
+      ? label + ": " + kept.length + " of " + total + " — " + (orderNote || "newest first") + ", the rest omitted for size"
+      : label + ": " + total + " (complete)" });
+  return kept;
+}
+/* One trip shape, used by every section that emits trips, so the paper
+   export and the prospecting export cannot describe the same trip
+   differently. Excluded-by-observation-floor trips are INCLUDED and marked
+   — the exclusion is from verdicts, not from the record. */
+function analysisTrip(p){
+  const exitPx = p.state === "forced-exit" ? (p.exitPx != null ? p.exitPx : null) : p.ask;
+  return {
+    item: p.name || itemName(p.itemId), itemId: p.itemId,
+    cohort: paperCohortOf(p),
+    horizonShape: shapeOf(p), horizonHours: r2(legHorizonH(p)),
+    evidenceGrade: gradeOf(p), exitPriceApproximate: !!p.exitApprox,
+    observedPctOfHorizon: shadowObsPct(p),
+    countsTowardVerdicts: shadowCounts(p),
+    excludedByObservationFloor: shadowThin(p),
+    openedAt: iso(p.t), closedAt: iso(p.closedAt),
+    qty: p.qty, entryBid: p.bid, exitAsk: p.ask,
+    exitPrice: exitPx != null ? exitPx : null,
+    outcome: p.state === "filled" ? "filled both legs"
+      : p.state === "forced-exit" ? "forced exit"
+      : p.state === "unfilled" ? "never filled at the bid" : String(p.state),
+    forcedUnsoldQty: p.state === "forced-exit" ? (p.forced || 0) : null,
+    participationPct: shadowPartPct(),
+    buyCreditAtParticipation: p.buyQ != null ? p.buyQ : null,
+    buyCreditAt100Pct: p.buyQFull != null ? p.buyQFull : null,
+    sellCreditAtParticipation: p.sellQ != null ? p.sellQ : null,
+    sellCreditAt100Pct: p.sellQFull != null ? p.sellQFull : null,
+    netSimGp: Math.round(p.net || 0),
+    regimes: (p.regimes || []).slice(),
+    benchedByGate: (p.benchedBy && p.benchedBy[0]) || null,
+    benchDetail: p.gapTxt || null,
+    clearedEveryGate: !!p.slicePass,
+    stratum: p.stratum ? STRATUM_LAB(p.stratum) : null,
+    scannerTier: p.scanTier != null ? p.scanTier : null
+  };
+}
+/* What was in force when this was made. Without it a reader cannot tell a
+   quiet market from a stalled collector, or a tight gate from a loose one. */
+function analysisHeader(view, truncation){
+  const book = DB.shadowBook || [];
+  const resolved = book.filter(shadowResolved);
+  const tally = (arr, fn) => arr.reduce((a, x) => { const k = fn(x); a[k] = (a[k] || 0) + 1; return a; }, {});
+  const gaps = touchGaps();
+  return {
+    view,
+    generatedAt: new Date().toISOString(),
+    generatedOn: today(),
+    paperBookEpochStart: iso(DB.shadowEpoch),
+    epochNote: DB.shadowEpoch
+      ? "The paper book was reset to zero at the epoch above; nothing before it exists. A thin ledger here means YOUNG, not broken."
+      : "No epoch reset recorded — the paper book has accrued since it was first written.",
+    counts: {
+      tripsInBook: book.length,
+      tripsResolved: resolved.length,
+      tripsCountingTowardVerdicts: book.filter(shadowCounts).length,
+      tripsExcludedByObservationFloor: book.filter(shadowThin).length,
+      tripsStillOpen: book.filter(p => p.state === "open").length,
+      tripsUnobserved: book.filter(p => p.state === "unobserved").length,
+      byCohort: tally(resolved, paperCohortOf),
+      byEvidenceGrade: tally(resolved, gradeOf),
+      byHorizonShape: tally(resolved, shapeOf),
+      byOutcome: tally(resolved, p => String(p.state))
+    },
+    observationCoverage: {
+      floorPctOfHorizon: Math.round(SHADOW_MIN_OBS * 100),
+      medianObservedPct: medianOf(book.filter(shadowResolved).map(shadowObsPct)),
+      meaning: "Observed share is the fraction of a trip's own fill horizon the tracker actually watched. "
+             + "An unobserved window is UNKNOWN, not unfilled. Trips under the floor are included in this file and marked "
+             + "excludedByObservationFloor; they are excluded from every verdict, never from the record."
+    },
+    constantsInForce: {
+      roiFloorPct: GATE.roi,
+      regimeRoiFloorsPct: { current: GATE.roi, loose: r2(GATE.roi * SHADOW_LOOSE), tight: r2(GATE.roi * SHADOW_TIGHT) },
+      marginTaxMultiple: GATE.taxMult,
+      trendFloorPct: GATE.trendSoft, fallingKnifePct: GATE.falling, volumeDeclineFloorPct: GATE.volDecline,
+      bookSkewHardPct: GATE.skewHard, flowImbalanceHardLo: GATE.balHardLo, flowImbalanceHardHi: GATE.balHardHi,
+      participationHaircutPct: shadowPartPct(),
+      observedShareFloorPct: Math.round(SHADOW_MIN_OBS * 100),
+      touchScheduleHours: touchWindows(),
+      touchGapsHours: gaps.map(g => r2(g.h)),
+      touchAttentionMinutes: touchMins(),
+      fillHorizonFallbackH: DB.fillHorizonH,
+      scheduleKept: scheduleOn(),
+      sleeveBudgetGp: DB.sleeveBudget, t1BudgetGp: DB.t1Budget, t2BudgetGp: DB.t2Budget,
+      reserveGp: DB.reserve, shadowReserveGp: DB.shadowReserve
+    },
+    standingCaveats: [
+      "EVERY paper-book number in this file is SIMULATED screening evidence, never realized profit and never a verdict. "
+        + "The fill model assumes a book you are not in; thin books change when you post.",
+      "Realized numbers (the gate-health streams, flip profits) are the only figures here drawn from actual logged round trips, tax netted.",
+      STRATUM_CAVEAT + " Strata other than F2P and the price bands are matched on item NAMES, so a wrong-bucket item skews which region a result is credited to. It never touches a trade.",
+      "Reconstruction is a backstop: trips graded reconstructed or mixed were replayed from the 5m series after an observation gap. "
+        + "An aggregate resting only on reconstructed evidence is weaker than its count suggests — evidenceGrade is on every trip row.",
+      "Gate-health streams are NOT interchangeable: \"traded while still benched\" is the user overriding the gate (clean evidence for or against it); "
+        + "\"traded after unbenching\" is re-admission latency only, and the gate eventually agreeing with itself is not the user being right against it.",
+      "Anomaly flags carrying volMode \"raw-preindex\" were raised before the market volume index existed (Aug 12 2026); their volume figures span the "
+        + "2026-07-24 market-wide feed change and are inflated by it, not by the item."
+    ],
+    truncation
+  };
+}
+
+function analysisPaper(){
+  const trunc = [];
+  const book = (DB.shadowBook || []).filter(shadowResolved)
+    .slice().sort((a, b) => (b.closedAt || b.t || 0) - (a.closedAt || a.t || 0));
+  const trips = analysisCap(book, ANALYSIS_CAPS.trips, "closedTrips", trunc, "newest closed first");
+  const gateRoll = [...shadowByGate(true).entries()].map(([k, s]) => ({
+    gateAndShape: k, gate: s.gate, horizonShape: s.shape,
+    tripsCounted: s.n, tripsExcludedByObservationFloor: s.thin,
+    filledAtParticipation: s.filled, filledAt100Pct: s.filledFull,
+    forcedExits: s.forced, neverFilled: s.unfilled,
+    netSimGp: Math.round(s.net || 0), medianObservedPct: s.obsMed
+  })).sort((a, b) => b.tripsCounted - a.tripsCounted);
+  const log = (DB.shadowDivLog || []).slice(-31);
+  const curves = REGIME_DEFS().map(r => {
+    const arr = (DB.shadowBook || []).filter(shadowCounts).filter(p => (p.regimes || []).includes(r.key));
+    return { regime: r.key, label: r.lab,
+      closedTripsCounted: arr.length,
+      excludedByObservationFloor: (DB.shadowBook || []).filter(shadowThin).filter(p => (p.regimes || []).includes(r.key)).length,
+      netSimGp: Math.round(arr.reduce((a, p) => a + (p.net || 0), 0)),
+      series: log.map(x => ({ date: x.d, cumulativeNetSimGp: Math.round(Number(x[r.col]) || 0) })) };
+  });
+  return { header: analysisHeader("paper-book", trunc),
+    closedTrips: trips.map(analysisTrip),
+    perGateRollup: gateRoll,
+    regimeCurves: curves,
+    divergenceLedger: log.map(x => ({ date: x.d, currentNetSimGp: Math.round(Number(x.cur) || 0),
+      looseNetSimGp: Math.round(Number(x.loose) || 0), tightNetSimGp: Math.round(Number(x.tight) || 0) })) };
+}
+
+function analysisGates(){
+  const trunc = [];
+  const gh = gateHealthAudit();
+  const items = [];
+  for (const r of gh.rows)
+    for (const it of (r.items || []))
+      items.push({ gate: r.g, item: it.name, itemId: it.id, firstBenchedOn: it.d0,
+        stream: it.ovrN ? "traded while still benched (override)" : it.latN ? "traded after unbenching (latency)" : "no trades since the bench",
+        overrideFlips: it.ovrN, overrideNetGp: Math.round(it.ovr || 0),
+        latencyFlips: it.latN, latencyNetGp: Math.round(it.lat || 0),
+        flips: (it.flips || []).slice(-ANALYSIS_CAPS.flips).map(f => ({
+          date: String(f.f.date || ""), netGp: Math.round(f.profit || 0),
+          stream: f.isOvr ? "override" : "latency" })) });
+  items.sort((a, b) => (b.overrideFlips + b.latencyFlips) - (a.overrideFlips + a.latencyFlips));
+  const capped = analysisCap(items, ANALYSIS_CAPS.gateItems, "gateItems", trunc, "most-traded first");
+  const eps = analysisCap((gh.dieOff.eps || []).slice().sort((a, b) => (b.t || 0) - (a.t || 0)),
+    ANALYSIS_CAPS.dieOff, "dieOffEpisodes", trunc, "newest first");
+  return { header: analysisHeader("gate-health", trunc),
+    gates: gh.rows.map(r => ({ gate: r.g, itemsBenchedThisWeek: r.benched,
+      overrideStreamItemsTraded: r.ovrTraded, overrideStreamNetGp: Math.round(r.ovrNet || 0),
+      latencyStreamItemsTraded: r.latTraded, latencyStreamNetGp: Math.round(r.latNet || 0),
+      streamMeaning: "override = you traded it while the gate still benched it (evidence about the gate); latency = you traded it after it unbenched (re-admission speed only)" })),
+    gateItems: capped,
+    fundedComparison: { itemsFunded: gh.fundedCount, itemsFundedAndTraded: gh.fundedTraded,
+      fundedNetGp: Math.round(gh.fundedNet || 0),
+      items: (gh.fundedItems || []).map(f => ({ item: f.name, itemId: f.id, firstFundedOn: f.d0,
+        flips: f.n, netGp: Math.round(f.net || 0) })) },
+    dieOffTag: { episodes: gh.dieOff.episodes, recoveredWithin24h: gh.dieOff.rec24,
+      insideWindowNow: gh.dieOff.watching, notConfirmedRecovered: gh.dieOff.faded,
+      medianRecoveryHours: r2(medianOf(gh.dieOff.recHs)),
+      note: "\"not confirmed recovered\" includes windows nobody observed — recovery closes only on a confirmed healthy 5m sample, which needs the app running.",
+      episodesDetail: eps.map(e => ({ item: itemName(e.id), itemId: e.id, taggedAt: iso(e.t),
+        recoveredAt: iso(e.rec), hoursToRecovery: r2(e.hrs), outcome: e.bucket })) },
+    exceptionLane: (DB.shadowExceptions || []).map(e => ({
+      item: itemName(e.id), itemId: e.id, gate: e.gate, status: e.status,
+      grantedAt: iso(e.grantedAt), realTripsSinceGrant: e.trips || 0,
+      paperEvidence: e.evidence ? { closedTrips: e.evidence.n, filled: e.evidence.filled,
+        netSimGp: Math.round(e.evidence.net || 0) } : null,
+      adjudicatedAt: iso(e.adjudicatedAt),
+      realizedNetGp: e.realNet != null ? Math.round(e.realNet) : null,
+      adverseMarkout: e.mkAdverse != null ? e.mkAdverse : null,
+      fillModelDivergence: e.divergence != null ? e.divergence : null,
+      note: "active = probation (half size, 2× tick floor); waived = standing per-item waiver; revoked = returned to bench. The GATE itself never moves on paper screening alone." })) };
+}
+
+function analysisProspecting(){
+  const trunc = [];
+  const keys = Object.keys(DB.strataStats || {});
+  const strata = keys.map(k => {
+    const s = DB.strataStats[k] || {};
+    /* stratumIdRows resolves each id to its name and current book — the
+       reader has no mapping API, so a bare id list would be unreadable. */
+    const ids = analysisCap(stratumIdRows(k).slice().reverse(), ANALYSIS_CAPS.strataIds,
+      "strata:" + STRATUM_LAB(k) + ":sampledItems", trunc, "most recently sampled first");
+    return { stratum: STRATUM_LAB(k), key: k,
+      distinctItemsSampled: s.samp || 0,
+      sampleIdLedgerCapped: !!s.capped,
+      singleGateNearMisses: s.nm || 0, cleanGatePassers: s.pass || 0,
+      cleanPassRatePct: s.samp ? r2(100 * (s.pass || 0) / s.samp) : null,
+      paperTripsClosed: s.trips || 0, paperTripsFilled: s.filled || 0,
+      paperFillRatePct: s.trips ? r2(100 * (s.filled || 0) / s.trips) : null,
+      netSimGp: Math.round(s.net || 0),
+      firstSampledAt: iso(s.first), lastSampledAt: iso(s.lastAt),
+      sampledItems: ids.map(r => ({ item: r.name, itemId: r.id, buyPriceNow: r._price || null, roiNowPct: r2(r._roi) })),
+      tripsInBook: stratumTrips(k).map(analysisTrip) };
+  }).sort((a, b) => b.distinctItemsSampled - a.distinctItemsSampled);
+  let gap = { poolSize: 0, sample: [] };
+  try {
+    const g = gapBandSample();
+    gap = { bandLowGp: GAP_LO, bandHighGp: GAP_HI, poolSize: g.poolN,
+      sample: (g.pick || []).map(c => ({ item: itemName(c.id), itemId: c.id, buy: c.buy, sell: c.sell,
+        marginGp: c.margin, roiPct: r2(c.roi), thinSideVolume: c.volSide })),
+      note: "The 250k–1m band sits between the tier-2 scanner ceiling and the anomaly scan's floor — nothing else looks here. Deterministic draw, so the sample is reproducible." };
+  } catch(e){ gap.note = "gap-band sample unavailable in this session (no live price snapshot)"; }
+  return { header: analysisHeader("prospecting", trunc),
+    strata, gapBand: gap,
+    hoursLedger: hoursLedger().map(r => ({
+      hourOfDayLocal: r.h,
+      marketMedianRoiPct: r.mkt != null ? r2(r.mkt) : null,
+      marketItemsContributing: r.items,
+      marketSources: (r.srcs || []).map(s => ({ item: s.name, itemId: s.id, roiPct: r2(s.roi) })),
+      paperTripsCounted: r.n, paperTripsFilled: r.filled,
+      paperFillRatePct: r.fillRate != null ? r2(r.fillRate * 100) : null,
+      paperNetSimGp: Math.round(r.net || 0),
+      paperTripsExcludedByObservationFloor: r.thin,
+      note: "Two streams: the MARKET stream is the hourly ROI series watchlist items already fetch; the PAPER stream is simulated fills. They answer different questions and are never averaged together." })) };
+}
+
+const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting };
+function analysisPayload(view){
+  const build = ANALYSIS_BUILDERS[view];
+  if (build) return build();
+  /* "all three" is the three files in one envelope, each keeping its OWN
+     header — a combined export with one merged header would hide that the
+     three sections truncate independently. */
+  return { view: "all-three", generatedAt: new Date().toISOString(), generatedOn: today(),
+    paperBook: analysisPaper(), gateHealth: analysisGates(), prospecting: analysisProspecting() };
+}
+function analysisExport(view){
+  const name = ANALYSIS_BUILDERS[view] ? view : "all";
+  const file = "analysis-" + name + "-" + today() + ".json";
+  const blob = new Blob([JSON.stringify(analysisPayload(view), null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = file;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  featTouchMark("analysis-export");
+  toast(file + " downloaded — its header states what was in force and what was truncated. "
+    + "Paste it to an analyst; this is the READ export, not the state backup.");
 }
 
 /* ═══ THE THREE PULL SURFACES (ruled Aug 11 2026) ═══

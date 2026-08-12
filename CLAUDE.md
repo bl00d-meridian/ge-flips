@@ -136,6 +136,16 @@ walk-up attention budget is untouched. The weekly review keeps a one-line summar
 with a link through and no longer re-renders them — that consolidation is what paid for
 them under the zero-based complexity budget.
 
+**Each of the three carries an `⭳ export for analysis` button** (user-directed, Aug 12
+2026), with a combined `export all three` in the weekly review — a curated JSON file
+written to be READ by an analyst in chat, carrying evidence with its provenance rather
+than the aggregates it rolls up to. It is **not** the state backup on the Flip Log tab:
+that one restores this browser, this one is capped, readable and never a restore point.
+Every export states in its header what was in force (epoch, counts by cohort / grade /
+horizon, constants, standing caveats) and exactly what it truncated — a file too big to
+paste is useless, and one that truncates silently is worse. Observation-floor exclusions
+travel INCLUDED and marked: the floor gates verdicts, never the record.
+
 ## Naming: the PAPER book (renamed Aug 11 2026 — user ruling)
 
 The counterfactual book is the **paper book** everywhere: surfaces, tooltips, copy,

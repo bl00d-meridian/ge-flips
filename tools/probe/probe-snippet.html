@@ -4592,6 +4592,160 @@
   } catch(e){
     out.push("FAIL volume index / measured tier :: " + (e && e.stack || e));
   }
+
+  // ─── §42: ANALYSIS EXPORT (user-directed, Aug 12 2026) ───
+  try {
+    const nowA = Date.now();
+    let tripSeq = 0;
+    const mkTrip = o => Object.assign({
+      id: ++tripSeq, fam: "f", itemId: 9001, name: "Probe alpha", qty: 100, bid: 4000, ask: 4400,
+      t: nowA - 6 * 3600e3, closedAt: nowA - 3600e3, hzH: 4,
+      buyQ: 100, sellQ: 100, buyQFull: 100, sellQFull: 100, buyDone: 100,
+      obsMs: 4 * 3600e3, state: "filled", net: 5000, regimes: ["current"], benchedBy: ["ROI floor"]
+    }, o);
+    const keepBook = DB.shadowBook, keepEpoch = DB.shadowEpoch, keepStrata = DB.strataStats;
+    const keepGL = DB.gateLog, keepDO = DB.dieOffLog, keepExc = DB.shadowExceptions, keepFlips = DB.flips;
+    const keepDiv = DB.shadowDivLog;
+    DB.shadowEpoch = nowA - 20 * 86400e3;
+    DB.shadowBook = [
+      mkTrip({ itemId: 9001, name: "Probe alpha" }),
+      mkTrip({ itemId: 9002, name: "Probe beta", state: "unfilled", net: 0, buyQ: 10, buyQFull: 40,
+               benchedBy: ["volume floor"], grade: "reconstructed", regimes: ["loose"] }),
+      /* The thin one: closed inside a single observation window. It is
+         excluded from every verdict and must still appear in the file. */
+      mkTrip({ itemId: 9003, name: "Probe gamma", obsMs: 5 * 60e3, net: -200,
+               benchedBy: ["ROI floor"], regimes: ["current"] }),
+      mkTrip({ itemId: 9001, name: "Probe alpha", state: "open", closedAt: null })
+    ];
+    DB.shadowDivLog = [{ d: "2026-08-11", cur: 100, loose: 90, tight: 110 },
+                       { d: "2026-08-12", cur: 150, loose: 80, tight: 160 }];
+    DB.strataStats = { f2p: { ids: [9001, 9002], samp: 2, nm: 1, pass: 1, trips: 2, filled: 1, net: 300,
+                              first: nowA - 10 * 86400e3, lastAt: nowA } };
+    const dToday = today();
+    DB.gateLog = [{ d: dToday, id: 9001, g: "ROI floor" }, { d: dToday, id: 9002, g: "volume floor" },
+                  { d: dToday, id: 9003, g: "funded" }];
+    DB.flips = [{ id: 1, itemId: 9001, date: dToday, qty: 10, buy: 4000, sell: 4400 }];
+    DB.dieOffLog = [{ id: 9002, t: nowA - 30 * 3600e3, rec: nowA - 28 * 3600e3 }];
+    DB.shadowExceptions = [{ id: 9001, gate: "ROI floor", grantedAt: nowA - 3 * 86400e3, trips: 1,
+                             status: "active", evidence: { n: 4, filled: 3, net: 1200 } }];
+
+    const P = analysisPayload("paper"), G = analysisPayload("gates"), R = analysisPayload("prospecting");
+    const ALL = analysisPayload("all");
+    /* Null-safe on purpose: a defect here must fail THIS assertion, not throw
+       and take the rest of the section's coverage down with it. */
+    const hv = o => (o && o.header && o.header.view) || null;
+    ok("[R42.1] three per-view payloads plus a combined one, each section keeping its OWN header",
+       hv(P) === "paper-book" && hv(G) === "gate-health" && hv(R) === "prospecting"
+       && ALL.view === "all-three" && hv(ALL.paperBook) === "paper-book"
+       && hv(ALL.gateHealth) === "gate-health" && hv(ALL.prospecting) === "prospecting",
+       JSON.stringify({ p: hv(P), sections: { paper: hv(ALL.paperBook), gates: hv(ALL.gateHealth), prosp: hv(ALL.prospecting) } }));
+
+    const tAlpha = P.closedTrips.find(t => t.item === "Probe alpha" && t.outcome === "filled both legs");
+    ok("[R42.2] a paper trip carries its provenance, not just its result",
+       !!tAlpha && tAlpha.itemId === 9001 && tAlpha.cohort && tAlpha.horizonShape
+       && tAlpha.evidenceGrade === "live" && tAlpha.observedPctOfHorizon === 100
+       && tAlpha.entryBid === 4000 && tAlpha.exitPrice === 4400 && tAlpha.netSimGp === 5000
+       && tAlpha.regimes.join() === "current" && tAlpha.benchedByGate === "ROI floor",
+       JSON.stringify(tAlpha));
+    ok("[R42.2] the tape credit is reported at BOTH participation readings",
+       (() => { const b = P.closedTrips.find(t => t.item === "Probe beta");
+                return b && b.buyCreditAtParticipation === 10 && b.buyCreditAt100Pct === 40
+                    && b.participationPct === shadowPartPct(); })(),
+       JSON.stringify(P.closedTrips.find(t => t.item === "Probe beta")));
+    ok("[R42.2] per-gate rollups and the three regime curves ship as series",
+       P.perGateRollup.length >= 1 && P.perGateRollup.every(r => r.gate && r.horizonShape)
+       && P.regimeCurves.length === 3
+       && P.regimeCurves.every(c => Array.isArray(c.series) && c.series.length === 2 && c.series[0].date)
+       && P.divergenceLedger.length === 2,
+       JSON.stringify({ gates: P.perGateRollup.length, curves: P.regimeCurves.map(c => c.regime) }));
+    ok("[R42.2] gate health ships both streams with their items and per-flip outcomes, die-off and the lane",
+       G.gates.length >= 1 && G.gateItems.length >= 1
+       && G.gateItems.every(i => i.item && i.gate && Array.isArray(i.flips))
+       && G.gateItems.some(i => i.flips.some(f => f.stream === "override" || f.stream === "latency"))
+       && G.dieOffTag.episodes === 1 && G.dieOffTag.episodesDetail[0].outcome === "recovered within 24h"
+       && G.exceptionLane.length === 1 && G.exceptionLane[0].paperEvidence.closedTrips === 4,
+       JSON.stringify({ gates: G.gates.length, items: G.gateItems.length, die: G.dieOffTag.episodes }));
+    ok("[R42.2] prospecting ships per-stratum rows with their sampled items, the gap band and the hours ledger",
+       R.strata.length === 1 && R.strata[0].distinctItemsSampled === 2
+       && R.strata[0].sampledItems.length === 2 && R.strata[0].sampledItems[0].item
+       && R.hoursLedger.length === 24 && R.hoursLedger.every(h => "paperTripsCounted" in h && "marketMedianRoiPct" in h)
+       && R.gapBand && "poolSize" in R.gapBand,
+       JSON.stringify({ strata: R.strata.length, hours: R.hoursLedger.length }));
+
+    const gamma = P.closedTrips.find(t => t.item === "Probe gamma");
+    ok("[R42.3] observation-floor exclusions are INCLUDED and marked, never dropped",
+       !!gamma && gamma.excludedByObservationFloor === true && gamma.countsTowardVerdicts === false
+       && P.header.counts.tripsExcludedByObservationFloor === 1,
+       JSON.stringify(gamma));
+
+    const H = P.header;
+    ok("[R42.4] the header states epoch, counts by cohort/grade/horizon and observation coverage",
+       !!H.paperBookEpochStart && !!H.generatedAt
+       && H.counts.byCohort && Object.keys(H.counts.byCohort).length >= 1
+       && H.counts.byEvidenceGrade.reconstructed === 1 && H.counts.byEvidenceGrade.live === 2
+       && H.counts.byHorizonShape && H.counts.byOutcome.filled === 2
+       && H.observationCoverage.floorPctOfHorizon === Math.round(SHADOW_MIN_OBS * 100)
+       && Number.isFinite(H.observationCoverage.medianObservedPct),
+       JSON.stringify(H.counts));
+    ok("[R42.4] the header states the constants that were in force",
+       H.constantsInForce.roiFloorPct === GATE.roi
+       && H.constantsInForce.participationHaircutPct === shadowPartPct()
+       && Array.isArray(H.constantsInForce.touchScheduleHours)
+       && Array.isArray(H.constantsInForce.touchGapsHours)
+       && H.constantsInForce.observedShareFloorPct === Math.round(SHADOW_MIN_OBS * 100)
+       && "sleeveBudgetGp" in H.constantsInForce,
+       JSON.stringify(H.constantsInForce).slice(0, 300));
+    ok("[R42.4] the standing caveats travel with the data, including the ones that normally render at the surface",
+       H.standingCaveats.length >= 5
+       && H.standingCaveats.some(c => /SIMULATED screening evidence/.test(c))
+       && H.standingCaveats.some(c => /matched on item NAMES/.test(c))
+       && H.standingCaveats.some(c => /reconstructed or mixed/.test(c))
+       && H.standingCaveats.some(c => /traded while still benched/.test(c))
+       && H.standingCaveats.some(c => /raw-preindex/.test(c)),
+       JSON.stringify(H.standingCaveats.length));
+
+    ok("[R42.5] every section declares its cap — including the ones that were NOT truncated",
+       Array.isArray(H.truncation) && H.truncation.length >= 1
+       && H.truncation.every(t => t.section && Number.isFinite(t.kept) && Number.isFinite(t.total) && t.note)
+       && H.truncation.some(t => t.truncated === false && /\(complete\)/.test(t.note)),
+       JSON.stringify(H.truncation));
+    /* Prove the cap actually bites: 3 resolved trips against a cap of 2. */
+    const realCap = ANALYSIS_CAPS.trips;
+    ANALYSIS_CAPS.trips = 2;
+    const Pc = analysisPayload("paper");
+    ANALYSIS_CAPS.trips = realCap;
+    ok("[R42.5] a truncated section keeps the NEWEST rows and says so, with kept and total",
+       Pc.closedTrips.length === 2
+       && Pc.header.truncation.some(t => t.section === "closedTrips" && t.truncated === true
+            && t.kept === 2 && t.total === 3 && /2 of 3/.test(t.note) && /newest closed first/.test(t.note)),
+       JSON.stringify(Pc.header.truncation));
+
+    /* Every id must resolve inside the file: the reader has no mapping API. */
+    const idRows = [].concat(
+      P.closedTrips.map(r => ({ w: "trip", id: r.itemId, name: r.item })),
+      G.gateItems.map(r => ({ w: "gateItem", id: r.itemId, name: r.item })),
+      G.exceptionLane.map(r => ({ w: "exception", id: r.itemId, name: r.item })),
+      G.dieOffTag.episodesDetail.map(r => ({ w: "dieOff", id: r.itemId, name: r.item })),
+      R.strata[0].sampledItems.map(r => ({ w: "stratumItem", id: r.itemId, name: r.item })));
+    ok("[R42.6] no row references an item id without carrying that item's name",
+       idRows.length >= 5 && idRows.every(r => r.id > 0 && typeof r.name === "string" && r.name.length > 0),
+       JSON.stringify(idRows.filter(r => !(r.id > 0) || !r.name)));
+    ok("[R42.6] every section is a flat array of named-field objects, JSON-round-trippable",
+       [P.closedTrips, P.perGateRollup, P.regimeCurves, G.gates, G.gateItems, R.strata, R.hoursLedger]
+         .every(a => Array.isArray(a) && a.every(o => o && typeof o === "object" && !Array.isArray(o)))
+       && JSON.parse(JSON.stringify(P)).closedTrips.length === P.closedTrips.length,
+       "flat arrays of objects");
+    ok("[R42.6] the export term ships with its glossary entry, and says it is not the state backup",
+       (() => { const e = GLOSSARY.flatMap(g => g.entries || []).find(x => x.id === "gov-analysis-export");
+                return !!e && e.what && e.from && e.do && /NOT the state backup/.test(e.caveat || ""); })(),
+       "glossary entry for the analysis export");
+
+    DB.shadowBook = keepBook; DB.shadowEpoch = keepEpoch; DB.strataStats = keepStrata;
+    DB.gateLog = keepGL; DB.dieOffLog = keepDO; DB.shadowExceptions = keepExc; DB.flips = keepFlips;
+    DB.shadowDivLog = keepDiv;
+  } catch(e){
+    out.push("FAIL analysis export :: " + (e && e.stack || e));
+  }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter
