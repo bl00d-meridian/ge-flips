@@ -1262,6 +1262,7 @@ let DB = {
   shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
+  calib: null,        // fill-model calibration (ruled Aug 12 2026): last replay of the model against REAL logged round trips {at,rows,skipped,strict,lenient} — the test of whether a low paper fill rate is a finding about the market or about the model; rolling, because the 5m tape retains ~36h
   volIndex: null,     // market volume index (ruled Aug 12 2026) {at,d,ratio,n,tried,rows:[{id,name,ratio,straddle}],straddle} — the anomaly scan's volume denominator; null = never measured
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
@@ -5631,7 +5632,14 @@ function reconReplay(p, pts, from, to){
        started before the trip did contains prints from before it existed. */
     if (bt < p.t) continue;
     if (!p.buyDone){
-      const cr = reachCredit(b.lo, p.bid, b.lv, "buy");
+      /* RECONSTRUCTION HAS NO TOUCH HISTORY (user ruling, Aug 12 2026). The
+         ambiguous class needs a live instabuy observation inside the bucket,
+         and a replay reads the bucket after the fact — so a reconstructed span
+         can only ever produce PROVEN or NEVER, never ambiguous. The trip is
+         stamped so a reconstructed fill rate is never compared against a live
+         one without the difference being stated. */
+      p.reachLimited = 1;
+      const cr = reachCredit(b.lo, p.bid, b.lv, "buy", false);
       if (cr.any) shadowCredit(p, "buy", cr);
       if (p.buyQ >= p.qty){ p.buyDone = bt; p.buyDoneBkt = bt; }
       else if (bt - p.t > H){
@@ -5646,7 +5654,8 @@ function reconReplay(p, pts, from, to){
     }
     /* The bucket that completed the buy cannot also fill the sell. */
     if (p.buyDone && p.state === "open" && bt !== p.buyDoneBkt && bt >= p.buyDone){
-      const crS = reachCredit(b.hi, p.ask, b.hv, "sell");
+      p.reachLimited = 1;
+      const crS = reachCredit(b.hi, p.ask, b.hv, "sell", false);
       if (crS.any) shadowCredit(p, "sell", crS);
       if (p.sellQ >= p.qty){
         shadowFinishReadings(p);
@@ -5736,11 +5745,20 @@ async function shadowRecover(){
      lenient   — everything that touched, at full. "Possibly reachable."
    lenient ≥ operative ≥ strict always, so the operative outcome is bracketed
    by two honest bounds rather than asserted alone. */
-function reachCredit(px, mine, vol, side){
+function reachCredit(px, mine, vol, side, touched){
   const v = Number(vol) || 0;
-  if (!(v > 0) || px == null || !(mine > 0)) return { any: false, strict: 0, oper: 0, lenient: 0 };
-  const beyond = side === "buy" ? px < mine : px > mine;   // past my price: the queue cleared
-  const at = px === mine;
+  if (!(v > 0) || !(mine > 0)) return { any: false, strict: 0, oper: 0, lenient: 0 };
+  const beyond = px != null && (side === "buy" ? px < mine : px > mine);   // past my price: the queue cleared
+  /* AMBIGUOUS, widened on the user's ruling (Aug 12 2026). The original rule
+     — bucket average EXACTLY equal to my price — was correct as specified and
+     useless in practice: a five-minute AVERAGE almost never lands on a
+     specific bid, and it fired on 3.2% of buckets in the epoch, so the
+     proven/possible bracket collapsed to nearly nothing for a reason that had
+     no bearing on real reachability. The ambiguous case is now the one that
+     actually happens: the bucket's average sat on the wrong side of my price,
+     but a LIVE instabuy observation touched it somewhere inside that bucket.
+     The price dipped to me briefly; some prints reached me, most did not. */
+  const at = !beyond && (px === mine || !!touched);
   if (!beyond && !at) return { any: false, strict: 0, oper: 0, lenient: 0 };
   const tape = Math.max(1, Math.floor(v * GATE.capture));
   return { any: true, beyond, at,
@@ -5811,17 +5829,42 @@ function shadowTick(){
     const m5 = S.min5[p.itemId] || {};
     /* Causality: this bucket may credit the BUY only if it began at or after
        the trip opened, and only once. */
-    const buyOK = bkt > 0 && bkt >= p.t && p.buyBkt !== bkt;
-    if (!p.buyDone){
-      if (buyOK){
-        const cr = reachCredit(m5.avgLowPrice, p.bid, m5.lowPriceVolume, "buy");
-        if (cr.any){
-          p.buyBkt = bkt;
-          shadowCredit(p, "buy", cr);
-          changed = true;
+    /* DEFERRED BUCKET CREDIT (Aug 12 2026). The ambiguous class needs to know
+       whether a live instabuy touched my price at ANY point inside a bucket,
+       which is only knowable once that bucket has closed. So each bucket is
+       observed while it is current — its prices, its volume, and whether a
+       touch was seen on any poll during it — and credited when the next
+       bucket arrives. Fills lag by up to one bucket, which is the honest
+       price of the distinction. */
+    if (bkt > 0 && bkt >= p.t){
+      if (p.pend && p.pend.bkt !== bkt){
+        const q = p.pend;
+        if (!p.buyDone && p.buyBkt !== q.bkt){
+          const cr = reachCredit(q.lo, p.bid, q.lv, "buy", q.touchBuy);
+          if (cr.any){ p.buyBkt = q.bkt; shadowCredit(p, "buy", cr); changed = true; }
+        } else if (p.buyDone && q.bkt >= p.buyDone && q.bkt !== p.buyDoneBkt && p.sellBkt !== q.bkt){
+          const cr = reachCredit(q.hi, p.ask, q.hv, "sell", q.touchSell);
+          if (cr.any){ p.sellBkt = q.bkt; shadowCredit(p, "sell", cr); changed = true; }
         }
+        p.pend = null;
       }
-      if (p.buyQ >= p.qty){ p.buyDone = now; p.buyDoneBkt = bkt; }
+      if (!p.pend) p.pend = { bkt, lo: null, lv: 0, hi: null, hv: 0, touchBuy: 0, touchSell: 0 };
+      if (p.pend.bkt === bkt){
+        p.pend.lo = m5.avgLowPrice != null ? m5.avgLowPrice : p.pend.lo;
+        p.pend.hi = m5.avgHighPrice != null ? m5.avgHighPrice : p.pend.hi;
+        p.pend.lv = Math.max(p.pend.lv, m5.lowPriceVolume || 0);
+        p.pend.hv = Math.max(p.pend.hv, m5.highPriceVolume || 0);
+        /* The touch: a live instabuy/instasell observation reaching my price
+           inside this bucket. This is the observation reconstruction can never
+           have, which is why a reconstructed span can only ever be proven or
+           never — stamped on the trip so a reconstructed fill rate is never
+           read beside a live one as though they measured the same thing. */
+        if (L.low != null && L.low <= p.bid) p.pend.touchBuy = 1;
+        if (L.high != null && L.high >= p.ask) p.pend.touchSell = 1;
+      }
+    }
+    if (!p.buyDone){
+      if (p.buyQ >= p.qty){ p.buyDone = now; p.buyDoneBkt = p.buyBkt || bkt; }
       else if (now - p.t > H){
         if (p.buyQ > 0){
           /* PARTIAL is now its own outcome (user ruling, Aug 12 2026). The
@@ -5852,13 +5895,9 @@ function shadowTick(){
       }
     }
     if (p.buyDone && p.state === "open"){
-      /* The sell leg starts where the buy finished: a bucket that completed
-         the buy cannot also fill the sell, and no bucket before it can. */
-      const sellOK = bkt > 0 && bkt >= p.buyDone && bkt !== p.buyDoneBkt && p.sellBkt !== bkt;
-      if (sellOK){
-        const cr = reachCredit(m5.avgHighPrice, p.ask, m5.highPriceVolume, "sell");
-        if (cr.any){ p.sellBkt = bkt; shadowCredit(p, "sell", cr); changed = true; }
-      }
+      /* Sell-leg credit also lands on bucket roll, above — the leg starts
+         where the buy finished, and the bucket that completed the buy can
+         never also fill the sell. */
       if (p.sellQ >= p.qty){
         shadowFinishReadings(p);
         p.state = "filled"; p.closedAt = now;
@@ -6440,6 +6479,120 @@ function paperRateFace(closed){
     + '</b> <span class="dim">per gp-day of simulated notional</span>';
 }
 
+/* ═══════ FILL-MODEL CALIBRATION (user ruling, Aug 12 2026) ═══════════════
+   The test that decides whether "1 of 43 trips filled" is a finding about the
+   market or about the model. Every logged REAL round trip is replayed against
+   the tape as if it had been a paper trip with the same bid, ask, qty and
+   horizon. A logged flip completed both legs by definition, so every
+   disagreement is a model error with a known direction:
+
+     agreement        — model also says filled. The model is calibrated here.
+     false partial    — model got the buy but not to full size in time.
+     false never      — model says the bid never got the tape at all. This is
+                        the damning one: if it is common, the fill model is
+                        pessimistic and no conclusion drawn from paper fill
+                        rates survives.
+
+   Three constraints, all of which are stated in the output rather than
+   quietly worked around:
+
+   • THE 5m TAPE RETAINS ~36 HOURS. Flips older than that cannot be replayed
+     at the model's own granularity. They are SKIPPED and counted, never
+     replayed against 1h buckets instead — an hour bucket credits twelve times
+     the volume per step and would flatter every fill, so it would be
+     measuring a different model. This makes calibration a ROLLING test that
+     has to be re-run, not a thing you do once.
+   • A FLIP NEEDS A KNOWN BUY WINDOW. `bh` (hours the buy leg took) is
+     recorded on flips placed through the plan; without it the buy start is
+     unknown and inventing one would fabricate the very thing under test.
+     Those flips are skipped and counted too.
+   • THE AMBIGUOUS CLASS CANNOT BE REPLAYED. It needs a live instabuy
+     observation from inside the bucket, and a historical replay reads the
+     bucket after the fact. So calibration reports the two BOUNDS — proven and
+     possible — and states that the operative reading lies between them and is
+     only measurable going forward, live. */
+const CALIB_5M_RETENTION_H = 36;
+async function calibrateFillModel(){
+  if (S.calibBusy) return null;
+  S.calibBusy = true;
+  try {
+    const now = Date.now();
+    const flips = (DB.flips || []).filter(f => f.itemId > 0 && f.qty > 0 && f.buy > 0 && f.sell > 0);
+    const rows = [], skipped = { tooOld: 0, noWindow: 0, noTape: 0 };
+    const eligible = [];
+    for (const f of flips){
+      const sellAt = f.t || f.id;                       // the log moment ≈ the sell
+      if (!(sellAt > 0)){ skipped.noWindow++; continue; }
+      if (now - sellAt > CALIB_5M_RETENTION_H * 3600e3){ skipped.tooOld++; continue; }
+      if (!(Number(f.bh) > 0)){ skipped.noWindow++; continue; }
+      eligible.push({ f, buyAt: sellAt - Number(f.bh) * 3600e3, sellAt });
+    }
+    const byItem = new Map();
+    for (const e of eligible){
+      if (!byItem.has(e.f.itemId)) byItem.set(e.f.itemId, []);
+      byItem.get(e.f.itemId).push(e);
+    }
+    for (const [id, list] of byItem){
+      let pts = null;
+      try {
+        const d = await getJSON("/timeseries?id=" + id + "&timestep=5m");
+        pts = (d.data || []).map(x => ({ t: x.timestamp * 1000,
+          lo: Number.isFinite(x.avgLowPrice) ? x.avgLowPrice : null,
+          hi: Number.isFinite(x.avgHighPrice) ? x.avgHighPrice : null,
+          lv: x.lowPriceVolume || 0, hv: x.highPriceVolume || 0 }));
+      } catch(e){ /* polite: skip the item, count it */ }
+      if (!pts || !pts.length){ skipped.noTape += list.length; continue; }
+      for (const e of list) rows.push(calibReplayOne(e, pts));
+      await new Promise(r => setTimeout(r, 300));
+    }
+    const res = { at: now, rows, skipped, eligible: eligible.length, total: flips.length,
+      retentionH: CALIB_5M_RETENTION_H };
+    for (const mode of ["strict", "lenient"]){
+      const v = rows.map(r => r[mode]);
+      res[mode] = {
+        agree: v.filter(x => x.verdict === "filled").length,
+        falsePartial: v.filter(x => x.verdict === "partial").length,
+        falseNever: v.filter(x => x.verdict === "unfilled").length,
+        falseForced: v.filter(x => x.verdict === "forced-exit").length,
+        medianBuyShortfallPct: medianOf(v.filter(x => x.verdict !== "filled").map(x => x.buyPct)),
+        medianSellShortfallPct: medianOf(v.filter(x => x.verdict === "forced-exit").map(x => x.sellPct))
+      };
+      res[mode].agreePct = rows.length ? Math.round(100 * res[mode].agree / rows.length) : null;
+    }
+    DB.calib = res; save();
+    return res;
+  } finally { S.calibBusy = false; if (S.tab === "trade" && S.sub === "paper") renderPaperView(); }
+}
+/* One flip, replayed. Pure given its tape, so the probe can drive it. */
+function calibReplayOne(e, pts){
+  const f = e.f, H = Math.max(0.25, Number(f.bh) * 2) * 3600e3;   // its own realised buy time, doubled, as the horizon
+  const out = { item: f.name || itemName(f.itemId), itemId: f.itemId, qty: f.qty,
+    bid: f.buy, ask: f.sell, buyAt: e.buyAt, sellAt: e.sellAt, bh: Number(f.bh) };
+  for (const mode of ["strict", "lenient"]){
+    let buy = 0, buyDone = null, sell = 0;
+    for (const b of pts){
+      if (b.t < e.buyAt || b.t - e.buyAt > H) continue;
+      const cr = reachCredit(b.lo, f.buy, b.lv, "buy", false);
+      buy += mode === "strict" ? cr.strict : cr.lenient;
+      if (buy >= f.qty){ buyDone = b.t; break; }
+    }
+    if (buyDone == null){
+      out[mode] = { verdict: buy > 0 ? "partial" : "unfilled",
+        buyPct: Math.round(100 * Math.min(1, buy / f.qty)), sellPct: 0 };
+      continue;
+    }
+    for (const b of pts){
+      if (b.t <= buyDone || b.t - buyDone > H) continue;
+      const cr = reachCredit(b.hi, f.sell, b.hv, "sell", false);
+      sell += mode === "strict" ? cr.strict : cr.lenient;
+      if (sell >= f.qty) break;
+    }
+    out[mode] = { verdict: sell >= f.qty ? "filled" : "forced-exit",
+      buyPct: 100, sellPct: Math.round(100 * Math.min(1, sell / f.qty)) };
+  }
+  return out;
+}
+
 /* ═══ NEVER-FED DETECTOR (user ruling, Aug 12 2026) ═══════════════════════
    A stat that renders 0 because nothing FEEDS it is indistinguishable, on
    screen, from a stat that renders 0 because nothing QUALIFIED — and the two
@@ -6457,6 +6610,57 @@ function neverFedNote(what, why){
 }
 /* The headline block: per cohort, as a rate, with its distribution and a
    capital-feasibility check. Never a blended total. */
+function calibSection(){
+  const c = DB.calib;
+  const head = '<div class="ph" style="margin-top:10px"><h3>Fill-model calibration</h3>'
+    + '<span class="sub">' + (c ? "last run " + ago(c.at) : "never run") + '</span>'
+    + '<span style="margin-left:auto"><button class="sm" id="calibRun"' + (S.calibBusy ? ' disabled' : '')
+    + ' title="Replays the fill model against the tape for every logged REAL round trip, and reports where it disagrees with what actually happened.">'
+    + (S.calibBusy ? '… running' : '▸ run calibration') + '</button></span></div>';
+  const note = '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
+    + 'So every disagreement below is a MODEL error with a known direction, and the one that matters is <b>false '
+    + 'never-filled</b>: if the model routinely says the bid never got the tape for flips you actually completed, then '
+    + 'it is pessimistic and no conclusion drawn from paper fill rates survives. The two columns are the reachability '
+    + 'BOUNDS. The operative reading lies between them and cannot be replayed at all — it needs a live instabuy '
+    + 'observation from inside each bucket, which a historical replay does not have — so it is only ever measurable '
+    + 'going forward.</div>';
+  if (!c) return head + note + '<div class="dim">Not run yet. It needs flips inside the 5-minute tape\'s ~'
+    + CALIB_5M_RETENTION_H + '-hour retention, so it is a ROLLING test: run it while recent flips are still replayable, '
+    + 'not once.</div>';
+  const cols = [{ k: "item", lab: "Item" }, { k: "qty", lab: "Qty", num: 1, sortk: "_qty" },
+                { k: "bh", lab: "Real buy time", num: 1, sortk: "_bh" },
+                { k: "strict", lab: "Model — proven reach" }, { k: "lenient", lab: "Model — possible reach" }];
+  const rows = (c.rows || []).map(r => ({ item: r.item, qty: full(r.qty), _qty: r.qty,
+    bh: fmtHrs(r.bh), _bh: r.bh,
+    strict: r.strict.verdict + (r.strict.verdict === "filled" ? "" : " (" + r.strict.buyPct + "% of the buy)"),
+    lenient: r.lenient.verdict + (r.lenient.verdict === "filled" ? "" : " (" + r.lenient.buyPct + "% of the buy)"),
+    _txt: r.item + " " + r.strict.verdict + " " + r.lenient.verdict }));
+  const line = (lab, m) => '<tr><td style="text-align:left">' + lab + '</td>'
+    + '<td class="num">' + m.agree + (m.agreePct != null ? ' <span class="dim">(' + m.agreePct + '%)</span>' : '') + '</td>'
+    + '<td class="num">' + m.falsePartial + '</td><td class="num">' + m.falseForced + '</td>'
+    + '<td class="num ' + (m.falseNever ? 'neg' : '') + '">' + m.falseNever + '</td>'
+    + '<td class="num dim">' + (m.medianBuyShortfallPct != null ? m.medianBuyShortfallPct + '%' : '—') + '</td></tr>';
+  return head + note
+    + '<div class="tw"><table><thead><tr><th>Reading</th><th>Agreed (filled)</th><th>False partial</th>'
+    + '<th>False forced-exit</th><th>False never-filled</th>'
+    + '<th title="Median share of the buy leg the model did credit, across the trips it got wrong — how wrong it was, not just that it was">Median buy credited when wrong</th>'
+    + '</tr></thead><tbody>'
+    + line("proven reach (lower bound)", c.strict) + line("possible reach (upper bound)", c.lenient)
+    + '</tbody></table></div>'
+    + '<div data-drillrow="1" style="margin-top:5px">'
+    + drill("calib:rows", c.rows.length + ' flip' + (c.rows.length === 1 ? '' : 's') + ' replayed', {
+        head: "every logged round trip the model was replayed against, and what it said",
+        cols, rows, empty: "No flips were replayable in this run.",
+        note: 'Each row is a trip that really completed. Anything other than "filled" in a column is the model being wrong '
+            + 'in that reading.' })
+    + ' of ' + c.total + ' logged · '
+    + '<span class="dim">skipped: ' + c.skipped.tooOld + ' outside the ~' + c.retentionH + 'h 5m-tape window, '
+    + c.skipped.noWindow + ' with no recorded buy duration to replay against, ' + c.skipped.noTape + ' with no tape returned'
+    + '</span></div>'
+    + '<div class="dim" style="margin-top:4px">Older flips are NOT replayed against 1h buckets to fill the gap: an hour '
+    + 'bucket credits twelve times the volume per step and would flatter every fill, so it would be calibrating a '
+    + 'different model than the one that runs.</div>';
+}
 function paperHeadlineSection(){
   const closed = paperClosed();
   if (!closed.length)
@@ -11775,6 +11979,7 @@ document.addEventListener("click", e => {
     toast("Dismissed for this occurrence — the reminder returns on the next trigger (a new flag on the tape, a catalyst window, next update Wednesday, or staleness).");
     return;
   }
+  if (e.target.closest("#calibRun")){ calibrateFillModel(); return; }
   const ax = e.target.closest("[data-analysis]");
   if (ax){ analysisExport(ax.dataset.analysis); return; }
   const fx = e.target.closest("[data-flagsexport]");
@@ -12755,6 +12960,18 @@ const GLOSSARY = [
     caveat: "A 5-minute bucket reports an AVERAGE price, not individual prints, so exact equality with your price is "
           + "rare and the two bounds sit closer together than true book depth would put them. The bracket is honest "
           + "about direction, not about width." },
+  { id: "met-calib", term: "Fill-model calibration",
+    what: "The fill model replayed against the tape for every logged REAL round trip, as if each had been a paper trip. "
+        + "A logged flip completed both legs by definition, so every disagreement is a MODEL error with a known "
+        + "direction — and the one that matters is <b>false never-filled</b>.",
+    from: "Your flip log and the 5-minute tape, on the ▸ run calibration button in the paper book.",
+    do: "Run it before you believe any paper fill rate. If the model says never-filled for flips you actually completed, "
+        + "it is pessimistic and nothing built on paper fill rates survives; if it agrees with reality, then a low paper "
+        + "fill rate is a fact about the market and worth more than any gate tuning.",
+    caveat: "ROLLING, not one-off: the 5m tape retains about 36 hours, so only recent flips can be replayed and the rest "
+          + "are skipped and counted. Flips without a recorded buy duration are skipped too — inventing the window would "
+          + "fabricate the thing under test. And the ambiguous reading cannot be replayed at all, so it reports the two "
+          + "bounds and nothing between them." },
   { id: "met-partial", term: "Partial buy",
     what: "A trip whose buy leg accumulated some volume but never reached its full size inside its horizon. It exits "
         + "what it bought at the horizon price and closes.",
@@ -14401,7 +14618,7 @@ function renderPaperView(){
     + " · simulated throughout";
   $("#paperGateSub").textContent = shadowByGate().size + " gate" + (shadowByGate().size === 1 ? "" : "s")
     + " with closed outcomes — every cell opens to its trips";
-  setHTML("#paperRegime", paperHeadlineSection() + paperRegimeSection());
+  setHTML("#paperRegime", paperHeadlineSection() + paperRegimeSection() + calibSection());
   setHTML("#paperGate", paperGateSection());
   setHTML("#paperCohort", paperCohortSection());
 }

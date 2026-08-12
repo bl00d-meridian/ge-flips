@@ -2161,18 +2161,25 @@
     ok("[R18.2] no print at-or-below the bid = no fill; observed time accrues capped",
        sb2.buyQ === 0 && sb2.state === "open" && sb2.obsMs > 0 && sb2.obsMs <= 10 * 60e3,
        JSON.stringify(sb2));
+    /* Credit lands when a bucket ROLLS (Aug 12 2026), because the ambiguous
+       class needs every touch inside a bucket to have been observed before it
+       can be judged. So each credited bucket takes two ticks in the fixture:
+       one that observes it, one that presents the next bucket and flushes it. */
+    const roll = ms => { S.min5At = ms; shadowTick(); };
     S.latest[9002] = { high: 4300, low: 4000, highTime: nowS, lowTime: nowS };   // prints through the bid; ask untouched
     S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
-    shadowTick();
+    roll(bkt18(t18 + 600e3));             // observe the fill bucket
+    ok("[R43.2] an observed bucket credits nothing until it has closed — a touch late in it still counts",
+       sb2.buyQ === 0 && sb2.state === "open", JSON.stringify({ buyQ: sb2.buyQ }));
+    roll(bkt18(t18 + 900e3));             // next bucket arrives → the fill bucket is credited
     ok("[R18.2] a print at-or-below the bid fills volume-weighted (capture-capped)",
        sb2.buyQ === 10 && sb2.buyDone > 0 && sb2.state === "open", JSON.stringify(sb2));
     S.latest[9002] = { high: 4399, low: 4000, highTime: nowS, lowTime: nowS };   // lifts the ask
-    shadowTick();
     ok("[R43.2] the bucket that completed the buy cannot also fill the sell — no instant round trip",
        sb2.state === "open" && sb2.sellQ === 0,
        JSON.stringify({ state: sb2.state, sellQ: sb2.sellQ, bkt: S.min5At, buyDoneBkt: sb2.buyDoneBkt }));
-    S.min5At = bkt18(t18 + 600e3);        // the NEXT bucket — the sell leg's first eligible tape
-    shadowTick();
+    roll(bkt18(t18 + 1200e3));            // observe a sell-eligible bucket
+    roll(bkt18(t18 + 1500e3));            // and close it
     ok("[R18.2] sell side symmetric — full round trip closes with net after tax",
        sb2.state === "filled" && sb2.net === 10 * (4399 - geTax(4399, 9002)) - 10 * 4001,
        JSON.stringify({ state: sb2.state, net: sb2.net }));
@@ -3154,8 +3161,9 @@
       obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     S.latest[9002] = { high: 4500, low: 4000, highTime: nowS27, lowTime: nowS27 };
     S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 40, lowPriceVolume: 40 };
-    S.min5At = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;   // a bucket that began after the trip opened
-    shadowTick();
+    const b27 = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;   // a bucket that began after the trip opened
+    const roll27 = ms => { S.min5At = ms; shadowTick(); };
+    roll27(b27); roll27(b27 + 300e3);      // observe, then close the bucket
     const sb27 = DB.shadowBook[0];
     const tape27 = Math.max(1, Math.floor(40 * GATE.capture));
     const cons27 = Math.max(1, Math.floor(tape27 * 0.5));
@@ -3171,8 +3179,7 @@
       qty: 20, bid: 4000, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0,
       obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     S.min5[9002] = { avgHighPrice: 4500, avgLowPrice: 4000, highPriceVolume: 40, lowPriceVolume: 40 };
-    S.min5At = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;
-    shadowTick();
+    roll27(b27); roll27(b27 + 300e3);
     const sbAt = DB.shadowBook[0];
     ok("[R18.5] a print EXACTLY AT the bid is ambiguous — haircut on the operative leg, nothing on the strict one, full on the lenient",
        sbAt.buyQ === cons27 && sbAt.buyQStrict === 0 && sbAt.buyQFull === tape27
@@ -3182,7 +3189,7 @@
        (() => { DB.shadowBook = [{ id: 9703, fam: "above:9002", itemId: 9002, name: "Probe beta",
                   qty: 20, bid: 3900, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0,
                   sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now27 - 60e3, state: "open", regimes: [] }];
-                shadowTick();
+                roll27(b27); roll27(b27 + 300e3);
                 return DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].buyQFull === 0; })(),
        JSON.stringify(DB.shadowBook[0]));
     DB.shadowBook = [{ id: 9701, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
@@ -4912,23 +4919,28 @@
     ok("[R43.2] a bucket that began before the trip did credits NOTHING — no round trip from prior tape",
        DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].state === "open",
        JSON.stringify({ buyQ: DB.shadowBook[0].buyQ, bkt: S.min5At, t: DB.shadowBook[0].t }));
-    /* Opened before the bucket started: this one is eligible, once. */
+    /* Opened before the bucket started: eligible, and credited ONCE when the
+       bucket closes however many polls presented it while it was open. */
     DB.shadowBook = [mkC2(-60e3)];
-    shadowTick();
+    S.min5At = bktC; shadowTick(); shadowTick(); shadowTick();   // three polls, same bucket
+    const beforeRoll = DB.shadowBook[0].buyQ;
+    S.min5At = bktC + 300e3; shadowTick();                        // bucket closes → one credit
     const after1 = DB.shadowBook[0].buyQ;
-    shadowTick();
+    shadowTick(); shadowTick();                                   // more polls, still the same new bucket
     ok("[R43.2] the same bucket credits a leg ONCE, however many polls present it",
-       after1 > 0 && DB.shadowBook[0].buyQ === after1,
-       JSON.stringify({ afterFirstTick: after1, afterSecond: DB.shadowBook[0].buyQ }));
+       beforeRoll === 0 && after1 > 0 && DB.shadowBook[0].buyQ === after1,
+       JSON.stringify({ whileOpen: beforeRoll, onClose: after1, afterMorePolls: DB.shadowBook[0].buyQ }));
     /* Minimum life: a trip cannot resolve in the cycle that opened it. */
     S.pollSeq = 77;
     DB.shadowBook = [Object.assign(mkC2(-60e3), { openSeq: 77 })];
-    shadowTick();
+    S.min5At = bktC; shadowTick();
+    S.min5At = bktC + 300e3; shadowTick();
     ok("[R43.2] a trip cannot resolve in its opening poll cycle — an instant round trip is a bug, not a fill",
        DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].state === "open",
        JSON.stringify({ buyQ: DB.shadowBook[0].buyQ, openSeq: DB.shadowBook[0].openSeq, seq: S.pollSeq }));
     S.pollSeq = 78;
-    shadowTick();
+    S.min5At = bktC; shadowTick();
+    S.min5At = bktC + 300e3; shadowTick();
     ok("[R43.2] and it fills on the NEXT cycle — the guard delays, it does not disable",
        DB.shadowBook[0].buyQ > 0,
        JSON.stringify({ buyQ: DB.shadowBook[0].buyQ }));
@@ -5103,6 +5115,97 @@
     DB.shadowBook = keep44b; DB.bank = keepBank44; DB.reserve = keepRes44; DB.shadowReserve = keepSh44;
   } catch(e){
     out.push("FAIL reachability / rate-not-total :: " + (e && e.stack || e));
+  }
+
+  // ─── §45: AMBIGUOUS-BY-TOUCH, AND FILL-MODEL CALIBRATION ───
+  try {
+    const capT2 = v => Math.max(1, Math.floor(v * GATE.capture));
+    // ---- R45.1 the widened ambiguous class ----
+    const noTouch = reachCredit(4100, 4000, 100, "buy", false);
+    const touched = reachCredit(4100, 4000, 100, "buy", true);
+    ok("[R45.1] bucket average on the wrong side and NO touch observed = no credit at all",
+       !noTouch.any && noTouch.strict === 0 && noTouch.oper === 0 && noTouch.lenient === 0,
+       JSON.stringify(noTouch));
+    ok("[R45.1] wrong side but a live instabuy TOUCHED my price inside the bucket = ambiguous, haircut only",
+       touched.any && touched.at === true && touched.strict === 0
+       && touched.oper === Math.max(1, Math.floor(capT2(100) * shadowPart()))
+       && touched.lenient === capT2(100),
+       JSON.stringify(touched));
+    ok("[R45.1] a touch never upgrades a PROVEN print — strictly past my price is already full credit",
+       (() => { const a = reachCredit(3900, 4000, 100, "buy", true), b = reachCredit(3900, 4000, 100, "buy", false);
+                return a.strict === b.strict && a.oper === b.oper && a.beyond && b.beyond; })(),
+       "touch is only a floor-raiser for the ambiguous case");
+    /* The whole point of the widening: the old rule fired on exact equality
+       only, which a 5-minute AVERAGE almost never hits. */
+    ok("[R45.1] the widened class actually fires where the old one did not",
+       !reachCredit(4100, 4000, 100, "buy", false).any
+       && reachCredit(4100, 4000, 100, "buy", true).any,
+       "same bucket, opposite verdicts, decided by the touch");
+    // ---- R45.2 reconstruction cannot produce the ambiguous class ----
+    const pts45 = [];
+    const base45 = Date.now() - 3600e3;
+    for (let i = 0; i < 12; i++) pts45.push({ t: base45 + i * 300e3, lo: 4100, hi: 4000, lv: 9000, hv: 9000 });
+    const recon45 = { id: 45001, itemId: 9001, qty: 10, bid: 4001, ask: 4399, t: base45, hzH: 1,
+      buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
+    reconReplay(recon45, pts45, base45, Date.now());
+    ok("[R45.2] a reconstructed span gets NO ambiguous credit — the touch history does not exist to be read",
+       recon45.buyQ === 0 && recon45.buyQFull === 0,
+       JSON.stringify({ buyQ: recon45.buyQ, full: recon45.buyQFull }));
+    ok("[R45.2] and the trip is STAMPED, so a reconstructed fill rate is never read beside a live one in silence",
+       recon45.reachLimited === 1, JSON.stringify({ stamped: recon45.reachLimited }));
+    ok("[R45.2] reconstruction still credits PROVEN prints normally — the limit is the ambiguous class, not the model",
+       (() => { const r2 = { id: 45002, itemId: 9001, qty: 10, bid: 4200, ask: 9e9, t: base45, hzH: 1,
+                  buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
+                reconReplay(r2, pts45, base45, Date.now());
+                return r2.buyQ === 10 && r2.reachLimited === 1; })(),
+       "proven still credits under reconstruction");
+
+    // ---- R45.3 calibration replays REAL flips and reports its own limits ----
+    /* Both legs PROVEN: the tape's low (4100) sits strictly below the bid and
+       its high (4000) strictly above the ask, so neither bound needs the
+       ambiguous class a replay cannot supply. */
+    const f45 = { f: { itemId: 9001, name: "Probe alpha", qty: 10, buy: 4200, sell: 3900, bh: 0.5 },
+      buyAt: base45, sellAt: base45 + 1800e3 };
+    const c45 = calibReplayOne(f45, pts45);
+    ok("[R45.3] a flip the model can complete reads AGREED on both bounds",
+       c45.strict.verdict === "filled" && c45.lenient.verdict === "filled",
+       JSON.stringify({ s: c45.strict, l: c45.lenient }));
+    ok("[R45.3] a leg that only ever traded AT the price reads worse on the proven bound than the possible one",
+       (() => { const atAsk = { f: { itemId: 9001, name: "Probe alpha", qty: 10, buy: 4200, sell: 4000, bh: 0.5 },
+                  buyAt: base45, sellAt: base45 + 1800e3 };
+                const r = calibReplayOne(atAsk, pts45);
+                return r.strict.verdict === "forced-exit" && r.lenient.verdict === "filled"; })(),
+       "the bracket separates where the tape only touched");
+    const f45b = { f: { itemId: 9001, name: "Probe alpha", qty: 999999, buy: 4200, sell: 4000, bh: 0.5 },
+      buyAt: base45, sellAt: base45 + 1800e3 };
+    const c45b = calibReplayOne(f45b, pts45);
+    ok("[R45.3] a flip the model cannot complete reads FALSE PARTIAL or FALSE NEVER, with how wrong it was",
+       ["partial", "unfilled"].indexOf(c45b.strict.verdict) >= 0
+       && Number.isFinite(c45b.strict.buyPct) && c45b.strict.buyPct < 100,
+       JSON.stringify(c45b.strict));
+    const f45c = { f: { itemId: 9001, name: "Probe alpha", qty: 10, buy: 3000, sell: 4000, bh: 0.5 },
+      buyAt: base45, sellAt: base45 + 1800e3 };
+    ok("[R45.3] a bid the tape never reached reads FALSE NEVER — the damning verdict is reachable",
+       calibReplayOne(f45c, pts45).strict.verdict === "unfilled",
+       JSON.stringify(calibReplayOne(f45c, pts45).strict));
+    ok("[R45.3] the panel states its three limits rather than working around them",
+       (() => { const keepC = DB.calib; DB.calib = null;
+                const s = calibSection(); DB.calib = keepC;
+                return /ROLLING test/.test(s) && /36-hour retention/.test(s)
+                    && /only ever measurable[\s\S]*going forward/.test(s); })(),
+       calibSection().slice(0, 300));
+    ok("[R45.3] and it refuses the 1h substitution in writing, with the reason",
+       (() => { const keepC = DB.calib;
+                DB.calib = { at: Date.now(), rows: [], total: 5, retentionH: CALIB_5M_RETENTION_H,
+                  skipped: { tooOld: 4, noWindow: 1, noTape: 0 },
+                  strict: { agree: 0, falsePartial: 0, falseNever: 0, falseForced: 0, agreePct: null, medianBuyShortfallPct: null },
+                  lenient: { agree: 0, falsePartial: 0, falseNever: 0, falseForced: 0, agreePct: null, medianBuyShortfallPct: null } };
+                const s = calibSection(); DB.calib = keepC;
+                return /NOT replayed against 1h buckets/.test(s) && /twelve times the volume/.test(s)
+                    && /4 outside/.test(s) && /1 with no recorded buy duration/.test(s); })(),
+       "1h refusal + skip census");
+  } catch(e){
+    out.push("FAIL ambiguous-by-touch / calibration :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
