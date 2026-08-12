@@ -6496,6 +6496,17 @@ function shadowTick(){
           if (cr.any){ p.buyBkt = q.bkt; shadowCredit(p, "buy", cr); changed = true; }
         } else if (p.buyDone && q.bkt >= p.buyDone && q.bkt !== p.buyDoneBkt && p.sellBkt !== q.bkt){
           const cr = reachCredit(q.hi, p.ask, q.hv, "sell", q.touchSell);
+          /* SELL-LEG TRACE (Aug 12 2026). The live book previously kept no
+             per-bucket evidence at all — `p.pend` is nulled once credited —
+             so a zero-sell-credit trip could not be classified after the
+             fact, and the discriminator had nothing to read on the population
+             where the failure is most visible. The buckets that credit
+             NOTHING are the informative ones, so they are recorded too.
+             Instrumentation only: it changes no credit and no verdict, so
+             FILL_MODEL_V does not move. */
+          if (!p.sellTrace) p.sellTrace = [];
+          if (p.sellTrace.length < SELL_TRACE_CAP)
+            p.sellTrace.push({ t: q.bkt, hi: q.hi, hv: q.hv, credited: cr.oper || 0 });
           if (cr.any){ p.sellBkt = q.bkt; shadowCredit(p, "sell", cr); changed = true; }
         }
         p.pend = null;
@@ -7355,6 +7366,115 @@ function calibReplaySell(e, pts){
   out.atPriceBuckets = out.trace.filter(x => x.code === "at-price").length;
   return out;
 }
+/* ═══ THE SELL DISCRIMINATOR (user ruling, Aug 12 2026) ═══════════════════
+   The sell leg fails for two causes with OPPOSITE fixes, so the split has to
+   be measured before either is proposed. Ruled two passes ago, shipped as
+   traces instead of as a reported figure; reading a trace by eye is what the
+   ruling excluded, so this is the computation.
+
+     DILUTION — the credit rule reads a 5m AVERAGE as if it described the
+       interval, then credits the whole bucket's flow when it passes. A bucket
+       whose average sits just below the ask certainly contained prints above
+       it. Signature: a SMALL negative gap with real volume present.
+     MISLOCATED WINDOW — the replay looked at the wrong interval entirely.
+       Signature: a LARGE gap sustained across the window.
+     NEITHER — a real, available outcome, not a residue. If a third mechanism
+       exists it surfaces as an unclassified pile rather than being forced into
+       one of two buckets; the no-liquidity case is already one such, and it is
+       an illiquidity finding rather than either of the two above.
+
+   THRESHOLDS ARE PROPOSED, NOT RULED. The reasoning, so a ruling has
+   something to argue against:
+
+   • DILUTION at |gap| ≤ 1.0%. A sell sits one tick inside the spread
+     (`ask = sell − 1`), and the tool's own ROI floor is 1.2% — so a bucket
+     average within 1% below the ask is inside the item's own typical
+     intra-bucket range, which is exactly the condition under which prints
+     above the ask are plausible. Beyond that the average is genuinely below
+     where the trader was asking, and calling it dilution would be assuming
+     the conclusion.
+   • MISLOCATION at gap ≤ −5.0%, sustained over ≥ 70% of the window. 5% is
+     ~4× the ROI floor and far outside intra-bucket noise: a window sitting
+     that far below the ask across most of its length is looking at a
+     different part of the day, not at the same interval noisily. The sustain
+     share is what distinguishes a mislocated window from a window that merely
+     contains a dip — a couple of deep buckets are not a wrong interval.
+   • NO SPLIT PERCENTAGE BELOW n = 8. Under eight cases a single trip moves
+     the split by more than twelve points, which is more precision than the
+     data has. Counts always render; percentages wait for the sample. */
+const SELL_DILUTION_GAP_PCT = 1.0;
+const SELL_MISLOC_GAP_PCT = 5.0;
+const SELL_MISLOC_SUSTAIN = 0.7;
+const SELL_CLASSIFY_MIN_N = 8;
+const SELL_TRACE_CAP = 48;          // 4h of 5m buckets per live trip
+/* One failed sell → one computed classification, with the figures that
+   produced it. Buckets are {hi, hv} inside the sell window; `ask` is the
+   price the leg was asking. */
+function classifySellFailure(buckets, ask){
+  const bs = buckets || [];
+  const base = { n: bs.length, medGapPct: null, volShare: null, sustainShare: null };
+  if (!(ask > 0)) return { ...base, cls: "unclassified", why: "no ask price recorded — nothing to measure a gap against" };
+  if (!bs.length) return { ...base, cls: "unclassified", why: "no buckets in the sell window — nothing to read" };
+  const withPx = bs.filter(b => b.hi != null);
+  if (!withPx.length) return { ...base, cls: "unclassified", why: "no high print in any bucket of the window" };
+  const withVol = withPx.filter(b => (b.hv || 0) > 0);
+  base.volShare = Math.round(withVol.length / bs.length * 100) / 100;
+  if (!withVol.length)
+    return { ...base, cls: "unclassified", sub: "no-liquidity",
+      why: "prints but no high-side volume anywhere in the window — an illiquidity finding, which is neither dilution nor mislocation" };
+  const gaps = withVol.map(b => (b.hi - ask) / ask * 100);
+  const medGapPct = Math.round(medianOf(gaps) * 100) / 100;
+  const sustainShare = Math.round(gaps.filter(g => g <= -SELL_MISLOC_GAP_PCT).length / gaps.length * 100) / 100;
+  const out = { ...base, medGapPct, sustainShare };
+  if (medGapPct >= -SELL_DILUTION_GAP_PCT)
+    return { ...out, cls: "dilution",
+      why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask with volume present on "
+         + Math.round(out.volShare * 100) + "% of buckets — inside the intra-bucket range, so prints above the ask are plausible" };
+  if (medGapPct <= -SELL_MISLOC_GAP_PCT && sustainShare >= SELL_MISLOC_SUSTAIN)
+    return { ...out, cls: "mislocated-window",
+      why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask and " + Math.round(sustainShare * 100)
+         + "% of buckets were at least " + SELL_MISLOC_GAP_PCT + "% below — a sustained gap, not noise" };
+  return { ...out, cls: "unclassified",
+    why: "median gap " + medGapPct + "% falls between the dilution band (within " + SELL_DILUTION_GAP_PCT
+       + "%) and the mislocation bar (" + SELL_MISLOC_GAP_PCT + "% sustained over " + Math.round(SELL_MISLOC_SUSTAIN * 100)
+       + "%) — neither signature fits, which is a finding rather than a residue" };
+}
+/* A population's split. Counts always; percentages only once the sample can
+   support them, and it SAYS which it is doing. */
+function sellSplitOf(cases){
+  const cs = (cases || []).filter(Boolean);
+  const by = k => cs.filter(c => c.cls === k).length;
+  const n = cs.length;
+  const enough = n >= SELL_CLASSIFY_MIN_N;
+  return { n, enough,
+    dilution: by("dilution"), mislocated: by("mislocated-window"), unclassified: by("unclassified"),
+    noLiquidity: cs.filter(c => c.sub === "no-liquidity").length,
+    pct: enough ? k => Math.round(by(k) / n * 100) : null,
+    note: n === 0 ? "no failed sells in this population yet — nothing to classify"
+        : enough ? null
+        : "counts only: " + n + " case" + (n === 1 ? "" : "s") + " is under the " + SELL_CLASSIFY_MIN_N
+          + "-case bar for a percentage, and a confident split from a handful would be the defect this discriminator exists to avoid" };
+}
+/* Population A: the replayed real flips. Every logged sell completed, so any
+   verdict other than "sold" is a model error. */
+function calibSellCases(c){
+  return ((c && c.rows) || []).filter(r => r.sell && r.sell.lenient && r.sell.lenient.verdict !== "sold")
+    .map(r => Object.assign({ item: r.item, itemId: r.itemId, verdict: r.sell.lenient.verdict,
+      creditedPct: r.sell.lenient.creditedPct },
+      classifySellFailure((r.sell.trace || []).map(b => ({ hi: b.hi, hv: b.hv })), r.ask)));
+}
+/* Population B: the live book. A trip that resolved without its sell leg
+   completing — including the pattern that raised this: zero sell credit on a
+   trip with a complete buy and hours of observed horizon. */
+const paperSellFailures = () => (DB.shadowBook || [])
+  .filter(p => shadowResolved(p) && p.buyDone && (p.sellQ || 0) < p.qty);
+function paperSellCases(){
+  return paperSellFailures().map(p => Object.assign(
+    { item: p.name || itemName(p.itemId), itemId: p.itemId,
+      verdict: p.state, creditedPct: Math.round(100 * (p.sellQ || 0) / Math.max(1, p.qty)),
+      buyPct: Math.round(100 * (p.buyQ || 0) / Math.max(1, p.qty)), obsPct: shadowObsPct(p) },
+    classifySellFailure(p.sellTrace || [], p.ask)));
+}
 /* One replayed flip, both legs. Extracted so an assertion can test the WIRING
    — that the sell is graded regardless of what the buy did — rather than only
    the two replay functions in isolation. A probe that calls calibReplaySell
@@ -7537,7 +7657,70 @@ function calibSellHTML(c){
     + '<b>What that means for reading the table:</b> the bounds differ only where a bucket is at-price or '
     + 'live-touched, and this replay can produce neither — so their being identical is a property of the harness, not '
     + 'a finding about the market, and a fast-sell failure above is a REAL model error rather than a measurement '
-    + 'artifact.</div>';
+    + 'artifact.</div>'
+    + sellDiscriminatorHTML(c);
+}
+/* THE SPLIT, RENDERED. Per population, never pooled — calibration replays
+   real completed sells, the live book holds simulated ones, and they answer
+   different questions. Each carries its own n and says whether that n can
+   support a percentage. */
+function sellSplitHTML(lab, cases, key, extra){
+  const s = sellSplitOf(cases);
+  const row = (k, n, why) => '<div class="bench-row"><span>' + k + '</span><span class="r">' + n
+    + (s.enough ? ' <span class="dim">(' + Math.round(n / s.n * 100) + '%)</span>' : '')
+    + (why ? ' <span class="dim">' + esc(why) + '</span>' : '') + '</span></div>';
+  const rows = cases.map(c => ({ item: c.item, _txt: c.item, cls: c.cls + (c.sub ? " · " + c.sub : ""),
+    gap: c.medGapPct == null ? "—" : c.medGapPct + "%", _gap: c.medGapPct || 0,
+    vol: c.volShare == null ? "—" : Math.round(c.volShare * 100) + "%",
+    sust: c.sustainShare == null ? "—" : Math.round(c.sustainShare * 100) + "%",
+    n: c.n, why: c.why }));
+  return '<div style="margin-top:8px"><b>' + esc(lab) + '</b> — '
+    + drill(key, s.n + ' failed sell' + (s.n === 1 ? '' : 's'), {
+        head: "every sell the model got wrong in this population, with the figures that classified it",
+        cols: [{ k: "item", lab: "Item" }, { k: "cls", lab: "Classified" },
+               { k: "gap", lab: "Median gap vs ask", num: 1, sortk: "_gap" },
+               { k: "vol", lab: "Buckets with volume", num: 1 },
+               { k: "sust", lab: "Buckets ≥5% below", num: 1 },
+               { k: "n", lab: "Buckets", num: 1 }, { k: "why", lab: "Why", w: "40%" }],
+        rows, empty: "No failed sells in this population.",
+        note: "Classification is computed from the per-bucket figures beside it, never read off a trace by eye. "
+            + "Thresholds are PROPOSED: dilution within " + SELL_DILUTION_GAP_PCT + "% of the ask, mislocation at "
+            + SELL_MISLOC_GAP_PCT + "% sustained over " + Math.round(SELL_MISLOC_SUSTAIN * 100) + "% of the window." })
+    + (extra ? ' <span class="dim">' + esc(extra) + '</span>' : '')
+    + '</div>'
+    + (s.note ? '<div class="plan-note">' + esc(s.note) + '</div>' : '')
+    + (s.n ? row("dilution", s.dilution) + row("mislocated window", s.mislocated)
+             + row("neither fits", s.unclassified, s.noLiquidity ? "of which " + s.noLiquidity + " no-liquidity" : "") : '');
+}
+function sellDiscriminatorHTML(c){
+  const cal = calibSellCases(c), live = paperSellCases();
+  const calS = sellSplitOf(cal), liveS = sellSplitOf(live);
+  let verdict;
+  if (!calS.enough && !liveS.enough)
+    verdict = '<b>Insufficient sample in both populations</b> — no mechanism claim is made. That is the result, not a '
+      + 'placeholder: a confident split from a handful of cases is the failure this discriminator exists to prevent.';
+  else if (calS.dilution > calS.mislocated && liveS.dilution > liveS.mislocated)
+    verdict = '<b>Dilution dominates in BOTH populations</b> — the hypothesis holds, and the mechanism is the credit '
+      + 'rule rather than the window. The fix shape would be the reaching-flow correction applied to the numerator.';
+  else if (calS.mislocated > 0 && liveS.n > 0 && liveS.dilution + liveS.unclassified > 0)
+    verdict = '<b>Mislocation appears in calibration while the live book fails anyway</b> — and the live book has no '
+      + 'window to mislocate, since its sell leg accrues forward from buyDone in real time. That is TWO DISTINCT '
+      + 'DEFECTS, each needing its own fix, and it contradicts the single-mechanism hypothesis.';
+  else
+    verdict = '<b>The split does not match either predicted outcome.</b> Stated rather than accommodated: the '
+      + 'populations disagree in a way neither the dilution nor the mislocation story explains, so the next step is '
+      + 'reading the unclassified pile, not proposing a fix.';
+  return '<div style="margin-top:10px"><b>Sell discriminator</b> '
+    + '<span class="dim">— which mechanism failed each sell, computed per case. The two causes have OPPOSITE fixes, so '
+    + 'nothing is proposed until the split is ruled on.</span></div>'
+    + '<div class="plan-note" style="white-space:normal">' + verdict
+    + ' <span class="dim">The live book is the falsification test: its sell leg accrues forward from the moment the buy '
+    + 'finished and has no window to place, so mislocation cannot occur there by construction. A defect present in both '
+    + 'populations therefore does not depend on window placement.</span></div>'
+    + sellSplitHTML("Calibration — replayed real flips, every logged sell completed", cal, "sell:cls:calib",
+        "any verdict but sold is a model error") + ' ' + provTag(false)
+    + sellSplitHTML("Live book — simulated sells that never completed", live, "sell:cls:live",
+        "zero or partial sell credit on a resolved trip") + ' ' + provTag(true);
 }
 /* Shared by the panel and the export so the corrected figure cannot drift
    between the two surfaces that carry the correction. */
@@ -16126,6 +16309,40 @@ function analysisCalibration(){
           + "CONSTRUCTION here — that identity is a property of the harness, not a measurement of the market. "
           + "Whatever is wrong with fast sells is therefore real rather than an artifact of self-comparison.",
         atPriceBucketsTotal: sellAtPriceTotal,
+        /* THE DISCRIMINATOR, per population and never pooled. Calibration
+           replays real completed sells; the live book holds simulated ones
+           that never completed. They answer different questions. */
+        discriminator: (() => {
+          const shape = (lab, cases, prov) => {
+            const s = sellSplitOf(cases);
+            return { population: lab, provenance: provNote(prov), failedSells: s.n,
+              sampleSupportsAPercentage: s.enough, note: s.note,
+              counts: { dilution: s.dilution, mislocatedWindow: s.mislocated,
+                        neitherFits: s.unclassified, ofWhichNoLiquidity: s.noLiquidity },
+              cases: cases.map(c => ({ item: c.item, itemId: c.itemId, verdict: c.verdict,
+                creditedPct: c.creditedPct, buyCreditedPct: c.buyPct, observedPctOfHorizon: c.obsPct,
+                classified: c.cls, subReason: c.sub || null,
+                medianBucketGapVsAskPct: c.medGapPct, bucketsWithVolumeShare: c.volShare,
+                bucketsAtLeast5PctBelowShare: c.sustainShare, bucketsInWindow: c.n, why: c.why })) };
+          };
+          return {
+            thresholdsProposedNotRuled: {
+              dilutionWithinPctOfAsk: SELL_DILUTION_GAP_PCT,
+              mislocationAtLeastPctBelow: SELL_MISLOC_GAP_PCT,
+              mislocationSustainedOverShare: SELL_MISLOC_SUSTAIN,
+              minCasesForAPercentage: SELL_CLASSIFY_MIN_N,
+              note: "Computed per case from the figures carried beside each one — never read off a trace by eye. "
+                  + "NEITHER-FITS is a real outcome: a third mechanism surfaces as an unclassified pile rather than "
+                  + "being forced into one of two buckets." },
+            falsificationTest:
+              "The live book's sell leg accrues forward from the moment the buy finished and has NO window to place, "
+              + "so mislocation cannot occur there by construction. If dilution dominates in both populations the "
+              + "mechanism is the credit rule; if mislocation appears in calibration while the live book fails anyway, "
+              + "there are two distinct defects and each needs its own fix.",
+            calibration: shape("replayed real flips — every logged sell completed, so any verdict but sold is a model error",
+              calibSellCases(c), false),
+            liveBook: shape("epoch-2 simulated sells that never completed", paperSellCases(), true) };
+        })(),
         provenReachBound: c.sellLeg.strict, possibleReachBound: c.sellLeg.lenient,
         byDuration: { provenReachBound: c.sellLeg.strict && c.sellLeg.strict.byDuration,
                       possibleReachBound: c.sellLeg.lenient && c.sellLeg.lenient.byDuration }

@@ -6122,6 +6122,85 @@
     ok("[R48.1] and the frozen 43-trip replay headline is stated in the file, not only in chat",
        x48.honesty.some(h => /43-TRIP REPLAY HEADLINE IS FROZEN/.test(h) && /launder the same defect/.test(h)),
        "freeze note absent");
+    /* ═══ §59 THE SELL DISCRIMINATOR (user ruling, Aug 12 2026) ═══
+       Computed per case, never read off a trace. Thresholds proposed. */
+    const mkB = (gapPct, hv, n) => Array.from({ length: n }, () => ({ hi: Math.round(1200 * (1 + gapPct / 100)), hv }));
+    ok("[R59.1] a small negative gap with volume classifies as DILUTION, and carries the figures that decided it",
+       (() => { const c = classifySellFailure(mkB(-0.5, 500, 10), 1200);
+                return c.cls === "dilution" && c.medGapPct != null && c.medGapPct >= -SELL_DILUTION_GAP_PCT
+                    && c.volShare === 1 && c.n === 10 && /prints above the ask are plausible/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-0.5, 500, 10), 1200)));
+    ok("[R59.1] a large SUSTAINED gap classifies as MISLOCATED WINDOW",
+       (() => { const c = classifySellFailure(mkB(-12, 500, 10), 1200);
+                return c.cls === "mislocated-window" && c.sustainShare >= SELL_MISLOC_SUSTAIN
+                    && /sustained gap, not noise/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-12, 500, 10), 1200)));
+    ok("[R59.1] a large gap that is NOT sustained is not mislocation — a window containing a dip is not a wrong window",
+       (() => { const mixed = mkB(-12, 500, 3).concat(mkB(-2.5, 500, 7));
+                return classifySellFailure(mixed, 1200).cls === "unclassified"; })(),
+       JSON.stringify(classifySellFailure(mkB(-12, 500, 3).concat(mkB(-2.5, 500, 7)), 1200)));
+    ok("[R59.1] NEITHER-FITS is a real outcome — a gap between the bands surfaces rather than being forced into a bucket",
+       (() => { const c = classifySellFailure(mkB(-3, 500, 10), 1200);
+                return c.cls === "unclassified" && /neither signature fits/.test(c.why)
+                    && /a finding rather than a residue/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-3, 500, 10), 1200)));
+    ok("[R59.1] and a third mechanism surfaces by name — prints with no volume is an ILLIQUIDITY finding, not dilution",
+       (() => { const c = classifySellFailure(mkB(-0.5, 0, 10), 1200);
+                return c.cls === "unclassified" && c.sub === "no-liquidity"
+                    && /neither dilution nor mislocation/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-0.5, 0, 10), 1200)));
+    ok("[R59.2] a population under the bar reports COUNTS ONLY and says so — no percentage from a handful",
+       (() => { const s = sellSplitOf([{ cls: "dilution" }, { cls: "dilution" }, { cls: "mislocated-window" }]);
+                return s.n === 3 && !s.enough && s.pct === null && s.dilution === 2
+                    && /under the 8-case bar for a percentage/.test(s.note); })(),
+       JSON.stringify(sellSplitOf([{ cls: "dilution" }, { cls: "dilution" }])));
+    ok("[R59.2] an empty population says nothing to classify rather than rendering a zero split",
+       (() => { const s = sellSplitOf([]);
+                return s.n === 0 && /nothing to classify/.test(s.note); })(),
+       JSON.stringify(sellSplitOf([])));
+    ok("[R59.2] at the bar it reports percentages",
+       (() => { const s = sellSplitOf(Array.from({ length: SELL_CLASSIFY_MIN_N }, () => ({ cls: "dilution" })));
+                return s.enough && s.note === null && s.pct("dilution") === 100; })(),
+       JSON.stringify(sellSplitOf(Array.from({ length: SELL_CLASSIFY_MIN_N }, () => ({ cls: "dilution" })))));
+    /* THE LIVE POPULATION needs per-bucket evidence the tick used to discard. */
+    ok("[R59.3] the live book retains a sell-leg trace, so its failures are classifiable at all",
+       (() => { const kB = DB.shadowBook;
+                DB.shadowBook = [{ id: 591, itemId: 9001, name: "x", qty: 10, bid: 100, ask: 1200,
+                  t: 1, closedAt: 2, buyDone: 1, buyQ: 10, sellQ: 0, hzH: 4, obsMs: 4 * 3600e3,
+                  state: "forced-exit", openSeq: 1, regimes: [],
+                  sellTrace: mkB(-0.4, 400, 9).map(b => Object.assign({ t: 1, credited: 0 }, b)) }];
+                const cs = paperSellCases();
+                DB.shadowBook = kB;
+                return cs.length === 1 && cs[0].cls === "dilution" && cs[0].buyPct === 100
+                    && cs[0].creditedPct === 0 && cs[0].n === 9; })(),
+       "live failures must classify from the retained trace");
+    /* WIRING: the buckets that credit NOTHING are the informative ones, and
+       an assertion on an injected trace passes even if the tick never records
+       them. Driven through shadowTick. */
+    ok("[R59.3] the tick records ZERO-CREDIT sell buckets — the informative ones — not only the crediting ones",
+       (() => { const kB = DB.shadowBook, kAt = S.min5At, kSeq = S.pollSeq, kL = S.latest[9002], kM = S.min5[9002];
+                const bkt = Math.floor(Date.now() / 300e3) * 300e3;
+                S.pollSeq = 900;
+                /* high print well BELOW the ask → reachCredit gives nothing */
+                S.latest[9002] = { high: 100, low: 100, highTime: 1, lowTime: 1 };
+                S.min5[9002] = { avgHighPrice: 100, avgLowPrice: 90, highPriceVolume: 500, lowPriceVolume: 500 };
+                DB.shadowBook = [{ id: 592, fam: "w", itemId: 9002, name: "y", qty: 10, bid: 50, ask: 1200,
+                  t: bkt - 600e3, hzH: 4, buyQ: 10, sellQ: 0, buyQFull: 10, sellQFull: 0,
+                  buyDone: bkt - 300e3, buyDoneBkt: bkt - 300e3, obsMs: 60e3, lastObs: Date.now(),
+                  state: "open", openSeq: 899, regimes: [] }];
+                S.min5At = bkt; shadowTick();
+                S.min5At = bkt + 300e3; shadowTick();
+                const tr = DB.shadowBook[0].sellTrace || [];
+                DB.shadowBook = kB; S.min5At = kAt; S.pollSeq = kSeq;
+                if (kL) S.latest[9002] = kL; if (kM) S.min5[9002] = kM;
+                return tr.length > 0 && tr.every(b => b.credited === 0) && tr[0].hi === 100; })(),
+       "zero-credit buckets must be recorded by the tick");
+    ok("[R59.4] both populations render SEPARATELY with their own n — never pooled",
+       (() => { const h = sellDiscriminatorHTML(DB.calib);
+                return /Calibration — replayed real flips/.test(h) && /Live book — simulated sells/.test(h)
+                    && /data-drill="sell:cls:calib"/.test(h) && /data-drill="sell:cls:live"/.test(h)
+                    && /has NO window to place|no window to place/.test(h); })(),
+       sellDiscriminatorHTML(DB.calib).slice(0, 300));
     /* ── R48.2 SELL-LEG PARITY: the rollup ships with its rows ── */
     ok("[R48.2] the sell aggregate no longer ships alone — the export carries the per-flip sell leg",
        !!sf48 && sf48.sellWindowStartHoursFromBuyDone === 0 && sf48.sellWindowEndHoursFromBuyDone === 2
