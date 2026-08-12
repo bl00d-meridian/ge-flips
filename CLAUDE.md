@@ -372,6 +372,19 @@ reports the feature as covered. Four named instances, all shipped green:
   what "two reads moments apart" actually claims. A tolerance tight enough to assert
   clock-simultaneity is testing the clock, not the behaviour.
 
+- **The assertion that re-implements what it tests** (user ruling, Aug 12 2026) — the
+  fifth distinct way this suite has found itself lying, alongside `|| true`, the detector
+  that could not fail, presence-vs-absence, and DOM-position-vs-visible-position. A probe
+  asserted that the per-stratum sampling counters summed correctly — but it computed the
+  counts itself, in the probe, rather than calling the production path. It passed with
+  the bug fully intact in `index.html`, because the bug was in code the assertion never
+  touched. **Assertions call production code; they never carry a parallel implementation
+  of the thing under test.** The fix pattern is the `strataCount()` extraction: when the
+  logic under test is buried inside a closure the probe cannot reach, EXTRACT it into a
+  named function and point the assertion at that — do not reproduce it in the probe. A
+  test that re-derives the answer is testing your arithmetic twice and the product zero
+  times. The tell is a probe line that computes rather than calls.
+
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is
 unproven, and "it passes" is not evidence that it *can* fail. This applies to every new

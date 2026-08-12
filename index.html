@@ -2850,12 +2850,17 @@ const volFloorFor = px => Math.max(4, Math.round(((DB.filtersT1 && DB.filtersT1.
    the 1h thin side rules, and the 5m status is labeled — never silent. */
 const VOL5_MIN_UNITS = 5, VOL5_BIND_REFRESHES = 2;
 /* Die-off EPISODE confirmation depth — a strategy parameter, separate from
-   the gate's binding rule above so the episode ledger can be made stricter
-   without touching any gate (user ruling, Aug 12 2026). PROPOSED: 6 (≈30
-   minutes of consecutive below-floor 5m samples). Left at the gate's value
-   until ruled. */
-const DIEOFF_CONFIRM_REFRESHES = VOL5_BIND_REFRESHES;
-const DIEOFF_CONFIRM_PROPOSED = 6;
+   the gate's binding rule above so the episode ledger can be stricter without
+   touching any gate. RULED 6 (≈30 minutes of consecutive below-floor 5m
+   samples), up from the gate's 2 (≈2 minutes), Aug 12 2026. The evidence: 64
+   of 64 episodes "recovered within 24h" at a median of 5.4 minutes across 16
+   items, ten of them Lumbridge teleport tabs — the tag was firing on
+   five-minute wobbles in thin teleport books. 30 minutes clears that noise
+   median with room, and still fires hours before the next touch, which it
+   must: the tag exists to stop a placement, so waiting a full touch gap would
+   make it useless. All 64 of that epoch's episodes would have been suppressed,
+   which is the intended outcome — none of them was a die-off. */
+const DIEOFF_CONFIRM_REFRESHES = 6;
 function volGateFor(c){
   if (c.vol5 == null)
     return { v: c.volSide, bound: "1h", label: "1h only — 5m pending" };
@@ -5626,25 +5631,25 @@ function reconReplay(p, pts, from, to){
        started before the trip did contains prints from before it existed. */
     if (bt < p.t) continue;
     if (!p.buyDone){
-      if (b.lo != null && b.lo <= p.bid && b.lv > 0){
-        const tape = Math.max(1, Math.floor(b.lv * GATE.capture));
-        p.buyQFull = Math.min(p.qty, (p.buyQFull != null ? p.buyQFull : p.buyQ) + tape);
-        p.buyQ = Math.min(p.qty, p.buyQ + Math.max(1, Math.floor(tape * shadowPart())));
-      }
+      const cr = reachCredit(b.lo, p.bid, b.lv, "buy");
+      if (cr.any) shadowCredit(p, "buy", cr);
       if (p.buyQ >= p.qty){ p.buyDone = bt; p.buyDoneBkt = bt; }
       else if (bt - p.t > H){
-        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = bt; p.buyDoneBkt = bt; }
-        else { p.state = "unfilled"; p.closedAt = bt; p.net = 0; break; }
+        if (p.buyQ > 0){
+          const exitP = b.lo != null ? b.lo : p.bid;
+          p.state = "partial"; p.closedAt = bt; p.forced = p.qty - p.buyQ; p.exitPx = Math.round(exitP);
+          p.net = p.buyQ * (exitP - geTax(exitP, p.itemId)) - p.buyQ * p.bid;
+          shadowFinishReadings(p); break;
+        }
+        else { p.state = "unfilled"; p.closedAt = bt; p.net = 0; shadowFinishReadings(p); break; }
       }
     }
     /* The bucket that completed the buy cannot also fill the sell. */
     if (p.buyDone && p.state === "open" && bt !== p.buyDoneBkt && bt >= p.buyDone){
-      if (b.hi != null && b.hi >= p.ask && b.hv > 0){
-        const tape = Math.max(1, Math.floor(b.hv * GATE.capture));
-        p.sellQFull = Math.min(p.qty, (p.sellQFull != null ? p.sellQFull : p.sellQ) + tape);
-        p.sellQ = Math.min(p.qty, p.sellQ + Math.max(1, Math.floor(tape * shadowPart())));
-      }
+      const crS = reachCredit(b.hi, p.ask, b.hv, "sell");
+      if (crS.any) shadowCredit(p, "sell", crS);
       if (p.sellQ >= p.qty){
+        shadowFinishReadings(p);
         p.state = "filled"; p.closedAt = bt;
         p.net = p.qty * (p.ask - geTax(p.ask, p.itemId)) - p.qty * p.bid;
         break;
@@ -5652,6 +5657,7 @@ function reconReplay(p, pts, from, to){
       if (bt - p.buyDone > H){
         const rem = p.qty - p.sellQ;
         const exitPx = b.lo != null ? b.lo : p.bid;   // the series value AT the horizon
+        shadowFinishReadings(p);
         p.state = "forced-exit"; p.closedAt = bt; p.forced = rem; p.exitPx = Math.round(exitPx);
         p.net = p.sellQ * (p.ask - geTax(p.ask, p.itemId))
               + rem * (exitPx - geTax(exitPx, p.itemId)) - p.qty * p.bid;
@@ -5709,6 +5715,64 @@ async function shadowRecover(){
   save();
   return rec;
 }
+/* ═══ REACHABILITY (user ruling, Aug 12 2026) ═════════════════════════════
+   "The tape printed at or below my bid" does not establish that the tape
+   reached ME — I may have been behind someone in the queue at my price. With
+   no book depth, the one queue signal available is where the print sat
+   relative to my price:
+
+     • STRICTLY BELOW my bid (above my ask, selling): the queue at my price
+       was exhausted and trading continued past it. Proof of reach — full
+       capture-capped credit.
+     • EXACTLY AT my price: ambiguous. Somebody traded there; it may not have
+       been me. Credit at the participation haircut only.
+     • The other side of my price: no credit at all.
+
+   Three readings accrue from the same buckets, so the ledger can show the
+   spread between proven and possible the way it already shows the two
+   participation readings:
+     strict    — below-price prints only. "Proven reachable."
+     operative — below at full + at-price at the haircut. Drives state and net.
+     lenient   — everything that touched, at full. "Possibly reachable."
+   lenient ≥ operative ≥ strict always, so the operative outcome is bracketed
+   by two honest bounds rather than asserted alone. */
+function reachCredit(px, mine, vol, side){
+  const v = Number(vol) || 0;
+  if (!(v > 0) || px == null || !(mine > 0)) return { any: false, strict: 0, oper: 0, lenient: 0 };
+  const beyond = side === "buy" ? px < mine : px > mine;   // past my price: the queue cleared
+  const at = px === mine;
+  if (!beyond && !at) return { any: false, strict: 0, oper: 0, lenient: 0 };
+  const tape = Math.max(1, Math.floor(v * GATE.capture));
+  return { any: true, beyond, at,
+    strict: beyond ? tape : 0,
+    oper: beyond ? tape : Math.max(1, Math.floor(tape * shadowPart())),
+    lenient: tape };
+}
+/* Apply one bucket's credit to a leg, all three readings together. */
+function shadowCredit(p, side, cr){
+  const q = p.qty;
+  if (side === "buy"){
+    p.buyQ = Math.min(q, (p.buyQ || 0) + cr.oper);
+    p.buyQStrict = Math.min(q, (p.buyQStrict || 0) + cr.strict);
+    p.buyQFull = Math.min(q, (p.buyQFull != null ? p.buyQFull : p.buyQ) + cr.lenient);
+  } else {
+    p.sellQ = Math.min(q, (p.sellQ || 0) + cr.oper);
+    p.sellQStrict = Math.min(q, (p.sellQStrict || 0) + cr.strict);
+    p.sellQFull = Math.min(q, (p.sellQFull != null ? p.sellQFull : p.sellQ) + cr.lenient);
+  }
+}
+/* Stamp the bracketing verdicts at the moment the trip resolves — evaluated
+   then, because that is the point at which all three have seen the same
+   buckets. Both are recorded even when they agree, so a row never has to be
+   read as "the flag is missing, so presumably it matched". */
+function shadowFinishReadings(p){
+  p.strictFilled = (p.buyQStrict || 0) >= p.qty && (p.sellQStrict || 0) >= p.qty ? 1 : 0;
+  p.lenientFilled = (p.buyQFull || 0) >= p.qty && (p.sellQFull || 0) >= p.qty ? 1 : 0;
+}
+const shadowStrictFilled = p => p.strictFilled === 1;
+const shadowLenientFilled = p => p.lenientFilled === 1
+  || (p.lenientFilled == null && (p.state === "filled" || p.state === "forced-exit"));
+
 /* ═══ FILL-MODEL CAUSALITY (defect fix, Aug 12 2026) ═══════════════════════
    The tick used to credit a leg from `S.min5[id]`, which is a TRAILING
    five-minute aggregate: on a trip's first tick it booked five minutes of
@@ -5749,19 +5813,32 @@ function shadowTick(){
        the trip opened, and only once. */
     const buyOK = bkt > 0 && bkt >= p.t && p.buyBkt !== bkt;
     if (!p.buyDone){
-      if (buyOK && L.low != null && L.low <= p.bid){
-        p.buyBkt = bkt;
-        /* Capture-capped tape credit is the 100%-participation reading; the
-           participation haircut (ruled Aug 11 2026) is the conservative leg
-           that drives state and net. Both accrue — the ledger reports both. */
-        const tape = Math.max(1, Math.floor((m5.lowPriceVolume || 0) * GATE.capture));
-        p.buyQFull = Math.min(p.qty, (p.buyQFull != null ? p.buyQFull : p.buyQ) + tape);
-        p.buyQ = Math.min(p.qty, p.buyQ + Math.max(1, Math.floor(tape * shadowPart())));
-        changed = true;
+      if (buyOK){
+        const cr = reachCredit(m5.avgLowPrice, p.bid, m5.lowPriceVolume, "buy");
+        if (cr.any){
+          p.buyBkt = bkt;
+          shadowCredit(p, "buy", cr);
+          changed = true;
+        }
       }
       if (p.buyQ >= p.qty){ p.buyDone = now; p.buyDoneBkt = bkt; }
       else if (now - p.t > H){
-        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = now; }   // partial: the bought units still need selling
+        if (p.buyQ > 0){
+          /* PARTIAL is now its own outcome (user ruling, Aug 12 2026). The
+             buy leg did not accumulate to qty inside its horizon, and
+             silently shrinking the trip to whatever it managed to buy made
+             "would not have filled" unreachable — the model reported it zero
+             times in 272 trips. The partial position exits at the horizon. */
+          const hzAt0 = p.t + H;
+          const sv0 = seriesPxAt(p.itemId, hzAt0);
+          const exitPx0 = sv0 != null ? sv0 : (L.low != null ? L.low : p.bid);
+          if (sv0 == null) p.exitApprox = 1;
+          p.state = "partial"; p.closedAt = now; p.forced = p.qty - p.buyQ;
+          p.exitPx = Math.round(exitPx0);
+          p.net = p.buyQ * (exitPx0 - geTax(exitPx0, p.itemId)) - p.buyQ * p.bid;
+          shadowFinishReadings(p);
+          changed = true;
+        }
         else if (now - (p.t + H) > SHADOW_OBS_CAP){
           /* The horizon expired while nobody was watching (audit fix, Aug 11
              2026): "would not have filled" is a claim about a window we did
@@ -5778,14 +5855,12 @@ function shadowTick(){
       /* The sell leg starts where the buy finished: a bucket that completed
          the buy cannot also fill the sell, and no bucket before it can. */
       const sellOK = bkt > 0 && bkt >= p.buyDone && bkt !== p.buyDoneBkt && p.sellBkt !== bkt;
-      if (sellOK && L.high != null && L.high >= p.ask){
-        p.sellBkt = bkt;
-        const tape = Math.max(1, Math.floor((m5.highPriceVolume || 0) * GATE.capture));
-        p.sellQFull = Math.min(p.qty, (p.sellQFull != null ? p.sellQFull : p.sellQ) + tape);
-        p.sellQ = Math.min(p.qty, p.sellQ + Math.max(1, Math.floor(tape * shadowPart())));
-        changed = true;
+      if (sellOK){
+        const cr = reachCredit(m5.avgHighPrice, p.ask, m5.highPriceVolume, "sell");
+        if (cr.any){ p.sellBkt = bkt; shadowCredit(p, "sell", cr); changed = true; }
       }
       if (p.sellQ >= p.qty){
+        shadowFinishReadings(p);
         p.state = "filled"; p.closedAt = now;
         p.net = p.qty * (p.ask - geTax(p.ask, p.itemId)) - p.qty * p.bid;
         changed = true;
@@ -5812,6 +5887,7 @@ function shadowTick(){
            in a drill-down can show what the forced exit actually paid —
            an outcome you can't see the price of can't be audited. Records
            closed before this render "—", never a guessed number. */
+        shadowFinishReadings(p);
         p.state = "forced-exit"; p.closedAt = now; p.forced = rem; p.exitPx = Math.round(exitPx);
         p.net = p.sellQ * (p.ask - geTax(p.ask, p.itemId))
               + rem * (exitPx - geTax(exitPx, p.itemId))
@@ -5929,7 +6005,11 @@ function shadowByGate(byShape){
     s.filled = s.arr.filter(p => p.state === "filled").length;
     s.forced = s.arr.filter(p => p.state === "forced-exit").length;
     s.unfilled = s.arr.filter(p => p.state === "unfilled").length;
+    s.partial = s.arr.filter(p => p.state === "partial").length;
     s.filledFull = s.arr.filter(shadowFullFilled).length;   // the 100%-participation reading, reported beside the conservative one
+    /* Reachability bounds (ruled Aug 12 2026): proven vs possible. */
+    s.strict = s.arr.filter(shadowStrictFilled).length;
+    s.lenient = s.arr.filter(shadowLenientFilled).length;
     s.net = s.arr.reduce((a, p) => a + (p.net || 0), 0);
     s.obsMed = medianOf(s.arr.map(shadowObsPct));
   }
@@ -5970,6 +6050,7 @@ function paperTripRows(trips){
     const obs = Math.round(shadowObsShare(p) * 100);
     const outcome = p.state === "filled" ? "filled both legs"
       : p.state === "forced-exit" ? "forced exit of " + full(p.forced || 0) + " unsold"
+      : p.state === "partial" ? "partial buy of " + full(p.qty - (p.forced || 0)) + " of " + full(p.qty) + " — never completed inside its horizon"
       : p.state === "unfilled" ? "never filled at the bid"
       : p.state === "unobserved" ? "unobserved — a hole in the record, not a result"
       : p.state === "open" ? "still open" : String(p.state);
@@ -6303,6 +6384,62 @@ function curveSVG(vals, lo, hi, w, h){
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="regime equity curve">'
     + zero + '<polyline fill="none" stroke="#e8b64c" stroke-width="1.5" points="' + pts + '"/></svg>';
 }
+/* ═══ THE HEADLINE IS A RATE, NOT A TOTAL (user ruling, Aug 12 2026) ══════
+   A bare summed net across the paper book was retired. Three things were
+   wrong with it and each has its own replacement here:
+
+   • It BLENDED cohorts. Watchlist near-misses, discovery-slice draws, the gap
+     band and the scanner cohort answer four different questions, and their
+     sum answers none of them. Net is reported per cohort and never added up.
+   • It was a TOTAL, so it grew with the size and age of the book rather than
+     with the quality of the screen. The headline is now net per gp-day of
+     simulated notional — a rate, comparable across populations of different
+     size and duration.
+   • It hid its own DISTRIBUTION. A total carried by one outsized trip looks
+     identical to one earned across the book. Median trip, top-5 share and the
+     outcome census now render beside it, so a dominated total looks dominated.
+
+   And a capital-feasibility line, because a counterfactual that quietly
+   spends money that does not exist is not screening evidence: peak
+   simultaneous simulated notional against working capital, flagged when the
+   sim assumed more than there was. */
+const tripNotional = p => (p.qty || 0) * (p.bid || 0);
+const tripDays = p => Math.max(1 / 24, ((p.closedAt || p.t) - p.t) / 86400e3);
+function paperEconomics(trips){
+  const arr = (trips || []).slice();
+  const net = arr.reduce((a, p) => a + (p.net || 0), 0);
+  const gpDays = arr.reduce((a, p) => a + tripNotional(p) * tripDays(p), 0);
+  const nets = arr.map(p => p.net || 0).sort((a, b) => a - b);
+  const top5 = nets.slice(-5).reduce((a, n) => a + n, 0);
+  const outcomes = arr.reduce((a, p) => { a[p.state] = (a[p.state] || 0) + 1; return a; }, {});
+  return { n: arr.length, net, gpDays,
+    rate: gpDays > 0 ? net / gpDays : null,          // net gp per gp of notional held for a day
+    median: nets.length ? medianOf(nets) : null,
+    top5, top5Share: net !== 0 ? top5 / net : null,
+    outcomes };
+}
+/* Peak simultaneous notional — the most the sim ever had "committed" at once,
+   swept over open/close events rather than summed, because trips overlap. */
+function paperPeakNotional(trips){
+  const ev = [];
+  for (const p of trips || []){
+    const v = tripNotional(p);
+    if (!(v > 0)) continue;
+    ev.push({ t: p.t, v }, { t: p.closedAt || p.t, v: -v });
+  }
+  ev.sort((a, b) => a.t - b.t || a.v - b.v);
+  let cur = 0, peak = 0, at = 0;
+  for (const e of ev){ cur += e.v; if (cur > peak){ peak = cur; at = e.t; } }
+  return { peak, at };
+}
+const workingCapital = () => Math.max(0, (DB.bank || 0) - (DB.shadowReserve || 0) - (DB.reserve || 0));
+function paperRateFace(closed){
+  const e = paperEconomics(closed);
+  if (!e.n) return '<span class="dim">no closed trips yet — no rate to report</span>';
+  return 'net <b class="' + sign(e.rate || 0) + '">' + (e.rate != null ? (e.rate * 100).toFixed(2) + '%' : '—')
+    + '</b> <span class="dim">per gp-day of simulated notional</span>';
+}
+
 /* ═══ NEVER-FED DETECTOR (user ruling, Aug 12 2026) ═══════════════════════
    A stat that renders 0 because nothing FEEDS it is indistinguishable, on
    screen, from a stat that renders 0 because nothing QUALIFIED — and the two
@@ -6317,6 +6454,63 @@ const regimeFedN = () => (DB.shadowBook || []).filter(p => (p.regimes || []).len
 function neverFedNote(what, why){
   return '<div class="neg" style="margin-bottom:6px">⚠ <b>' + esc(what) + ' has never been fed.</b> ' + esc(why)
     + ' This is not a reading of zero — it is the absence of any reading, and the two mean opposite things.</div>';
+}
+/* The headline block: per cohort, as a rate, with its distribution and a
+   capital-feasibility check. Never a blended total. */
+function paperHeadlineSection(){
+  const closed = paperClosed();
+  if (!closed.length)
+    return '<div class="dim">No counted paper trips yet — nothing to report a rate on. (Rates need closed trips that '
+         + 'cleared the observation floor; the raw book may hold rows this says nothing about.)</div>';
+  const byCoh = new Map();
+  for (const p of closed){
+    const k = paperCohortOf(p);
+    if (!byCoh.has(k)) byCoh.set(k, []);
+    byCoh.get(k).push(p);
+  }
+  const rows = [...byCoh.entries()].map(([k, arr]) => {
+    const e = paperEconomics(arr);
+    return { cohort: k, _cohort: k,
+      n: e.n, _n: e.n,
+      rate: e.rate != null ? (e.rate * 100).toFixed(3) + "%" : "—", _rate: e.rate || 0,
+      net: gp(Math.round(e.net)), _net: Math.round(e.net),
+      median: e.median != null ? gp(Math.round(e.median)) : "—", _median: Math.round(e.median || 0),
+      top5: e.top5Share != null ? Math.round(e.top5Share * 100) + "%" : "—", _top5: e.top5Share || 0,
+      outcomes: Object.entries(e.outcomes).map(([s, c]) => c + " " + s).join(", "),
+      _txt: k + " " + Object.keys(e.outcomes).join(" ") };
+  }).sort((a, b) => b._n - a._n);
+  const pk = paperPeakNotional(closed);
+  const wc = workingCapital();
+  const over = wc > 0 && pk.peak > wc;
+  const bits = ['<div class="note">Net is reported <b>per cohort and never blended</b> — the watchlist, the discovery '
+    + 'slice, the gap band and the scanner cohort answer four different questions, and their sum answers none of them. '
+    + 'The headline figure is a <b>rate</b>: simulated net per gp of notional held for a day, so it is comparable across '
+    + 'populations of different size and duration rather than growing with the book. All of it SIMULATED.</div>'];
+  bits.push('<div data-drillrow="1">Per-cohort screening rate: '
+    + drill("paper:econ", rows.length + ' cohort' + (rows.length === 1 ? '' : 's'), {
+        head: "per-cohort economics — rate, distribution and outcome census, never a blended total",
+        cols: [{ k: "cohort", lab: "Cohort" }, { k: "n", lab: "Trips", num: 1, sortk: "_n" },
+               { k: "rate", lab: "Net per gp-day", num: 1, sortk: "_rate" },
+               { k: "net", lab: "Net (sim)", num: 1, sortk: "_net" },
+               { k: "median", lab: "Median trip", num: 1, sortk: "_median" },
+               { k: "top5", lab: "Top-5 share of net", num: 1, sortk: "_top5" },
+               { k: "outcomes", lab: "Outcomes" }],
+        rows,
+        empty: "No counted trips in any cohort.",
+        note: 'A cohort whose top-5 share approaches 100% is carried by a handful of trips and its rate should be read as '
+            + 'anecdote, not screen quality. The median trip beside the total is there so that is visible at a glance. '
+            + PAPER_NOTE()
+      }) + '</div>');
+  bits.push('<div class="' + (over ? 'neg' : 'dim') + '" style="margin-top:5px">'
+    + (over ? '⚠ ' : '') + 'Capital feasibility: peak simultaneous simulated notional <b>' + gp(Math.round(pk.peak))
+    + '</b> against working capital <b>' + gp(Math.round(wc)) + '</b>'
+    + (wc > 0 ? ' (' + Math.round(pk.peak / wc * 100) + '% of it)' : ' — no bank figure recorded')
+    + (over ? ' — <b>the sim assumed more capital than exists.</b> Trips above that line could not all have been held at '
+            + 'once, so the rate above is not reachable in practice: treat it as an upper bound on the screen, not a '
+            + 'forecast of what this book would have earned.'
+            : ' — inside working capital, so the sim did not spend money that is not there.')
+    + '</div>');
+  return bits.join("");
 }
 function paperRegimeSection(){
   const log = (DB.shadowDivLog || []).slice(-31);
@@ -6333,7 +6527,8 @@ function paperRegimeSection(){
       (DB.shadowBook || []).length + " paper trips exist and not one carries a regime, so the three curves below have "
       + "no membership at all — they are not flat, they are empty."));
   bits.push('<div class="note">Three ROI-regime equity curves side by side, on ONE shared scale — the ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&amp;L). '
-    + 'The headline is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger.</div>');
+    + 'The number under each curve is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger. '
+    + '<b>These three sums are COMPARISON ONLY, not a magnitude</b> (ruled Aug 12 2026) — the raw summed net was retired as a headline everywhere else, and survives here alone because the three regimes screen the SAME population, so the level cancels out and only the difference between them carries information. Do not read any one of them as what the book earned.</div>');
   bits.push('<div class="curves">' + regs.map(r => {
     const arr = closed.filter(p => (p.regimes || []).includes(r.key));
     const thinReg = paperThin().filter(p => (p.regimes || []).includes(r.key)).length;
@@ -6401,8 +6596,17 @@ function paperGateSection(){
       + '<td>' + cell(g, "n", String(s.n), 'benched by "' + g + '" alone — every closed paper trip it opened', s.arr) + '</td>'
       + '<td>' + cell(g, "fill", String(fills.length), 'would have filled at ' + shadowPartPct() + '% participation — the conservative reading that drives state and net', fills) + '</td>'
       + '<td>' + cell(g, "full", String(s.filledFull), 'would also have filled at 100% participation — the same trips read without the haircut', s.arr.filter(shadowFullFilled)) + '</td>'
-      + '<td>' + cell(g, "miss", String(misses.length), 'would-not-have-filled — the bid never got the tape, which IS the data', misses) + '</td>'
-      + '<td>' + cell(g, "rate", rate + "%", 'fill rate — the outcome of each trip that produced it', s.arr) + '</td>'
+      + '<td>' + cell(g, "miss", String(misses.length + s.partial),
+          'would-not-have-filled — never filled at the bid, plus partial buys that never completed inside their horizon. This IS the data.',
+          misses.concat(s.arr.filter(p => p.state === "partial"))) + '</td>'
+      /* Fill rate with its reachability bracket (ruled Aug 12 2026): the
+         operative reading, flanked by proven and possible, the same way the
+         two participation readings sit beside each other. */
+      + '<td>' + cell(g, "rate", rate + "%", 'fill rate, operative reading — the outcome of each trip that produced it', s.arr)
+          + ' <span class="dim" title="PROVEN reachable: counting only prints strictly past your price, which show the queue at it had cleared. The lower bound.">↓'
+          + (s.n ? Math.round(s.strict / s.n * 100) : 0) + '%</span>'
+          + ' <span class="dim" title="POSSIBLY reachable: every print that touched your price counted in full. The upper bound.">↑'
+          + (s.n ? Math.round(s.lenient / s.n * 100) : 0) + '%</span></td>'
       + '<td class="' + sign(s.net) + '">' + cell(g, "net", gp(Math.round(s.net)), 'net simulated after tax — every trip and its contribution', s.arr) + '</td>'
       + '<td>' + cell(g, "obs", s.obsMed + "%", 'median share of the fill horizon actually observed — unobserved windows are unknown, not unfilled', s.arr,
           'Sort by Observed to see which verdicts rest on a watched horizon and which rest on a hole.') + '</td>'
@@ -6511,11 +6715,10 @@ function paperCohortSection(){
 function paperSummaryLine(){
   const closed = paperClosed();
   const gates = shadowByGate();
-  const net = closed.reduce((a, p) => a + (p.net || 0), 0);
   const evd = shadowRegimeEvidence();
   return '<div class="inline"><div>' + closed.length + ' closed paper trip' + (closed.length === 1 ? '' : 's')
-    + ' · ' + gates.size + ' gate' + (gates.size === 1 ? '' : 's') + ' with outcomes · net <span class="' + sign(net) + '">'
-    + gp(Math.round(net)) + '</span> simulated · '
+    + ' · ' + gates.size + ' gate' + (gates.size === 1 ? '' : 's') + ' with outcomes · '
+    + paperRateFace(closed) + ' · '
     + (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence')
     + ' — <a href="#" data-goto="paper#paperRegimePanel">open the paper book →</a></div>'
     + '<div class="dim">Screening evidence, never a verdict. The working surface carries the three regime curves, the divergence ledger, the per-gate table and every trip behind each number.</div>'
@@ -6560,8 +6763,9 @@ function hoursLedger(){
     if (p.state === "filled" || p.state === "forced-exit") sh[h].filled++;
     /* The never-filled counterexample count rides every fill rate (user
        ruling, Aug 12 2026): a 100% reading must be visibly a claim about zero
-       counterexamples, not a default that nobody has tested. */
-    if (p.state === "unfilled") sh[h].unfilled++;
+       counterexamples, not a default that nobody has tested. A partial buy is
+       its own counterexample — the leg never completed. */
+    if (p.state === "unfilled" || p.state === "partial") sh[h].unfilled++;
   }
   for (const p of (DB.shadowBook || []).filter(shadowThin)){
     const h = new Date(p.t).getHours();
@@ -8841,9 +9045,9 @@ function gateDieOffSection(){
       + (d0.voidHs.length ? 'Median time to recovery ' + fmtHrs(medianOf(d0.voidHs)) + '. ' : '')
       + 'They are excluded from the recovery counts above and from the denominator: a false positive is not an episode '
       + 'the tag got right OR wrong, and counting it as a recovery would let the scorecard flatter itself. '
-      + 'Confirmation depth is currently <b>' + DIEOFF_CONFIRM_REFRESHES + ' consecutive below-floor 5m samples</b> '
-      + '(~' + (DIEOFF_CONFIRM_REFRESHES * 5) + ' minutes); <b>' + DIEOFF_CONFIRM_PROPOSED + ' (~'
-      + (DIEOFF_CONFIRM_PROPOSED * 5) + ' minutes) is PROPOSED and not applied</b> — a strategy parameter, yours to rule.</div>'
+      + 'Confirmation depth is <b>' + DIEOFF_CONFIRM_REFRESHES + ' consecutive below-floor 5m samples</b> (~'
+      + (DIEOFF_CONFIRM_REFRESHES * 5) + ' minutes), ruled Aug 12 2026 and separate from the volume gate\'s own '
+      + VOL5_BIND_REFRESHES + '-refresh binding rule, which is unchanged.</div>'
     : '';
   if (!d0 || !d0.episodes)
     return '<div class="dim">No die-off episodes in the last 30 days — the volume floor has not benched anything on a 5m-confirmed die-off against a passing 1h book.</div>' + voidLine;
@@ -12538,6 +12742,43 @@ const GLOSSARY = [
     from: "The plan build.",
     do: "Nothing directly — it is context for the plan's ORDER. What should change your decisions is the stated reason on "
         + "each line, not its rank." },
+  { id: "met-reach", term: "Proven vs possibly reachable", aka: "the ↓ and ↑ beside a fill rate",
+    what: "Two bounds around every simulated fill rate. <b>Proven</b> counts only prints that landed strictly past your "
+        + "price — below your bid, above your ask — which show the queue at your price had cleared and trading "
+        + "continued through it. <b>Possible</b> counts every print that so much as touched your price. The rate "
+        + "between them is the operative one, which credits at-your-price prints at the participation haircut because "
+        + "somebody traded there and it may not have been you.",
+    from: "Each 5-minute bucket's own average price against your bid or ask, from the same bucket the volume comes from.",
+    do: "Read the SPREAD, not the middle number. A wide gap means the fill claim rests on prints that merely touched "
+        + "your price, and you should discount it; a narrow gap means the tape traded through you and the screen is "
+        + "telling you something real.",
+    caveat: "A 5-minute bucket reports an AVERAGE price, not individual prints, so exact equality with your price is "
+          + "rare and the two bounds sit closer together than true book depth would put them. The bracket is honest "
+          + "about direction, not about width." },
+  { id: "met-partial", term: "Partial buy",
+    what: "A trip whose buy leg accumulated some volume but never reached its full size inside its horizon. It exits "
+        + "what it bought at the horizon price and closes.",
+    from: "The fill model, when credited volume runs out of horizon before it runs out of qty.",
+    do: "Count it against the fill rate, which is where it renders — it is a counterexample, not a small success. Before "
+        + "this existed the model shrank such trips to whatever they managed to buy and called them filled, which is "
+        + "why \"would not have filled\" was reported zero times in 272 trips." },
+  { id: "met-gpday", term: "Net per gp-day of simulated notional",
+    what: "The paper book's headline. Simulated net divided by the gp of notional the sim held, multiplied by how long "
+        + "it held it — a rate rather than a total, so it does not grow simply because the book is bigger or older.",
+    from: "Closed counted trips, per cohort. It is never blended across cohorts: the watchlist, the slice, the gap band "
+        + "and the scanner cohort answer four different questions.",
+    do: "Compare cohorts against each other, and compare the same cohort across epochs. Read the median trip and the "
+        + "top-5 share beside it before you trust either — a rate carried by one outsized trip is anecdote.",
+    caveat: "Simulated throughout. The raw summed net it replaced survives only inside the regime comparison, where the "
+          + "three regimes screen the same population so the level cancels out and only the difference means anything." },
+  { id: "met-capfeas", term: "Capital feasibility",
+    what: "The peak amount of simulated notional the paper book ever held at one moment, against your actual working "
+        + "capital (bank less reserve and Shadow Fund). Swept over open and close events, not summed, because trips "
+        + "overlap.",
+    from: "Every counted trip's size and its open/close stamps.",
+    do: "If the peak exceeds working capital, stop reading the rate above it as achievable — those trips could not all "
+        + "have been held at once, so the screen is an upper bound rather than a forecast. A counterfactual that quietly "
+        + "spends money you do not have is not screening evidence." },
   { id: "met-volindex", term: "Market volume index",
     what: "The median volume ratio — last 7 days against 2–3 weeks ago — of a basket of eight liquid items chosen for "
         + "having nothing to do with each other or with endgame PvM: a rune, a food, a herb, a gem, a log, an ore, a "
@@ -13898,13 +14139,18 @@ function analysisTrip(p){
     exitPrice: exitPx != null ? exitPx : null,
     outcome: p.state === "filled" ? "filled both legs"
       : p.state === "forced-exit" ? "forced exit"
+      : p.state === "partial" ? "partial buy, never completed inside its horizon"
       : p.state === "unfilled" ? "never filled at the bid" : String(p.state),
     forcedUnsoldQty: p.state === "forced-exit" ? (p.forced || 0) : null,
     participationPct: shadowPartPct(),
-    buyCreditAtParticipation: p.buyQ != null ? p.buyQ : null,
-    buyCreditAt100Pct: p.buyQFull != null ? p.buyQFull : null,
-    sellCreditAtParticipation: p.sellQ != null ? p.sellQ : null,
-    sellCreditAt100Pct: p.sellQFull != null ? p.sellQFull : null,
+    buyCreditOperative: p.buyQ != null ? p.buyQ : null,
+    buyCreditProvenReachable: p.buyQStrict != null ? p.buyQStrict : null,
+    buyCreditPossiblyReachable: p.buyQFull != null ? p.buyQFull : null,
+    sellCreditOperative: p.sellQ != null ? p.sellQ : null,
+    sellCreditProvenReachable: p.sellQStrict != null ? p.sellQStrict : null,
+    sellCreditPossiblyReachable: p.sellQFull != null ? p.sellQFull : null,
+    wouldFillProvenReachable: p.strictFilled != null ? !!p.strictFilled : null,
+    wouldFillPossiblyReachable: p.lenientFilled != null ? !!p.lenientFilled : null,
     netSimGp: Math.round(p.net || 0),
     regimes: (p.regimes || []).slice(),
     benchedByGate: (p.benchedBy && p.benchedBy[0]) || null,
@@ -13989,7 +14235,9 @@ function analysisPaper(){
     gateAndShape: k, gate: s.gate, horizonShape: s.shape,
     tripsCounted: s.n, tripsExcludedByObservationFloor: s.thin,
     filledAtParticipation: s.filled, filledAt100Pct: s.filledFull,
-    forcedExits: s.forced, neverFilled: s.unfilled,
+    forcedExits: s.forced, neverFilled: s.unfilled, partialBuys: s.partial,
+    provenReachableFills: s.strict, possiblyReachableFills: s.lenient,
+    reachabilityNote: "Operative fills sit between the two: proven counts only prints strictly past your price (the queue at it had cleared), possible counts every print that touched it.",
     netSimGp: Math.round(s.net || 0), medianObservedPct: s.obsMed
   })).sort((a, b) => b.tripsCounted - a.tripsCounted);
   const log = (DB.shadowDivLog || []).slice(-31);
@@ -14051,7 +14299,7 @@ function analysisGates(){
       autoVoidNote: "Episodes that recovered inside one touch gap are voided as noise and excluded from every count above, "
         + "including the denominator — a false positive is not an episode the tag got right or wrong.",
       confirmationRefreshes: DIEOFF_CONFIRM_REFRESHES,
-      confirmationProposedRefreshes: DIEOFF_CONFIRM_PROPOSED,
+      gateBindingRefreshes: VOL5_BIND_REFRESHES,
       insideWindowNow: gh.dieOff.watching, notConfirmedRecovered: gh.dieOff.faded,
       medianRecoveryHours: r2(medianOf(gh.dieOff.recHs)),
       note: "\"not confirmed recovered\" includes windows nobody observed — recovery closes only on a confirmed healthy 5m sample, which needs the app running.",
@@ -14153,7 +14401,7 @@ function renderPaperView(){
     + " · simulated throughout";
   $("#paperGateSub").textContent = shadowByGate().size + " gate" + (shadowByGate().size === 1 ? "" : "s")
     + " with closed outcomes — every cell opens to its trips";
-  setHTML("#paperRegime", paperRegimeSection());
+  setHTML("#paperRegime", paperHeadlineSection() + paperRegimeSection());
   setHTML("#paperGate", paperGateSection());
   setHTML("#paperCohort", paperCohortSection());
 }
@@ -15285,7 +15533,7 @@ function validateImport(d){
               name: String(p.name || itemName(itemId)), qty: Math.floor(qty), bid: Math.round(bid), ask: Math.round(ask),
               t: num(p.t) || Date.now(), buyQ: Math.max(0, num(p.buyQ) || 0), sellQ: Math.max(0, num(p.sellQ) || 0),
               buyDone: num(p.buyDone) || 0, obsMs: Math.max(0, num(p.obsMs) || 0), lastObs: num(p.lastObs) || 0,
-              state: ["open", "filled", "unfilled", "forced-exit"].includes(p.state) ? p.state : "open",
+              state: ["open", "filled", "unfilled", "forced-exit", "partial", "unobserved"].includes(p.state) ? p.state : "open",
               regimes: (Array.isArray(p.regimes) ? p.regimes : []).filter(r => ["current", "loose", "tight"].includes(r)) };
             if (Array.isArray(p.benchedBy) && p.benchedBy.length) o2.benchedBy = p.benchedBy.map(g => String(g).slice(0, 60)).slice(0, 4);
             if (p.gapTxt) o2.gapTxt = String(p.gapTxt).slice(0, 160);
@@ -15297,6 +15545,11 @@ function validateImport(d){
                filter question and the "which pond region" question. */
             if (num(p.buyQFull) >= 0) o2.buyQFull = Math.max(0, num(p.buyQFull));
             if (num(p.sellQFull) >= 0) o2.sellQFull = Math.max(0, num(p.sellQFull));
+            /* Reachability readings (ruled Aug 12 2026): proven vs possible. */
+            if (num(p.buyQStrict) >= 0) o2.buyQStrict = Math.max(0, num(p.buyQStrict));
+            if (num(p.sellQStrict) >= 0) o2.sellQStrict = Math.max(0, num(p.sellQStrict));
+            if (p.strictFilled != null) o2.strictFilled = p.strictFilled ? 1 : 0;
+            if (p.lenientFilled != null) o2.lenientFilled = p.lenientFilled ? 1 : 0;
             if (p.cohort === "scanner") o2.cohort = "scanner";
             if (num(p.scanTier) === 1 || num(p.scanTier) === 2) o2.scanTier = num(p.scanTier);
             if (num(p.score) > 0) o2.score = num(p.score);

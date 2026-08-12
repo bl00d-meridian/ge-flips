@@ -53,7 +53,7 @@
       S.items.push(it); S.byId.set(id, it);
       S.latest[id] = { high:4400, low:4000, highTime: nowS-60, lowTime: nowS-120 };
       S.hour[id]  = { avgHighPrice:4400, avgLowPrice:4000, highPriceVolume:50000, lowPriceVolume:50000 };
-      S.min5[id]  = { highPriceVolume:4000, lowPriceVolume:4000 };
+      S.min5[id]  = { avgHighPrice:4400, avgLowPrice:3900, highPriceVolume:4000, lowPriceVolume:4000 };
       const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
       for (let k = 0; k < 168; k++){ const mid = 4200 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({t: nowS-(168-k)*3600, mid}); }
       S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData:false });
@@ -341,7 +341,7 @@
        JSON.stringify({f: cV.failed, v: cV.volGate, s: cV.volSrc}));
 
     // 1 unit in the window (the '12/h' signature) → noise, never binds, labeled
-    S.min5[9001] = { highPriceVolume: 0, lowPriceVolume: 1 };
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 0, lowPriceVolume: 1 };
     updateVol5Streaks(); updateVol5Streaks();   // even repeated arrivals of noise never arm the streak
     cV = candidateFor({id:9001, qty:null});
     ok("sub-5-unit window is labeled noise and never binds", !cV.failed && cV.volGate === 50000
@@ -349,7 +349,7 @@
        JSON.stringify({f: cV.failed, v: cV.volGate, s: cV.volSrc, n: S.vol5Low.get(9001)}));
 
     // real (≥5-unit) below-floor sample: first refresh does NOT bind
-    S.min5[9001] = { highPriceVolume: 2, lowPriceVolume: 4 };   // 6 units → 72/h, under the 500/h floor
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 2, lowPriceVolume: 4 };   // 6 units → 72/h, under the 500/h floor
     updateVol5Streaks();
     cV = candidateFor({id:9001, qty:null});
     ok("first below-floor refresh: not binding yet, labeled n/2", !cV.failed && cV.volGate === 50000
@@ -364,7 +364,7 @@
        JSON.stringify({f: cV.failed, v: cV.volGate}));
 
     // recovery resets the streak and the gate reopens
-    S.min5[9001] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     updateVol5Streaks();
     cV = candidateFor({id:9001, qty:null});
     ok("healthy 5m window resets streak and reopens gate", !cV.failed && (S.vol5Low.get(9001) || 0) === 0
@@ -374,8 +374,10 @@
     // Confirmed 5m die-off (6 units → 72/h vs the 500/h floor) against a
     // PASSING 1h book (50k/h): the tag's exact ruled condition.
     DB.gateLog = []; DB.dieOffLog = []; S.depProposalCount = 0;
-    S.min5[9001] = { highPriceVolume: 2, lowPriceVolume: 4 };
-    updateVol5Streaks(); updateVol5Streaks();          // arm the ruled 2-refresh confirmation
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 2, lowPriceVolume: 4 };
+    /* Arm the RULED 6-refresh die-off confirmation (Aug 12 2026), raised from
+       2 so a five-minute wobble in a thin book cannot open an episode. */
+    for (let i = 0; i < DIEOFF_CONFIRM_REFRESHES; i++) updateVol5Streaks();
     let plD = buildPlan();
     const bD = plD.bench.find(b => b.id === 9001);
     ok("[R8.1] die-off bench names the tag inline", !!bD && /tagged die-off detected/.test(bD.failed || ""),
@@ -391,14 +393,14 @@
        DB.gateLog.filter(e => e.id === 9001 && e.g === "die-off detected").length === 1 && DB.dieOffLog.length === 1,
        JSON.stringify({log: DB.gateLog, epi: DB.dieOffLog}));
     // a window gone quiet (sub-5-unit) is NOT recovery — only a confirmed healthy sample is
-    S.min5[9001] = { highPriceVolume: 0, lowPriceVolume: 1 };
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 0, lowPriceVolume: 1 };
     updateVol5Streaks();
     ok("[R8.2] quiet window does not close the episode", DB.dieOffLog[0].rec === null, JSON.stringify(DB.dieOffLog));
     /* Back-date the episode past one touch gap BEFORE recovering it: an
        episode that recovers inside a gap is auto-voided as noise (ruled Aug 12
        2026), which is asserted separately below. This one is a real recovery. */
     DB.dieOffLog[0].t = Date.now() - 6 * 3600e3;
-    S.min5[9001] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     updateVol5Streaks();
     ok("[R8.2] confirmed healthy 5m sample stamps recovery", Number.isFinite(DB.dieOffLog[0].rec),
        JSON.stringify(DB.dieOffLog));
@@ -410,7 +412,7 @@
        && ghD.dieOff.watching === 0, JSON.stringify(ghD.dieOff));
     /* The noise case: a five-minute wobble in a thin book. */
     DB.dieOffLog.push({ d: today(), id: 9002, t: Date.now() - 60e3, rec: null });
-    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     updateVol5Streaks();
     const ghV = gateHealthAudit();
     ok("[R43.5] an episode recovering inside one touch gap is auto-voided as noise",
@@ -420,15 +422,15 @@
        ghV.dieOff.episodes === 1 && ghV.dieOff.rec24 === 1 && ghV.dieOff.voided === 1
        && ghV.dieOff.eps.some(e => /auto-voided as noise/.test(e.bucket)),
        JSON.stringify({ ep: ghV.dieOff.episodes, rec: ghV.dieOff.rec24, void: ghV.dieOff.voided }));
-    ok("[R43.5] the confirmation depth is its own constant, and the proposed value is NOT applied",
-       DIEOFF_CONFIRM_REFRESHES === VOL5_BIND_REFRESHES && DIEOFF_CONFIRM_PROPOSED === 6
-       && DIEOFF_CONFIRM_PROPOSED > DIEOFF_CONFIRM_REFRESHES,
-       JSON.stringify({ now: DIEOFF_CONFIRM_REFRESHES, proposed: DIEOFF_CONFIRM_PROPOSED }));
+    ok("[R43.5] the episode confirmation depth is its own constant, ruled to 6, and the volume gate is untouched",
+       DIEOFF_CONFIRM_REFRESHES === 6 && VOL5_BIND_REFRESHES === 2
+       && DIEOFF_CONFIRM_REFRESHES > VOL5_BIND_REFRESHES,
+       JSON.stringify({ episode: DIEOFF_CONFIRM_REFRESHES, gate: VOL5_BIND_REFRESHES }));
     DB.dieOffLog = DB.dieOffLog.slice(0, 1);
     // concur-recommended lane: the die-off line defends the standing rule —
     // batched under its own header, never a pending ruling
-    S.min5[9001] = { highPriceVolume: 2, lowPriceVolume: 4 };
-    updateVol5Streaks(); updateVol5Streaks();
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 2, lowPriceVolume: 4 };
+    for (let i = 0; i < DIEOFF_CONFIRM_REFRESHES; i++) updateVol5Streaks();
     renderDeploy();
     const depD = document.querySelector("#depBody").innerHTML;
     ok("[R8.3] concur-recommended batch renders with the die-off defense",
@@ -440,7 +442,7 @@
     ok("[R8.2] recovered episode + fresh die-off opens a NEW episode", DB.dieOffLog.length === 2
        && DB.dieOffLog[1].rec === null, JSON.stringify(DB.dieOffLog));
     // restore fixture health for the next block
-    S.min5[9001] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9001] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     updateVol5Streaks();
     DB.gateLog = []; DB.dieOffLog = [];
 
@@ -533,7 +535,7 @@
     S.vol5Low = new Map();
     for (const id of [9001, 9002, 9003]){
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 25, lowPriceVolume: 25 };
-      S.min5[id] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+      S.min5[id] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     }
     renderDeploy();
     const dep84a = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
@@ -1495,7 +1497,7 @@
     DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
     S.vol5Low = new Map();
     DB.qual = { 9051: qualified() }; S.qualStamp = S.latestAt + "|" + S.hourAt;
-    S.min5[9051] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9051] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     S.hour[9051] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
     for (let i = 0; i < 3; i++) DB.flips.push({ id: Date.now() - (i + 1) * 3600e3, itemId: 9051,
       name: "Probe sleeve second", qty: 10, buy: 4000, sell: 4400, date: today(), note: "" });
@@ -1574,7 +1576,7 @@
     S.items.push(itW); S.byId.set(wid, itW);
     S.latest[wid] = { high: 180000, low: 170000, highTime: nowS - 60, lowTime: nowS - 120 };
     S.hour[wid] = { avgHighPrice: 180000, avgLowPrice: 170000, highPriceVolume: 200, lowPriceVolume: 200 };
-    S.min5[wid] = { highPriceVolume: 20, lowPriceVolume: 20 };
+    S.min5[wid] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 20, lowPriceVolume: 20 };
     DB.filtersT2 = { ...SCAN_T2_DEFAULTS };
     const wideHits = scanScreenTier(2);
     ok("[R11.1] scout T2 screen admits a 175k item under the widened ceiling",
@@ -2082,7 +2084,7 @@
     for (const id of [9001, 9002, 9003]){   // restore canonical market data — earlier die-off blocks degrade it
       S.latest[id] = { high: 4400, low: 4000, highTime: nowS - 60, lowTime: nowS - 120 };
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
-      S.min5[id] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+      S.min5[id] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     }
     S.vol5Low = new Map();
     S.latestAt = S.latestAt || Date.now();   // shadowScan guards on live data having arrived — simulate it
@@ -2149,14 +2151,18 @@
       qty: 10, bid: 4001, ask: 4399, t: t18, buyQ: 0, sellQ: 0, buyDone: 0,
       obsMs: 0, lastObs: Date.now() - 5 * 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     S.min5At = bkt18(t18 + 300e3);        // first bucket that STARTED after the trip opened
-    S.latest[9002] = { high: 4500, low: 4100, highTime: nowS, lowTime: nowS };   // low ABOVE bid — no fill
+    /* The price test now reads the BUCKET's own average low, not /latest's
+       current instabuy — volume and price come from the same bucket, which is
+       what makes the reachability split meaningful. */
+    S.latest[9002] = { high: 4500, low: 4100, highTime: nowS, lowTime: nowS };
+    S.min5[9002] = { avgHighPrice: 4500, avgLowPrice: 4100, highPriceVolume: 4000, lowPriceVolume: 4000 };  // above bid — no fill
     shadowTick();
     const sb2 = DB.shadowBook[0];
     ok("[R18.2] no print at-or-below the bid = no fill; observed time accrues capped",
        sb2.buyQ === 0 && sb2.state === "open" && sb2.obsMs > 0 && sb2.obsMs <= 10 * 60e3,
        JSON.stringify(sb2));
     S.latest[9002] = { high: 4300, low: 4000, highTime: nowS, lowTime: nowS };   // prints through the bid; ask untouched
-    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     shadowTick();
     ok("[R18.2] a print at-or-below the bid fills volume-weighted (capture-capped)",
        sb2.buyQ === 10 && sb2.buyDone > 0 && sb2.state === "open", JSON.stringify(sb2));
@@ -3135,7 +3141,7 @@
       S.items.push(it); S.byId.set(id, it);
       S.latest[id] = { high: 4400, low: 4000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
       S.hour[id]  = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
-      S.min5[id]  = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+      S.min5[id]  = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
       const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
       for (let k = 0; k < 168; k++){ const mid = 4200 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS27 - (168 - k) * 3600, mid }); }
       S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
@@ -3147,15 +3153,42 @@
       qty: 20, bid: 4001, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0,
       obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     S.latest[9002] = { high: 4500, low: 4000, highTime: nowS27, lowTime: nowS27 };
-    S.min5[9002] = { highPriceVolume: 40, lowPriceVolume: 40 };
+    S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 40, lowPriceVolume: 40 };
     S.min5At = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;   // a bucket that began after the trip opened
     shadowTick();
     const sb27 = DB.shadowBook[0];
     const tape27 = Math.max(1, Math.floor(40 * GATE.capture));
     const cons27 = Math.max(1, Math.floor(tape27 * 0.5));
-    ok("[R18.5] participation haircut: conservative leg claims capture × 50% of the tape, the 100% reading accrues beside it",
-       sb27.buyQ === cons27 && sb27.buyQFull === tape27 && sb27.buyQFull > sb27.buyQ,
-       JSON.stringify({ buyQ: sb27.buyQ, buyQFull: sb27.buyQFull, tape: tape27 }));
+    /* REACHABILITY (ruled Aug 12 2026) makes the haircut POSITION-DEPENDENT:
+       a print strictly below the bid proves the queue at my price cleared and
+       takes full credit, so the fixture above (avgLowPrice 4000 vs bid 4001)
+       is the proven case and all three readings agree. The haircut now applies
+       only to the ambiguous at-the-bid case, asserted next. */
+    ok("[R18.5] a print BELOW the bid is proven reachable — full credit on every reading",
+       sb27.buyQ === tape27 && sb27.buyQFull === tape27 && sb27.buyQStrict === tape27,
+       JSON.stringify({ buyQ: sb27.buyQ, strict: sb27.buyQStrict, full: sb27.buyQFull, tape: tape27 }));
+    DB.shadowBook = [{ id: 9702, fam: "at:9002", itemId: 9002, name: "Probe beta",
+      qty: 20, bid: 4000, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0,
+      obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
+    S.min5[9002] = { avgHighPrice: 4500, avgLowPrice: 4000, highPriceVolume: 40, lowPriceVolume: 40 };
+    S.min5At = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;
+    shadowTick();
+    const sbAt = DB.shadowBook[0];
+    ok("[R18.5] a print EXACTLY AT the bid is ambiguous — haircut on the operative leg, nothing on the strict one, full on the lenient",
+       sbAt.buyQ === cons27 && sbAt.buyQStrict === 0 && sbAt.buyQFull === tape27
+       && sbAt.buyQFull > sbAt.buyQ && sbAt.buyQ > sbAt.buyQStrict,
+       JSON.stringify({ oper: sbAt.buyQ, strict: sbAt.buyQStrict, lenient: sbAt.buyQFull }));
+    ok("[R18.5] a print on the wrong side of my price credits nothing at all",
+       (() => { DB.shadowBook = [{ id: 9703, fam: "above:9002", itemId: 9002, name: "Probe beta",
+                  qty: 20, bid: 3900, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0,
+                  sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now27 - 60e3, state: "open", regimes: [] }];
+                shadowTick();
+                return DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].buyQFull === 0; })(),
+       JSON.stringify(DB.shadowBook[0]));
+    DB.shadowBook = [{ id: 9701, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
+      qty: 20, bid: 4001, ask: 4399, t: now27 - 60e3, buyQ: sb27.buyQ, sellQ: 0,
+      buyQFull: sb27.buyQFull, buyQStrict: sb27.buyQStrict, sellQFull: 0, buyDone: 0,
+      obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     ok("[R18.5] the participation knob clamps to [10,100]%",
        (() => { DB.shadowPartPct = 5; const lo = shadowPart(); DB.shadowPartPct = 200; const hi = shadowPart();
                 DB.shadowPartPct = 50; return lo === 0.1 && hi === 1; })());
@@ -3339,7 +3372,7 @@
     // teardown
     DB.shadowBook = []; DB.flips = []; DB.shadowExceptions = []; DB.shadowPartPct = 50;
     S.items = S.items.filter(it => it.i !== 9322); S.byId.delete(9322);
-    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     S.latest[9002] = { high: 4400, low: 4000, highTime: nowS27 - 60, lowTime: nowS27 - 120 };
     save();
   } catch(e){
@@ -4696,10 +4729,13 @@
        && tAlpha.entryBid === 4000 && tAlpha.exitPrice === 4400 && tAlpha.netSimGp === 5000
        && tAlpha.regimes.join() === "current" && tAlpha.benchedByGate === "ROI floor",
        JSON.stringify(tAlpha));
-    ok("[R42.2] the tape credit is reported at BOTH participation readings",
+    /* THREE readings since the reachability ruling (Aug 12 2026): proven,
+       operative and possible, so the export brackets the fill claim rather
+       than asserting it. */
+    ok("[R42.2] the tape credit is reported at all THREE reachability readings",
        (() => { const b = P.closedTrips.find(t => t.item === "Probe beta");
-                return b && b.buyCreditAtParticipation === 10 && b.buyCreditAt100Pct === 40
-                    && b.participationPct === shadowPartPct(); })(),
+                return b && b.buyCreditOperative === 10 && b.buyCreditPossiblyReachable === 40
+                    && "buyCreditProvenReachable" in b && b.participationPct === shadowPartPct(); })(),
        JSON.stringify(P.closedTrips.find(t => t.item === "Probe beta")));
     ok("[R42.2] per-gate rollups and the three regime curves ship as series",
        P.perGateRollup.length >= 1 && P.perGateRollup.every(r => r.gate && r.horizonShape)
@@ -4867,7 +4903,7 @@
       buyDone: 0, obsMs: 0, lastObs: Date.now(), state: "open", regimes: [] });
     const nowSC = Math.floor(Date.now() / 1000);
     S.latest[9002] = { high: 4300, low: 4000, highTime: nowSC, lowTime: nowSC };
-    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5[9002] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     S.min5At = bktC;
     /* Opened ONE MINUTE INTO the bucket: the bucket's prints are partly from
        before the trip existed, so it credits nothing. */
@@ -4964,6 +5000,109 @@
     DB.strataStats = keepStrata43;
   } catch(e){
     out.push("FAIL paper-book defect fixes :: " + (e && e.stack || e));
+  }
+
+  // ─── §44: REACHABILITY, PARTIAL AS AN OUTCOME, RATE-NOT-TOTAL ───
+  try {
+    const capT = v => Math.max(1, Math.floor(v * GATE.capture));
+    // ---- R44.1 the three-way credit rule ----
+    const below = reachCredit(3900, 4000, 100, "buy");
+    const atBid = reachCredit(4000, 4000, 100, "buy");
+    const wrong = reachCredit(4100, 4000, 100, "buy");
+    ok("[R44.1] a print strictly BELOW my bid is proven reach — full credit on every reading",
+       below.any && below.strict === capT(100) && below.oper === capT(100) && below.lenient === capT(100),
+       JSON.stringify(below));
+    ok("[R44.1] a print EXACTLY AT my bid is ambiguous — haircut operative, zero strict, full lenient",
+       atBid.any && atBid.strict === 0 && atBid.oper === Math.max(1, Math.floor(capT(100) * shadowPart()))
+       && atBid.lenient === capT(100),
+       JSON.stringify(atBid));
+    ok("[R44.1] a print on the wrong side of my price credits nothing on any reading",
+       !wrong.any && wrong.strict === 0 && wrong.oper === 0 && wrong.lenient === 0, JSON.stringify(wrong));
+    ok("[R44.1] the sell side is the mirror — strictly ABOVE my ask is the proven case",
+       reachCredit(4500, 4400, 100, "sell").strict === capT(100)
+       && reachCredit(4400, 4400, 100, "sell").strict === 0
+       && !reachCredit(4300, 4400, 100, "sell").any,
+       "sell mirror");
+    ok("[R44.1] the readings are ordered lenient >= operative >= strict, always",
+       [below, atBid].every(c => c.lenient >= c.oper && c.oper >= c.strict),
+       "bracket ordering");
+
+    // ---- R44.2 partial is a real outcome, not a silent resize ----
+    const keep44 = DB.shadowBook, keepAt44 = S.min5At, keepSeq44 = S.pollSeq;
+    const b44 = Math.floor(Date.now() / 300e3) * 300e3;
+    /* qty far beyond what one bucket can credit, horizon already elapsed. */
+    DB.shadowBook = [{ id: 44001, fam: "p44", itemId: 9002, name: "Probe beta", qty: 100000,
+      bid: 4001, ask: 4399, t: b44 - 9 * 3600e3, hzH: 0.001, buyQ: 0, sellQ: 0, buyQFull: 0,
+      sellQFull: 0, buyDone: 0, obsMs: 60e3, lastObs: Date.now(), state: "open", regimes: [] }];
+    DB.shadowBook[0].buyQ = 5; DB.shadowBook[0].buyQFull = 9; DB.shadowBook[0].buyQStrict = 5;
+    S.min5At = b44;
+    S.latest[9002] = { high: 4300, low: 4000, highTime: Math.floor(Date.now() / 1000), lowTime: Math.floor(Date.now() / 1000) };
+    shadowTick();
+    const p44 = DB.shadowBook[0];
+    ok("[R44.2] a buy leg that never reaches qty inside its horizon resolves PARTIAL, not a silently shrunk trip",
+       p44.state === "partial" && p44.qty === 100000 && p44.forced === 100000 - p44.buyQ
+       && Number.isFinite(p44.net),
+       JSON.stringify({ state: p44.state, qty: p44.qty, bought: p44.buyQ, forced: p44.forced }));
+    ok("[R44.2] partial is a resolved outcome that counts, and reads as a counterexample to the fill rate",
+       shadowResolved(p44) && /partial buy of/.test(paperTripRows([p44])[0].outcome),
+       paperTripRows([p44])[0].outcome);
+    ok("[R44.2] the resolution stamps BOTH reachability verdicts, even when they agree",
+       p44.strictFilled === 0 && p44.lenientFilled === 0,
+       JSON.stringify({ s: p44.strictFilled, l: p44.lenientFilled }));
+    DB.shadowBook = keep44; S.min5At = keepAt44; S.pollSeq = keepSeq44;
+
+    // ---- R44.3 the headline is a rate with a distribution, per cohort ----
+    const keep44b = DB.shadowBook, keepBank44 = DB.bank, keepRes44 = DB.reserve, keepSh44 = DB.shadowReserve;
+    const t0 = Date.now() - 4 * 3600e3;
+    const mk44 = (i, net, qty, st) => ({ id: 44100 + i, fam: "e" + i, itemId: 9001, name: "Probe alpha",
+      qty, bid: 1000, ask: 1100, t: t0, closedAt: t0 + 3600e3, hzH: 4, obsMs: 4 * 3600e3,
+      state: st || "filled", net, regimes: [], slice: i > 1 ? 1 : 0, stratum: i > 1 ? "f2p" : null });
+    DB.shadowBook = [mk44(0, 1000, 100), mk44(1, 100000, 100), mk44(2, 50, 100), mk44(3, 50, 100)];
+    const eco = paperEconomics(paperClosed());
+    ok("[R44.3] the headline is a RATE — net per gp-day of simulated notional, not a total",
+       eco.gpDays > 0 && Math.abs(eco.rate - eco.net / eco.gpDays) < 1e-12
+       && /per gp-day of simulated notional/.test(paperRateFace(paperClosed())),
+       JSON.stringify({ net: eco.net, gpDays: Math.round(eco.gpDays), rate: eco.rate }));
+    ok("[R44.3] distribution rides beside it — median trip, top-5 share, and the outcome census",
+       eco.median === 525 && eco.top5Share > 0.9 && eco.outcomes.filled === 4,
+       JSON.stringify({ median: eco.median, top5: eco.top5Share, outcomes: eco.outcomes }));
+    const hs = paperHeadlineSection();
+    ok("[R44.3] net renders PER COHORT and is never blended into one number",
+       /never blended/.test(hs) && /data-drill="paper:econ"/.test(hs)
+       && (() => { S.drillOpen = new Set(["paper:econ"]);
+                   const bx = drillBoxHTML("paper:econ");
+                   return /watchlist/.test(bx) && /Net per gp-day/.test(bx)
+                       && /Median trip/.test(bx) && /Top-5 share/.test(bx); })(),
+       hs.slice(0, 300));
+    S.drillOpen = new Set();
+    /* Capital feasibility. The fixture deliberately mixes overlapping and
+       SEQUENTIAL trips so summed and swept give different answers — with four
+       simultaneous trips they coincide and the assertion could not fail.
+       Two overlap (200k held at once), two run after them in series. Summed
+       would say 400k; the honest peak is 200k. */
+    DB.bank = 100000; DB.reserve = 0; DB.shadowReserve = 0;
+    const seqA = Object.assign(mk44(4, 10, 100), { t: t0 + 2 * 3600e3, closedAt: t0 + 3 * 3600e3 });
+    const seqB = Object.assign(mk44(5, 10, 100), { t: t0 + 3 * 3600e3, closedAt: t0 + 4 * 3600e3 });
+    DB.shadowBook = [mk44(0, 1000, 100), mk44(1, 100000, 100), seqA, seqB];
+    const pk44 = paperPeakNotional(paperClosed());
+    ok("[R44.3] peak SIMULTANEOUS notional is SWEPT, not summed — sequential trips do not stack",
+       pk44.peak === 200000, JSON.stringify(pk44));
+    DB.shadowBook = [mk44(0, 1000, 100), mk44(1, 100000, 100), mk44(2, 50, 100), mk44(3, 50, 100)];
+    ok("[R44.3] and it is flagged when the sim assumed more capital than exists",
+       /Capital feasibility/.test(paperHeadlineSection())
+       && /assumed more capital than exists/.test(paperHeadlineSection()),
+       "over-capital flag");
+    DB.bank = 10000000;
+    ok("[R44.3] inside working capital it says so rather than staying silent",
+       /did not spend money that is not there/.test(paperHeadlineSection()),
+       "within-capital line");
+    ok("[R44.4] the raw summed net survives ONLY in the regime comparison, labelled comparison-only",
+       /COMPARISON ONLY, not a magnitude/.test(paperRegimeSection())
+       && /the level cancels out/.test(paperRegimeSection()),
+       "regime comparison label");
+    DB.shadowBook = keep44b; DB.bank = keepBank44; DB.reserve = keepRes44; DB.shadowReserve = keepSh44;
+  } catch(e){
+    out.push("FAIL reachability / rate-not-total :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
