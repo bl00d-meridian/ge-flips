@@ -2,6 +2,30 @@
 (async function(){
   const out = [];
   const ok = (name, cond, extra) => out.push((cond ? "PASS " : "FAIL ") + name + (cond ? "" : " :: " + (extra || "")));
+  /* THE BROAD-CONTAINER TELL (user ruling, Aug 12 2026). An assertion that
+     matches against a container broader than the thing under test can run on
+     real production output, exercise real production code, and still pass with
+     the property deleted from its subject — because some OTHER element on the
+     page satisfied the pattern. [R49.2] did exactly that: it checked that a
+     specific per-gate fill rate carries its cohort split by matching
+     /watchlist 100% of 2/ against the whole page's HTML.
+
+     blendFrag narrows the match to the one blend under test: the element whose
+     data-drill key is `key`, plus the inline decomposition span rateBlend()
+     emits immediately after it. Returns "" when the key is absent, so a
+     vanished blend fails rather than matching nothing quietly. This LOCATES an
+     element; it does not compute the expected value — the split it matches is
+     still produced entirely by production code. */
+  const blendFrag = (html, key) => {
+    const d = document.createElement("div");
+    d.innerHTML = html;
+    /* Quoted attribute value: only backslash and the quote itself need escaping.
+       CSS.escape is for identifiers and would mangle the spaces and "·" these
+       drill keys carry. */
+    const btn = d.querySelector('[data-drill="' + String(key).replace(/[\\"]/g, "\\$&") + '"]');
+    if (!btn) return "";
+    return btn.outerHTML + (btn.nextElementSibling ? btn.nextElementSibling.outerHTML : "");
+  };
   /* The early stub traps app-script parse errors, but its beacon is overwritten
      by this report — so surface them HERE, first. Without this a syntax error
      in index.html reads as a cascade of "x is not defined" with no cause. */
@@ -537,16 +561,28 @@
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 25, lowPriceVolume: 25 };
       S.min5[id] = { avgHighPrice: 4400, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
     }
+    const dm84 = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
+    /* Coverage is now part of this fixture's meaning (observed-time ruling,
+       Aug 12 2026): "no persistence" and "the bar is out of reach" are
+       different findings, so the snapshot-advocacy case has to be set up on a
+       FULLY observed week or it silently becomes the other case. */
+    DB.obsDays = [6,5,4,3,2,1].map(dm84);
     renderDeploy();
     const dep84a = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
     ok("[R8.4] snapshot pile without ledger persistence emits no change-proposal",
        S.depProposalCount === 0 && /snapshot advocacy/.test(dep84a) && /Concur-recommended/.test(dep84a),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84a.slice(-600));
+    ok("[R51.2] and it states the coverage the 'no persistence' claim rests on",
+       /none carry multi-day ledger persistence across 7 days observed in the last 7/.test(dep84a),
+       dep84a.slice(-600));
     // seed 5 prior days of volume-floor benches — the ledger persistence earns
     // the hearing; BOTH outcome streams agreeing makes the case (ruled Aug 11
     // 2026): a realized override win + profitable closed paper fills.
-    const dm84 = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     for (let d = 1; d <= 5; d++) for (const id of [9001, 9002, 9003]) DB.gateLog.push({ d: dm84(d), id, g: "volume floor" });
+    /* Drop one day out of the observed set: the persistence case has to be
+       readable on a PARTIALLY observed week, which is the ordinary case and
+       the one the old "of the last 7 days" wording misreported. */
+    DB.obsDays = [5,4,3,2,1].map(dm84);
     DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4000, sell: 4400, date: dm84(2), note: "" }];
     DB.shadowBook = [
       { id: 841, fam: "s841", itemId: 9002, name: "Probe beta", qty: 10, bid: 4001, ask: 4399, t: 1, buyQ: 10, sellQ: 10,
@@ -557,13 +593,53 @@
     renderDeploy();
     const dep84b = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
     ok("[R8.4] ledger-backed proposal cites persistence and traces the next stage per admitted item",
-       S.depProposalCount === 1 && /ledger persistence/.test(dep84b) && /4\+ of the last 7 days/.test(dep84b)
+       S.depProposalCount === 1 && /with ledger persistence — benched by it on 4\+/.test(dep84b)
        && /Realized overrides make the case and the paper screen concurs/.test(dep84b) && /Next stage per admitted item/.test(dep84b),
        JSON.stringify({count: S.depProposalCount}) + " :: " + dep84b.slice(-800));
+    /* ═══ §51 OBSERVED TIME (user ruling, Aug 12 2026) ═══
+       No claim about a period that was not observed. The proposal copy is the
+       surface that moves gate constants, so the coverage has to be ON it. */
+    ok("[R51.1] the persistence claim reports benched days against OBSERVED days, not calendar days",
+       /4\+ of the 6 days observed in the last 7/.test(dep84b)
+       && /Probe \w+ \(6 of 6\)/.test(dep84b)
+       && !/of the last 7 days/.test(dep84b),
+       dep84b.slice(dep84b.indexOf("ledger persistence") - 40, dep84b.indexOf("ledger persistence") + 320));
+    ok("[R51.1] and the window's unobserved remainder is named, not left to arithmetic",
+       /1 day not observed — no claim is made about it/.test(dep84b)
+       && /benched by this gate on 6 of 6 observed days \(7-day window; 1 day not observed/.test(dep84b),
+       dep84b.slice(dep84b.indexOf("observed day") - 90, dep84b.indexOf("observed day") + 200));
+    /* The pair, from production: the numerator was always observed-only (a
+       ledger row exists only on a day a plan built); the defect was the
+       denominator. Assert both halves come back together. */
+    const p51 = daysBenchedBy(9001, "volume floor", 7);
+    ok("[R51.1] daysBenchedBy returns the pair, so a caller cannot render the count without its coverage",
+       p51 && p51.n === 6 && p51.obs === 6 && p51.window === 7
+       && benchDaysTxt(p51) === "6 of 6 observed days (7-day window; 1 day not observed — no claim is made about it)",
+       JSON.stringify(p51) + " :: " + benchDaysTxt(p51));
+    ok("[R51.1] observedDaysIn unions the day-stamp with the ledger's own dates and ignores days outside the window",
+       (() => { const keep = DB.obsDays, keepG = DB.gateLog;
+                DB.obsDays = [dm84(0), dm84(20)]; DB.gateLog = [{ d: dm84(3), id: 9001, g: "x" }, { d: dm84(0), id: 9002, g: "y" }];
+                const r = observedDaysIn(7);
+                DB.obsDays = keep; DB.gateLog = keepG;
+                return r === 2; })(),
+       "expected 2 distinct in-window observed days");
+    /* Unreachable is not absent — the never-fed rule, applied to coverage. */
+    const keepObs51 = DB.obsDays, keepGL51 = DB.gateLog;
+    DB.obsDays = []; DB.gateLog = []; S.depProposalCount = 0;
+    renderDeploy();
+    const dep51 = document.querySelector("#depBody").innerHTML.replace(/<[^>]+>/g, " ");
+    ok("[R51.2] below the bar's own arithmetic the funnel says the bar is UNREACHABLE, not that persistence is absent",
+       /persistence bar cannot be reached at this coverage/.test(dep51)
+       && /coverage is only 1 day observed in the last 7 \(6 days not observed/.test(dep51)
+       && /not enough observation to have an answer either way/.test(dep51)
+       && !/none carry multi-day ledger persistence/.test(dep51)
+       && S.depProposalCount === 0,
+       dep51.slice(-700));
+    DB.obsDays = keepObs51; DB.gateLog = keepGL51;
     // restore fixture volumes and ledgers for the next block
     for (const id of [9001, 9002, 9003])
       S.hour[id] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
-    DB.gateLog = []; DB.dieOffLog = []; DB.flips = []; DB.shadowBook = []; S.depProposalCount = 0;
+    DB.gateLog = []; DB.dieOffLog = []; DB.flips = []; DB.shadowBook = []; DB.obsDays = []; S.depProposalCount = 0;
 
     // ═══ PROMOTE FLOW (friction Aug 10 2026: fund first, reason-aware picker) ═══
     DB.flips = []; DB.positions = []; DB.invLots = [];
@@ -739,6 +815,11 @@
     DB.watch = [9001, 9002, 9003, 9031, 9032, 9033].map(id => ({ id, qty: null }));
     DB.qual = { 9001: qualified(), 9002: qualified(), 9031: qualified(), 9032: qualified(), 9033: qualified() };
     S.qualStamp = null;   // 9003 has no streak → seasons this snapshot
+    /* Observed-time fixture (Aug 12 2026): this block tests snapshot-vs-ledger
+       discipline, so the week must be fully observed — otherwise the funnel
+       correctly reports the different finding "the bar is unreachable" and the
+       assertion below would be testing coverage instead of discipline. */
+    DB.obsDays = [6,5,4,3,2,1].map(n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA"));
     S.tab = "watch"; renderWatch();
     const dep = document.querySelector("#depBody").innerHTML;
     ok("funnel renders enter → kills → funded", /candidates enter/.test(dep) && /funded/.test(dep)
@@ -4756,20 +4837,44 @@
        rateBlend("t49c", [], {}));
     /* Applied where rates actually render. */
     const keep49 = DB.shadowBook;
-    const mk49 = (i, coh, st) => Object.assign({ id: 49000 + i, itemId: 9001, name: "Probe alpha", qty: 5,
+    const mk49 = (i, coh, st, gate) => Object.assign({ id: 49000 + i, itemId: 9001, name: "Probe alpha", qty: 5,
       bid: 100, ask: 120, t: Date.now() - 3600e3, closedAt: Date.now(), hzH: 4, obsMs: 4 * 3600e3,
-      state: st, net: 10, regimes: [], benchedBy: ["ROI floor"] }, coh);
+      state: st, net: 10, regimes: [], benchedBy: [gate || "ROI floor"] }, coh);
+    /* TWO gates, with IDENTICAL cohort splits — the fixture that makes the
+       broad-container defect expressible. With one blend on the page, deleting
+       the split from it fails a whole-section match too, and the old assertion
+       would have looked fine. With a second blend carrying the same text, a
+       whole-section match passes with the property gone from its subject —
+       which is the defect, and is what the scoped match below catches. */
     DB.shadowBook = [mk49(1, {}, "filled"), mk49(2, {}, "filled"),
-                     mk49(3, { slice: 1, stratum: "f2p" }, "unfilled"), mk49(4, { slice: 1, stratum: "f2p" }, "unfilled")];
+                     mk49(3, { slice: 1, stratum: "f2p" }, "unfilled"), mk49(4, { slice: 1, stratum: "f2p" }, "unfilled"),
+                     mk49(5, {}, "filled", "volume floor"), mk49(6, {}, "filled", "volume floor"),
+                     mk49(7, { slice: 1, stratum: "f2p" }, "unfilled", "volume floor"),
+                     mk49(8, { slice: 1, stratum: "f2p" }, "unfilled", "volume floor")];
+    /* Scoped per the broad-container tell (Aug 12 2026). The previous version
+       matched /watchlist 100% of 2/ against the whole section, which any other
+       blend on the page would have satisfied — it would have passed with this
+       gate's split deleted. Every match below is inside the one blend named. */
     const gs = paperGateSection();
+    const gFrag = blendFrag(gs, "paper:gate:ROI floor · daytime:rateblend");
     ok("[R49.2] the per-gate fill rate renders its cohort split inline — the blend is never alone",
-       /data-drill="paper:gate:ROI floor · daytime:rateblend"/.test(gs)
-       && /watchlist 100% of 2/.test(gs) && /slice 0% of 2/.test(gs),
-       gs.slice(gs.indexOf("rateblend") - 40, gs.indexOf("rateblend") + 260));
+       !!gFrag && /watchlist 100% of 2/.test(gFrag) && /slice 0% of 2/.test(gFrag),
+       gFrag || "no blend at key paper:gate:ROI floor · daytime:rateblend");
+    /* The fixture's own proof, kept: a whole-section match for this blend's
+       split is satisfiable by the OTHER gate's blend, so the container the
+       assertion above uses has to be the fragment, not the section. */
+    ok("[R49.2] the fixture proves the container matters — a second blend on the page carries the same split text",
+       /watchlist 100% of 2/.test(gs.replace(gFrag, "")),
+       "no second blend — the scoping assertion would be untestable on this fixture");
+    ok("[R49.2] and the assertion is scoped to THAT blend — the split is inside the fragment, not merely on the page",
+       gFrag.length < gs.length && gs.indexOf(gFrag.slice(0, 60)) >= 0,
+       "fragment " + gFrag.length + " of section " + gs.length);
     const hi49 = hoursLedgerInline();
+    const hKey = (hi49.match(/data-drill="(hours:rate:[^"]*)"/) || [])[1];
+    const hFrag = hKey ? blendFrag(hi49, hKey) : "";
     ok("[R49.2] the hours ledger's paper fill rate does the same",
-       /data-drill="hours:rate:/.test(hi49) && /watchlist 100% of 2/.test(hi49),
-       hi49.slice(hi49.indexOf("hours:rate:") - 20, hi49.indexOf("hours:rate:") + 220));
+       !!hFrag && /watchlist 100% of 4/.test(hFrag) && /slice 0% of 4/.test(hFrag),
+       hFrag || "no hours:rate: blend found");
     DB.shadowBook = keep49; S.drillOpen = new Set(); S.drillUI = new Map();
   } catch(e){
     out.push("FAIL never-blend a rate :: " + (e && e.stack || e));
@@ -5590,20 +5695,60 @@
        && sSum.lenient.byDuration && sSum.lenient.byDuration.fast && sSum.lenient.byDuration.slow
        && sSum.lenient.byDuration.slow.n === 1 && sSum.lenient.byDuration.fast.n === 0,
        JSON.stringify(sSum.lenient.byDuration));
-    ok("[R48.1] the panel renders the sell table and warns that a FAST sell's proven bound is near-meaningless",
-       (() => { const keepC2 = DB.calib;
-                DB.calib = Object.assign({ at: Date.now(), rows: [{ sell: sRow, strict: { verdict: "filled", buyPct: 100 },
-                    lenient: { verdict: "filled", buyPct: 100 }, item: "x", qty: 1, bid: 1, ask: 2, bh: 2, sh: 1,
-                    trace: [], atPriceBuckets: 0 }], total: 1, retentionH: CALIB_5M_RETENTION_H,
-                  skipped: { tooOld: 0, noWindow: 0, noTape: 0 },
-                  sellLeg: sSum }, calibSummarise([{ strict: { verdict: "filled", buyPct: 100 },
-                    lenient: { verdict: "filled", buyPct: 100 }, fastLeg: 0 }]));
-                const s = calibSection(), x = analysisCalibration();
-                DB.calib = keepC2;
-                return /Sell leg — anchored independently/.test(s) && /False never-sold/.test(s)
-                    && /close to meaningless/.test(s) && !!x.calibration.sellLeg
-                    && /HARDER here/.test(x.calibration.sellLeg.note); })(),
-       "sell panel + export");
+    /* Both surfaces are built once and shared by every assertion below, so a
+       divergence between panel and file is visible rather than tested twice. */
+    const keepC2 = DB.calib;
+    DB.calib = Object.assign({ at: Date.now(), rows: [{ sell: sRow, strict: { verdict: "filled", buyPct: 100 },
+        lenient: { verdict: "filled", buyPct: 100 }, item: "x", itemId: 9001, qty: 10, bid: 1000, ask: 1200, bh: 2, sh: 1,
+        trace: [], atPriceBuckets: 0, bucketsReaching: 0, bucketsInWindow: 0 }], total: 1, retentionH: CALIB_5M_RETENTION_H,
+      skipped: { tooOld: 0, noWindow: 0, noTape: 0 },
+      sellLeg: sSum }, calibSummarise([{ strict: { verdict: "filled", buyPct: 100 },
+        lenient: { verdict: "filled", buyPct: 100 }, fastLeg: 0 }]));
+    const s48 = calibSection(), x48 = analysisCalibration();
+    const sf48 = x48.replayedFlips[0].sellLeg;
+    DB.calib = keepC2;
+    ok("[R48.1] the panel renders the sell table",
+       /Sell leg — anchored independently/.test(s48) && /False never-sold/.test(s48), s48.slice(0, 200));
+    /* THE FALSIFIED PREDICTION (user ruling, Aug 12 2026). The old copy claimed
+       self-comparison bit HARDER on sells. Zero at-price buckets measured, and
+       the bounds are identical BY CONSTRUCTION. Corrections must land where the
+       user already read the claim, so the assertion checks the old wording is
+       gone AND that the correction names what it is correcting. */
+    ok("[R48.1] and it carries the CORRECTION where the old claim stood, rather than quietly dropping it",
+       !/close to meaningless/.test(s48)
+       && /Corrected — the earlier caveat here was wrong/.test(s48)
+       && /property of the harness, not a finding about the market/.test(s48),
+       s48.slice(s48.indexOf("Corrected") - 60, s48.indexOf("Corrected") + 400));
+    ok("[R48.1] the export carries the same correction, flagged as a reversal of what it previously claimed",
+       !!x48.calibration.sellLeg && !/HARDER here/.test(x48.calibration.sellLeg.note)
+       && /reverses what earlier runs of this export claimed/.test(x48.calibration.sellLeg.selfComparisonPredictionFALSIFIED || "")
+       && /identical BY CONSTRUCTION/.test(x48.calibration.sellLeg.selfComparisonPredictionFALSIFIED || "")
+       && x48.calibration.sellLeg.atPriceBucketsTotal === 0
+       && x48.honesty.some(h => /SELF-COMPARISON DOES NOT BITE THE SELL LEG/.test(h)),
+       JSON.stringify(x48.calibration.sellLeg && x48.calibration.sellLeg.atPriceBucketsTotal));
+    ok("[R48.1] and the frozen 43-trip replay headline is stated in the file, not only in chat",
+       x48.honesty.some(h => /43-TRIP REPLAY HEADLINE IS FROZEN/.test(h) && /launder the same defect/.test(h)),
+       "freeze note absent");
+    /* ── R48.2 SELL-LEG PARITY: the rollup ships with its rows ── */
+    ok("[R48.2] the sell aggregate no longer ships alone — the export carries the per-flip sell leg",
+       !!sf48 && sf48.sellWindowStartHoursFromBuyDone === 0 && sf48.sellWindowEndHoursFromBuyDone === 2
+       && sf48.verdictProvenReach === "sold" && sf48.verdictPossibleReach === "sold"
+       && sf48.sellCreditedProvenPct === 100 && sf48.sellCreditedPossiblePct === 100
+       && typeof sf48.bucketsReachingThePrice === "number" && typeof sf48.bucketsInWindow === "number"
+       && sf48.atPriceBuckets === 0,
+       JSON.stringify(sf48 && { w: sf48.sellWindowEndHoursFromBuyDone, v: sf48.verdictProvenReach }));
+    ok("[R48.2] with the bucket-by-bucket trace, each bucket carrying its relative price, volume, credit and reason",
+       Array.isArray(sf48.trace) && sf48.trace.length > 0
+       && sf48.trace.every(b => typeof b.minutesFromWindowStart === "number" && "bucketAvgHighVsSellPct" in b
+            && "highSideVolume" in b && "creditedUnits" in b && /\S/.test(b.reason))
+       && sf48.trace.some(b => /average high sat ABOVE the sell price — proven reach/.test(b.reason))
+       && sf48.trace.some(b => /average high sat BELOW the sell price by [\d.]+% — never reached/.test(b.reason)),
+       JSON.stringify(sf48.trace.slice(0, 2)));
+    ok("[R48.2] the duration split ships for both bounds, so bounded-defect vs global pessimism is answerable from the file",
+       !!x48.calibration.sellLeg.byDuration
+       && x48.calibration.sellLeg.byDuration.provenReachBound.fast
+       && x48.calibration.sellLeg.byDuration.possibleReachBound.slow,
+       JSON.stringify(x48.calibration.sellLeg.byDuration));
     DB.calib = keepCal; DB.bank = keepBank47;
   } catch(e){
     out.push("FAIL calibration export :: " + (e && e.stack || e));

@@ -1243,6 +1243,7 @@ let DB = {
   decisionLog: [],    // audit rulings [{t,d,kind,subject,action,reason}] — the audit of the audit, exportable
   audRuled: {},       // "seed:311"/"sib:227" → {t, action} — a ruled card rests for 7 days
   gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
+  obsDays: [],        // OBSERVED-DAY ledger ["YYYY-MM-DD"] (user ruling, Aug 12 2026): one entry per day a plan actually built, 30d retention. The honest denominator for every "d of the last N days" claim — no claim may be made about a period that was not observed. Written even when nothing benched, funded or qualified, which is the case DB.gateLog alone cannot witness
   dieOffLog: [],      // die-off episodes [{d,id,t,rec}] (ruled Aug 10 2026): 5m-confirmed die-off against a passing 1h book; rec = recovery stamp ms (confirmed healthy 5m sample) or null; 30d retention
   qual: {},           // sustained qualification: id → {n, firstAt, lastAt} counted full-gate passes (spec: 3 spanning ≥2h)
   deployLog: [],      // funnel headline snapshots [{h,pass,funded,dep}] — hourly buckets (last refresh of the hour wins), 7d retention
@@ -1291,7 +1292,7 @@ function load(){
     const raw = localStorage.getItem(K);
     if (raw) DB = Object.assign(DB, JSON.parse(raw));
     DB.filters = Object.assign({...DEFAULT_FILTERS}, DB.filters || {});
-    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions"])
+    for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions","obsDays"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
     for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog","strataStats"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
@@ -4368,6 +4369,12 @@ function buildPlan(){
     const dToday = today();
     const have = new Set(DB.gateLog.map(e => e.d + "|" + e.id + "|" + e.g));
     let logDirty = false;
+    /* OBSERVED-DAY stamp (user ruling, Aug 12 2026). A gate-ledger row proves
+       the day was observed, but the converse fails: a plan that benched
+       nothing, funded nothing and qualified nothing writes no row at all, and
+       that day was still observed. Stamp it here, unconditionally, so the
+       denominator below never has to infer observation from evidence. */
+    if (!DB.obsDays.includes(dToday)){ DB.obsDays.push(dToday); logDirty = true; }
     for (const b of bench){
       if (!(b.id > 0)) continue;
       const g = gateName(b.failed) || "plan gate";
@@ -4408,6 +4415,7 @@ function buildPlan(){
     if (logDirty){
       const cutoff = new Date(Date.now() - 30 * 86400e3).toLocaleDateString("en-CA");
       if (DB.gateLog.length && DB.gateLog[0].d < cutoff) DB.gateLog = DB.gateLog.filter(e => e.d >= cutoff);
+      if (DB.obsDays.length && DB.obsDays[0] < cutoff) DB.obsDays = DB.obsDays.filter(d => d >= cutoff);
       if (DB.dieOffLog.length && DB.dieOffLog[0].d < cutoff) DB.dieOffLog = DB.dieOffLog.filter(e => e.d >= cutoff);
       save();
     }
@@ -5309,10 +5317,64 @@ function renderPlan(P0){
 const GATE_CHAIN_ORDER = ["no live price","blacklist","proven-loser bench","ROI floor",
   "margin floor (ticks / 3× tax)","book skew","flow imbalance","no history","chart still loading",
   "trend","volume trend","sizing","volume floor","momentum","fill history","drift bench"];
+/* ═══ OBSERVED TIME (user ruling, Aug 12 2026) ════════════════════════════
+   No claim may be made about a period that was not observed. Any denominator
+   counting time or occasions counts only OBSERVED ones and states its
+   coverage.
+
+   The escaping instance this was widened from: `daysBenchedBy(id, gate, 7)`
+   drove gate-persistence proposals reading "benched by this gate on 4 of the
+   last 7 days" against a denominator of 7 even if the app was closed for
+   three of them. The numerator was always honest — a ledger row exists only
+   on a day a plan actually built — so the defect was purely the denominator
+   claiming a period nothing had looked at. Since the 4-of-7 bar is the
+   standard that moves gate constants, an inflated window makes the standard
+   read as weaker evidence than it is, and a thin week makes the bar
+   unreachable while the copy says "no persistence".
+
+   The observed set is the union of the explicit stamp and the ledger's own
+   dates: the stamp covers days that produced no rows, and the ledger dates
+   make the rule work retroactively on a store that predates the stamp,
+   without a migration. */
+function observedDaysIn(days){
+  const cutoff = new Date(Date.now() - days * 86400e3).toLocaleDateString("en-CA");
+  const s = new Set((DB.obsDays || []).filter(d => d >= cutoff));
+  for (const e of (DB.gateLog || [])) if (e.d >= cutoff) s.add(e.d);
+  return s.size;
+}
+/* Returns the PAIR, never a bare count: a caller that renders the numerator
+   without its coverage would have to reach into the object to do it, and
+   `{n, obs}` interpolated into copy renders as [object Object] rather than as
+   a plausible-looking number. Same construction as rateBlend() — the honest
+   form is the only convenient one. */
 function daysBenchedBy(id, g, days){
   const cutoff = new Date(Date.now() - days * 86400e3).toLocaleDateString("en-CA");
-  return new Set(DB.gateLog.filter(e => e.id === id && e.g === g && e.d >= cutoff).map(e => e.d)).size;
+  return { n: new Set(DB.gateLog.filter(e => e.id === id && e.g === g && e.d >= cutoff).map(e => e.d)).size,
+           obs: observedDaysIn(days), window: days };
 }
+/* The copy. Coverage is stated always; the unobserved remainder is named
+   explicitly, because "4 of 5 observed days" still leaves the reader to work
+   out that two days are missing from a seven-day window. */
+function benchDaysTxt(p){
+  const gap = p.window - p.obs;
+  return p.n + " of " + p.obs + " observed day" + (p.obs === 1 ? "" : "s")
+    + (gap > 0 ? " (" + p.window + "-day window; " + gap + " day" + (gap === 1 ? "" : "s")
+        + " not observed — no claim is made about " + (gap === 1 ? "it" : "them") + ")" : "");
+}
+/* Coverage stated once for a whole block of per-item counts, so a list of
+   five items doesn't repeat the same caveat five times and stop being read. */
+function obsCoverageTxt(days){
+  const obs = observedDaysIn(days), gap = days - obs;
+  return obs + " day" + (obs === 1 ? "" : "s") + " observed in the last " + days
+    + (gap > 0 ? " (" + gap + " day" + (gap === 1 ? "" : "s")
+        + " not observed — no claim is made about " + (gap === 1 ? "it" : "them") + ")" : "");
+}
+/* Persistence bar for gate-constant proposals: benched days, counted only on
+   observed days. The BAR ITSELF is unchanged at 4 — the numerator never
+   counted unobserved days, so nothing about qualification moves; what moved
+   is the denominator the evidence is reported against. Changing this constant
+   is a strategy-parameter decision and is not made here. */
+const GATE_PERSIST_DAYS = 4;
 const medianOf = a => {
   const s = a.slice().sort((x, y) => x - y);
   return !s.length ? null : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
@@ -6935,9 +6997,25 @@ function calibSellHTML(c){
     + dRow("proven · sell under 1h", c.sellLeg.strict.byDuration.fast)
     + dRow("proven · sell 1h and over", c.sellLeg.strict.byDuration.slow)
     + '</tbody></table></div>'
-    + '<div class="dim">The self-comparison caveat applies here too, and harder: a sell that completed in minutes leaves '
-    + 'almost no bucket that is not the trade itself, so the proven bound on a fast sell is close to meaningless. Read '
-    + 'the possible bound for fast legs and the bracket for slow ones.</div>';
+    /* CORRECTION WITH A LANDING PATH (user ruling, Aug 12 2026). This line
+       used to read "the self-comparison caveat applies here too, and harder".
+       Measurement falsified it. The old claim is quoted rather than quietly
+       swapped, because the user read it and acted on it — a correction that
+       cannot be recognised as a correction has not landed. */
+    + '<div class="plan-note">✎ <b>Corrected — the earlier caveat here was wrong.</b> This panel used to say the '
+    + 'self-comparison artifact applied to sells "and harder", on the reasoning that a sell completing in minutes '
+    + 'leaves almost no bucket that is not the trade itself. Measured: <b>' + sellAtPrice(c) + ' at-price bucket'
+    + (sellAtPrice(c) === 1 ? '' : 's') + '</b> on the sell side, and the two bounds are identical. Your own print is '
+    + 'one of many in a liquid item\'s 5m bucket, so the average never lands on your fill. '
+    + '<b>What that means for reading the table:</b> the bounds differ only where a bucket is at-price or '
+    + 'live-touched, and this replay can produce neither — so their being identical is a property of the harness, not '
+    + 'a finding about the market, and a fast-sell failure above is a REAL model error rather than a measurement '
+    + 'artifact.</div>';
+}
+/* Shared by the panel and the export so the corrected figure cannot drift
+   between the two surfaces that carry the correction. */
+function sellAtPrice(c){
+  return ((c && c.rows) || []).reduce((a, r) => a + ((r.sell && r.sell.atPriceBuckets) || 0), 0);
 }
 function calibSection(){
   const c = DB.calib;
@@ -7726,7 +7804,7 @@ function renderDeploy(plan){
     const d7 = daysBenchedBy(x.id, f.g, 7);
     return '<div class="bench-row"><span>' + esc(x.name) + ' <span class="dim">· ' + esc(f.g) + '</span></span>'
       + '<span class="r">' + esc(f.short || f.detail)
-      + (d7 > 1 ? ' · benched by this gate on ' + d7 + ' of the last 7 days' : '') + '</span></div>';
+      + (d7.n > 1 ? ' · benched by this gate on ' + esc(benchDaysTxt(d7)) : '') + '</span></div>';
   }).join("");
   if (two.length) attrib += '<div class="bench-row"><span class="dim">Two-gate: '
     + esc(two.map(x => x.name + " (" + x.fails.map(f => f.g).join(" + ") + ")").join(", ")) + '</span></div>';
@@ -7765,12 +7843,24 @@ function renderDeploy(plan){
        persistence, realized outcomes — never on a single refresh's
        near-miss pile. Without persistence the pile renders as a
        concur-recommended observation, not a proposal. */
-    const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4);
+    const obs7 = observedDaysIn(7);
+    const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7).n >= GATE_PERSIST_DAYS);
     const shorts = arr.slice(0, 3).map(x => x.name + ": " + ((fpOf.get(x) && fpOf.get(x).nearMiss && fpOf.get(x).nearMiss.short) || "miss"));
     if (!persistItems.length){
+      /* Never-fed, not zero (Aug 12 2026). Below GATE_PERSIST_DAYS observed
+         days the bar is arithmetically out of reach, so "none carry
+         persistence" would report an absence of evidence as evidence of
+         absence — the same defect class as the regime race's three zero
+         curves. Say which one this is. */
       props.push({ concur: true, html: '<b>' + gateChip(g) + '</b> blocks ' + arr.length + ' items this refresh ('
-        + esc(shorts.join("; ")) + ') — but none carry multi-day ledger persistence, and gate constants change on'
-        + ' gate-health ledger evidence, never snapshot advocacy (your ruling). No change proposed — the ledger will make the case if it holds.' });
+        + esc(shorts.join("; ")) + ') — '
+        + (obs7 < GATE_PERSIST_DAYS
+          ? '<b>and the persistence bar cannot be reached at this coverage</b>: ' + GATE_PERSIST_DAYS
+            + ' benched days are needed and coverage is only ' + esc(obsCoverageTxt(7))
+            + '. This is not "no persistence" — it is not enough observation to have an answer either way.'
+          : 'but none carry multi-day ledger persistence across ' + esc(obsCoverageTxt(7)) + ', and gate constants change on'
+            + ' gate-health ledger evidence, never snapshot advocacy (your ruling).')
+        + ' No change proposed — the ledger will make the case if it holds.' });
       continue;
     }
     /* Combined-stream verdict (ruled Aug 11 2026): persistence earns the
@@ -7778,8 +7868,9 @@ function renderDeploy(plan){
        Disagreement is its own finding; an incomplete pair keeps accruing. */
     const dirs = gateStreamDirs(g);
     const persistTxt = '<b>' + gateChip(g) + '</b> alone blocks ' + arr.length + ' items this refresh, '
-      + persistItems.length + ' with ledger persistence — benched by it on 4+ of the last 7 days: '
-      + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7) + "/7d)").join("; "))
+      + persistItems.length + ' with ledger persistence — benched by it on ' + GATE_PERSIST_DAYS + '+ of the '
+      + esc(obsCoverageTxt(7)) + ': '
+      + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7).n + " of " + obs7 + ")").join("; "))
       + ' — ' + esc(shorts.join("; ")) + '. ';
     if (dirs.shadow.dir === "loosen" && dirs.realized.dir === "loosen"){
       props.push({ concur: false, html: persistTxt + 'Realized overrides make the case and the paper screen concurs: ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
@@ -12914,8 +13005,12 @@ const GLOSSARY = [
     from: "Computed from the live instasell/instabuy pair and the 1h averages, net of tax. \"Sustained\" means it also "
         + "holds on the 1h-averaged rebuild, so a single lucky print cannot pass an item.",
     do: "Nothing on a single bench — this is the gate doing its job. What earns your attention is the same item benched "
-        + "here on 4+ of the last 7 days: that is a persistence signal, and the deployment funnel raises it as a proposal "
-        + "with numbers. Then the question is whether YOUR floor is too tight, not whether this item is special." },
+        + "here on 4+ OBSERVED days out of the last 7: that is a persistence signal, and the deployment funnel raises it "
+        + "as a proposal with numbers. Then the question is whether YOUR floor is too tight, not whether this item is "
+        + "special.",
+    caveat: "Corrected Aug 12 2026: this line used to read \"4+ of the last 7 days\", which counted days the app was never "
+        + "open. Days you did not visit are not evidence either way, so the bar is now stated against observed days and "
+        + "the funnel names how many of the seven it actually saw." },
   { id: "gate-liquidity", term: "Liquidity gates", names: ["volume floor", "book skew", "flow imbalance", "volume trend", "die-off detected", "sizing"],
     what: "The gates that ask whether you can actually get in and out. <b>Volume floor</b> gates on the THIN side of the "
         + "book (under 5k gp a unit count, at 5k+ a gp-flow floor). <b>Book skew</b> and <b>flow imbalance</b> reject a "
@@ -13275,6 +13370,19 @@ const GLOSSARY = [
         + "thin-side units × price per hour, because unit counts understate mid-tier liquidity.",
     from: "The 1h volume feed, both sides.",
     do: "This is the number that decides how big you can be. Your fills can never be faster than the slow side." },
+  { id: "met-observedday", term: "Observed day / coverage",
+    what: "A day on which the tool actually built a plan — i.e. a day you opened it. Every \"benched on d of the last 7 "
+        + "days\" claim is now counted against observed days only, and states how many of the seven it saw. Four benched "
+        + "days out of four observed is a stronger signal than four out of seven, and the old wording could not tell you "
+        + "which you were looking at.",
+    from: "A one-line-per-day ledger stamped whenever the plan builds, plus the gate ledger's own dates (a bench row "
+        + "proves that day was observed), 30-day retention. Union of the two, so it works on a store that predates the "
+        + "ledger without a migration.",
+    do: "Read the coverage before you read the persistence. Below 4 observed days the 4-day bar cannot be reached at "
+        + "all, and the funnel says so instead of reporting \"no persistence\" — an absence of observation is not "
+        + "evidence that the gate is behaving.",
+    caveat: "Coverage counts days a plan BUILT, not attention paid. A day you opened the tool for ten seconds counts the "
+        + "same as a full four-touch day; it is a floor on observation, not a measure of it." },
   { id: "met-imbalance", term: "Imbalance / Bal",
     what: "Share of volume on the side that sells into you. 0.50 is balanced.",
     from: "The 1h volume feed.",
@@ -15050,6 +15158,38 @@ function analysisCalibration(){
             : "average low sat ABOVE the fill price by " + (pctOf(x.lo, r.bid) != null ? pctOf(x.lo, r.bid) + "%" : "an unknown margin")
               + " — never reached" })) };
   };
+  /* SELL-LEG TRACE AT PARITY (user-directed, Aug 12 2026). The first export
+     built after the interrogability rule was widened to artefacts shipped the
+     sell AGGREGATE alone — the rollup without its rows, which is the same
+     finding in a file as it is on a screen. The sell now carries everything
+     the buy carries: window offsets, both verdicts, credited percentages, the
+     reach census, the at-price count, and the bucket-by-bucket trace with its
+     reasons. Same trimming rule, same declared truncation.
+
+     Note the comparison flips sides: the buy asks whether the tape got BELOW
+     the bid, the sell whether it got ABOVE the ask, so a POSITIVE percentage
+     is proven reach here and a negative one is a miss. The reason strings say
+     so in words rather than leaving the sign to be inferred. */
+  const traceOfSell = r => {
+    const t = (r.sell && r.sell.trace) || [];
+    let rows = t, trimmed = null;
+    if (t.length > CALIB_EXPORT_TRACE){
+      rows = t.slice(0, 20).concat(t.slice(-20));
+      trimmed = "trace held " + t.length + " buckets — first 20 and last 20 kept, " + (t.length - 40) + " omitted from the middle";
+    }
+    return { trimmed, buckets: rows.map(x => ({
+      minutesFromWindowStart: x.minsIn,
+      bucketAvgHighVsSellPct: pctOf(x.hi, r.ask),
+      highSideVolume: x.hv,
+      creditedUnits: x.credited,
+      reason: x.code === "no-print" ? "no high print in this bucket"
+            : x.code === "no-volume" ? "no high-side volume in this bucket"
+            : x.code === "proven" ? "average high sat ABOVE the sell price — proven reach"
+            : x.code === "at-price" ? "average high sat EXACTLY at the sell price — self-comparison"
+            : "average high sat BELOW the sell price by " + (pctOf(x.hi, r.ask) != null ? Math.abs(pctOf(x.hi, r.ask)) + "%" : "an unknown margin")
+              + " — never reached" })) };
+  };
+  const sellAtPriceTotal = sellAtPrice(c);
   return {
     header: calibHeaderRedacted(trunc),
     honesty: [
@@ -15073,6 +15213,16 @@ function analysisCalibration(){
         + "PAPER BOOK IS A DIFFERENT CONSTRUCT: there the comparison price is a SIMULATED bid that never traded, no "
         + "trade of the trader's can be inside those buckets, and equality is genuinely ambiguous. Do not carry a "
         + "conclusion from one to the other.",
+      "SELF-COMPARISON DOES NOT BITE THE SELL LEG — a stated prediction, now FALSIFIED by measurement. Earlier runs of "
+        + "this file claimed the artifact was HARDER on sells. It is not: " + sellAtPriceTotal + " at-price buckets on "
+        + "the sell side and the two bounds identical. The identity is by construction — the bounds diverge only on "
+        + "at-price or live-touched buckets and this replay can produce neither — so it says nothing about the market, "
+        + "and a fast-sell failure here is a real model error rather than a measurement artifact. The falsified claim "
+        + "is carried rather than deleted, because the user read the earlier version.",
+      "THE 43-TRIP REPLAY HEADLINE IS FROZEN (user ruling, Aug 12 2026). Its '1 of 43 completing' figure rests on this "
+        + "same sell model, which just failed calibration on 2 of 5 sell legs, both fast. The replay is not to be "
+        + "re-run until the fast-sell mechanism is understood: a re-run now would launder the same defect into a new "
+        + "number. Any figure downstream of it is quarantined until then.",
       "THE CAPTURE SHARE (" + Math.round(GATE.capture * 100) + "%) IS CURRENTLY UNGRADED, not validated. It cannot be "
         + "tested against paper trips at all, because those fills were generated using it — measuring it there is "
         + "circular. Only realized flips can grade it, and this harness will do so once the replayable sample is large "
@@ -15097,10 +15247,22 @@ function analysisCalibration(){
       sellLeg: c.sellLeg ? {
         note: "Anchored independently at the moment the buy really finished, so the sell is graded on its own terms "
             + "rather than only on flips whose buy the model completed. Every logged sell completed, so any verdict "
-            + "other than 'sold' is a model error. The self-comparison caveat is HARDER here: a sell that completed in "
-            + "minutes leaves almost no bucket that is not the trade itself, so a fast leg's proven bound is close to "
-            + "meaningless — read the possible bound there.",
-        provenReachBound: c.sellLeg.strict, possibleReachBound: c.sellLeg.lenient
+            + "other than 'sold' is a model error.",
+        selfComparisonPredictionFALSIFIED:
+          "CORRECTION (Aug 12 2026), and it reverses what earlier runs of this export claimed. The stated expectation "
+          + "was that self-comparison would bite HARDER on the sell leg — that a sell completing in minutes leaves "
+          + "almost no bucket that is not the trade itself, making a fast leg's proven bound close to meaningless. "
+          + "Measured, that is false: " + sellAtPriceTotal + " at-price buckets on the sell side across this run, and "
+          + "the proven and possible bounds are identical. The prediction assumed the trader's own print would "
+          + "DOMINATE its 5m bucket; on a liquid item it is one print among many, so the bucket average never lands "
+          + "on the fill. Read the consequence carefully: because the two bounds differ only where a bucket is "
+          + "at-price or live-touched, and neither can occur in this replay, the sell bounds are identical BY "
+          + "CONSTRUCTION here — that identity is a property of the harness, not a measurement of the market. "
+          + "Whatever is wrong with fast sells is therefore real rather than an artifact of self-comparison.",
+        atPriceBucketsTotal: sellAtPriceTotal,
+        provenReachBound: c.sellLeg.strict, possibleReachBound: c.sellLeg.lenient,
+        byDuration: { provenReachBound: c.sellLeg.strict && c.sellLeg.strict.byDuration,
+                      possibleReachBound: c.sellLeg.lenient && c.sellLeg.lenient.byDuration }
       } : null,
       provenReachBound: Object.assign({ depressedBySelfComparison: true }, bound(c.strict)),
       possibleReachBound: bound(c.lenient),
@@ -15112,6 +15274,9 @@ function analysisCalibration(){
       const tr = traceOf(r);
       if (tr.trimmed) trunc.push({ section: "trace:" + r.item, kept: tr.buckets.length,
         total: (r.trace || []).length, truncated: true, note: tr.trimmed });
+      const sr = traceOfSell(r);
+      if (sr.trimmed) trunc.push({ section: "sellTrace:" + r.item, kept: sr.buckets.length,
+        total: ((r.sell && r.sell.trace) || []).length, truncated: true, note: sr.trimmed });
       return {
         item: r.item, itemId: r.itemId, qty: r.qty,
         realBuyDurationHours: r2(r.bh), realSellDurationHours: r2(r.sh),
@@ -15124,7 +15289,20 @@ function analysisCalibration(){
         bucketsReachingThePrice: r.bucketsReaching, bucketsInWindow: r.bucketsInWindow,
         atPriceBuckets: r.atPriceBuckets || 0,
         atPriceNote: "Buckets whose average low sat exactly on the realized fill — expected under self-comparison, credited on the possible bound and refused on the proven one.",
-        traceTrimmed: tr.trimmed, trace: tr.buckets };
+        traceTrimmed: tr.trimmed, trace: tr.buckets,
+        /* The sell leg at parity — same fields, its own anchor, its own
+           horizon. Null only when the flip carried no sell replay at all,
+           and it says which rather than rendering an empty object. */
+        sellLeg: r.sell ? {
+          fastLeg: !!r.sell.fastLeg,
+          sellWindowStartHoursFromBuyDone: 0,
+          sellWindowEndHoursFromBuyDone: r2(Math.max(0.25, r.sh * 2)),
+          verdictProvenReach: r.sell.strict.verdict, sellCreditedProvenPct: r.sell.strict.creditedPct,
+          verdictPossibleReach: r.sell.lenient.verdict, sellCreditedPossiblePct: r.sell.lenient.creditedPct,
+          bucketsReachingThePrice: r.sell.bucketsReaching, bucketsInWindow: r.sell.bucketsInWindow,
+          atPriceBuckets: r.sell.atPriceBuckets || 0,
+          traceTrimmed: sr.trimmed, trace: sr.buckets
+        } : { note: "no sell replay for this flip — the sell leg duration was missing, so its window could not be located" } };
     })
   };
 }
@@ -16474,6 +16652,11 @@ function validateImport(d){
             if (!(id > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || "")) || !e.g) return null;
             return { d: String(e.d), id, g: String(e.g) };
           }).filter(Boolean).slice(-4000),
+          /* The observed-day ledger restores with the gate ledger it is the
+             denominator for. Restoring one without the other would make a
+             restored store claim coverage it cannot support. */
+          obsDays: [...new Set((Array.isArray(d.obsDays) ? d.obsDays : [])
+            .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x))).map(String))].sort().slice(-60),
           dieOffLog: (Array.isArray(d.dieOffLog) ? d.dieOffLog : []).map(e => {
             const id = num(e && e.id), t = num(e && e.t);
             if (!(id > 0) || !(t > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || ""))) return null;

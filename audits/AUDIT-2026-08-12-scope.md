@@ -1,0 +1,238 @@
+# AUDIT 2026-08-12 — constitutional scope: adoption, detectors, open findings
+
+Records the adoption of the scope-audit rulings (Aug 12 2026): the prophylactic, ten
+widened rules, the BINDING/DOCTRINE split, and the three live consequences. Written
+because a ruling with no record of what it changed is a ruling that gets re-litigated.
+
+---
+
+## 1. What was adopted
+
+The prophylactic sits at the top of `CLAUDE.md`, above the rule list, because it governs
+how rules are written rather than what they say:
+
+> When writing a ruling, name the property first; list the surface only as the example
+> that produced it. The incident is the example; the reasoning is the rule.
+
+Ten rules widened, each carrying its escaping instance. The constitution is split into
+**BINDING** (mechanically checkable; violations are audit findings) and **DOCTRINE**
+(practices with no test, explicitly not audited), with the design-philosophy principles,
+"every layer ships with a detector", "'done' requires the integration exercise" and "the
+constitution accretes case law" moved into DOCTRINE. The rationale recorded there: *a
+rule that looks binding and isn't is the same defect class as a detector that cannot
+fire.*
+
+The advisory/membership contradiction is resolved in place — the advisory rule now names
+its own supersession, its date, and the carve-out (coherence DROPS still queue, because a
+drop loosens a cap and that is deployment), with an instruction that the two rules are
+read together and neither quoted alone.
+
+---
+
+## 2. Detector coverage — which of the ten are now checkable
+
+Required by the ruling: *a widened rule with no detector is a DOCTRINE entry wearing
+BINDING clothes.* Two new integration-audit scans were added so three of these have
+detectors rather than good intentions.
+
+| # | Widened rule | Detector | Status |
+|---|---|---|---|
+| 1 | Interrogability — screens **and artefacts** | Scan 5 (widened to exports); probe `[R48.2]`, `[R49.1]` | **Checkable.** Scan extended this commit; sell-leg parity shipped and probe-proven |
+| 2 | Observed time — denominators count only observed occasions | probe `[R51.1]` `[R51.2]` | **Checkable.** New; both assertions proven by seeding |
+| 3 | Restraint/deployment — removal counts as deployment | **Scan 6, restraint-lift scan** (new) | **Checkable by scan.** The enumeration is the deliverable. §4 below is the first run; it has a live finding |
+| 4 | File-as-press — and no strategy parameter by any channel | Import ignores `action:"ratify"` (probe-covered); the new clause is **not** probe-covered | **Partly checkable.** Gap named in §5 |
+| 5 | Never pool — rate, median, count, verdict, score alike | **Scan 8, pooling scan** (new); `rateBlend()` for rates | **Checkable by scan.** Two live findings in §5 |
+| 6 | Test-suite root: green can mean *ran and passed for the wrong reason* | The seeding practice + `blendFrag()` scoping helper | **Checkable.** `[R49.2]` fixed and the defect demonstrated (§3) |
+| 7 | Entity state — every entity the user can see, not only allocator-touched | **Scan 2 extended** to entity state | **Checkable by scan.** One live finding in §5 |
+| 8 | Automated decisions state their reason inline | Scan 2 + decision-log `auto` stamps | **Checkable by scan** |
+| 9 | Corrections ship their landing path, for any artefact already read | No mechanical detector for *arbitrary* artefacts; per-instance probes only (`[R48.1]` asserts this one landed) | **Weakly checkable.** Honest status: the general rule is scan-only and the scan is a reading, not a test |
+| 10 | Metric honesty — copy claims what it computes, **asked or not** | **Scan 7, claims-vs-computation scan** (new) | **Checkable by scan.** Deliberately a reading of copy against code; no probe can assert this |
+
+Honest summary: **6 of 10 have a mechanical (probe) detector or gained one; 3 more are
+covered only by a named audit scan, which is a disciplined reading rather than a test; 1
+(corrections) is weaker than its BINDING placement implies.** #9 is flagged rather than
+quietly kept — if the next audit cannot make it mechanical, it should move to DOCTRINE
+rather than continue to look enforceable.
+
+---
+
+## 3. Live consequence (c): R49.2 fixed, and the defect demonstrated
+
+`[R49.2]` matched `/watchlist 100% of 2/` against the whole of `paperGateSection()` — a
+container broader than the blend under test. Fixed with `blendFrag(html, key)` in the
+probe, which locates the one `data-drill="<key>"` element and the inline decomposition
+span `rateBlend()` emits after it; every per-surface pooling assertion now matches inside
+that fragment only.
+
+**Proving it required fixing the fixture too, and that is the more useful finding.** The
+first seed — delete the split from the ROI-floor blend — failed *both* the old and new
+forms, because the fixture contained only one blend, so a whole-section match had nothing
+else to satisfy it. That would have been recorded as proof and would have proved nothing.
+The fixture now carries **two gates with identical cohort splits**; under the same seed
+the whole-section match passes while the scoped match fails. A permanent assertion holds
+the fixture to it, so the scoping test cannot silently become untestable again.
+
+Generalised into the constitution: *match against the narrowest container that still
+contains the property. If the assertion would pass with the property deleted from its
+subject but present elsewhere, the container is too broad.*
+
+---
+
+## 4. Live consequence (b): intel auto-expiry, audited — REPORTED, NOT CHANGED
+
+Per the ruling, this reports what would change before anything changes. **No behaviour
+was modified.**
+
+### The enumeration (scan 6, first run) — every path that lifts a restraint
+
+| Path | Where | Lifts what | User press? |
+|---|---|---|---|
+| Dismiss warning record | `data-inteldis` button | the caution and its haircut | **Yes** |
+| Dismiss via imported `disposition` | `importIntelligence` | the caution | **Yes** (file-as-press) |
+| Toggle haircut off | `data-intelteeth` | the 0.5× sizing haircut | **Yes** |
+| **Ratified record reaches `validUntil`** | `intelExpired()` via `intelActive()` | **the whole caution: tags, deflation-flag sleeve refusal, and any haircut** | **NO — calendar only** |
+| **Pending record reaches `validUntil`** | `intelSweep()` | an unruled caution, auto-dismissed | **NO — calendar only** |
+| Anomaly-flag dismissal | `data-anomdismiss` | the briefing reminder only (explicitly *not* a pump defense) | Yes, and correctly scoped |
+| 30-day retention prunes | `anomalyFlags`, `gateLog`, `dieOffLog` | flags and ledger evidence age out | No — retention, not a lift of an active caution |
+
+### What the widened rule now classifies as a finding
+
+Two paths, both real:
+
+1. **`intelExpired()` on a ratified caution.** A `promotion-warning`, `watch-note` or
+   `deflation-flag` stops applying at midnight on `validUntil`. Its item tags vanish, the
+   sleeve stops refusing the item, and a `teeth` haircut lifts — all with no press. Under
+   the old wording this was fine (nothing was *armed*); under the widened rule it is
+   deployment, because it widens what the allocator may fund.
+2. **`intelSweep()` auto-dismissing a pending record.** Milder — the record was never
+   armed — but it converts "you have not ruled on this" into "dismissed" by the calendar,
+   and the anomaly panel's own copy at `index.html:11074` already advertises the
+   behaviour: *"lifted by dismissal or expiry of the record"*.
+
+There is a third, subtler one worth naming: **the pump defense's stated lift path is
+contradicted by expiry.** The constitution says a flagged pump caution's *only* lift path
+is the user dismissing the record — "nothing else". `validUntil` is something else.
+
+### Proposed shape — NOT APPLIED, awaiting a ruling
+
+The distinction that keeps this from becoming noise: expiry should stop *asserting* a
+caution without *lifting* it.
+
+- On expiry, a **restraint-bearing** record (`promotion-warning`, `watch-note`,
+  `deflation-flag`, or any record with `teeth`) moves to a new `lapsed` state: it keeps
+  applying, and surfaces in the walk-up as a single line — *"this caution reached its
+  expiry date; drop it or extend it"* — which is one press, batched with other lapsed
+  records so the attention budget takes one decision, not one per record.
+- **Context-bearing** records (`demand-context`, `catalyst`, `catalyst-update`,
+  `long-catalyst`) keep expiring on the calendar exactly as now. They restrain nothing,
+  so nothing is being deployed when they lapse; the restraint/deployment line puts them
+  outside this rule entirely.
+- `intelSweep()`'s auto-dismissal of **pending** records stands, with its copy corrected:
+  an unruled record was never armed, so nothing is being lifted. It is a queue-hygiene
+  rule, not a restraint lift, and should say so where it renders.
+- The anomaly panel's "lifted by dismissal or expiry" copy is wrong the moment this
+  lands, and is part of the same change.
+
+**Cost, stated because every proposal here states one:** up to one extra walk-up decision
+on days when cautions lapse, against a budget of 7. It displaces nothing, so under the
+zero-based complexity rule it needs either a ruling that the safety is worth the slot or
+a consolidation to pay for it. My recommendation is that it is worth the slot, because
+the failure it prevents is silent and asymmetric: a lapsed pump caution costs whatever
+the pump extracts, and a lapsed context record costs nothing.
+
+---
+
+## 5. Open findings recorded but NOT acted on
+
+These are live violations of rules as widened today. They are recorded rather than fixed
+because the ruling's "act on these" list named three consequences and these were not
+among them; scaling the work up is the user's call, not mine.
+
+- **Never-pool, two instances.** `paperEconomics`' median trip net pools four cohorts;
+  calibration's median share credited when wrong pools fast and slow legs. Neither is a
+  rate, so `rateBlend()` never saw them. Both need their decomposition rendered beside
+  the figure.
+- **Entity state.** A paper trip in the *unobserved* state renders as a hole with no
+  explanation. The paper book is not allocator-touched, so the pre-widening wording
+  excused it.
+- **Automated decisions.** Auto-applied coherence membership adds and auto-voided die-off
+  episodes state their reason in the decision log but not inline where the user reads the
+  result.
+- **Corrections.** A corrected glossary entry and a revised requirement row have no
+  landing path in general. Two instances were given one by hand this commit (the
+  `4+ of the last 7 days` glossary line now carries a `caveat` naming what changed; R47.5b
+  records the falsified sell-side prediction as its own row rather than an edit) — but
+  that is authorship, not a mechanism.
+- **File-as-press, final clause.** Nothing asserts that a settings or strategy block
+  arriving in `intelligence.json` is ignored. The import happens not to read one today,
+  which is a fact about the current code rather than a guarantee.
+
+---
+
+## 6. Sell-leg calibration — parity shipped, mechanism reported (user-directed, Aug 12 2026)
+
+### Shipped
+
+The sell leg now exports at parity with the buy: per replayed flip, the window offsets
+against the real buy-completion anchor, both verdicts, credited percentages on both
+bounds, the reach census, the at-price count, and the bucket-by-bucket trace with each
+bucket's relative price, high-side volume, credited units and reason. Truncations are
+declared like the buy's. This was the interrogability rule violated in the first export
+built after widening it — the aggregate shipped alone.
+
+### The falsified prediction (recorded, per the user's note)
+
+Self-comparison does **not** bite harder on sells: zero at-price buckets, bounds
+identical. Mechanism for the falsification: the at-price test requires the 5m bucket
+*average* to equal the fill, which requires the trader's print to dominate its bucket. On
+a liquid item it is one print among many. The consequence is stronger than the
+retraction — the sell bounds diverge only on at-price or live-touched buckets, and a
+historical replay can produce neither, so **their identity is a property of the harness,
+not a measurement of the market.** Whatever is wrong with fast sells is real.
+
+### The mechanism — hypothesis tested against the code, change NOT proposed
+
+**Hypothesis: does the sell credit rule divide by TOTAL high-side flow rather than flow
+reaching the ask, as the fill-horizon estimator did?**
+
+**Not as stated — there is no division by flow on this path at all.** `calibReplaySell`
+calls `reachCredit(b.hi, f.sell, b.hv, "sell", false)`, which is a per-bucket *gate*, not
+a ratio. But the same structural fault is present in two places, and the second is the
+hypothesis landing on the numerator instead of the denominator:
+
+- **Fault A — the gate reads an average as if it described the interval.** A bucket
+  credits only if its *average* high cleared the ask. A bucket whose average sat below it
+  certainly contained prints above it — that is what an average means, and the trader's
+  own sale is one of them. Those buckets score zero.
+- **Fault B — a passing bucket credits the whole bucket's flow.** When the gate does
+  pass, the credit is `floor(hv × capture)` on the bucket's *entire* high-side volume,
+  including every print that was below the ask and could not have filled the offer. That
+  is total flow used where reaching flow is meant — the hypothesis's fault, on the
+  numerator.
+
+Together the model is bimodal per bucket: zero or everything. **That is what selects
+against fast legs specifically.** A fast sell resolves inside one to three buckets
+(`H = max(0.25, sh × 2)` hours, so a 3-minute leg gets a 15-minute window ≈ 3 buckets),
+and each is all-or-nothing on its average — so a sell into a brief spike, which is what a
+fast sell *is*, scores zero across a short window and reads "never-sold". A slow leg
+spans many buckets, needs only enough of them to clear, and Fault B means one clearing
+bucket often covers the whole quantity.
+
+**The falsifiable test the new traces answer.** If dilution is the mechanism, the failing
+fast sells show `below-price` buckets with a SMALL negative `bucketAvgHighVsSellPct` —
+roughly within the item's own 5-minute spread — and non-trivial `highSideVolume`. If
+instead the gap is large and sustained across the whole window, the window is mislocated
+and the mechanism is an anchoring bug rather than dilution. **The two have opposite
+fixes, which is why no change is proposed until the traces are read.**
+
+Note that Fault A is already documented for the BUY side, in the export's
+"THIS COMPARISON BIASES PESSIMISTIC" honesty line. It was never carried on the sell
+panel, so the same known bias went unnamed on the leg where it appears to bind hardest.
+
+### Frozen
+
+The 43-trip replay's "1 of 43 completing" headline rests on this sell model, which failed
+calibration on 2 of 5 sell legs, both fast. **Not to be re-run until the mechanism is
+understood** — a re-run now would launder the same defect into a new number. The freeze
+is stated in the export's own honesty block, not only here, so the artefact carries its
+own quarantine.

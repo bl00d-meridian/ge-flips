@@ -5,98 +5,155 @@ dependencies, all client-side, localStorage persistence. Opening the file in a b
 *is* the app. Data comes from the RuneLite / OSRS Wiki real-time prices API, polled no
 faster than 60s.
 
-## Design philosophy (standing — user ruling, Aug 10 2026)
+## How a ruling is written (prophylactic — user ruling, Aug 12 2026)
 
-**Division of labor.** The machine verifies parts, traces requirements, audits
-composition, grades its own accuracy, proposes its own restructurings, and surfaces
-questions proactively on a schedule — noticing is buildable machinery, never the
-user's job; their irritation must never be the detector. The user's non-delegable
-job: ground truth from lived use, judgment of purpose, and rulings.
+> **When writing a ruling, name the property first; list the surface only as the example
+> that produced it. The incident is the example; the reasoning is the rule.**
 
-- **Every layer ships with a detector and a correction channel** — parts→probe suite,
-  specs→REQUIREMENTS.md, composition→integration audit, judgment→scorecard. A
-  component nothing can catch failing is unfinished even if it works.
-- **The constitution accretes case law.** Near-misses become named, dated precedents
-  (see the rulings below); write incidents down, don't just resolve them.
-- **"Done" requires the integration exercise.** Verification milestones are not design
-  milestones; "show me the audit" is answered with an audit, not a claim.
-- Propose/dispose, attention-not-authority, metric honesty, realized-data-over-
-  narrative, attention-cost complexity, adversarial-source, and human-handoff
-  principles are codified in the sections below — they are instances of this
-  philosophy, not exceptions to it.
+This governs every rule below and every rule added after it. The constitutional scope
+audit that produced it found the recurring failure: most rules here named the SURFACE
+where a defect was found rather than the PROPERTY that was violated, so the same defect
+recurred on the next surface and escaped a rule that had already been written about it.
+The never-blend ruling is the worked example — written about a *rate*, it did not reach
+a pooled *median* three days later. Ten rules were widened on Aug 12 2026; each carries
+the escaping instance that motivated the widening, because the instance is what proves
+the old wording was too narrow.
 
-## Product constitution (binding — do not soften these in code or copy)
+Two structural consequences of the same audit:
+
+- **The constitution is split into BINDING and DOCTRINE below.** A rule that looks
+  enforceable and isn't is the same defect class as a detector that cannot fire: it
+  occupies the slot where a real rule would have gone and reports the property as
+  covered. BINDING entries are mechanically checkable and their violations are audit
+  findings. DOCTRINE entries are practices for which no test exists, and are not audited.
+- **A widened rule with no detector is a DOCTRINE entry wearing BINDING clothes.** When a
+  rule is widened, the audit scan that checks it is extended in the same commit, or the
+  rule moves to DOCTRINE.
+
+---
+
+# BINDING
+
+Mechanically checkable — by a probe assertion, or by a named integration-audit scan that
+reads code and copy against a stated rule. **Violations are audit findings.** Do not
+soften these in code or copy.
 
 - **The tool proposes and prefills; it never acts.** No flip is logged, no offer placed,
   no watchlist commitment made without an explicit user button press.
 - **House convention (strategy layer):** strategy parameters — ceilings, floors, budgets,
   gates, tier bands, cluster caps — may be *proposed* in review copy but change only on
   the user's explicit instruction. Never self-apply.
-- **Advisory layers stay advisory.** Scout, cluster discovery, audits, and verdicts queue
-  candidates and recommendations; nothing caps or spends capital until the user ratifies.
+- **Advisory layers stay advisory — except where a ruling has explicitly superseded it.**
+  Scout, cluster discovery, audits, and verdicts queue candidates and recommendations;
+  nothing caps or spends capital until the user ratifies. **Superseded in exactly one
+  place (user ruling, Aug 11 2026):** coherence membership ADDS and the seed/sibling
+  audits' KEEP / RETIRE / PRUNE recommendations self-apply at their existing evidence
+  thresholds — see *Membership bookkeeping applies itself* below for the reasoning, the
+  decision-log requirement, and the carve-out that coherence DROPS still queue. The
+  advisory default holds everywhere the supersession does not name; the two rules are
+  read together, and neither is to be quoted alone.
 - **The blacklist is the user's alone.** No automated path may admit, fund, quote, or
   clear an entry — not even a margin test.
-- **Automated decisions show their work.** Every bench, clamp, and cap states its reason
-  inline where the user reads it.
-- **Never blend a rate** (user ruling, Aug 12 2026 — generalises the net-per-cohort rule
-  to every rate the tool computes). Fill rate, credited share, agreement rate, hit rate:
-  anywhere populations answering different questions are averaged together, **the blended
-  figure may render only ALONGSIDE its decomposition, never alone** — and beside it on the
+- **Every automated decision states its reason inline where the user reads it** (widened
+  Aug 12 2026 — the previous wording enumerated "every bench, clamp, and cap", and the
+  enumeration was read as the scope). Escaping instances: auto-applied coherence
+  membership adds, and auto-voided die-off episodes — neither is a bench, a clamp, or a
+  cap, so neither was covered by a rule that plainly meant to cover them.
+- **Never pool a statistic across populations that answer different questions** — rate,
+  median, count, verdict or score alike (widened Aug 12 2026; the Aug 12 wording said
+  "never blend a *rate*", which itself generalised an Aug 11 rule written about *net*).
+  **The pooled figure may render only ALONGSIDE its decomposition** — beside it on the
   page, not merely inside an expansion the reader has to open. `rateBlend()` in
-  `index.html` is the sanctioned way to render one; it emits the blend and the split
-  together so a caller cannot produce the first without the second. The incident: paper
-  trips filled at "a median 37% of intended size", which read as a book-wide sizing
-  problem. Split by cohort it was watchlist 100%, scanner 37%, discovery slice 8.3% —
-  the items closest to fundable fill completely, and the low figure was four populations
-  averaged. That is the same defect the net ruling was made about, recurring on a rate
-  because the earlier ruling had been written about net specifically. **When a ruling
-  names a quantity, check whether it is really about the quantity or about the shape.**
-- **Every aggregate decomposes to its rows, in one click** (user ruling, Aug 11 2026).
-  Any statistic, verdict, score, or summary the tool renders must open to the constituent
-  rows that produced it — which items, which events, with the per-item evidence. A number
-  that cannot be audited is a number that cannot be ruled on, and the operator's job here
-  is auditing reasoning, not accepting conclusions. The collection layer has consistently
-  outrun the display layer in this project: aggregates are cheap to build and expensive to
-  use, so the drill-down is part of the feature, not a follow-up to it.
-  **One primitive, not per-surface drill-downs** (Aug 11 2026): `drill(key, face, spec)` in
-  `index.html` is the single implementation — sort, text filter, cohort selection and
-  honest subset disclosure live in it, so a new aggregate inherits the expansion instead of
+  `index.html` is the sanctioned renderer for a rate; it emits the blend and the split
+  together so a caller cannot produce the first without the second.
+  The original incident: paper trips filled at "a median 37% of intended size", which
+  read as a book-wide sizing problem. Split by cohort it was watchlist 100%, scanner 37%,
+  discovery slice 8.3% — the items closest to fundable fill completely, and the low figure
+  was four populations averaged.
+  Escaping instances that forced the second widening, both live findings as of Aug 12
+  2026: `paperEconomics`' **median trip net** pooled across four cohorts, and
+  calibration's **median share credited when wrong** pooled across fast and slow legs.
+  Neither is a rate, so the rate wording did not reach them.
+  **The general lesson, which is why the prophylactic above exists: when a ruling names a
+  quantity, check whether it is really about the quantity or about the shape.**
+- **Any statistic, verdict, score, or summary must open to, or ship with, its constituent
+  rows — on screen, in an export, or in any artefact handed to a reader** (widened Aug 12
+  2026; the previous wording said "renders … in one click", which bound the screen only).
+  Which items, which events, with the per-item evidence. A number that cannot be audited
+  is a number that cannot be ruled on, and the operator's job here is auditing reasoning,
+  not accepting conclusions. The collection layer has consistently outrun the display
+  layer in this project: aggregates are cheap to build and expensive to use, so the
+  drill-down is part of the feature, not a follow-up to it.
+  Escaping instance: the three analysis exports carry per-gate rollups, bound summaries
+  and the volume index as bare numbers — they ship rows only by the author's choice, not
+  by rule, because a rule about clicks says nothing about a file.
+  **One primitive, not per-surface drill-downs** (Aug 11 2026): `drill(key, face, spec)`
+  is the single on-screen implementation — sort, text filter, cohort selection and honest
+  subset disclosure live in it, so a new aggregate inherits the expansion instead of
   re-earning it. Wrap the number at the point you render it; never hand-roll an expansion.
   When rows shown are fewer than the number counts, the primitive says so and why — a
-  quietly truncated expansion is the defect, not a detail.
-- **Every allocator-touched entity states where it stands** (user ruling, Aug 11 2026).
-  An unexplained state reads as a broken feature even when the machinery underneath is
-  correct — the F18 incident: held items passed all gates, appeared in no bucket, and
-  made working auto-promote machinery feel press-gated. Funded, next-up, qualifying,
-  benched, held, owned-elsewhere, hidden, skipped: each says so, with its reason, on the
-  surface where it renders. The converse binds too: an element that cannot explain its
-  presence on the screen does not render.
+  quietly truncated expansion is the defect, not a detail. An artefact obeys the same rule
+  in its own idiom: rows carried with the number, and every truncation declared.
+- **No claim may be made about a period that was not observed. Any denominator counting
+  time or occasions must count only observed ones, and state its coverage** (widened Aug
+  12 2026; previously this lived only as the paper book's series-coverage rule, which
+  bound reconstruction and nothing else).
+  Escaping instance: `daysBenchedBy(id, gate, 7)` drove gate-persistence proposals reading
+  "benched by this gate on 4 of the last 7 days" with a denominator of 7 even when the app
+  was closed for three of them. The numerator was always honest — a ledger row exists only
+  on a day a plan actually built — so the defect was the denominator claiming a period
+  nothing had looked at. The 4-of-7 bar is the standard that moves gate constants, and a
+  standard must not be read against an inflated window. Fixed Aug 12 2026:
+  `observedDaysIn()` is the ledger of days a plan actually built, `daysBenchedBy()` returns
+  the pair `{n, obs}` so no caller can render the numerator without its coverage, and the
+  copy states the unobserved remainder explicitly. Where coverage puts the bar out of
+  reach, the surface says so rather than reporting "no persistence" — a never-fed
+  aggregate, not a reading of zero.
+- **Every entity the user can see states where it stands, and why** (widened Aug 12 2026;
+  previously "every *allocator-touched* entity", which excused everything the allocator
+  does not touch). An unexplained state reads as a broken feature even when the machinery
+  underneath is correct — the F18 incident: held items passed all gates, appeared in no
+  bucket, and made working auto-promote machinery feel press-gated. Funded, next-up,
+  qualifying, benched, held, owned-elsewhere, hidden, skipped: each says so, with its
+  reason, on the surface where it renders. The converse binds too: an element that cannot
+  explain its presence on the screen does not render.
+  Escaping instance: a paper trip in the unobserved state renders as a hole with no
+  explanation — the paper book is not allocator-touched, so the old wording let it through.
 - Known repeated bug class: gates that re-punish what sizing already priced in
   (double-counting). Bench only on information the sizing/margin logic doesn't use.
-- **Restraint may auto-arm; deployment never** (user ruling, Aug 10 2026). Defensive
-  intel may act pre-ratification precisely because its only power is restraint — a false
-  caution costs nothing (absence, lifted by one dismissal), a late defense costs whatever
-  the pump extracts before the next walk-up. Anything that could DEPLOY capital stays
-  ratification-gated. New features inherit this distinction.
+- **Restraint may auto-arm; deployment never — and REMOVING a restraint counts as
+  deployment, whether by action, by expiry, or by a rule change. Anything that widens what
+  the allocator may fund is the user's press** (widened Aug 12 2026). Defensive intel may
+  act pre-ratification precisely because its only power is restraint — a false caution
+  costs nothing (absence, lifted by one dismissal), a late defense costs whatever the pump
+  extracts before the next walk-up. New features inherit this distinction.
+  Escaping instance: intel records auto-expire at `validUntil`, so a promotion-warning or a
+  watch-note lifts with no press at all — the old wording covered *arming* a deployment and
+  said nothing about a caution ending by the calendar. Audited Aug 12 2026; findings and
+  the proposed shape are in `audits/AUDIT-2026-08-12-scope.md`, unapplied pending a ruling.
 - **The file is the press, and it presses in one direction only** (user ruling, Aug 12
   2026 — the *file-as-press* precedent). A `disposition` block arriving inside
   `intelligence.json` is the user's own press, because they carried the file and pressed
   Import: the handshake pattern already makes the carry a deliberate act, and requiring
   the same ruling twice would make the desk a place where decisions go to be re-entered.
   **But it is their press only for actions that DROP an advisory, never for actions that
-  arm one.** Dismissal travels in the file; ratification requires a press in the tool.
-  The reasoning is the restraint/deployment line applied to indirect consent: a
-  dismissal removes a caution the user already read and judged, and its blast radius is
-  bounded by what it stops doing, whereas a ratification arms a record that then tags
-  items, can carry a sizing haircut, and can create calendar entries — so a mistake in
-  the file, a stale copy, or a record the user never actually ruled on would ADD
-  machinery rather than remove it. The asymmetry is enforced at import, not documented:
-  `action: "ratify"` is ignored, and a dismissal with no stated reason is ignored too,
-  because a dismissal without a why is not a record. Every applied disposition is
-  decision-logged with an `auto` stamp, the reason, and the date the user ruled.
-  **New consent channels inherit this shape**: whenever user intent reaches the tool by
-  any route other than a press on the surface itself, that route may drop advisories and
-  may not arm them.
+  arm one — and a channel may carry no strategy-parameter change at all; those move only
+  on an explicit in-tool ruling** (final clause added Aug 12 2026). The reasoning is the
+  restraint/deployment line applied to indirect consent: a dismissal removes a caution the
+  user already read and judged, and its blast radius is bounded by what it stops doing,
+  whereas a ratification arms a record that then tags items, can carry a sizing haircut,
+  and can create calendar entries — so a mistake in the file, a stale copy, or a record the
+  user never actually ruled on would ADD machinery rather than remove it. The asymmetry is
+  enforced at import, not documented: `action: "ratify"` is ignored, and a dismissal with
+  no stated reason is ignored too, because a dismissal without a why is not a record. Every
+  applied disposition is decision-logged with an `auto` stamp, the reason, and the date the
+  user ruled.
+  Escaping instance for the final clause: a settings or config block changing the ROI floor
+  neither drops an advisory nor arms one, so the two-direction wording did not classify it
+  at all — and a parameter that arrives in a file has been ruled on by nobody.
+  **New consent channels inherit this shape**: whenever user intent reaches the tool by any
+  route other than a press on the surface itself, that route may drop advisories, may not
+  arm them, and may never move a strategy parameter.
 - **A manipulation defense never relaxes on the manipulator's chosen evidence** (user
   ruling, Aug 10 2026). Recent wins during a pump are the bait, so wins never graduate a
   flagged pump caution; the only lift path is the user dismissing the warning record —
@@ -106,18 +163,35 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   them and leave them unapplied until the user rules. Applying one and mentioning it in
   the summary is a near miss, not compliance (the incident: entry-watch DISCOUNTED set to
   ≤ −2% in-flight; ratified after the fact).
-- **The human carries the file** (handshake pattern — user ruling, Aug 10 2026). Where
-  the browser and repo can't reach each other (`intelligence.json` in,
-  `flags-pending.json` out), the human carries the file. This is architecture, not a
-  workaround — do not propose sync infrastructure to replace deliberate human handoffs.
+- **Shipping a correction means shipping the path by which it lands, for any artefact the
+  user has already read** (widened Aug 12 2026; previously scoped to intelligence records,
+  where the defect was found). Withdrawing contaminated numbers from a brief exposed the
+  original: re-importing an already-ratified record was silently absorbed, so eleven
+  corrected records would have left the wrong numbers on screen while the brief claimed
+  they were fixed.
+  Escaping instances: a corrected glossary entry and a revised requirement row have no
+  landing path at all — the user read them once and nothing tells them the words changed.
+- **Metric honesty.** Every metric reports **realized quantities only** — actual logged
+  round trips, tax netted; no counterfactual fills, no price drift counted as missed
+  profit — **and every metric's rendered copy claims exactly what it computes, asked or
+  not** (final clause added Aug 12 2026: the rule was previously written as the
+  *definitions protocol*, a response procedure triggered by the user asking, which did not
+  bind copy written unprompted). Where a signal could flatter the machine's own case (e.g.
+  a "gate too tight" verdict), the copy claims exactly what is measured and no more. Gate
+  health is the reference implementation: "traded while still benched" (the user overrode
+  the gate — clean evidence for or against it) is never conflated with "traded after
+  unbenching" (re-admission latency only — the gate eventually agreeing with itself is not
+  the user being right against it). The response half of the protocol stands: see
+  *Definitions protocol* below.
 - **Feedback edges tune ATTENTION, never AUTHORITY** (closed-loop constitution — user
   ruling, Aug 10 2026). Learning loops (story-resolution signatures, lag profiles,
   scorecard priors, rulings digests, ramping triggers) may change what gets watched,
   flagged, and prioritized; gates, sizing, and deployment still move only by ruling.
 - **Membership bookkeeping applies itself** (user ruling, Aug 11 2026 — **supersedes
-  "membership never recomposes silently"**, R4.2b, which stood from Aug 10 2026).
-  Coherence membership ADDS and the seed/sibling audits' KEEP / RETIRE / PRUNE
-  recommendations now apply automatically at their existing evidence thresholds —
+  "membership never recomposes silently"**, R4.2b, which stood from Aug 10 2026; and see
+  the advisory-layers entry above, which names this supersession explicitly rather than
+  contradicting it). Coherence membership ADDS and the seed/sibling audits' KEEP / RETIRE
+  / PRUNE recommendations apply automatically at their existing evidence thresholds —
   persistence-gated, statistical-cap-respecting, blacklist-excluded. **The reason for the
   supersession:** membership is mechanical bookkeeping about correlation, not a capital
   decision; exposure caps and every gate still bind, so what changed is who presses, not
@@ -137,6 +211,73 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   default posture, not a decision point: flag it "concur-recommended", batch such entries
   under their own header in review copy, and keep them out of the rulings-pending count.
   The full ruling flow is reserved for proposals that want to change something.
+- **Walk-up attention budget ≤ 7 distinct decisions.** The walk-up targets ≤2 min of
+  rulings, enforced by instrumentation: the walk-up surface reports its distinct-decision
+  count and the probe suite asserts the bound. A new surface that would breach the budget
+  must displace something, not stack.
+- **Every user-visible term ships with its glossary entry, in the same commit** — see the
+  Verification section for the entry's required shape and the `[R38.2]` assertion that
+  fails the suite on an unglossed gate name.
+- **Every new probe assertion is proven by seeding the defect it is meant to catch** — see
+  Verification. An assertion that has never failed is unproven.
+
+---
+
+# DOCTRINE
+
+**Nothing in this section is enforceable and nothing here is audited.** These are
+practices and principles the work aims at, kept because they explain *why* the binding
+rules are shaped as they are. No test exists for any of them; do not cite one as a
+finding, and do not let one masquerade as a rule.
+
+**Division of labor.** The machine verifies parts, traces requirements, audits
+composition, grades its own accuracy, proposes its own restructurings, and surfaces
+questions proactively on a schedule — noticing is buildable machinery, never the
+user's job; their irritation must never be the detector. The user's non-delegable
+job: ground truth from lived use, judgment of purpose, and rulings.
+
+The ten standing design principles (propose/dispose at every layer; every layer ships
+with a detector and a correction channel; feedback tunes attention not authority;
+realized data outranks narrative; complexity is measured in operator attention;
+the constitution accretes case law; "done" requires the integration exercise; metric
+honesty; adversarial sources filed as adversaries; the human handoff is architecture)
+live here in full. Several have binding *instances* above — a specific detector, a
+specific check — and those instances are what the audit enforces. The principle itself
+is not enforceable, and two of them read as though they were:
+
+- **"Realized data outranks narrative."** Its binding instances are the metric-honesty
+  entry and the gate-proposal persistence bar. The principle in general has no detector.
+- **"Complexity is measured in operator attention, not code size."** Its one binding
+  instance is the ≤7 walk-up bound, which a probe asserts. Everything else about
+  complexity — the zero-based budget, "what does this replace", the dormancy report — is
+  judgment, and is listed under *Complexity governance* below as practice, not as rule.
+- **"Every layer ships with a detector and a correction channel"** (parts→probe suite,
+  specs→REQUIREMENTS.md, composition→integration audit, judgment→scorecard). A component
+  nothing can catch failing is unfinished even if it works. There is no detector for the
+  presence of detectors; this is an aim.
+- **"The constitution accretes case law."** Near-misses become named, dated precedents;
+  write incidents down, don't just resolve them. A practice, not a check.
+- **"'Done' requires the integration exercise."** Verification milestones are not design
+  milestones; "show me the audit" is answered with an audit, not a claim. The audit is a
+  scheduled discipline (below), but "done" is a judgment.
+
+## Complexity governance (practice — user ruling, Aug 10 2026)
+
+The ≤7 walk-up bound is BINDING and probe-asserted. The rest of this section is practice:
+
+- **Usage-based pruning.** Feature touches (panels opened, buttons pressed, settings
+  changed) are instrumented per 30 days. Quarterly, the review renders a DORMANCY
+  report: features untouched in 90 days are proposed for demotion — collapsed behind a
+  "more" disclosure, not deleted (code is cheap; screen space and mental inventory are
+  not). Demotions are ratified like anything else.
+- **Feature freeze with a price tag.** Every new capability proposal (the agent's
+  included) answers in one line: "what existing surface does this replace or absorb?"
+  Additive-only proposals get the ledger-will-make-the-case treatment. The complexity
+  budget is zero-based: growth is paid for in consolidation.
+- Every feature proposal states its walk-up attention cost; the weekly review reports the
+  trend.
+
+---
 
 ## Surface map (Aug 11 2026)
 
@@ -158,6 +299,8 @@ Every export states in its header what was in force (epoch, counts by cohort / g
 horizon, constants, standing caveats) and exactly what it truncated — a file too big to
 paste is useless, and one that truncates silently is worse. Observation-floor exclusions
 travel INCLUDED and marked: the floor gates verdicts, never the record.
+**The interrogability rule binds these files** (widened Aug 12 2026): a rollup that ships
+without its rows is the same finding in a file as it is on a screen.
 
 ## Naming: the PAPER book (renamed Aug 11 2026 — user ruling)
 
@@ -178,19 +321,14 @@ Two things deliberately were NOT renamed, so nothing silently breaks:
 - **Historical records.** Prior audit reports and decision-log entries use the old term;
   they are left as written so past records stay readable and internally consistent.
 
-## Definitions protocol (metric honesty — user ruling, Aug 10 2026)
+## Definitions protocol (the response half of metric honesty — user ruling, Aug 10 2026)
 
 When the user asks what a metric measures, the standing rule is **answer first, build
 later**: state exactly what the current code computes (not what it was meant to compute),
 show one concrete data row as proof, flag known biases unprompted, and propose
-corrections without applying anything until the user rules. The house standard for every
-metric: **realized quantities only** — actual logged round trips, tax netted; no
-counterfactual fills, no price drift counted as missed profit — and where a signal could
-flatter the machine's own case (e.g. a "gate too tight" verdict), the copy must claim
-exactly what is measured and no more. Gate health is the reference implementation:
-"traded while still benched" (the user overrode the gate — clean evidence for or against
-it) is never conflated with "traded after unbenching" (re-admission latency only — the
-gate eventually agreeing with itself is not the user being right against it).
+corrections without applying anything until the user rules. The binding half — realized
+quantities only, and copy that claims exactly what it computes whether or not anyone
+asked — is in the BINDING section above.
 
 ## Case law: the Jul 24 volume artifact (user ruling, Aug 12 2026)
 
@@ -227,7 +365,9 @@ Three corollaries, each of which cost something here:
   contaminated numbers exposed a second defect: re-importing an already-ratified
   record was silently absorbed, so eleven corrected records would have left the
   wrong numbers on screen while the brief claimed they were fixed. Shipping a
-  correction means shipping the path by which it lands.
+  correction means shipping the path by which it lands — widened Aug 12 2026 to
+  every artefact the user has already read, including glossary entries and
+  requirement rows.
 
 ## Case law: the never-fed aggregate (user ruling, Aug 12 2026)
 
@@ -245,6 +385,11 @@ an aggregate whose input population is empty says so, in its own words, instead
 of rendering a zero. Membership in a race like this must be a property of the
 CANDIDATE, evaluated once centrally, never a label that individual entry paths
 remember to attach.
+
+The observed-time widening (Aug 12 2026) produced a second instance of exactly this
+shape: a gate-persistence pile reporting "none carry multi-day ledger persistence" when
+the truth was that fewer than four days had been observed and the 4-day bar was
+arithmetically out of reach. Unreachable is not absent, and the copy now says which.
 
 Three companions found in the same review, each worth its own line:
 
@@ -266,30 +411,14 @@ Three companions found in the same review, each worth its own line:
   items, 100% by construction, and contradicted the funnel's own attribution.
   Count the population where the test runs, not where it passes.
 
-## Complexity governance (standing — user ruling, Aug 10 2026)
-
-- **Attention budget as a probe.** The walk-up targets ≤2 min of rulings, enforced by
-  instrumentation: the walk-up surface reports its distinct-decision count, and the
-  probe suite asserts it stays **≤ 7**. A new surface that would breach the budget must
-  displace something, not stack. Every feature proposal states its walk-up attention
-  cost. Weekly review reports the trend.
-- **Usage-based pruning.** Feature touches (panels opened, buttons pressed, settings
-  changed) are instrumented per 30 days. Quarterly, the review renders a DORMANCY
-  report: features untouched in 90 days are proposed for demotion — collapsed behind a
-  "more" disclosure, not deleted (code is cheap; screen space and mental inventory are
-  not). Demotions are ratified like anything else.
-- **Feature freeze with a price tag.** Every new capability proposal (the agent's
-  included) answers in one line: "what existing surface does this replace or absorb?"
-  Additive-only proposals get the ledger-will-make-the-case treatment. The complexity
-  budget is zero-based: growth is paid for in consolidation.
-
 ## Integration audit (standing discipline — user ruling, Aug 10 2026)
 
 Run by the agent **after any week containing a build session; skip after pure-usage
 weeks** (integration debt accrues at build speed — cadence tied to activity, not the
 calendar; user ruling, Aug 10 2026), and on the user's demand. Distinct from probes
 (parts work) and friction review (reported pain): this hunts **unreported composition
-defects**.
+defects**. Scans 1–5 predate Aug 12 2026; scans 6–8 were added that day so the rules
+widened in the scope audit have detectors rather than good intentions.
 
 1. **Workflow walks:** trace each real workflow end-to-end through the actual code
    paths — walk-up, briefing cycle, sleeve entry-to-exit, weekly review — and for every
@@ -297,7 +426,10 @@ defects**.
    it earn its render. Any missing answer is a finding.
 2. **Orphan scan:** every panel, queue, record type, and setting gets a connectivity
    check — who writes it, who reads it, what decision changes because it exists.
-   Write-only data and read-never surfaces are findings.
+   Write-only data and read-never surfaces are findings. **Extended Aug 12 2026 to entity
+   state:** every entity the user can see — not only allocator-touched ones — must state
+   where it stands and why; an entity rendering as a hole, a blank, or a dash with no
+   stated reason is a finding.
 3. **Redundancy scan:** concepts implemented twice under different names (cluster
    baskets vs catalyst item-links was exactly this) — propose merges.
 4. **Glossary-coverage scan** (user ruling, Aug 11 2026): every term, badge, tag,
@@ -309,16 +441,33 @@ defects**.
    you" line is missing, and one that hedges to "nothing directly" without naming the
    decision it is context for — that hedge marks a **deletion candidate**, and surfacing
    those while writing is part of the scan's job.
-5. **Interrogability scan** (user ruling, Aug 11 2026): for every aggregate, statistic,
-   verdict, score, or summary the tool renders, check that it opens to its constituent
-   rows in one click — which items, which events, with the per-item evidence behind the
-   number. Findings are: any number that cannot be opened; any expansion showing a subset
-   without saying so; any verdict whose stated reason doesn't name the specific items or
-   thresholds behind it; and any surface reporting a conclusion where the underlying rows
-   would teach more than the conclusion does. **This is distinct from the orphan scan** —
-   a surface can be fully connected, reading real data and feeding real decisions, and
-   still be opaque. Connected-but-unauditable is a finding.
-6. **Output:** a findings report with proposed restructurings, ruled like everything
+5. **Interrogability scan** (user ruling, Aug 11 2026; widened Aug 12 2026 from screens to
+   artefacts): for every aggregate, statistic, verdict, score, or summary the tool
+   renders **or exports**, check that it opens to — or ships with — its constituent rows:
+   which items, which events, with the per-item evidence behind the number. Findings are:
+   any number that cannot be opened; any export carrying a rollup without its rows; any
+   expansion or file showing a subset without saying so; any verdict whose stated reason
+   doesn't name the specific items or thresholds behind it; and any surface reporting a
+   conclusion where the underlying rows would teach more than the conclusion does. **This
+   is distinct from the orphan scan** — a surface can be fully connected, reading real
+   data and feeding real decisions, and still be opaque. Connected-but-unauditable is a
+   finding.
+6. **Restraint-lift scan** (Aug 12 2026, for the widened restraint/deployment rule):
+   enumerate every path by which a caution, warning, bench, cap, haircut or refusal
+   STOPS applying — an action, an expiry, a timeout, a status transition, a retention
+   prune, a rule change. Each one is checked for a user press. A lift with no press is a
+   finding, and the enumeration itself is the deliverable: a path nobody listed is a path
+   nobody checked.
+7. **Claims-vs-computation scan** (Aug 12 2026, for the widened metric-honesty rule):
+   for every metric the tool renders, read the rendered copy against the code that
+   produces it and check the copy claims exactly that — no more, no fewer caveats, the
+   right population, the right denominator. Unprompted copy is in scope; this scan exists
+   because the definitions protocol only ever fired when the user asked.
+8. **Pooling scan** (Aug 12 2026, for the widened never-pool rule): every rate, median,
+   count, verdict and score is checked for whether its population is one population. A
+   pooled figure rendering without its decomposition beside it is a finding, whatever
+   kind of statistic it is.
+9. **Output:** a findings report with proposed restructurings, ruled like everything
    else. No findings is a valid result and says so.
 
 ## Verification
@@ -343,7 +492,15 @@ visibility (`offsetParent`, `getComputedStyle`) on the surfaces that must be cle
 
 A green suite is a claim, and an assertion that cannot fail makes that claim falsely.
 Worse than no test: it occupies the slot where a real one would have gone, and it
-reports the feature as covered. Four named instances, all shipped green:
+reports the feature as covered.
+
+**The root property, widened Aug 12 2026: a green result can mean the test never ran, OR
+that it ran and passed for a reason other than the property it names.** The original
+wording covered only the first half, and the R49.2 instance below is the second — an
+assertion that ran, on real production output, and would have passed with the property
+gone. Every named instance is a face of that one root.
+
+Named instances, all shipped green:
 
 - **The `|| true` assertion** (Aug 11 2026): a probe line ending `… || true`, written
   to check the poll calls the accrual step. It passed unconditionally and asserted
@@ -385,9 +542,7 @@ reports the feature as covered. Four named instances, all shipped green:
   what "two reads moments apart" actually claims. A tolerance tight enough to assert
   clock-simultaneity is testing the clock, not the behaviour.
 
-- **The assertion that re-implements what it tests** (user ruling, Aug 12 2026) — the
-  fifth distinct way this suite has found itself lying, alongside `|| true`, the detector
-  that could not fail, presence-vs-absence, and DOM-position-vs-visible-position. A probe
+- **The assertion that re-implements what it tests** (user ruling, Aug 12 2026). A probe
   asserted that the per-stratum sampling counters summed correctly — but it computed the
   counts itself, in the probe, rather than calling the production path. It passed with
   the bug fully intact in `index.html`, because the bug was in code the assertion never
@@ -404,9 +559,9 @@ reports the feature as covered. Four named instances, all shipped green:
   means the tell is worth checking on every new assertion, not just when something feels
   off: **if a probe line constructs an input the product would have constructed, the
   product's constructor is untested.**
-- **Dead safeguards and dead seeds** (user ruling, Aug 12 2026) — the sixth entry, and
-  the one that generalises the others. Three instances, one root: **a green result can
-  mean the test never ran.**
+- **Dead safeguards and dead seeds** (user ruling, Aug 12 2026). Three instances, one
+  root — the same root the whole section now carries: **a green result can mean the test
+  never ran.**
 
   **A guard whose trigger condition cannot be reached by its own upstream limits is not
   protection — it is decoration that reads as protection.** The calibration export
@@ -439,8 +594,18 @@ reports the feature as covered. Four named instances, all shipped green:
   and when a batch is unavoidable, re-run any assertion that did not fail in isolation
   before counting it as proven.**
 
-  All three are the reimplementation trap's siblings: in each, the assertion reported a
-  pass without ever exercising the thing it names.
+- **The broad-container assertion** (user ruling, Aug 12 2026) — the face of the root that
+  is *ran, but passed for the wrong reason*. **The tell: an assertion matching against a
+  container broader than the thing under test.** `[R49.2]` asserted that a specific
+  per-gate fill rate carries its cohort split by testing `/watchlist 100% of 2/` against
+  the whole page's HTML — which any other blend anywhere on that page would have
+  satisfied. Delete the split from the gate rate and the assertion still passes, on real
+  production output, having exercised real production code. Fixed by scoping the match to
+  the blend under test: `blendFrag(html, key)` in the probe locates the one
+  `data-drill="<key>"` element and its inline sibling, and every per-surface pooling
+  assertion matches inside that fragment only. **Generalised: match against the narrowest
+  container that still contains the property. If the assertion would pass with the
+  property deleted from its subject but present elsewhere, the container is too broad.**
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is
@@ -521,7 +686,8 @@ cadence kept").
   provenance is stamped live/reconstructed/mixed, and an aggregate resting only on
   reconstructed evidence says so. Forced exits price at the series value AT the horizon —
   the proper fix for the defect that caused the epoch reset, and correct on a perfect host
-  too.
+  too. This is the paper book's instance of the general observed-time rule in BINDING; the
+  general rule reaches every denominator counting time or occasions, not just this one.
 - **Cadence is not edge.** Gates, floors, reserve and budgets are untouched by a schedule
   change, and the walk-up attention budget still binds at ≤ 7.
 - When a metric's denominator changes because the cadence changed, **show both sides**: the
