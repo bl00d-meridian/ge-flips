@@ -216,6 +216,43 @@ Three corollaries, each of which cost something here:
   wrong numbers on screen while the brief claimed they were fixed. Shipping a
   correction means shipping the path by which it lands.
 
+## Case law: the never-fed aggregate (user ruling, Aug 12 2026)
+
+**A stat that renders 0 because nothing FEEDS it is indistinguishable, on screen,
+from a stat that renders 0 because nothing QUALIFIED — and the two mean opposite
+things.** The regime race, the machinery that exists to answer whether the 1.2%
+ROI floor is right, spent an entire epoch reporting three zero curves and a
+two-day all-zero divergence ledger while not one of 272 paper trips had ever been
+assigned to a regime. Four of the six entry paths hardcoded an empty set instead
+of evaluating, and in that epoch those four were 96% of the book. Nothing said so.
+
+This is the same class as the silent-unfunded-state defect (F18): **a component
+reporting nothing where it should report that it HAS nothing.** The rule:
+an aggregate whose input population is empty says so, in its own words, instead
+of rendering a zero. Membership in a race like this must be a property of the
+CANDIDATE, evaluated once centrally, never a label that individual entry paths
+remember to attach.
+
+Three companions found in the same review, each worth its own line:
+
+- **Causality in a simulator is not optional.** The fill model credited a leg
+  from a trailing five-minute aggregate on the leg's first tick, and re-credited
+  the same bucket every poll — 182 of 272 trips opened and closed in under a
+  second (median 55ms), all "filled", booking 52% of the headline net from tape
+  that printed before they existed. A simulated leg may only be filled by tape
+  that printed after it was placed, each bucket counted once, and a trip that
+  resolves in its opening cycle is a bug rather than a fill.
+- **A rate needs its counterexample count.** "Fill rate 100%" appeared on every
+  stratum and every hour, and `neverFilled` was 0 in every per-gate rollup — a
+  model built on the premise that would-never-have-filled is the finding half the
+  time was finding it never. Every rate now renders its counterexample count, so
+  100% reads as a claim about zero counterexamples rather than as a default.
+- **A ratio whose denominator is filtered by its own numerator is not a ratio.**
+  The per-stratum sampling counter sat after the near-miss filter, so it counted
+  only items that had already qualified: near-misses were 577 of 578 sampled
+  items, 100% by construction, and contradicted the funnel's own attribution.
+  Count the population where the test runs, not where it passes.
+
 ## Complexity governance (standing — user ruling, Aug 10 2026)
 
 - **Attention budget as a probe.** The walk-up targets ≤2 min of rulings, enforced by

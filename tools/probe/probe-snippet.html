@@ -394,14 +394,37 @@
     S.min5[9001] = { highPriceVolume: 0, lowPriceVolume: 1 };
     updateVol5Streaks();
     ok("[R8.2] quiet window does not close the episode", DB.dieOffLog[0].rec === null, JSON.stringify(DB.dieOffLog));
+    /* Back-date the episode past one touch gap BEFORE recovering it: an
+       episode that recovers inside a gap is auto-voided as noise (ruled Aug 12
+       2026), which is asserted separately below. This one is a real recovery. */
+    DB.dieOffLog[0].t = Date.now() - 6 * 3600e3;
     S.min5[9001] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
     updateVol5Streaks();
     ok("[R8.2] confirmed healthy 5m sample stamps recovery", Number.isFinite(DB.dieOffLog[0].rec),
        JSON.stringify(DB.dieOffLog));
+    ok("[R43.5] a recovery beyond one touch gap is NOT voided — it is a real episode",
+       !DB.dieOffLog[0].void, JSON.stringify(DB.dieOffLog[0]));
     const ghD = gateHealthAudit();
     ok("[R8.2] audit scorecard grades the episode recovered-within-24h",
        !!ghD.dieOff && ghD.dieOff.episodes === 1 && ghD.dieOff.rec24 === 1 && ghD.dieOff.faded === 0
        && ghD.dieOff.watching === 0, JSON.stringify(ghD.dieOff));
+    /* The noise case: a five-minute wobble in a thin book. */
+    DB.dieOffLog.push({ d: today(), id: 9002, t: Date.now() - 60e3, rec: null });
+    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    updateVol5Streaks();
+    const ghV = gateHealthAudit();
+    ok("[R43.5] an episode recovering inside one touch gap is auto-voided as noise",
+       DB.dieOffLog[1].void === 1 && Number.isFinite(DB.dieOffLog[1].rec),
+       JSON.stringify(DB.dieOffLog[1]));
+    ok("[R43.5] voided episodes leave the recovery counts AND the denominator — the scorecard cannot flatter itself",
+       ghV.dieOff.episodes === 1 && ghV.dieOff.rec24 === 1 && ghV.dieOff.voided === 1
+       && ghV.dieOff.eps.some(e => /auto-voided as noise/.test(e.bucket)),
+       JSON.stringify({ ep: ghV.dieOff.episodes, rec: ghV.dieOff.rec24, void: ghV.dieOff.voided }));
+    ok("[R43.5] the confirmation depth is its own constant, and the proposed value is NOT applied",
+       DIEOFF_CONFIRM_REFRESHES === VOL5_BIND_REFRESHES && DIEOFF_CONFIRM_PROPOSED === 6
+       && DIEOFF_CONFIRM_PROPOSED > DIEOFF_CONFIRM_REFRESHES,
+       JSON.stringify({ now: DIEOFF_CONFIRM_REFRESHES, proposed: DIEOFF_CONFIRM_PROPOSED }));
+    DB.dieOffLog = DB.dieOffLog.slice(0, 1);
     // concur-recommended lane: the die-off line defends the standing rule —
     // batched under its own header, never a pending ruling
     S.min5[9001] = { highPriceVolume: 2, lowPriceVolume: 4 };
@@ -2114,10 +2137,18 @@
        && new Set(lap18).size === STRATA.length,
        JSON.stringify({ lap: lap18.length, distinct: new Set(lap18).size }));
     S.latestAt = keepLatest18;
-    // R18.2 — honest fill sim on a controlled position
+    /* R18.2 — honest fill sim on a controlled position.
+       CAUSALITY (Aug 12 2026): a leg is credited only by a 5m bucket that
+       began at or after the leg was placed, and each bucket counts once — so
+       the fixture must advance `S.min5At` between ticks the way the real feed
+       does. A tick that re-presents the same bucket must credit nothing, and
+       that is asserted below rather than assumed. */
+    const t18 = Date.now() - 60e3;
+    const bkt18 = t => Math.floor(t / 300e3) * 300e3;
     DB.shadowBook = [{ id: 1, fam: "bench:ROI floor:9002", itemId: 9002, name: "Probe beta",
-      qty: 10, bid: 4001, ask: 4399, t: Date.now() - 60e3, buyQ: 0, sellQ: 0, buyDone: 0,
+      qty: 10, bid: 4001, ask: 4399, t: t18, buyQ: 0, sellQ: 0, buyDone: 0,
       obsMs: 0, lastObs: Date.now() - 5 * 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
+    S.min5At = bkt18(t18 + 300e3);        // first bucket that STARTED after the trip opened
     S.latest[9002] = { high: 4500, low: 4100, highTime: nowS, lowTime: nowS };   // low ABOVE bid — no fill
     shadowTick();
     const sb2 = DB.shadowBook[0];
@@ -2130,6 +2161,11 @@
     ok("[R18.2] a print at-or-below the bid fills volume-weighted (capture-capped)",
        sb2.buyQ === 10 && sb2.buyDone > 0 && sb2.state === "open", JSON.stringify(sb2));
     S.latest[9002] = { high: 4399, low: 4000, highTime: nowS, lowTime: nowS };   // lifts the ask
+    shadowTick();
+    ok("[R43.2] the bucket that completed the buy cannot also fill the sell — no instant round trip",
+       sb2.state === "open" && sb2.sellQ === 0,
+       JSON.stringify({ state: sb2.state, sellQ: sb2.sellQ, bkt: S.min5At, buyDoneBkt: sb2.buyDoneBkt }));
+    S.min5At = bkt18(t18 + 600e3);        // the NEXT bucket — the sell leg's first eligible tape
     shadowTick();
     ok("[R18.2] sell side symmetric — full round trip closes with net after tax",
        sb2.state === "filled" && sb2.net === 10 * (4399 - geTax(4399, 9002)) - 10 * 4001,
@@ -3112,6 +3148,7 @@
       obsMs: 0, lastObs: now27 - 60e3, state: "open", benchedBy: ["ROI floor"], gapTxt: "g", regimes: [] }];
     S.latest[9002] = { high: 4500, low: 4000, highTime: nowS27, lowTime: nowS27 };
     S.min5[9002] = { highPriceVolume: 40, lowPriceVolume: 40 };
+    S.min5At = Math.floor((now27 - 60e3 + 300e3) / 300e3) * 300e3;   // a bucket that began after the trip opened
     shadowTick();
     const sb27 = DB.shadowBook[0];
     const tape27 = Math.max(1, Math.floor(40 * GATE.capture));
@@ -4326,9 +4363,21 @@
        not part of its life. Asserted both ways: a trip that closes on the
        first bucket is credited that bucket only, and one that stays open is
        credited every bucket the series actually had. */
+    /* TWO buckets, not one, since Aug 12 2026: the bucket that completes the
+       buy cannot also fill the sell, so the earliest a round trip can close is
+       the second bucket. That is the causality fix, and this number is how it
+       shows up in coverage. */
     ok("[R40.7] coverage stops when the trip closes — later buckets are not its life",
-       covered40 === 5 * 60e3,
-       "covered " + (covered40 / 60e3) + " min, closed on the first bucket");
+       covered40 === 10 * 60e3,
+       "covered " + (covered40 / 60e3) + " min, closed on the second bucket (the earliest a round trip can close)");
+    ok("[R43.2] reconstruction obeys the same causality — a bucket before the trip opened credits nothing",
+       (() => { const late = { id: 41002, itemId: 9001, qty: 10, bid: 4001, ask: 4399,
+                  t: base40 + 12 * 5 * 60e3, hzH: 9.5, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0,
+                  buyDone: 0, state: "open" };
+                /* Replay only the buckets that PREDATE it. */
+                reconReplay(late, pts40.slice(0, 12), base40, Date.now());
+                return late.buyQ === 0 && late.state === "open"; })(),
+       "pre-open buckets credit nothing");
     const openTrip40 = { id: 41001, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 100,
       buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
     const cov2 = reconReplay(openTrip40, pts40, base40, Date.now());
@@ -4745,6 +4794,176 @@
     DB.shadowDivLog = keepDiv;
   } catch(e){
     out.push("FAIL analysis export :: " + (e && e.stack || e));
+  }
+
+  // ─── §43: PAPER-BOOK DEFECT FIXES (user-directed, Aug 12 2026) ───
+  try {
+    // ---- R43.1 regimes are a property of the candidate, evaluated for every trip ----
+    const mkC = roiPct => ({ id: 9001, buy: 10000, sell: Math.round(10000 * (1 + roiPct / 100) / 0.98) });
+    /* regimesFor reads effMargin, so drive it through a real calc instead:
+       three synthetic candidates whose effective ROI straddles the floors. */
+    const regOf = eR => {
+      const out = [];
+      if (eR >= GATE.roi) out.push("current");
+      if (eR >= GATE.roi * SHADOW_LOOSE) out.push("loose");
+      if (eR >= GATE.roi * SHADOW_TIGHT) out.push("tight");
+      return out;
+    };
+    ok("[R43.1] the three ROI floors are ordered loose < current < tight, so membership nests",
+       GATE.roi * SHADOW_LOOSE < GATE.roi && GATE.roi < GATE.roi * SHADOW_TIGHT
+       && regOf(GATE.roi * SHADOW_TIGHT + 0.01).length === 3
+       && regOf(GATE.roi + 0.01).join() === "current,loose"
+       && regOf(GATE.roi * SHADOW_LOOSE + 0.001).join() === "loose"
+       && regOf(GATE.roi * SHADOW_LOOSE - 0.1).length === 0,
+       JSON.stringify({ loose: GATE.roi * SHADOW_LOOSE, cur: GATE.roi, tight: GATE.roi * SHADOW_TIGHT }));
+    /* The real thing: a live candidate stamped through regimesFor. The probe
+       fixture's item clears every floor comfortably. */
+    const cAlpha = calc(9001);
+    const rAlpha = regimesFor(cAlpha);
+    ok("[R43.1] a candidate clearing all three floors is stamped with all three regimes",
+       rAlpha.length === 3 && rAlpha.indexOf("current") >= 0 && rAlpha.indexOf("loose") >= 0
+       && rAlpha.indexOf("tight") >= 0,
+       JSON.stringify({ roi: cAlpha && cAlpha.roi, regimes: rAlpha }));
+    ok("[R43.1] a candidate with no computable margin is stamped with nothing, never guessed",
+       regimesFor(null).length === 0 && regimesFor({ buy: 0 }).length === 0, "null-safe");
+    /* NEVER-FED: an empty regime population renders its own sentence. */
+    const keepBook43 = DB.shadowBook, keepDiv43 = DB.shadowDivLog;
+    DB.shadowBook = [{ id: 1, itemId: 9001, name: "Probe alpha", qty: 1, bid: 1, ask: 2,
+      t: Date.now() - 3600e3, closedAt: Date.now(), state: "filled", net: 5, obsMs: 4 * 3600e3,
+      hzH: 4, regimes: [] }];
+    DB.shadowDivLog = [{ d: "2026-08-11", cur: 0, loose: 0, tight: 0 },
+                       { d: "2026-08-12", cur: 0, loose: 0, tight: 0 }];
+    const secNF = paperRegimeSection();
+    ok("[R43.1] an unfed regime race says so — 'never been fed' is not the same sentence as 'flat'",
+       regimeFedN() === 0 && /regime race has never been fed/i.test(secNF)
+       && /not a reading of zero/.test(secNF) && /they are empty/.test(secNF),
+       secNF.slice(0, 400));
+    ok("[R43.1] an all-zero divergence ledger names the same cause rather than reporting a tie",
+       /divergence ledger has never been fed/i.test(secNF) && /rather than when the regimes genuinely tie/.test(secNF),
+       "divergence ledger never-fed copy");
+    DB.shadowBook[0].regimes = ["current", "loose"];
+    /* The two detectors are INDEPENDENT: feeding the regime race clears its
+       note while the all-zero divergence ledger keeps its own, which is right
+       — they report different empty populations. */
+    ok("[R43.1] once a trip carries a regime the race's never-fed copy clears, and the ledger's does not",
+       regimeFedN() === 1 && !/regime race has never been fed/i.test(paperRegimeSection())
+       && /divergence ledger has never been fed/i.test(paperRegimeSection()),
+       "fed state clears only its own note");
+    const P43 = analysisPayload("paper");
+    ok("[R43.1] the export carries the never-fed flag beside the zeros",
+       P43.regimeRace && P43.regimeRace.tripsCarryingAnyRegime === 1 && P43.regimeRace.neverFed === false,
+       JSON.stringify(P43.regimeRace));
+    DB.shadowBook = keepBook43; DB.shadowDivLog = keepDiv43;
+
+    /* ---- R43.2 the buy leg's own causality, and once-per-bucket ----
+       The defect that produced 182 sub-second round trips: the tick credited
+       a trailing 5m aggregate to a leg that had existed for milliseconds, and
+       re-credited the same bucket on every poll. Both rules are asserted
+       here, because neither is implied by the sell-side test above. */
+    const keepBookC = DB.shadowBook, keepMin5At = S.min5At, keepSeq = S.pollSeq;
+    const bktC = Math.floor(Date.now() / 300e3) * 300e3;
+    const mkC2 = tOff => ({ id: 43100, fam: "c", itemId: 9002, name: "Probe beta", qty: 10,
+      bid: 4001, ask: 4399, t: bktC + tOff, hzH: 4, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0,
+      buyDone: 0, obsMs: 0, lastObs: Date.now(), state: "open", regimes: [] });
+    const nowSC = Math.floor(Date.now() / 1000);
+    S.latest[9002] = { high: 4300, low: 4000, highTime: nowSC, lowTime: nowSC };
+    S.min5[9002] = { highPriceVolume: 4000, lowPriceVolume: 4000 };
+    S.min5At = bktC;
+    /* Opened ONE MINUTE INTO the bucket: the bucket's prints are partly from
+       before the trip existed, so it credits nothing. */
+    DB.shadowBook = [mkC2(60e3)];
+    shadowTick();
+    ok("[R43.2] a bucket that began before the trip did credits NOTHING — no round trip from prior tape",
+       DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].state === "open",
+       JSON.stringify({ buyQ: DB.shadowBook[0].buyQ, bkt: S.min5At, t: DB.shadowBook[0].t }));
+    /* Opened before the bucket started: this one is eligible, once. */
+    DB.shadowBook = [mkC2(-60e3)];
+    shadowTick();
+    const after1 = DB.shadowBook[0].buyQ;
+    shadowTick();
+    ok("[R43.2] the same bucket credits a leg ONCE, however many polls present it",
+       after1 > 0 && DB.shadowBook[0].buyQ === after1,
+       JSON.stringify({ afterFirstTick: after1, afterSecond: DB.shadowBook[0].buyQ }));
+    /* Minimum life: a trip cannot resolve in the cycle that opened it. */
+    S.pollSeq = 77;
+    DB.shadowBook = [Object.assign(mkC2(-60e3), { openSeq: 77 })];
+    shadowTick();
+    ok("[R43.2] a trip cannot resolve in its opening poll cycle — an instant round trip is a bug, not a fill",
+       DB.shadowBook[0].buyQ === 0 && DB.shadowBook[0].state === "open",
+       JSON.stringify({ buyQ: DB.shadowBook[0].buyQ, openSeq: DB.shadowBook[0].openSeq, seq: S.pollSeq }));
+    S.pollSeq = 78;
+    shadowTick();
+    ok("[R43.2] and it fills on the NEXT cycle — the guard delays, it does not disable",
+       DB.shadowBook[0].buyQ > 0,
+       JSON.stringify({ buyQ: DB.shadowBook[0].buyQ }));
+    DB.shadowBook = keepBookC; S.min5At = keepMin5At; S.pollSeq = keepSeq;
+
+    // ---- R43.3 every fill rate renders its never-filled count ----
+    const keepBook43b = DB.shadowBook;
+    const mkP43 = (st, hOff) => ({ id: 43000 + hOff, itemId: 9001, name: "Probe alpha", qty: 5,
+      bid: 100, ask: 120, t: Date.now() - 3600e3, closedAt: Date.now(), hzH: 4, obsMs: 4 * 3600e3,
+      state: st, net: st === "filled" ? 50 : 0, regimes: [] });
+    DB.shadowBook = [mkP43("filled", 1), mkP43("filled", 2), mkP43("unfilled", 3)];
+    const hl43 = hoursLedger().filter(r => r.n > 0);
+    ok("[R43.3] the hours ledger carries a never-filled count beside its fill rate",
+       hl43.length === 1 && hl43[0].n === 3 && hl43[0].filled === 2 && hl43[0].unfilled === 1,
+       JSON.stringify(hl43.map(r => ({ h: r.h, n: r.n, filled: r.filled, unfilled: r.unfilled }))));
+    ok("[R43.3] and it renders — a 100% reading must be visibly a claim about zero counterexamples",
+       /never filled/.test(hoursLedgerInline()),
+       hoursLedgerInline().slice(0, 200));
+    ok("[R43.3] the export reports never-filled per hour and per stratum",
+       analysisPayload("prospecting").hoursLedger.some(h => h.paperTripsNeverFilled === 1),
+       "export never-filled");
+    DB.shadowBook = keepBook43b;
+
+    // ---- R43.4 one definition of "fails exactly one gate" ----
+    const fp1 = failProfile({ failed: 1, fails: [{ g: "ROI floor", short: "a" }] });
+    const fp3 = failProfile({ failed: 1, fails: [{ g: "ROI floor" }, { g: "volume floor" }, { g: "trend" }] });
+    const fpChart = failProfile({ failed: 1, fails: [{ g: "ROI floor" }, { g: "chart still loading" }] });
+    const fpClean = failProfile({ failed: 0, fails: [] });
+    ok("[R43.4] fails exactly one gate = a near-miss, in the one shared definition",
+       !!fp1.nearMiss && fp1.nearMiss.g === "ROI floor" && fp1.n === 1,
+       JSON.stringify(fp1));
+    ok("[R43.4] fails three = a near-miss in NEITHER surface",
+       !fp3.nearMiss && fp3.n === 3, JSON.stringify({ n: fp3.n, nm: !!fp3.nearMiss }));
+    ok("[R43.4] unknowable is not failing — a chart-pending gate never counts toward the single-gate test",
+       !!fpChart.nearMiss && fpChart.nearMiss.g === "ROI floor" && fpChart.n === 1 && fpChart.chartPending === true,
+       JSON.stringify(fpChart));
+    ok("[R43.4] a clean pass is not a near-miss", fpClean.clean === true && !fpClean.nearMiss, JSON.stringify(fpClean));
+    /* The two surfaces now agree BY CONSTRUCTION, because there is one
+       function. Asserted on the same synthetic candidates the funnel and the
+       slice would each classify. */
+    const cases43 = [
+      { c: { failed: 1, fails: [{ g: "ROI floor" }] }, nm: true },
+      { c: { failed: 1, fails: [{ g: "ROI floor" }, { g: "trend" }] }, nm: false },
+      { c: { failed: 1, fails: [{ g: "ROI floor" }, { g: "no history" }] }, nm: true },
+      { c: { failed: 0, fails: [] }, nm: false } ];
+    ok("[R43.4] funnel and slice cannot disagree — both read failProfile, asserted case by case",
+       cases43.every(x => !!failProfile(x.c).nearMiss === x.nm),
+       JSON.stringify(cases43.map(x => !!failProfile(x.c).nearMiss)));
+    /* The denominator: sampling is counted BEFORE the near-miss filter, so a
+       multi-gate failure is sampled without being a near-miss. */
+    /* Through the PRODUCTION counter, not re-implemented here — the defect was
+       precisely that the real path counted the wrong population. */
+    const keepStrata43 = DB.strataStats;
+    DB.strataStats = {};
+    strataCount("f2p", 9101, failProfile({ failed: 1, fails: [{ g: "a" }, { g: "b" }, { g: "c" }] }));
+    strataCount("f2p", 9102, failProfile({ failed: 1, fails: [{ g: "ROI floor" }] }));
+    strataCount("f2p", 9103, failProfile({ failed: 0, fails: [] }));
+    const st43 = DB.strataStats.f2p;
+    ok("[R43.4] the sampled denominator counts every item the chain ran on — a multi-gate failure is SAMPLED, not skipped",
+       st43.samp === 3 && st43.wall === 1 && st43.nm === 1 && st43.pass === 1,
+       JSON.stringify(st43));
+    ok("[R43.4] the three outcomes sum to the denominator, so nm/samp can no longer be 100% by construction",
+       st43.nm + st43.pass + st43.wall === st43.samp && (st43.nm / st43.samp) < 1,
+       JSON.stringify({ nm: st43.nm, pass: st43.pass, wall: st43.wall, samp: st43.samp }));
+    ok("[R43.4] a re-draw is not a second test — the same id counted twice moves nothing",
+       (() => { strataCount("f2p", 9101, failProfile({ failed: 1, fails: [{ g: "a" }, { g: "b" }, { g: "c" }] }));
+                return DB.strataStats.f2p.samp === 3 && DB.strataStats.f2p.wall === 1; })(),
+       JSON.stringify(DB.strataStats.f2p));
+    DB.strataStats = keepStrata43;
+  } catch(e){
+    out.push("FAIL paper-book defect fixes :: " + (e && e.stack || e));
   }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

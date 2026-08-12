@@ -1517,7 +1517,7 @@ addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
 /* ── app state ───────────────────────────────────────────────── */
 const S = {
   items: [], byId: new Map(),
-  latest: {}, hour: {}, min5: {}, volumes: {}, volRank: new Map(),
+  latest: {}, hour: {}, min5: {}, min5At: 0, pollSeq: 0, volumes: {}, volRank: new Map(),
   vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
@@ -1927,6 +1927,10 @@ async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.da
 async function loadHour(){
   const [h, m, v] = await Promise.all([getJSON("/1h"), getJSON("/5m"), getJSON("/volumes")]);
   S.hour = h.data || {}; S.min5 = m.data || {}; S.hourAt = Date.now();
+  /* The 5m payload's own bucket stamp. The fill model needs bucket IDENTITY,
+     not arrival time: a trailing aggregate must be credited once, and only to
+     legs that already existed when the bucket opened. */
+  S.min5At = Number.isFinite(m.timestamp) ? m.timestamp * 1000 : Date.now();
   updateVol5Streaks();   // vol5 binding rule: streaks count data arrivals, not renders
   /* 24h volume ranking = the crowding census. The most-flipped items are where
      every tool sends every flipper — expect spreads compressed to the tax floor. */
@@ -2097,6 +2101,10 @@ function refresh(opts = {}){
 let failCount = 0;
 async function doRefresh(opts = {}){
   S.loading = true; paintStatus();
+  /* Poll sequence: the paper book's minimum-life rule needs to know which
+     cycle a trip was opened in, and wall-clock cannot answer that (two polls
+     can land in the same millisecond bucket, and one poll can span seconds). */
+  S.pollSeq = (S.pollSeq || 0) + 1;
   try {
     if (!S.items.length) await loadMapping(opts.forceMap);
     const jobs = [loadLatest()];
@@ -2615,6 +2623,21 @@ function strataStat(k){
   if (!Array.isArray(s.ids)) s.ids = [];
   return s;
 }
+/* Record one sample against a stratum, from the SHARED fail profile (defect
+   fix, Aug 12 2026). This used to sit after the near-miss filter, so `samp`
+   counted only items that had already qualified: the denominator excluded
+   every multi-gate failure and `nm / samp` was 100% by construction — it read
+   577 of 578 across 22 strata and meant nothing. The gate chain has run on
+   this item by the time this is called, so this is where it is counted, and
+   the three outcomes always sum to the denominator. */
+function strataCount(k, id, fp){
+  if (!strataSeen(k, id)) return null;      // a re-draw is not a second test
+  const st = strataStat(k);
+  if (fp.clean) st.pass++;
+  else if (fp.nearMiss) st.nm++;
+  else st.wall = (st.wall || 0) + 1;        // failed 2+ knowable gates: sampled, not a near-miss
+  return st;
+}
 function strataSeen(k, id){
   const s = strataStat(k);
   s.lastAt = Date.now();   // freshness: a stalled sampler must be visible, not inferred from a flat map
@@ -2826,6 +2849,13 @@ const volFloorFor = px => Math.max(4, Math.round(((DB.filtersT1 && DB.filtersT1.
    AND it has sat under the floor for 2 consecutive /5m refreshes. Otherwise
    the 1h thin side rules, and the 5m status is labeled — never silent. */
 const VOL5_MIN_UNITS = 5, VOL5_BIND_REFRESHES = 2;
+/* Die-off EPISODE confirmation depth — a strategy parameter, separate from
+   the gate's binding rule above so the episode ledger can be made stricter
+   without touching any gate (user ruling, Aug 12 2026). PROPOSED: 6 (≈30
+   minutes of consecutive below-floor 5m samples). Left at the gate's value
+   until ruled. */
+const DIEOFF_CONFIRM_REFRESHES = VOL5_BIND_REFRESHES;
+const DIEOFF_CONFIRM_PROPOSED = 6;
 function volGateFor(c){
   if (c.vol5 == null)
     return { v: c.volSide, bound: "1h", label: "1h only — 5m pending" };
@@ -2862,7 +2892,24 @@ function updateVol5Streaks(){
     if (e.rec != null) continue;
     const c = calc(e.id);
     if (!c || c.buy == null || c.vol5 == null || c.vol5units < VOL5_MIN_UNITS) continue;
-    if (c.vol5 >= volFloorFor(c.buy)){ e.rec = Date.now(); recDirty = true; }
+    if (c.vol5 >= volFloorFor(c.buy)){
+      e.rec = Date.now();
+      /* AUTO-VOID (user ruling, Aug 12 2026): an episode that recovers inside
+         one touch gap never affected a placement — nothing was placed or
+         repriced between touches — so it is a five-minute wobble in a thin
+         book, not a die-off. It is kept as a record and marked NOISE, and it
+         is excluded from the recovery statistics: a scorecard that counted
+         its own false positives as successful recoveries would flatter
+         itself, which is exactly what "64 of 64 recovered, median 5.4
+         minutes" was doing. The gap is the one in force when the episode
+         OPENED, per-episode, never the current one. */
+      const gapMs = gapHoursAt(e.t) * 3600e3;
+      if (e.rec - e.t <= gapMs){
+        e.void = 1;
+        e.voidH = Math.round(gapHoursAt(e.t) * 100) / 100;
+      }
+      recDirty = true;
+    }
   }
   if (recDirty) save();
 }
@@ -2871,6 +2918,43 @@ function updateVol5Streaks(){
    floor — the average remembers a book that no longer exists. Tag condition,
    ledger row, and review copy all use this one predicate so they can never
    drift apart. */
+/* ═══ ONE DEFINITION OF "FAILS EXACTLY ONE GATE" (defect fix, Aug 12 2026) ═══
+   The deployment funnel and the discovery slice each had their own, and they
+   disagreed: the funnel counted chart-pending gates as failures, the slice
+   excluded them. Same concept, two computations — the class the shared-
+   computation rule exists to prevent. This is now the only one.
+
+   UNKNOWABLE ≠ FAILING is the rule the slice had right and the funnel did
+   not: "chart still loading" and "no history" mean the gate could not be
+   ASKED, so they never count toward the single-gate test. For a watchlist
+   item the chart is present and the distinction is a no-op; for a freshly
+   drawn slice item it is the whole difference. */
+const GATE_UNKNOWABLE = f => f.g === "chart still loading" || f.g === "no history";
+function failProfile(cand){
+  const fails = (cand && cand.fails) || [];
+  const known = fails.filter(f => !GATE_UNKNOWABLE(f));
+  const failed = !!(cand && cand.failed);
+  return { known, n: known.length,
+    chartPending: fails.some(GATE_UNKNOWABLE),
+    clean: !failed,
+    /* The near-miss ITSELF, not a boolean — callers need the gate. */
+    nearMiss: failed && known.length === 1 ? known[0] : null };
+}
+/* Every ROI regime this candidate's effective margin clears. The regime race
+   exists to answer whether the 1.2% floor is right, so membership must be a
+   PROPERTY OF THE CANDIDATE, evaluated the same way for every trip, rather
+   than a label two of six entry paths happened to attach. */
+function regimesFor(c){
+  if (!c || !(c.buy > 0)) return [];
+  const eM = effMargin(c);
+  const eR = eM != null ? eM / c.buy * 100 : null;
+  if (eR == null) return [];
+  const out = [];
+  if (eR >= GATE.roi) out.push("current");
+  if (eR >= GATE.roi * SHADOW_LOOSE) out.push("loose");
+  if (eR >= GATE.roi * SHADOW_TIGHT) out.push("tight");
+  return out;
+}
 const dieOffTagged = x => x.volBound === "5m" && x.c
   && (x.fails || []).some(f => f.g === "volume floor")
   && x.c.volSide >= volFloorFor(x.c.buy);
@@ -4238,6 +4322,15 @@ function buildPlan(){
        previous one recovered — days of continued fade are one episode. */
     for (const b of bench){
       if (!(b.id > 0) || !dieOffTagged(b)) continue;
+      /* Episode confirmation depth is its OWN constant, separate from the
+         volume gate's binding rule (Aug 12 2026). They were the same number,
+         so an episode opened on the same two refreshes that bound the gate —
+         about two minutes — and 64 of 64 observed episodes recovered in a
+         median of 5.4 minutes across 16 items, ten of them Lumbridge teleport
+         tabs. Raising THIS constant changes what counts as an episode without
+         touching any gate. Currently equal to the gate's depth, so behaviour
+         is unchanged until the proposal below is ruled. */
+      if ((S.vol5Low.get(b.id) || 0) < DIEOFF_CONFIRM_REFRESHES) continue;
       const k = dToday + "|" + b.id + "|die-off detected";
       if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g: "die-off detected" }); have.add(k); logDirty = true; }
       const last = DB.dieOffLog.filter(e => e.id === b.id).pop();
@@ -5312,34 +5405,26 @@ function shadowScan(P){
     if (!c || c.buy == null || c.sell == null) return;
     DB.shadowBook.push(Object.assign({ id: now + DB.shadowBook.length, fam, itemId: x.id,
       name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
-      t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live",
+      t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
+      /* Regimes are stamped CENTRALLY here, from the candidate's own effective
+         ROI, so no entry path can forget (defect fix, Aug 12 2026 — four of
+         the six paths used to hardcode an empty set, and in the epoch that
+         found this they were 96% of the book). */
+      regimes: regimesFor(c),
       buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta));
     recent.add(fam); room--;
   };
-  const eRof = x => {
-    const c = x.c || calc(x.id);
-    if (!c || !(c.buy > 0)) return null;
-    const eM = effMargin(c);
-    return eM != null ? eM / c.buy * 100 : null;
-  };
-  /* Regime membership for funded picks: current + loose always; tight only
-     if it clears the tightened ROI floor. */
-  for (const x of P.picks || []){
-    const eR = eRof(x);
-    add("regime:" + x.id, x, { regimes: ["current", "loose"].concat(eR != null && eR >= GATE.roi * SHADOW_TIGHT ? ["tight"] : []) });
-  }
+  for (const x of P.picks || []) add("regime:" + x.id, x, {});
   /* Every single-gate benched near-miss shadow-trades, stamped with the gate
      and the gap; ROI-floor misses that clear the loose floor also join the
      loose regime's book. Blacklist-gate misses never shadow-trade — the
      blacklist is the user's alone, and a ledger arguing against it would be
      the machine building a case against a non-delegable call. */
-  for (const x of (P.all || []).filter(x => x.failed && Array.isArray(x.fails) && x.fails.length === 1
-      && x.fails[0].g !== "blacklist")){
-    const f = x.fails[0];
-    const eR = eRof(x);
-    const looseToo = f.g === "ROI floor" && eR != null && eR >= GATE.roi * SHADOW_LOOSE;
-    add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: String(f.short || f.detail || ""),
-      regimes: looseToo ? ["loose"] : [] });
+  for (const x of (P.all || [])){
+    const fp = failProfile(x);
+    if (!fp.nearMiss || fp.nearMiss.g === "blacklist") continue;
+    const f = fp.nearMiss;
+    add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: String(f.short || f.detail || "") });
   }
   /* Discovery-slice counterfactuals (ruled Aug 11 2026; stratified + clean
      passers + gap band, user-directed same day): the slice carries gate
@@ -5358,21 +5443,22 @@ function shadowScan(P){
       if (isBlk(c.id)) continue;                          // the blacklist is the user's alone
       if (suspectedPump(c.id)) continue;                  // pump-flagged: excluded from every cohort
       const cand = candidateFor({ id: c.id, qty: null });
-      const fl = (cand.fails || []).filter(f => f.g !== "chart still loading" && f.g !== "no history");
-      const chartPend = (cand.fails || []).some(f => f.g === "chart still loading" || f.g === "no history");
-      const clean = !cand.failed;
+      const fp = failProfile(cand);
+      const fl = fp.known, chartPend = fp.chartPending, clean = fp.clean;
+      /* SAMPLING LEDGER — counted BEFORE the near-miss filter (defect fix,
+         Aug 12 2026). It used to sit after the `continue` below, so `samp`
+         counted only the items that had already qualified as near-misses or
+         clean passers: the denominator excluded every multi-gate failure, and
+         `nm / samp` was therefore 100% BY CONSTRUCTION. It read 577 of 578
+         across 22 strata and meant nothing. The gate chain ran on this item
+         here, so this is where it is counted. */
+      strataCount(stratum, c.id, fp);
       if (!clean && fl.length !== 1) continue;
-      /* Sampling ledger: distinct items only, so a re-draw is not a second
-         test. Counted at the point the gate chain actually ran on it. */
-      if (strataSeen(stratum, c.id)){
-        const st = strataStat(stratum);
-        if (clean) st.pass++; else st.nm++;
-      }
       const before = room;
       add((clean ? "slicepass:" : "slice:" + fl[0].g + ":") + c.id, { id: c.id, c },
-        clean ? { slice: 1, slicePass: 1, stratum, regimes: [] }
+        clean ? { slice: 1, slicePass: 1, stratum }
               : { benchedBy: [fl[0].g], gapTxt: String(fl[0].short || fl[0].detail || ""),
-                  slice: 1, stratum, regimes: [] });
+                  slice: 1, stratum });
       if (room < before){
         roomBox.n--;
         /* A clean gate-passer from a random draw is the slice's whole thesis
@@ -5437,10 +5523,9 @@ async function scannerShadowScan(){
         try { await sparkFor(x.id); } catch(e){}
         await new Promise(r => setTimeout(r, 250));
         const cand = candidateFor({ id: x.id, qty: null });
-        /* Same verdict rule as the discovery slice: chart-dependent gates are
-           unknowable here and don't count toward the single-gate test. */
-        const fl = (cand.fails || []).filter(f => f.g !== "chart still loading" && f.g !== "no history");
-        const pass = !cand.failed, nearMiss = !pass && fl.length === 1;
+        /* Same single shared definition the funnel and the slice use. */
+        const fp = failProfile(cand);
+        const fl = fp.known, pass = fp.clean, nearMiss = !!fp.nearMiss;
         if (!pass && !nearMiss) continue;
         const c = calc(x.id);
         if (!c || c.buy == null || c.sell == null) continue;
@@ -5456,11 +5541,12 @@ async function scannerShadowScan(){
         }
         DB.shadowBook.push({ id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
           itemId: x.id, name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
-          t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live",
+          t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
+          regimes: regimesFor(c),
           buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
           benchedBy: nearMiss ? [fl[0].g] : undefined,
-          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "", regimes: [] });
+          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" });
         taken.add(x.id); opened++; changed = true;
       }
     }
@@ -5536,19 +5622,23 @@ function reconReplay(p, pts, from, to){
     covered += M5_MS;
     if (p.state !== "open") break;
     const bt = b.t;
+    /* Same causality rule as the live tick (Aug 12 2026): a bucket that
+       started before the trip did contains prints from before it existed. */
+    if (bt < p.t) continue;
     if (!p.buyDone){
       if (b.lo != null && b.lo <= p.bid && b.lv > 0){
         const tape = Math.max(1, Math.floor(b.lv * GATE.capture));
         p.buyQFull = Math.min(p.qty, (p.buyQFull != null ? p.buyQFull : p.buyQ) + tape);
         p.buyQ = Math.min(p.qty, p.buyQ + Math.max(1, Math.floor(tape * shadowPart())));
       }
-      if (p.buyQ >= p.qty) p.buyDone = bt;
+      if (p.buyQ >= p.qty){ p.buyDone = bt; p.buyDoneBkt = bt; }
       else if (bt - p.t > H){
-        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = bt; }
+        if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = bt; p.buyDoneBkt = bt; }
         else { p.state = "unfilled"; p.closedAt = bt; p.net = 0; break; }
       }
     }
-    if (p.buyDone && p.state === "open"){
+    /* The bucket that completed the buy cannot also fill the sell. */
+    if (p.buyDone && p.state === "open" && bt !== p.buyDoneBkt && bt >= p.buyDone){
       if (b.hi != null && b.hi >= p.ask && b.hv > 0){
         const tape = Math.max(1, Math.floor(b.hv * GATE.capture));
         p.sellQFull = Math.min(p.qty, (p.sellQFull != null ? p.sellQFull : p.sellQ) + tape);
@@ -5619,10 +5709,32 @@ async function shadowRecover(){
   save();
   return rec;
 }
+/* ═══ FILL-MODEL CAUSALITY (defect fix, Aug 12 2026) ═══════════════════════
+   The tick used to credit a leg from `S.min5[id]`, which is a TRAILING
+   five-minute aggregate: on a trip's first tick it booked five minutes of
+   tape that had printed before the trip existed, and it re-booked the same
+   bucket on every poll until the bucket rolled. With a small qty that fills
+   both legs instantly — 182 of one epoch's 272 trips opened and closed in
+   under a second, median 55ms, every one of them "filled both legs", booking
+   52% of the headline simulated net from tape that predated them.
+
+   Two rules, both of which the reconstruction path already half-had:
+     • a leg is credited only by a bucket that STARTED at or after the leg was
+       placed — the buy from its open, the sell from the moment the buy
+       completed. A bucket straddling the placement is not usable: it mixes
+       prints from both sides and they cannot be separated.
+     • a bucket is credited to a leg ONCE. `buyBkt` / `sellBkt` carry the last
+       bucket applied, so a 5m bucket seen by five 60s polls counts once.
+   And a trip cannot resolve in the poll cycle that opened it, which the
+   bucket rule already implies but which is asserted separately because it is
+   the property that matters: an instant round trip is a bug, not a fill. */
 function shadowTick(){
   const now = Date.now();
+  const bkt = S.min5At || 0;          // start of the 5m bucket S.min5 currently holds
   let changed = false;
   for (const p of shadowOpen()){
+    /* Minimum life: never resolve inside the opening cycle. */
+    const sameCycle = p.openSeq != null && p.openSeq === S.pollSeq;
     /* Each trip runs against the horizon it was OPENED under — never
        retro-applied (ruled Aug 11 2026). Legacy records without a stamp fall
        back to the old global, which is what they actually ran against. */
@@ -5631,10 +5743,14 @@ function shadowTick(){
     const dt = Math.min(Math.max(0, now - (p.lastObs || now)), SHADOW_OBS_CAP);
     p.obsMs += dt; p.lastObs = now;
     if (dt > 0){ p.obsLive = (p.obsLive || 0) + dt; if (p.reconMs) p.grade = "mixed"; else p.grade = "live"; }
-    if (!L){ continue; }
+    if (!L || sameCycle){ continue; }
     const m5 = S.min5[p.itemId] || {};
+    /* Causality: this bucket may credit the BUY only if it began at or after
+       the trip opened, and only once. */
+    const buyOK = bkt > 0 && bkt >= p.t && p.buyBkt !== bkt;
     if (!p.buyDone){
-      if (L.low != null && L.low <= p.bid){
+      if (buyOK && L.low != null && L.low <= p.bid){
+        p.buyBkt = bkt;
         /* Capture-capped tape credit is the 100%-participation reading; the
            participation haircut (ruled Aug 11 2026) is the conservative leg
            that drives state and net. Both accrue — the ledger reports both. */
@@ -5643,7 +5759,7 @@ function shadowTick(){
         p.buyQ = Math.min(p.qty, p.buyQ + Math.max(1, Math.floor(tape * shadowPart())));
         changed = true;
       }
-      if (p.buyQ >= p.qty){ p.buyDone = now; }
+      if (p.buyQ >= p.qty){ p.buyDone = now; p.buyDoneBkt = bkt; }
       else if (now - p.t > H){
         if (p.buyQ > 0){ p.qty = p.buyQ; p.buyDone = now; }   // partial: the bought units still need selling
         else if (now - (p.t + H) > SHADOW_OBS_CAP){
@@ -5659,7 +5775,11 @@ function shadowTick(){
       }
     }
     if (p.buyDone && p.state === "open"){
-      if (L.high != null && L.high >= p.ask){
+      /* The sell leg starts where the buy finished: a bucket that completed
+         the buy cannot also fill the sell, and no bucket before it can. */
+      const sellOK = bkt > 0 && bkt >= p.buyDone && bkt !== p.buyDoneBkt && p.sellBkt !== bkt;
+      if (sellOK && L.high != null && L.high >= p.ask){
+        p.sellBkt = bkt;
         const tape = Math.max(1, Math.floor((m5.highPriceVolume || 0) * GATE.capture));
         p.sellQFull = Math.min(p.qty, (p.sellQFull != null ? p.sellQFull : p.sellQ) + tape);
         p.sellQ = Math.min(p.qty, p.sellQ + Math.max(1, Math.floor(tape * shadowPart())));
@@ -6183,15 +6303,35 @@ function curveSVG(vals, lo, hi, w, h){
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" role="img" aria-label="regime equity curve">'
     + zero + '<polyline fill="none" stroke="#e8b64c" stroke-width="1.5" points="' + pts + '"/></svg>';
 }
+/* ═══ NEVER-FED DETECTOR (user ruling, Aug 12 2026) ═══════════════════════
+   A stat that renders 0 because nothing FEEDS it is indistinguishable, on
+   screen, from a stat that renders 0 because nothing QUALIFIED — and the two
+   mean opposite things. The regime race spent an entire epoch reporting three
+   zeros while not one of 272 trips had ever been assigned to a regime, and no
+   surface said so. Same class as the silent-unfunded-state defect: a
+   component reporting nothing where it should report that it HAS nothing.
+
+   The rule this encodes: an aggregate whose input population is EMPTY says
+   so, in its own words, instead of rendering a zero. */
+const regimeFedN = () => (DB.shadowBook || []).filter(p => (p.regimes || []).length).length;
+function neverFedNote(what, why){
+  return '<div class="neg" style="margin-bottom:6px">⚠ <b>' + esc(what) + ' has never been fed.</b> ' + esc(why)
+    + ' This is not a reading of zero — it is the absence of any reading, and the two mean opposite things.</div>';
+}
 function paperRegimeSection(){
   const log = (DB.shadowDivLog || []).slice(-31);
   const closed = paperClosed();
   const regs = REGIME_DEFS();
+  const fed = regimeFedN();
   const vals = regs.flatMap(r => log.map(x => Number(x[r.col]) || 0)).concat([0]);
   const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
   const bits = [];
   if (shadowEpochNote()) bits.push(shadowEpochNote());
   bits.push(paperCaveat());
+  if (!fed && (DB.shadowBook || []).length)
+    bits.push(neverFedNote("The regime race",
+      (DB.shadowBook || []).length + " paper trips exist and not one carries a regime, so the three curves below have "
+      + "no membership at all — they are not flat, they are empty."));
   bits.push('<div class="note">Three ROI-regime equity curves side by side, on ONE shared scale — the ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&amp;L). '
     + 'The headline is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger.</div>');
   bits.push('<div class="curves">' + regs.map(r => {
@@ -6219,6 +6359,10 @@ function paperRegimeSection(){
       tight: gp(Math.round(x.tight || 0)), _tight: Math.round(x.tight || 0),
       lead: best[0], _txt: x.d + " " + best[0] };
   });
+  if (log.length && log.every(x => !Number(x.cur) && !Number(x.loose) && !Number(x.tight)))
+    bits.push(neverFedNote("The divergence ledger",
+      log.length + " daily readings exist and every one is all-zero across all three regimes, which happens when no trip "
+      + "has ever been assigned to a regime rather than when the regimes genuinely tie."));
   bits.push('<div data-drillrow="1" style="margin-top:6px">Divergence ledger: '
     + drill("paper:divlog", log.length + ' daily reading' + (log.length === 1 ? '' : 's'), {
         head: "the daily regime ledger — one row per day the app was open, 31 retained",
@@ -6409,11 +6553,15 @@ function hoursLedger(){
      verdict about that hour, so thin trips are counted separately and
      reported, never folded into the rate. */
   const closed = (DB.shadowBook || []).filter(shadowCounts);
-  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, net: 0, trips: [], thin: 0, thinTrips: [] }));
+  const sh = Array.from({ length: 24 }, () => ({ n: 0, filled: 0, unfilled: 0, net: 0, trips: [], thin: 0, thinTrips: [] }));
   for (const p of closed){
     const h = new Date(p.t).getHours();
     sh[h].n++; sh[h].net += (p.net || 0); sh[h].trips.push(p);
     if (p.state === "filled" || p.state === "forced-exit") sh[h].filled++;
+    /* The never-filled counterexample count rides every fill rate (user
+       ruling, Aug 12 2026): a 100% reading must be visibly a claim about zero
+       counterexamples, not a default that nobody has tested. */
+    if (p.state === "unfilled") sh[h].unfilled++;
   }
   for (const p of (DB.shadowBook || []).filter(shadowThin)){
     const h = new Date(p.t).getHours();
@@ -6422,7 +6570,7 @@ function hoursLedger(){
   const rows = [];
   for (let h = 0; h < 24; h++)
     rows.push({ h, mkt: mktN[h] ? mkt[h] / mktN[h] : null, items: mktN[h], srcs: srcs[h],
-      n: sh[h].n, filled: sh[h].filled, net: sh[h].net, trips: sh[h].trips,
+      n: sh[h].n, filled: sh[h].filled, unfilled: sh[h].unfilled, net: sh[h].net, trips: sh[h].trips,
       thin: sh[h].thin, thinTrips: sh[h].thinTrips,
       fillRate: sh[h].n ? sh[h].filled / sh[h].n : null });
   return rows;
@@ -6440,7 +6588,7 @@ function hoursLedgerInline(){
   lines.push('<div class="plan-note">Two streams, different natures. <b>Market</b> (post-tax spread by hour, from the 7-day hourly series) covers every hour equally whether or not you were awake — this is the unbiased one. <b>Shadow</b> (simulated fill rate) only accrues while the tracker is open, so hours you never observe read "no data", never "bad hour". Advisory: this sizes nothing.</div>');
   lines.push('<div>Average post-tax spread across watched items: <b>' + avg.toFixed(2) + '%</b> · widest hours: '
     + top.map(r => '<b>' + hh(r.h) + '</b> ' + r.mkt.toFixed(2) + '%'
-        + (r.n ? ' <span class="dim">(shadow: ' + Math.round((r.fillRate || 0) * 100) + '% fill of ' + r.n + ' sim trips)</span>'
+        + (r.n ? ' <span class="dim">(shadow: ' + Math.round((r.fillRate || 0) * 100) + '% fill of ' + r.n + ' sim trips, ' + r.unfilled + ' never filled)</span>'
               : ' <span class="dim">(shadow: no data — never observed)</span>')).join(" · ") + '</div>');
   const bars = rows.map(r => {
     const v = r.mkt == null ? 0 : Math.max(0, r.mkt);
@@ -6462,7 +6610,7 @@ function hoursLedgerInline(){
       empty: "No watched item has an hourly reading for this hour.",
       note: 'The market stream is computed from the 168-point hourly series each watched item already fetches, so <b>every hour is equally represented whether or not the tracker was open</b>. It is the unbiased stream, and it makes no claim about whether those spreads are fillable.'
     });
-    const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n)
+    const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n + " (" + r.unfilled + " never filled)")
       : r.thin ? '<span class="dim">no counted trips</span>'
       : '<span class="dim">no data — never observed</span>';
     const shCell = r.n ? drill("hours:sh:" + r.h, shFace, {
@@ -6758,12 +6906,17 @@ function renderDeploy(plan){
     + (top.size ? '<div class="dim" style="font-size:12px;margin-top:2px">⚑ = the two biggest killers this refresh.</div>' : '');
 
   /* ── marginal-gate attribution: near-misses vs walls ── */
+  /* ONE definition, shared with the discovery slice and the scanner cohort
+     (defect fix, Aug 12 2026). This used to count chart-pending gates as
+     failures while the slice excluded them, so the two surfaces answered the
+     same question differently. Unknowable is not failing. */
   const gated = all.filter(x => x.failed && Array.isArray(x.fails) && x.fails.length);
-  const near = gated.filter(x => x.fails.length === 1);
-  const two = gated.filter(x => x.fails.length === 2);
-  const wall = gated.filter(x => x.fails.length >= 3);
+  const fpOf = new Map(gated.map(x => [x, failProfile(x)]));
+  const near = gated.filter(x => !!fpOf.get(x).nearMiss);
+  const two = gated.filter(x => fpOf.get(x).n === 2);
+  const wall = gated.filter(x => fpOf.get(x).n >= 3);
   const nmByGate = new Map();
-  for (const x of near){ const g = x.fails[0].g; if (!nmByGate.has(g)) nmByGate.set(g, []); nmByGate.get(g).push(x); }
+  for (const x of near){ const g = fpOf.get(x).nearMiss.g; if (!nmByGate.has(g)) nmByGate.set(g, []); nmByGate.get(g).push(x); }
   let verdict = "";
   if (near.length || wall.length)
     verdict = near.length > wall.length
@@ -6776,7 +6929,7 @@ function renderDeploy(plan){
     + ' (fail exactly one gate) · ' + two.length + ' fail two · ' + wall.length + ' fail three or more'
     + (verdict ? ' — ' + verdict : '') + '</div>';
   attrib += near.map(x => {
-    const f = x.fails[0];
+    const f = fpOf.get(x).nearMiss;
     const d7 = daysBenchedBy(x.id, f.g, 7);
     return '<div class="bench-row"><span>' + esc(x.name) + ' <span class="dim">· ' + esc(f.g) + '</span></span>'
       + '<span class="r">' + esc(f.short || f.detail)
@@ -6797,7 +6950,7 @@ function renderDeploy(plan){
       + " · a fresh margin test funds it now" });
   }
   for (const x of near){
-    const g = x.fails[0].g;
+    const g = fpOf.get(x).nearMiss.g;
     if (g === "chart still loading") pipe.push({ nm: x.name, txt: "chart still loading — the verdict improves on its own" });
     else if (g === "proven-loser bench") pipe.push({ nm: x.name, txt: "awaiting your re-test — a fresh one-unit margin test unbenches it" });
     else if (g === "drift bench") pipe.push({ nm: x.name, txt: "resolves on your next walk-up — the bench is about the visit gap, not the item" });
@@ -6820,7 +6973,7 @@ function renderDeploy(plan){
        near-miss pile. Without persistence the pile renders as a
        concur-recommended observation, not a proposal. */
     const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7) >= 4);
-    const shorts = arr.slice(0, 3).map(x => x.name + ": " + (x.fails[0].short || "miss"));
+    const shorts = arr.slice(0, 3).map(x => x.name + ": " + ((fpOf.get(x) && fpOf.get(x).nearMiss && fpOf.get(x).nearMiss.short) || "miss"));
     if (!persistItems.length){
       props.push({ concur: true, html: '<b>' + gateChip(g) + '</b> blocks ' + arr.length + ' items this refresh ('
         + esc(shorts.join("; ")) + ') — but none carry multi-day ledger persistence, and gate constants change on'
@@ -7472,7 +7625,7 @@ function shadowDot(id){
   const hollow = s.fillRate < SHADOW_FILLRATE_LO;
   return '<span class="dslot"><span class="sdot' + (hollow ? "" : s.net > 0 ? " pos" : " neg")
     + '" title="Paper screen: ' + s.n
-    + ' closed trips · fill rate ' + Math.round(s.fillRate * 100) + '% at ' + shadowPartPct() + '% participation'
+    + ' closed trips · fill rate ' + Math.round(s.fillRate * 100) + '% at ' + shadowPartPct() + '% participation (' + s.unfilled + ' never filled)'
     + (hollow ? " — the margin exists, the fills don’t" : (s.net > 0 ? " — paper-profitable" : " — paper-losing"))
     + ' · net ' + gp(Math.round(s.net)) + ' sim · book: ' + esc(s.regs.join(", "))
     + ' · median ' + s.obsMed + '% of horizon observed (unobserved windows are unknown, not unfilled)'
@@ -7548,8 +7701,8 @@ function watchDetailRow(w, c, sp, P, risks){
     bits.push('<div><b>Shadow</b> <span class="dim">(all simulated — a screen ranking probation candidates, not evidence; the sim assumes a book you\'re not in)</span>: '
       + sh.n + ' closed trip' + (sh.n === 1 ? '' : 's') + ' · would-not-have-filled ' + sh.unfilled
       + ' · filled ' + sh.bought + ' at ' + shadowPartPct() + '% participation (would also fill ' + sh.boughtFull + ' at 100%)'
-      + ' · net ' + gp(Math.round(sh.net)) + ' sim · fill rate ' + Math.round(sh.fillRate * 100)
-      + '% · book: ' + esc(sh.regs.join(", ")) + ' · median ' + sh.obsMed
+      + ' · net ' + gp(Math.round(sh.net)) + ' sim · fill rate ' + Math.round(sh.fillRate * 100) + '% (' + sh.unfilled + ' never filled)'
+      + ' · book: ' + esc(sh.regs.join(", ")) + ' · median ' + sh.obsMed
       + '% of horizon observed — unobserved windows are unknown, not unfilled</div>'
       + sh.last.map(p => '<div class="dim">— ' + new Date(p.closedAt || p.t).toLocaleDateString("en-CA") + ' ' + esc(p.state)
         + ' · bid ' + full(p.bid) + ' / ask ' + full(p.ask) + ' × ' + full(p.qty)
@@ -8500,8 +8653,20 @@ function gateHealthAudit(){
      within-hours recoveries argue the confirmation is too twitchy, persistent
      fades earn it trust; that verdict is the user's, never this card's. */
   const dNow = Date.now(), H24 = 24 * 3600e3;
-  const dieOff = { episodes: 0, rec24: 0, faded: 0, watching: 0, recHs: [], eps: [] };
+  const dieOff = { episodes: 0, rec24: 0, faded: 0, watching: 0, recHs: [], eps: [], voided: 0, voidHs: [] };
   for (const e of DB.dieOffLog || []){
+    /* Auto-voided episodes are NOISE, not evidence (ruled Aug 12 2026): they
+       recovered inside one touch gap, so they never affected a placement.
+       They stay on the record and are counted separately, and they are kept
+       out of every recovery statistic — including the denominator, since a
+       false positive is not an episode the tag got right OR wrong. */
+    if (e.void){
+      dieOff.voided++;
+      if (e.rec != null) dieOff.voidHs.push((e.rec - e.t) / 3600e3);
+      dieOff.eps.push(Object.assign({ bucket: "auto-voided as noise — recovered inside one touch gap",
+        hrs: e.rec != null ? (e.rec - e.t) / 3600e3 : null }, e));
+      continue;
+    }
     dieOff.episodes++;
     dieOff.eps.push(Object.assign({
       bucket: (e.rec != null && e.rec - e.t <= H24) ? "recovered within 24h"
@@ -8669,8 +8834,19 @@ function gateStreamsSection(){
 }
 function gateDieOffSection(){
   const d0 = gateHealthAudit().dieOff;
+  const voidLine = d0 && d0.voided
+    ? '<div class="plan-note" style="margin-top:6px">⊘ <b>' + d0.voided + ' episode'
+      + (d0.voided === 1 ? '' : 's') + ' auto-voided as noise</b> (your Aug 12 2026 ruling): each recovered inside one '
+      + 'touch gap, so it never affected a placement — nothing is placed or repriced between touches. '
+      + (d0.voidHs.length ? 'Median time to recovery ' + fmtHrs(medianOf(d0.voidHs)) + '. ' : '')
+      + 'They are excluded from the recovery counts above and from the denominator: a false positive is not an episode '
+      + 'the tag got right OR wrong, and counting it as a recovery would let the scorecard flatter itself. '
+      + 'Confirmation depth is currently <b>' + DIEOFF_CONFIRM_REFRESHES + ' consecutive below-floor 5m samples</b> '
+      + '(~' + (DIEOFF_CONFIRM_REFRESHES * 5) + ' minutes); <b>' + DIEOFF_CONFIRM_PROPOSED + ' (~'
+      + (DIEOFF_CONFIRM_PROPOSED * 5) + ' minutes) is PROPOSED and not applied</b> — a strategy parameter, yours to rule.</div>'
+    : '';
   if (!d0 || !d0.episodes)
-    return '<div class="dim">No die-off episodes in the last 30 days — the volume floor has not benched anything on a 5m-confirmed die-off against a passing 1h book.</div>';
+    return '<div class="dim">No die-off episodes in the last 30 days — the volume floor has not benched anything on a 5m-confirmed die-off against a passing 1h book.</div>' + voidLine;
   const med = medianOf(d0.recHs);
   const rowsOf = bucket => (d0.eps || []).filter(e => bucket == null || e.bucket === bucket)
     .slice().reverse().map(e => ({
@@ -8698,7 +8874,8 @@ function gateDieOffSection(){
     + dd("watching", String(d0.watching), "inside the 24h window now",
         "episodes still inside their 24h watch window", 'Undecided by construction — they have not had their window yet.')
     + ' inside the window now'
-    + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. The tag builds its own track record — nothing changes from here.</div></div>';
+    + '<div class="dim">Your standing rule (Aug 10 2026): routine within-hours recoveries indict the 2-refresh confirmation as too twitchy — a revisit case; persistent fades earn the gate its trust. Ruled Aug 12 2026: sub-touch-gap recoveries are voided as noise rather than counted, and the confirmation depth is now its own constant so it can be raised without touching the volume gate.</div>'
+    + voidLine + '</div>';
 }
 function gateExcSection(){
   const exc = DB.shadowExceptions || [];
@@ -8763,7 +8940,7 @@ function gateExcSection(){
     secs.push('<div class="nexthead"><b>Ranked shortlist</b> — best conservative simulated net first, truncated at the free probation slots. The grant is your press, from the bench line or the rulings digest.</div>');
     for (const c of cands)
       secs.push('<div data-drillrow="1">' + esc(itemName(c.id)) + ' — would waive <b>' + esc(c.gate) + '</b> · '
-        + drill("exc:cand:" + c.id, c.s.n + ' closed trips, ' + Math.round(c.s.fillRate * 100) + '% fill, net ' + gp(Math.round(c.s.net)) + ' sim', {
+        + drill("exc:cand:" + c.id, c.s.n + ' closed trips, ' + Math.round(c.s.fillRate * 100) + '% fill (' + c.s.unfilled + ' never filled), net ' + gp(Math.round(c.s.net)) + ' sim', {
             head: itemName(c.id) + " — the paper trips behind this candidacy",
             cols: PAPER_TRIP_COLS, rows: paperTripRows((DB.shadowBook || []).filter(p => p.itemId === c.id && shadowResolved(p) && p.cohort !== "scanner")),
             empty: "No rows.",
@@ -8786,7 +8963,8 @@ function gateSummaryLine(){
   const voids = excVoidBasis().length;
   return '<div class="inline"><div>' + names.size + ' gate' + (names.size === 1 ? '' : 's') + ' with bench data · '
     + agree + ' with both streams agreeing · ' + disagree + ' <b>disagreeing</b> · '
-    + gh.dieOff.episodes + ' die-off episode' + (gh.dieOff.episodes === 1 ? '' : 's') + ' in 30d · '
+    + gh.dieOff.episodes + ' die-off episode' + (gh.dieOff.episodes === 1 ? '' : 's') + ' in 30d'
+    + (gh.dieOff.voided ? ' (+' + gh.dieOff.voided + ' auto-voided as noise)' : '') + ' · '
     + excActiveN() + ' of ' + EXC_MAX_ACTIVE + ' probation slots in use'
     + (voids ? ' · <b>' + voids + ' exception' + (voids === 1 ? '' : 's') + ' on void basis</b>' : '')
     + ' — <a href="#" data-goto="gates#gateStreamPanel">open gate health →</a></div>'
@@ -12470,6 +12648,26 @@ const GLOSSARY = [
         + "stamp, the reason, and the date you ruled.",
     do: "Check the decision log entry says why, not merely that. The asymmetry is deliberate: dismissing drops an "
         + "advisory record, while ratifying arms one, and arming stays a press in the tool." },
+  { id: "gov-neverfed", term: "Never been fed",
+    what: "A warning that an aggregate's input population is EMPTY — not that its numbers came out zero. The regime "
+        + "race and the divergence ledger both carry one when no paper trip has been assigned to a regime.",
+    from: "A count of the population behind the number, checked before the number renders.",
+    do: "Treat it as a broken pipe, not a market reading. A zero that means \"nothing qualified\" and a zero that means "
+        + "\"nothing was ever fed in\" look identical and mean opposite things, and this is the surface that tells you "
+        + "which one you are looking at.",
+    caveat: "It was added after the regime race spent an entire epoch reporting three zero curves while not one of 272 "
+          + "trips had ever been given a regime." },
+  { id: "gov-autovoid", term: "Auto-voided as noise",
+    what: "A die-off episode that recovered inside one touch gap. It never affected a placement — nothing is placed or "
+        + "repriced between touches — so it is a wobble in a thin book rather than a book dying.",
+    from: "The recovery watch, comparing the recovery stamp against the touch gap in force when the episode opened.",
+    do: "Nothing directly — it is context for the decision it sits under, which is whether the die-off tag's "
+        + "confirmation depth should be raised. Read the voided count against the real one: a tag voiding far more "
+        + "episodes than it keeps is firing too early, and that is the evidence for ruling on the proposed depth. "
+        + "Voided episodes leave both the recovery count and the denominator, because a false positive is not an "
+        + "episode the tag got right or wrong.",
+    caveat: "Sixty-four of sixty-four episodes once read \"recovered within 24h\" at a median of 5.4 minutes, ten of "
+          + "them Lumbridge teleport tabs. That was the tag scoring its own false positives as successes." },
   { id: "gov-analysis-export", term: "Export for analysis",
     what: "A curated JSON download of one pull surface — paper book, gate health or prospecting — or all three at once, "
         + "written for someone to READ. It carries evidence with its provenance (every closed trip, every gate item, "
@@ -13795,6 +13993,7 @@ function analysisPaper(){
     netSimGp: Math.round(s.net || 0), medianObservedPct: s.obsMed
   })).sort((a, b) => b.tripsCounted - a.tripsCounted);
   const log = (DB.shadowDivLog || []).slice(-31);
+  const fedN = regimeFedN();
   const curves = REGIME_DEFS().map(r => {
     const arr = (DB.shadowBook || []).filter(shadowCounts).filter(p => (p.regimes || []).includes(r.key));
     return { regime: r.key, label: r.lab,
@@ -13806,6 +14005,14 @@ function analysisPaper(){
   return { header: analysisHeader("paper-book", trunc),
     closedTrips: trips.map(analysisTrip),
     perGateRollup: gateRoll,
+    /* NEVER-FED (ruled Aug 12 2026): a reader must be able to tell "zero
+       because nothing qualified" from "zero because nothing was ever fed in".
+       The flag says which, in the file, beside the zeros. */
+    regimeRace: { tripsCarryingAnyRegime: fedN, tripsInBook: (DB.shadowBook || []).length,
+      neverFed: fedN === 0 && (DB.shadowBook || []).length > 0,
+      note: fedN === 0 && (DB.shadowBook || []).length > 0
+        ? "NEVER FED: no trip in the book carries a regime, so the curves below are empty rather than flat. Their zeros are the absence of a reading, not a reading of zero."
+        : "Regime membership is stamped at open from each candidate's own effective ROI against the three floors." },
     regimeCurves: curves,
     divergenceLedger: log.map(x => ({ date: x.d, currentNetSimGp: Math.round(Number(x.cur) || 0),
       looseNetSimGp: Math.round(Number(x.loose) || 0), tightNetSimGp: Math.round(Number(x.tight) || 0) })) };
@@ -13839,6 +14046,12 @@ function analysisGates(){
       items: (gh.fundedItems || []).map(f => ({ item: f.name, itemId: f.id, firstFundedOn: f.d0,
         flips: f.n, netGp: Math.round(f.net || 0) })) },
     dieOffTag: { episodes: gh.dieOff.episodes, recoveredWithin24h: gh.dieOff.rec24,
+      autoVoidedAsNoise: gh.dieOff.voided,
+      autoVoidMedianHours: r2(medianOf(gh.dieOff.voidHs)),
+      autoVoidNote: "Episodes that recovered inside one touch gap are voided as noise and excluded from every count above, "
+        + "including the denominator — a false positive is not an episode the tag got right or wrong.",
+      confirmationRefreshes: DIEOFF_CONFIRM_REFRESHES,
+      confirmationProposedRefreshes: DIEOFF_CONFIRM_PROPOSED,
       insideWindowNow: gh.dieOff.watching, notConfirmedRecovered: gh.dieOff.faded,
       medianRecoveryHours: r2(medianOf(gh.dieOff.recHs)),
       note: "\"not confirmed recovered\" includes windows nobody observed — recovery closes only on a confirmed healthy 5m sample, which needs the app running.",
@@ -13869,8 +14082,14 @@ function analysisProspecting(){
       distinctItemsSampled: s.samp || 0,
       sampleIdLedgerCapped: !!s.capped,
       singleGateNearMisses: s.nm || 0, cleanGatePassers: s.pass || 0,
+      multiGateFailures: s.wall || 0,
+      nearMissRatePct: s.samp ? r2(100 * (s.nm || 0) / s.samp) : null,
       cleanPassRatePct: s.samp ? r2(100 * (s.pass || 0) / s.samp) : null,
+      denominatorNote: (s.wall == null)
+        ? "PRE-FIX LEDGER: distinctItemsSampled was counted after the near-miss filter, so it excluded every multi-gate failure and nearMissRatePct is 100% by construction. Counts are real; the ratio is not. Recorded before the Aug 12 2026 fix."
+        : "distinctItemsSampled counts every item the gate chain ran on, near-miss or not.",
       paperTripsClosed: s.trips || 0, paperTripsFilled: s.filled || 0,
+      paperTripsNeverFilled: stratumTrips(k).filter(p => p.state === "unfilled").length,
       paperFillRatePct: s.trips ? r2(100 * (s.filled || 0) / s.trips) : null,
       netSimGp: Math.round(s.net || 0),
       firstSampledAt: iso(s.first), lastSampledAt: iso(s.lastAt),
@@ -13892,7 +14111,7 @@ function analysisProspecting(){
       marketMedianRoiPct: r.mkt != null ? r2(r.mkt) : null,
       marketItemsContributing: r.items,
       marketSources: (r.srcs || []).map(s => ({ item: s.name, itemId: s.id, roiPct: r2(s.roi) })),
-      paperTripsCounted: r.n, paperTripsFilled: r.filled,
+      paperTripsCounted: r.n, paperTripsFilled: r.filled, paperTripsNeverFilled: r.unfilled,
       paperFillRatePct: r.fillRate != null ? r2(r.fillRate * 100) : null,
       paperNetSimGp: Math.round(r.net || 0),
       paperTripsExcludedByObservationFloor: r.thin,
@@ -15242,7 +15461,8 @@ function validateImport(d){
             const id = num(e && e.id), t = num(e && e.t);
             if (!(id > 0) || !(t > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || ""))) return null;
             const rec = num(e.rec);
-            return { d: String(e.d), id, t, rec: rec > 0 ? rec : null };
+            return { d: String(e.d), id, t, rec: rec > 0 ? rec : null,
+              ...(e.void ? { void: 1, voidH: num(e.voidH) > 0 ? num(e.voidH) : null } : {}) };
           }).filter(Boolean).slice(-500),
           deployLog: (Array.isArray(d.deployLog) ? d.deployLog : []).map(e => {
             const h = num(e && e.h);
