@@ -6650,6 +6650,14 @@ function calibReplayOne(e, pts){
   }
   out.bucketsInWindow = out.trace.length;
   out.bucketsReaching = out.trace.filter(x => x.credited > 0).length;
+  /* SELF-COMPARISON (user ruling, Aug 12 2026). In CALIBRATION the comparison
+     price is the trader's own REALIZED FILL, so a 5m bucket whose average low
+     lands exactly on it very likely CONTAINS that trade — their fill is one of
+     the prints averaged into the bucket. Equality is therefore EXPECTED here,
+     not ambiguous, and the proven bound's refusal to credit it depresses that
+     bound by construction. Counting the at-price buckets makes the size of
+     that artifact visible instead of asserted. */
+  out.atPriceBuckets = out.trace.filter(x => x.code === "at-price").length;
   return out;
 }
 /* Duration split (user ruling, Aug 12 2026): reported on EVERY run, because a
@@ -6721,7 +6729,21 @@ function calibSection(){
     + (S.calibBusy ? '… running' : '▸ run calibration') + '</button>'
     + (DB.calib ? ' <button class="sm" data-analysis="calibration" title="Writes analysis-calibration-&lt;date&gt;.json — the measurement and its per-bucket evidence, with your trading record left behind. Prices appear only as percentages against your own fill, there are no gp amounts and no wall-clock times, so reachability is fully legible without publishing what you paid.">⭳ export calibration</button>' : '')
     + '</span></div>';
-  const note = '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
+  /* The self-comparison caveat belongs at the point the lower bound is read,
+     not in a footnote — a reviewer seeing a depressed proven bound has to
+     know whether it is the market or the measurement. */
+  const atP = c ? (c.rows || []).reduce((a, r) => a + (r.atPriceBuckets || 0), 0) : 0;
+  const selfNote = '<div class="plan-note">⚠ <b>The proven bound is depressed here by SELF-COMPARISON, and that is an '
+    + 'artifact of the measurement rather than evidence of an unreachable market.</b> Calibration compares each bucket '
+    + 'against your OWN realized fill price, so a bucket whose average low lands exactly on it very likely CONTAINS '
+    + 'the trade being measured — your fill is one of the prints averaged into that bucket. Equality is therefore '
+    + 'EXPECTED, not ambiguous, and refusing to credit it holds the lower bound down by construction. '
+    + (atP ? 'This run: <b>' + atP + ' at-price bucket' + (atP === 1 ? '' : 's') + '</b> across the replayed flips, each '
+        + 'one credited on the possible bound and refused on the proven one. ' : '')
+    + '<b>This does NOT apply to the paper book</b>, where the comparison price is a SIMULATED bid that never traded — '
+    + 'no trade of yours can be inside those buckets, so equality there is genuinely ambiguous and the bracket means '
+    + 'what it says. Two different constructs; do not read one bound against the other.</div>';
+  const note = selfNote + '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
     + 'So every disagreement below is a MODEL error with a known direction, and the one that matters is <b>false '
     + 'never-filled</b>: if the model routinely says the bid never got the tape for flips you actually completed, then '
     + 'it is pessimistic and no conclusion drawn from paper fill rates survives. The two columns are the reachability '
@@ -14804,6 +14826,16 @@ function analysisCalibration(){
         + "neither 'strictly below' nor exact equality fires and a correctly-placed window can still credit nothing. "
         + "The per-bucket trace is how to tell that apart from a mislocated window: a window error shows the tape far "
         + "from the fill price throughout, while this bias shows it hovering just above it.",
+      "THE PROVEN BOUND IS DEPRESSED BY SELF-COMPARISON, and that is an artifact of the measurement, not evidence of "
+        + "an unreachable market. This replay compares each 5m bucket's average low against the trader's OWN realized "
+        + "fill price, so a bucket landing exactly on that price very likely CONTAINS the trade being measured — their "
+        + "fill is one of the prints averaged into it. Equality is EXPECTED here rather than ambiguous, and the proven "
+        + "bound refuses to credit it, holding that bound down by construction. This run: "
+        + (c.rows || []).reduce((a, r) => a + (r.atPriceBuckets || 0), 0) + " at-price buckets across the replayed "
+        + "flips. A low proven bound should be read against that count before it is read as a market finding. THE "
+        + "PAPER BOOK IS A DIFFERENT CONSTRUCT: there the comparison price is a SIMULATED bid that never traded, no "
+        + "trade of the trader's can be inside those buckets, and equality is genuinely ambiguous. Do not carry a "
+        + "conclusion from one to the other.",
       "PRICES ARE RELATIVE BY DESIGN. Every price appears only as a percentage against the trader's fill price. The "
         + "absolute figures, the gp deltas that would let them be recovered, all realized profit, and every "
         + "gp-denominated capital constant are excluded. Quantities and market volumes are carried; money is not.",
@@ -14820,8 +14852,9 @@ function analysisCalibration(){
       flipsLogged: c.total,
       tapeRetentionHours: c.retentionH,
       skippedByReason: { outsideTapeWindow: c.skipped.tooOld, missingLegTiming: c.skipped.noWindow, noTapeReturned: c.skipped.noTape },
-      provenReachBound: bound(c.strict),
+      provenReachBound: Object.assign({ depressedBySelfComparison: true }, bound(c.strict)),
       possibleReachBound: bound(c.lenient),
+      atPriceBucketsTotal: (c.rows || []).reduce((a, r) => a + (r.atPriceBuckets || 0), 0),
       byDuration: { provenReachBound: dur(c.strict && c.strict.byDuration),
                     possibleReachBound: dur(c.lenient && c.lenient.byDuration) }
     },
@@ -14839,6 +14872,8 @@ function analysisCalibration(){
         verdictProvenReach: r.strict.verdict, buyCreditedProvenPct: r.strict.buyPct,
         verdictPossibleReach: r.lenient.verdict, buyCreditedPossiblePct: r.lenient.buyPct,
         bucketsReachingThePrice: r.bucketsReaching, bucketsInWindow: r.bucketsInWindow,
+        atPriceBuckets: r.atPriceBuckets || 0,
+        atPriceNote: "Buckets whose average low sat exactly on the realized fill — expected under self-comparison, credited on the possible bound and refused on the proven one.",
         traceTrimmed: tr.trimmed, trace: tr.buckets };
     })
   };

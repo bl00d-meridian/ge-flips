@@ -5418,6 +5418,41 @@
                 return !!big && big.trace.length === 40 && /first 20 and last 20 kept, 30 omitted/.test(big.traceTrimmed)
                     && X.header.truncation.some(t => /^trace:/.test(t.section) && t.total === 70); })(),
        JSON.stringify((X.replayedFlips.find(f => f.traceTrimmed) || {}).traceTrimmed));
+    // ---- R47.5 self-comparison: the artifact is named AND measured ----
+    /* A bucket whose average low lands exactly on the realized fill very
+       likely contains that trade. Equality is expected in CALIBRATION and
+       genuinely ambiguous in the PAPER BOOK, and the two must not be read
+       against each other. */
+    /* Built THROUGH calibReplayOne against tape sitting exactly on the fill
+       price, so atPriceBuckets is computed by production rather than supplied
+       by the fixture — a hand-set count would pass with the counter removed,
+       which is the reimplementation trap and it caught me here on the first
+       attempt. */
+    const nowAt47 = Math.floor(Date.now() / 300e3) * 300e3;
+    const atFlip = { id: nowAt47, itemId: 9001, name: "Probe alpha", qty: 999999,
+      buy: MAGIC.bid, sell: MAGIC.ask, bh: 2, sh: 1 };
+    const atW = calibWindow(atFlip, nowAt47 + 60e3);
+    const atPts = [];
+    for (let i = 0; i < 3; i++) atPts.push({ t: atW.buyAt + i * 300e3, lo: MAGIC.bid, hi: 1, lv: 500, hv: 500 });
+    const atRow = calibReplayOne(atW, atPts);
+    DB.calib = Object.assign({ at: Date.now(), rows: [atRow], total: 1, retentionH: CALIB_5M_RETENTION_H,
+      skipped: { tooOld: 0, noWindow: 0, noTape: 0 } }, calibSummarise([atRow]));
+    const Z = analysisCalibration(), zBlob = JSON.stringify(Z), zPanel = calibSection();
+    ok("[R47.5] the export names the self-comparison artifact and MEASURES it, rather than asserting it",
+       Z.honesty.some(l => /DEPRESSED BY SELF-COMPARISON/.test(l) && /artifact of the measurement/.test(l))
+       && Z.calibration.atPriceBucketsTotal === 3
+       && Z.calibration.provenReachBound.depressedBySelfComparison === true
+       && Z.replayedFlips[0].atPriceBuckets === 3,
+       JSON.stringify({ total: Z.calibration.atPriceBucketsTotal }));
+    ok("[R47.5] and it keeps the two constructs distinct — the paper book's bid never traded, so equality there is real ambiguity",
+       /PAPER BOOK IS A DIFFERENT CONSTRUCT/.test(zBlob) && /SIMULATED bid that never traded/.test(zBlob)
+       && /Do not carry a conclusion from one to the other/.test(zBlob),
+       "construct separation in the export");
+    ok("[R47.5] the panel carries the same caveat where the lower bound is READ, not in a footnote",
+       /depressed here by SELF-COMPARISON/.test(zPanel) && /3 at-price buckets/.test(zPanel)
+       && /does NOT apply to the paper book/.test(zPanel)
+       && /Two different constructs/.test(zPanel),
+       zPanel.slice(0, 200));
     DB.calib = keepCal; DB.bank = keepBank47;
   } catch(e){
     out.push("FAIL calibration export :: " + (e && e.stack || e));
