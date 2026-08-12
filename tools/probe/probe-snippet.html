@@ -5430,32 +5430,37 @@
                 const c = paperCapacity(null);
                 /* 2 families, 4h horizon + 5h cooldown = 9h cycle → 2.67/family/day
                    → 5.3/day by families; the 40-trip cap would allow 240/day. */
-                return c.fams === 2 && c.cycleH === 9 && c.perFamPerDay === 2.67
-                    && c.byFamilies === 5.3 && c.byCap === 240 && c.ceiling === 5.3
-                    && c.binding === "family count"; })(),
+                /* 2 watchlist families, 4h horizon + 5h cooldown = 9h cycle →
+                   2.67/family/day → 5.3/day for that cohort. The rotating
+                   cohorts are draw-limited and reported apart. */
+                return c.watchFams === 2 && c.cycleH === 9 && c.perFamPerDay === 2.67
+                    && c.watchCeil === 5.3 && c.byCap === 240
+                    && c.sliceCeil === SLICE_SHADOW_CAP * (24 * 3600e3 / POLL_MS)
+                    && c.scanCeil === SHADOW_SCAN_TOP * 2 * (24 * 3600e3 / SCOUT_EVERY); })(),
        JSON.stringify(paperCapacity(null)));
     ok("[R57.2] and the concurrency cap binds instead when families are plentiful",
        (() => { DB.touchWindows = []; DB.fillHorizonH = 4;
                 DB.shadowBook = Array.from({ length: 300 }, (_, i) => ({ id: 800 + i, fam: "f" + i, state: "filled",
                   closedAt: 1, t: 1, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] }));
                 const c = paperCapacity(null);
-                return c.fams === 300 && c.binding === "the " + SHADOW_MAX_OPEN + "-trip concurrency cap"
-                    && c.ceiling === c.byCap; })(),
+                return c.watchFams === 300 && /concurrency cap/.test(c.binding)
+                    && c.ceiling === c.byCap && c.wanted > c.byCap; })(),
        JSON.stringify(paperCapacity(null)));
     ok("[R57.2] the ceiling RENDERS on the paper surface — a cap nobody can see is a cap nobody accounts for",
        /Generator ceiling:/.test(paperHeadlineSection())
-       && /Binding constraint:/.test(paperHeadlineSection())
-       && /worth knowing before waiting weeks for evidence/.test(paperHeadlineSection()),
+       && /Overall binding constraint:/.test(paperHeadlineSection())
+       && /reported per cohort/.test(paperHeadlineSection())
+       && /Read the watchlist figure alone for any verdict about YOUR items/.test(paperHeadlineSection()),
        paperHeadlineSection().slice(0, 240));
-    ok("[R57.3] the interim constant is decision-logged with its reasoning and names its own reversion",
+    ok("[R57.3] the ruled constant is decision-logged with the reasoning it was approved on",
        (() => { const kL = DB.decisionLog; DB.decisionLog = []; S.famCoolLogged = 0;
                 paperCooldownLog();
                 const e = (DB.decisionLog || []).find(x => x.subject === PAPER_FAM_COOLDOWN_KEY);
                 const okE = !!e && e.auto === 1 && /two unrelated jobs/.test(e.reason)
-                         && /inverted/.test(e.reason) && /PROPOSED, not ruled/.test(e.reason)
-                         && /REVERTS or changes on your ruling/.test(e.reason);
+                         && /inverted/.test(e.reason) && /RULED as proposed/.test(e.reason)
+                         && /Changes only on a further ruling/.test(e.reason);
                 DB.decisionLog = kL; return okE; })(),
-       "interim must log its reasoning and reversion");
+       "the ruling must log the reasoning it was approved on");
     DB.fillHorizonH = keepFillH; DB.touchWindows = keepTW; DB.shadowBook = keepBook57;
     /* THE BUILD STAMP. Three states, all distinct — "could not check" must
        never render as "up to date". */
@@ -5495,6 +5500,13 @@
          !!t55 && t55.predBasis != null && t55.predReadings === 6 && t55.predReached === 3
          && t55.predShare != null && t55.predFlow != null && t55.predCapture === GATE.capture,
          JSON.stringify(t55 && { b: t55.predBasis, n: t55.predReadings, r: t55.predReached, s: t55.predShare }));
+      /* THE MODEL VERSION. Epoch 1 could not be partitioned because nothing
+         recorded which build wrote each trip. A model change must partition
+         the book by a field rather than force another epoch. */
+      ok("[R58.1] every trip records the FILL-MODEL VERSION that produced it, so a model change partitions rather than invalidates",
+         t55.fillModelV === FILL_MODEL_V && FILL_MODEL_V >= 1
+         && analysisTrip(t55).fillModelVersion === FILL_MODEL_V,
+         JSON.stringify({ v: t55.fillModelV, exported: analysisTrip(t55).fillModelVersion }));
       ok("[R55.1] including the PRE-Aug-12 total-flow prediction, so before/after is one population not two epochs",
          !!t55 && t55.predOldH != null && t55.predH !== undefined
          && (t55.predOldH === "never" || t55.predOldH > 0),

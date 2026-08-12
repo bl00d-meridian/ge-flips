@@ -5817,7 +5817,32 @@ function provNote(downstream){
    division, and it makes before/after measurable on ONE population instead of
    across two epochs, which is the only way to compare them without the cohort
    mix moving underneath the comparison. */
+/* ═══ THE FILL-MODEL VERSION, STAMPED ON EVERY TRIP ══════════════════════
+   Answers the sequencing question the reset turned on, and dissolves it.
+
+   A corrected SELL model would change outcomes on trips already closed under
+   the old one — `sellQ` decides filled-vs-forced-exit and therefore `net` —
+   and those trips CANNOT be re-graded: the tick discards each bucket's
+   evidence once credited (`p.pend = null`), and `touchSell`, the live
+   observation the operative reading needs, is unrecoverable from any replay.
+   So a sell fix invalidates prior sell-side verdicts rather than leaving them
+   readable.
+
+   The naive consequence is that a sell fix forces epoch 3. It does not — that
+   is the same reasoning error that made epoch 1 unrecoverable. Epoch 1 could
+   not be partitioned only because nothing recorded WHICH BUILD wrote each
+   trip; the moment `openSeq` existed, a corrupt population became identifiable
+   by a field. Generalised here: stamp the MODEL VERSION on every trip, and a
+   model change partitions the book instead of invalidating it. Trips carrying
+   `fillModelV: 1` are readable as sell-side evidence for model 1; after a sell
+   fix, model 2 trips accrue alongside them and the two are never pooled.
+
+   Bump this on any change to what a bucket credits. It is not a build id —
+   two builds with identical crediting share a model version, because the
+   version is a claim about the MEASUREMENT, not about the code. */
+const FILL_MODEL_V = 1;
 function stampPrediction(rec, qty, c){
+  rec.fillModelV = FILL_MODEL_V;
   const r = reachFlow(c.id, c.buy);
   const pred = estFillH(qty, c);
   rec.predH = pred == null ? null : (Number.isFinite(pred) ? Math.round(pred * 1000) / 1000 : "never");
@@ -5894,22 +5919,23 @@ function stampPrediction(rec, qty, c){
    samples of the same family through the same hourly readings; longer (9.5h)
    would reproduce the inversion this ruling removes.
 
-   INTERIM, and decision-logged as one: the mechanism change is ruled, the
-   NUMBER is proposed. It reverts or changes on the user's word, and the
-   capacity arithmetic below is what a ruling should be made against. */
+   RULED Aug 12 2026, as proposed — approved with this reasoning: re-sampling
+   rides the decision cadence rather than a horizon that shifts underneath it,
+   and five fresh hourly readings is what independence means for these inputs.
+   Changes only on a further ruling. */
 const PAPER_FAM_COOLDOWN_H = 5;
-const PAPER_FAM_COOLDOWN_KEY = "paper family cooldown → 5h, severed from the horizon (2026-08-12)";
+const PAPER_FAM_COOLDOWN_KEY = "paper family cooldown → 5h, severed from the horizon (2026-08-12)";   /* RULED, not interim — approved as proposed */
 function paperCooldownLog(){
   if (S.famCoolLogged) return;
   S.famCoolLogged = 1;
   if ((DB.decisionLog || []).some(e => e.subject === PAPER_FAM_COOLDOWN_KEY)) return;
-  logDecision("settings", PAPER_FAM_COOLDOWN_KEY, "sever the family cooldown from the fill horizon (interim constant)",
+  logDecision("settings", PAPER_FAM_COOLDOWN_KEY, "sever the family cooldown from the fill horizon (ruled)",
     "One constant served two unrelated jobs: concurrency (one open trip per family — a property of being OPEN, needing "
     + "no duration) and sample independence (a SAMPLING concern, with no exposure argument behind it since the paper "
     + "book holds no capital). Fused at 2 × FILLH() the lockout ran ~19h at the evening touch and ~9h in the morning — "
     + "longest exactly where observation time is greatest, which is inverted. Now: an OPEN trip blocks its family; a "
-    + "CLOSED one releases it after a fixed " + PAPER_FAM_COOLDOWN_H + "h. The 5h is PROPOSED, not ruled — modal touch "
-    + "gap, five fresh hourly readings, horizon-independent. REVERTS or changes on your ruling; the capacity arithmetic "
+    + "CLOSED one releases it after a fixed " + PAPER_FAM_COOLDOWN_H + "h. The 5h is RULED as proposed (Aug 12 2026) — modal touch "
+    + "gap, five fresh hourly readings, horizon-independent. Changes only on a further ruling; the capacity arithmetic "
     + "renders on the paper surface so the ruling has numbers to work from.", 1);
 }
 /* The family block. Open blocks; closed releases after the fixed cooldown. */
@@ -5928,34 +5954,65 @@ const paperFamBlocked = () => {
    first, which it does only when families are plentiful and horizons short.
    Both are computed and the BINDING one is named, because a ceiling whose
    cause is not stated cannot be raised deliberately. */
+/* The cohorts do NOT share a limiting mechanism, and a single pooled ceiling
+   answers neither of their questions — the never-pool rule, applied to the
+   capacity figure itself.
+
+     WATCHLIST — a FIXED pool re-sampled over and over. The cooldown binds:
+       each family yields 24 / (horizon + cooldown) trips a day, so the ceiling
+       is the family count times that. This is the cohort the cooldown ruling
+       was about.
+     SLICE + GAP BAND — a ROTATING pool. Every cycle draws fresh items from a
+       universe of thousands, so the same family rarely recurs and the cooldown
+       almost never binds. The DRAW SIZE binds instead.
+     SCANNER — also rotating, and throttled to the scout cadence rather than
+       the poll, so its own throttle binds.
+
+   All three then sit under the shared concurrency cap. Reporting one number
+   would hide that raising the watchlist ceiling and raising the slice ceiling
+   are entirely different actions. */
 function paperCapacity(P){
-  const hz = FILLH();
+  const hz = Math.max(0.25, FILLH());
   const cycleH = hz + PAPER_FAM_COOLDOWN_H;
-  const fams = P
+  const perFamPerDay = 24 / cycleH;
+  const watchFams = P
     ? new Set([].concat((P.picks || []).map(x => "regime:" + x.id),
         (P.all || []).filter(x => { const f = failProfile(x); return f.nearMiss && f.nearMiss.g !== "blacklist"; })
                      .map(x => "bench:" + failProfile(x).nearMiss.g + ":" + x.id))).size
-    : new Set((DB.shadowBook || []).map(p => p.fam)).size;
-  const perFamPerDay = 24 / cycleH;
-  const byFamilies = fams * perFamPerDay;
-  const byCap = SHADOW_MAX_OPEN * (24 / Math.max(0.25, hz));
-  const ceiling = Math.min(byFamilies, byCap);
-  return { fams, hz, cooldownH: PAPER_FAM_COOLDOWN_H, cycleH,
+    : new Set((DB.shadowBook || []).filter(p => !p.slice && p.cohort !== "scanner").map(p => p.fam)).size;
+  const r2c = v => Math.round(v * 10) / 10;
+  /* Rotating cohorts are limited by how many they DRAW, not by re-sampling.
+     The slice draws on the price cycle; the scanner on the scout cadence. */
+  const cyclesPerDay = 24 * 3600e3 / POLL_MS;
+  const scoutPerDay = 24 * 3600e3 / SCOUT_EVERY;
+  const sliceCeil = SLICE_SHADOW_CAP * cyclesPerDay;
+  const scanCeil = SHADOW_SCAN_TOP * 2 * scoutPerDay;
+  const watchCeil = watchFams * perFamPerDay;
+  const byCap = SHADOW_MAX_OPEN * (24 / hz);
+  const wanted = watchCeil + sliceCeil + scanCeil;
+  return { hz, cooldownH: PAPER_FAM_COOLDOWN_H, cycleH,
     perFamPerDay: Math.round(perFamPerDay * 100) / 100,
-    byFamilies: Math.round(byFamilies * 10) / 10,
-    byCap: Math.round(byCap * 10) / 10,
-    ceiling: Math.round(ceiling * 10) / 10,
-    binding: byFamilies <= byCap ? "family count" : "the " + SHADOW_MAX_OPEN + "-trip concurrency cap" };
+    watchFams, watchCeil: r2c(watchCeil), sliceCeil: r2c(sliceCeil), scanCeil: r2c(scanCeil),
+    byCap: r2c(byCap), wanted: r2c(wanted),
+    ceiling: r2c(Math.min(wanted, byCap)),
+    binding: wanted <= byCap
+      ? "per-cohort limits (cooldown on the watchlist, draw size on the rotating cohorts)"
+      : "the " + SHADOW_MAX_OPEN + "-trip concurrency cap, which all three cohorts share" };
 }
 function paperCapacityLine(P){
   const c = paperCapacity(P);
-  return '<div class="dim" style="white-space:normal">Generator ceiling: <b>~' + c.ceiling + ' trips/day</b> — '
-    + c.fams + ' famil' + (c.fams === 1 ? 'y' : 'ies') + ' × 24h ÷ (' + fmtHrs(c.hz) + ' horizon + '
-    + c.cooldownH + 'h cooldown) = ' + c.perFamPerDay + ' per family per day. Binding constraint: <b>' + esc(c.binding)
-    + '</b> (the ' + SHADOW_MAX_OPEN + '-trip cap would allow ~' + c.byCap + '/day). '
-    + 'Sample size is structurally capped at this rate, so a verdict needing N trips needs about '
-    + (c.ceiling > 0 ? Math.ceil(10 / c.ceiling) : '∞') + ' day' + (c.ceiling > 0 && Math.ceil(10 / c.ceiling) === 1 ? '' : 's')
-    + ' per 10 trips — worth knowing before waiting weeks for evidence.</div>';
+  const days = n => c.ceiling > 0 ? Math.max(1, Math.ceil(n / c.ceiling)) : "∞";
+  return '<div class="dim" style="white-space:normal">Generator ceiling: <b>~' + c.ceiling + ' trips/day</b>'
+    + ' — reported per cohort, because they are limited by different mechanisms and one number would answer neither.'
+    + ' <b>Watchlist</b> ' + c.watchCeil + '/day: ' + c.watchFams + ' famil' + (c.watchFams === 1 ? 'y' : 'ies')
+    + ' × ' + c.perFamPerDay + ' (24h ÷ [' + fmtHrs(c.hz) + ' horizon + ' + c.cooldownH + 'h cooldown]) — a FIXED pool, so'
+    + ' the cooldown binds. <b>Slice + gap band</b> ' + c.sliceCeil + '/day and <b>scanner</b> ' + c.scanCeil + '/day:'
+    + ' ROTATING pools drawing fresh items, so the draw size binds and the cooldown almost never does.'
+    + ' Overall binding constraint: <b>' + esc(c.binding) + '</b> (the ' + SHADOW_MAX_OPEN + '-trip cap allows ~'
+    + c.byCap + '/day; the cohorts together want ~' + c.wanted + ').'
+    + ' At this rate a 30-trip bar needs ~' + days(30) + ' day' + (days(30) === 1 ? '' : 's')
+    + '. <b>Read the watchlist figure alone for any verdict about YOUR items</b> — the rotating cohorts answer'
+    + ' different questions and their volume does not shorten the wait for a watchlist verdict.</div>';
 }
 function shadowScanState(P){
   const now = Date.now(), cool = PAPER_FAM_COOLDOWN_H * 3600e3;
@@ -15629,6 +15686,12 @@ function analysisTrip(p){
        resolved instantly. */
     resolvedInMs: p.closedAt ? p.closedAt - p.t : null,
     openPollSeq: p.openSeq != null ? p.openSeq : null,
+    /* Which FILL MODEL graded this trip. A sell-model change cannot re-grade
+       closed trips — the tick discards each bucket's evidence once credited
+       and the live touch observation is unrecoverable — so trips must be
+       partitioned by the model that produced them rather than pooled or
+       discarded. Null means the trip predates the stamp. */
+    fillModelVersion: p.fillModelV != null ? p.fillModelV : null,
     /* PREDICTED vs OBSERVED, per trip (user-directed, Aug 12 2026). Stamped at
        OPEN — these are open-time facts and none can be reconstructed once the
        5m series rolls. Trips opened before this shipped carry nulls and say so
