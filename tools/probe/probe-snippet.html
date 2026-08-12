@@ -4205,10 +4205,33 @@
     const sched40 = () => [mk40(hNow40 + 5), mk40(hNow40 + 10), mk40(hNow40 + 15), mk40(hNow40 + 20)].sort((a, b) => a - b);
     DB.touchWindows = sched40();
     DB.touchMins = [6, 6, 6, 10];
-    ok("[R40.1] the schedule is a setting and the horizon is the gap to the NEXT touch",
-       scheduleOn() && Math.abs(planHorizonH() - gapHoursAt(Date.now())) < 1e-9
+    /* Split in two (Aug 12 2026), because the single assertion this replaces
+       compared TWO SEPARATE CLOCK READS — planHorizonH() calls Date.now()
+       internally — against a 1e-9-hour tolerance, which is 3.6 microseconds.
+       It therefore failed whenever a millisecond boundary fell between the two
+       calls: an intermittent assertion, the case law's fifth entry. The fix is
+       not to pin the clock (S.latestAt staleness and the whole cadence depend
+       on it being real) but to inject the instant for the behaviour test and
+       give the wiring test a tolerance that reflects what it actually claims.
+       BEHAVIOUR, at one injected instant: the fixture puts its first window 5h
+       after a MINUTE-FLOORED now (hNow40 drops seconds), so the true gap is
+       5h minus the current second-of-minute minus however long the suite takes
+       to get here — bounded above by 5h and below by roughly 4.98h. The bound
+       is derived from how the fixture is built, not restated from the
+       implementation, and it still discriminates: the no-schedule fallback
+       (4h) and the second window (10h) both fall outside it. */
+    const t40 = Date.now();
+    ok("[R40.1] the schedule is a setting and the gap to the NEXT touch is what the schedule says",
+       scheduleOn() && gapHoursAt(t40) > 4.9 && gapHoursAt(t40) <= 5 + 1e-9,
+       JSON.stringify({ windows: touchWindows().map(x => Math.round(x * 100) / 100), gap: gapHoursAt(t40) }));
+    /* WIRING: planHorizonH is that same gap, read at the current instant. Two
+       clock reads moments apart, so the tolerance is 3.6 SECONDS — enough that
+       a slow pass cannot fail it, tight enough that reading the wrong quantity
+       still does. */
+    ok("[R40.1] planHorizonH is that gap taken now, and always inside a day",
+       Math.abs(planHorizonH() - gapHoursAt(Date.now())) < 1e-3
        && planHorizonH() > 0 && planHorizonH() <= 24,
-       JSON.stringify({ windows: touchWindows().map(x => Math.round(x * 100) / 100), gap: planHorizonH() }));
+       JSON.stringify({ ph: planHorizonH(), gap: gapHoursAt(Date.now()) }));
     const gaps40 = touchGaps();
     ok("[R40.1] the gaps are derived from the schedule and sum to a day",
        gaps40.length === 4 && Math.abs(gaps40.reduce((a, g) => a + g.h, 0) - 24) < 0.05,

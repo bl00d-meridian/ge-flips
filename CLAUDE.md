@@ -65,6 +65,25 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   caution costs nothing (absence, lifted by one dismissal), a late defense costs whatever
   the pump extracts before the next walk-up. Anything that could DEPLOY capital stays
   ratification-gated. New features inherit this distinction.
+- **The file is the press, and it presses in one direction only** (user ruling, Aug 12
+  2026 — the *file-as-press* precedent). A `disposition` block arriving inside
+  `intelligence.json` is the user's own press, because they carried the file and pressed
+  Import: the handshake pattern already makes the carry a deliberate act, and requiring
+  the same ruling twice would make the desk a place where decisions go to be re-entered.
+  **But it is their press only for actions that DROP an advisory, never for actions that
+  arm one.** Dismissal travels in the file; ratification requires a press in the tool.
+  The reasoning is the restraint/deployment line applied to indirect consent: a
+  dismissal removes a caution the user already read and judged, and its blast radius is
+  bounded by what it stops doing, whereas a ratification arms a record that then tags
+  items, can carry a sizing haircut, and can create calendar entries — so a mistake in
+  the file, a stale copy, or a record the user never actually ruled on would ADD
+  machinery rather than remove it. The asymmetry is enforced at import, not documented:
+  `action: "ratify"` is ignored, and a dismissal with no stated reason is ignored too,
+  because a dismissal without a why is not a record. Every applied disposition is
+  decision-logged with an `auto` stamp, the reason, and the date the user ruled.
+  **New consent channels inherit this shape**: whenever user intent reaches the tool by
+  any route other than a press on the surface itself, that route may drop advisories and
+  may not arm them.
 - **A manipulation defense never relaxes on the manipulator's chosen evidence** (user
   ruling, Aug 10 2026). Recent wins during a pump are the bait, so wins never graduate a
   flagged pump caution; the only lift path is the user dismissing the warning record —
@@ -294,6 +313,17 @@ reports the feature as covered. Four named instances, all shipped green:
   holds under every stratum ("no family is open twice"), while rotation is tested on its
   own with the cycle injected. Instrumentation that makes a failure name its own cause
   stays even once the flake is gone.
+- **The simultaneity assertion** (Aug 12 2026), a second instance of the same class,
+  found by accident while seeding an unrelated defect. `[R40.1]` compared
+  `planHorizonH()` against `gapHoursAt(Date.now())` with a tolerance of `1e-9` hours —
+  3.6 microseconds. `planHorizonH()` reads the clock internally, so the assertion was
+  comparing TWO SEPARATE CLOCK READS and passed only when both landed in the same
+  millisecond; any millisecond boundary between the calls failed it. It had been green
+  for a day. Split per the ruling: the BEHAVIOUR is tested at one injected instant
+  against a bound derived from how the fixture builds its schedule, and the WIRING
+  ("planHorizonH is that gap, taken now") keeps a tolerance of 3.6 *seconds* — which is
+  what "two reads moments apart" actually claims. A tolerance tight enough to assert
+  clock-simultaneity is testing the clock, not the behaviour.
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is
