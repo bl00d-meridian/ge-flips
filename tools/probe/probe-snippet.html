@@ -5371,13 +5371,14 @@
        /Paper book: /.test(shadowScanStateLine(null))
        && /A book that is not opening accrues nothing/.test(shadowScanStateLine(null)),
        shadowScanStateLine(null).slice(0, 200));
-    ok("[R56.3] and when the cooldown is what stopped it, the line says so and names the horizon it scales with",
+    ok("[R56.3] and when the cooldown is what stopped it, the line says so and names it as a SAMPLING rule",
        (() => { DB.shadowBook = [{ id: 2, fam: "f-a", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
                                    t: Date.now() - 3600e3, closedAt: Date.now() - 60e3, hzH: 4,
                                    state: "filled", obsMs: 4 * 3600e3, openSeq: 5, regimes: [] }];
                 const s = shadowScanState(null), line = shadowScanStateLine(null);
-                return s.blocked === 1 && /cooldown/.test(s.why)
-                    && /closing does not release one/.test(line); })(),
+                return s.blocked === 1 && s.coolH === PAPER_FAM_COOLDOWN_H
+                    && /an OPEN trip blocks its family/.test(line)
+                    && /no longer scaled to the horizon/.test(line); })(),
        JSON.stringify(shadowScanState(null)));
     /* WIRING, not just the function: an assertion that only calls
        shadowScanStateLine passes with the surface no longer rendering it,
@@ -5392,6 +5393,70 @@
                                    state: "filled", obsMs: 4 * 3600e3, openSeq: 5, regimes: [] }];
                 return /Nothing has opened for/.test(shadowScanStateLine(null)); })(),
        shadowScanStateLine(null).slice(0, 160));
+    /* ═══ §57 THE FAMILY BLOCK, SEVERED FROM THE HORIZON (ruled Aug 12 2026) ═══
+       Two jobs were fused into one constant, and the fusion gave the sampling
+       rule an exposure rule's scale — longest lockout at the touch with the
+       most observation time, which is inverted. */
+    const keepFillH = DB.fillHorizonH, keepTW = DB.touchWindows, keepBook57 = DB.shadowBook;
+    ok("[R57.1] the cooldown is a FIXED constant, not a multiple of the horizon — it does not move when the horizon does",
+       (() => { DB.touchWindows = [];              // explicitly no cadence → FILLH falls back
+                DB.fillHorizonH = 2;
+                const a = shadowScanState(null).coolH;
+                DB.fillHorizonH = 12;
+                const b = shadowScanState(null).coolH;
+                return a === PAPER_FAM_COOLDOWN_H && b === PAPER_FAM_COOLDOWN_H && a === b; })(),
+       "cooldown must not track FILLH");
+    ok("[R57.1] an OPEN trip blocks its family regardless of age — concurrency is a property of being open",
+       (() => { DB.shadowBook = [{ id: 71, fam: "f-open", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
+                                   t: Date.now() - 40 * 3600e3, hzH: 4, state: "open", obsMs: 1, openSeq: 1, regimes: [] }];
+                return paperFamBlocked().has("f-open"); })(),
+       "an open trip 40h old still blocks");
+    ok("[R57.1] a CLOSED trip releases its family after the fixed cooldown, and not before",
+       (() => { const mk = ago => [{ id: 72, fam: "f-cl", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
+                                     t: Date.now() - ago - 3600e3, closedAt: Date.now() - ago, hzH: 4,
+                                     state: "filled", obsMs: 4 * 3600e3, openSeq: 1, regimes: [] }];
+                DB.shadowBook = mk((PAPER_FAM_COOLDOWN_H - 1) * 3600e3);
+                const stillBlocked = paperFamBlocked().has("f-cl");
+                DB.shadowBook = mk((PAPER_FAM_COOLDOWN_H + 1) * 3600e3);
+                const released = !paperFamBlocked().has("f-cl");
+                return stillBlocked && released; })(),
+       "closed trip must block for exactly the cooldown");
+    /* THE CEILING. If sample size is structurally capped, that is worth
+       knowing before waiting weeks for evidence. */
+    ok("[R57.2] the capacity ceiling is computed from families, horizon and cooldown — and names its BINDING constraint",
+       (() => { DB.touchWindows = []; DB.fillHorizonH = 4;
+                DB.shadowBook = [{ id: 73, fam: "a", state: "filled", closedAt: 1, t: 1, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] },
+                                 { id: 74, fam: "b", state: "filled", closedAt: 1, t: 1, itemId: 9002, name: "y", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] }];
+                const c = paperCapacity(null);
+                /* 2 families, 4h horizon + 5h cooldown = 9h cycle → 2.67/family/day
+                   → 5.3/day by families; the 40-trip cap would allow 240/day. */
+                return c.fams === 2 && c.cycleH === 9 && c.perFamPerDay === 2.67
+                    && c.byFamilies === 5.3 && c.byCap === 240 && c.ceiling === 5.3
+                    && c.binding === "family count"; })(),
+       JSON.stringify(paperCapacity(null)));
+    ok("[R57.2] and the concurrency cap binds instead when families are plentiful",
+       (() => { DB.touchWindows = []; DB.fillHorizonH = 4;
+                DB.shadowBook = Array.from({ length: 300 }, (_, i) => ({ id: 800 + i, fam: "f" + i, state: "filled",
+                  closedAt: 1, t: 1, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] }));
+                const c = paperCapacity(null);
+                return c.fams === 300 && c.binding === "the " + SHADOW_MAX_OPEN + "-trip concurrency cap"
+                    && c.ceiling === c.byCap; })(),
+       JSON.stringify(paperCapacity(null)));
+    ok("[R57.2] the ceiling RENDERS on the paper surface — a cap nobody can see is a cap nobody accounts for",
+       /Generator ceiling:/.test(paperHeadlineSection())
+       && /Binding constraint:/.test(paperHeadlineSection())
+       && /worth knowing before waiting weeks for evidence/.test(paperHeadlineSection()),
+       paperHeadlineSection().slice(0, 240));
+    ok("[R57.3] the interim constant is decision-logged with its reasoning and names its own reversion",
+       (() => { const kL = DB.decisionLog; DB.decisionLog = []; S.famCoolLogged = 0;
+                paperCooldownLog();
+                const e = (DB.decisionLog || []).find(x => x.subject === PAPER_FAM_COOLDOWN_KEY);
+                const okE = !!e && e.auto === 1 && /two unrelated jobs/.test(e.reason)
+                         && /inverted/.test(e.reason) && /PROPOSED, not ruled/.test(e.reason)
+                         && /REVERTS or changes on your ruling/.test(e.reason);
+                DB.decisionLog = kL; return okE; })(),
+       "interim must log its reasoning and reversion");
+    DB.fillHorizonH = keepFillH; DB.touchWindows = keepTW; DB.shadowBook = keepBook57;
     /* THE BUILD STAMP. Three states, all distinct — "could not check" must
        never render as "up to date". */
     const keepBC = S.buildCheck;

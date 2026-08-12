@@ -5859,8 +5859,106 @@ function stampPrediction(rec, qty, c){
    horizon is longest exactly at the evening touch, which is when the book has
    the most observation time available. Whether it should scale that way is a
    strategy question and moves only on the user's word. */
+/* ═══ THE FAMILY BLOCK, SEVERED FROM THE HORIZON (user ruling, Aug 12 2026) ═
+   One constant was doing two unrelated jobs, and the fusion made the weaker
+   job set the stronger one's scale.
+
+     CONCURRENCY — do not run two trips in the same family at once. Real, and
+       it is a property of being OPEN. Nothing about a closed trip threatens
+       it, so it needs no duration at all: the open trip is the block.
+     SAMPLE INDEPENDENCE — do not re-sample the same family so fast that the
+       second trip is really the first trip's market conditions measured
+       twice. Also real, but it is a SAMPLING concern. The paper book holds no
+       capital and carries no correlation risk, so there is no exposure
+       argument for scaling it to the horizon.
+
+   Fusing them at `2 × FILLH()` gave the sampling rule an exposure rule's
+   scale, and inverted it: FILLH is the gap to the next touch, so the lockout
+   was ~19h at the evening touch — the touch with the MOST observation time
+   and the most to learn — and ~9h in the morning. Longest exactly where it
+   should have been shortest.
+
+   PROPOSED CONSTANT: 5 hours, fixed. The reasoning, so a ruling has something
+   to argue against:
+     • It is the MODAL touch gap (5.0 / 5.0 / 4.5 / 9.5), so a family becomes
+       re-samplable roughly once per touch — re-sampling then rides the same
+       cadence as the decision it informs, rather than a horizon that changes
+       under it.
+     • It is long enough for sample independence in the terms that actually
+       apply here: the inputs are the 5m tape and the hourly series, and five
+       hours is five fresh hourly readings — a re-sample is not the same
+       reading twice.
+     • It is horizon-INDEPENDENT, which is the whole point: the evening touch
+       no longer buys the longest lockout with its longest observation window.
+   Shorter (say 2h) would raise throughput but start correlating consecutive
+   samples of the same family through the same hourly readings; longer (9.5h)
+   would reproduce the inversion this ruling removes.
+
+   INTERIM, and decision-logged as one: the mechanism change is ruled, the
+   NUMBER is proposed. It reverts or changes on the user's word, and the
+   capacity arithmetic below is what a ruling should be made against. */
+const PAPER_FAM_COOLDOWN_H = 5;
+const PAPER_FAM_COOLDOWN_KEY = "paper family cooldown → 5h, severed from the horizon (2026-08-12)";
+function paperCooldownLog(){
+  if (S.famCoolLogged) return;
+  S.famCoolLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === PAPER_FAM_COOLDOWN_KEY)) return;
+  logDecision("settings", PAPER_FAM_COOLDOWN_KEY, "sever the family cooldown from the fill horizon (interim constant)",
+    "One constant served two unrelated jobs: concurrency (one open trip per family — a property of being OPEN, needing "
+    + "no duration) and sample independence (a SAMPLING concern, with no exposure argument behind it since the paper "
+    + "book holds no capital). Fused at 2 × FILLH() the lockout ran ~19h at the evening touch and ~9h in the morning — "
+    + "longest exactly where observation time is greatest, which is inverted. Now: an OPEN trip blocks its family; a "
+    + "CLOSED one releases it after a fixed " + PAPER_FAM_COOLDOWN_H + "h. The 5h is PROPOSED, not ruled — modal touch "
+    + "gap, five fresh hourly readings, horizon-independent. REVERTS or changes on your ruling; the capacity arithmetic "
+    + "renders on the paper surface so the ruling has numbers to work from.", 1);
+}
+/* The family block. Open blocks; closed releases after the fixed cooldown. */
+const paperFamBlocked = () => {
+  const now = Date.now(), cool = PAPER_FAM_COOLDOWN_H * 3600e3;
+  return new Set((DB.shadowBook || [])
+    .filter(p => p.state === "open" || now - (p.closedAt || 0) < cool)
+    .map(p => p.fam));
+};
+/* ═══ CAPACITY — the ceiling nobody had computed ══════════════════════════
+   If sample size is structurally capped, that is worth knowing BEFORE waiting
+   weeks for evidence. A family cycles: blocked while open (about one horizon),
+   then blocked for the cooldown, then re-samplable. So per family per day the
+   generator can produce 24 / (horizon + cooldown) trips, and the book's
+   ceiling is that times the family count — unless the concurrency cap binds
+   first, which it does only when families are plentiful and horizons short.
+   Both are computed and the BINDING one is named, because a ceiling whose
+   cause is not stated cannot be raised deliberately. */
+function paperCapacity(P){
+  const hz = FILLH();
+  const cycleH = hz + PAPER_FAM_COOLDOWN_H;
+  const fams = P
+    ? new Set([].concat((P.picks || []).map(x => "regime:" + x.id),
+        (P.all || []).filter(x => { const f = failProfile(x); return f.nearMiss && f.nearMiss.g !== "blacklist"; })
+                     .map(x => "bench:" + failProfile(x).nearMiss.g + ":" + x.id))).size
+    : new Set((DB.shadowBook || []).map(p => p.fam)).size;
+  const perFamPerDay = 24 / cycleH;
+  const byFamilies = fams * perFamPerDay;
+  const byCap = SHADOW_MAX_OPEN * (24 / Math.max(0.25, hz));
+  const ceiling = Math.min(byFamilies, byCap);
+  return { fams, hz, cooldownH: PAPER_FAM_COOLDOWN_H, cycleH,
+    perFamPerDay: Math.round(perFamPerDay * 100) / 100,
+    byFamilies: Math.round(byFamilies * 10) / 10,
+    byCap: Math.round(byCap * 10) / 10,
+    ceiling: Math.round(ceiling * 10) / 10,
+    binding: byFamilies <= byCap ? "family count" : "the " + SHADOW_MAX_OPEN + "-trip concurrency cap" };
+}
+function paperCapacityLine(P){
+  const c = paperCapacity(P);
+  return '<div class="dim" style="white-space:normal">Generator ceiling: <b>~' + c.ceiling + ' trips/day</b> — '
+    + c.fams + ' famil' + (c.fams === 1 ? 'y' : 'ies') + ' × 24h ÷ (' + fmtHrs(c.hz) + ' horizon + '
+    + c.cooldownH + 'h cooldown) = ' + c.perFamPerDay + ' per family per day. Binding constraint: <b>' + esc(c.binding)
+    + '</b> (the ' + SHADOW_MAX_OPEN + '-trip cap would allow ~' + c.byCap + '/day). '
+    + 'Sample size is structurally capped at this rate, so a verdict needing N trips needs about '
+    + (c.ceiling > 0 ? Math.ceil(10 / c.ceiling) : '∞') + ' day' + (c.ceiling > 0 && Math.ceil(10 / c.ceiling) === 1 ? '' : 's')
+    + ' per 10 trips — worth knowing before waiting weeks for evidence.</div>';
+}
 function shadowScanState(P){
-  const now = Date.now(), cool = 2 * FILLH() * 3600e3;
+  const now = Date.now(), cool = PAPER_FAM_COOLDOWN_H * 3600e3;
   const openN = shadowOpen().length;
   const room = Math.max(0, SHADOW_MAX_OPEN - openN);
   const blocked = new Set(DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < cool).map(p => p.fam));
@@ -5870,9 +5968,9 @@ function shadowScanState(P){
            blocked: blocked.size, lastOpen, candidates: cand,
            why: !S.latestAt ? "no live prices yet — the scan needs a price cycle before it can open anything"
               : !room ? "at the open cap (" + openN + " of " + SHADOW_MAX_OPEN + ") — nothing opens until a trip closes"
-              : blocked.size ? blocked.size + " famil" + (blocked.size === 1 ? "y is" : "ies are") + " inside the "
-                 + (Math.round(cool / 3600e3 * 10) / 10) + "h cooldown (2× the current " + fmtHrs(FILLH())
-                 + " horizon), and closing does not release one — a family is blocked while its last trip is open OR closed inside that window"
+              : blocked.size ? blocked.size + " famil" + (blocked.size === 1 ? "y is" : "ies are") + " blocked: an OPEN trip"
+                 + " blocks its family, and a closed one releases it after a fixed " + PAPER_FAM_COOLDOWN_H
+                 + "h (a sampling rule, no longer scaled to the horizon)"
               : cand === 0 ? "no eligible candidates this cycle — nothing passed, and nothing was a single-gate near-miss"
               : "opening normally" };
 }
@@ -5890,8 +5988,9 @@ function shadowScanStateLine(P){
 }
 function shadowScan(P){
   if (!S.latestAt) return;
-  const now = Date.now(), cool = 2 * FILLH() * 3600e3;
-  const recent = new Set(DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < cool).map(p => p.fam));
+  paperCooldownLog();
+  const now = Date.now();
+  const recent = paperFamBlocked();
   const openN = shadowOpen().length;
   let room = Math.max(0, SHADOW_MAX_OPEN - openN);
   const add = (fam, x, meta) => {
@@ -6004,7 +6103,10 @@ async function scannerShadowScan(){
   if (S.shadowScanBusy) return;
   S.lastShadowScan = now; S.shadowScanBusy = true;
   try {
-    const cool = 2 * FILLH() * 3600e3;
+    /* Same severance on the scanner cohort — it is the same sampling rule,
+       and leaving one path on the old constant would make the two cohorts
+       answer their questions at different sampling rates. */
+    const cool = PAPER_FAM_COOLDOWN_H * 3600e3;
     const watched = new Set(DB.watch.map(w => w.id));
     const taken = new Set(DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < cool).map(p => p.itemId));
     let fetches = 0, changed = false;
@@ -7485,7 +7587,7 @@ function paperHeadlineSection(){
   /* The generator's own state leads. An empty or thin book means nothing until
      you know whether the book is OPENING — a stalled generator and a quiet
      market look identical in every aggregate below. */
-  const gen = shadowScanStateLine(null);
+  const gen = shadowScanStateLine(null) + paperCapacityLine(null);
   if (!closed.length)
     return gen + '<div class="dim">No counted paper trips yet — nothing to report a rate on. (Rates need closed trips that '
          + 'cleared the observation floor; the raw book may hold rows this says nothing about.)</div>';

@@ -463,3 +463,72 @@ the data lives only in the user's browser and there is no other mechanism that c
 it. `paperEpoch2Reset()` is extracted so an assertion can call it — inline in `load()` it
 was unreachable, and a seeded defect on it changed nothing the suite could see, which
 reads exactly like a weak assertion and was in fact code no test could reach.
+
+---
+
+## 12. The family cooldown, severed — and the capacity ceiling
+
+**The ruling:** one constant was doing two unrelated jobs, and the fusion let the weaker
+one inherit the stronger one's scale.
+
+| Job | Real? | What it is a property of | What it needs |
+|---|---|---|---|
+| **Concurrency** — no two open trips in one family | Yes | being OPEN | nothing but the open trip; no duration at all |
+| **Sample independence** — do not re-sample a family so fast the second trip is the first trip's conditions measured twice | Yes | *sampling* | a fixed interval, chosen for how fast the inputs refresh |
+
+Fused at `2 × FILLH()`, the sampling rule got an exposure rule's scale. The paper book
+holds no capital and carries no correlation risk, so there was never an exposure argument
+for scaling it to the horizon at all — and scaling it there **inverted** the rule: ~19h
+lockout at the evening touch, which has the most observation time and the most to learn,
+against ~9h in the morning.
+
+Now: an open trip blocks its family; a closed one releases it after a fixed cooldown.
+Applied to the scanner cohort too, so the two cohorts are not sampling at different rates.
+
+### The constant, proposed at 5h
+
+Mechanism ruled, number proposed, decision-logged as an interim naming its own reversion.
+
+- **Modal touch gap.** The gaps are 5.0 / 5.0 / 4.5 / 9.5, so 5h makes a family
+  re-samplable about once per touch — re-sampling then rides the same cadence as the
+  decision it informs, instead of a horizon that changes underneath it.
+- **Five fresh hourly readings.** The inputs are the 5m tape and the hourly series; five
+  hours means a re-sample is not the same reading twice, which is what independence means
+  for *these* inputs rather than in the abstract.
+- **Horizon-independent**, which is the whole point of the severance.
+
+Shorter (2h) buys throughput but starts correlating consecutive samples of a family
+through the same hourly readings. Longer (9.5h) reproduces the inversion just removed.
+
+### The capacity arithmetic — computed, and it renders
+
+Nobody had computed this, and it is the number that should govern how long to wait for
+evidence. A family cycles: blocked while open (≈ one horizon), then the cooldown, then
+re-samplable.
+
+```
+per family per day = 24 ÷ (horizon + cooldown)
+ceiling            = min( families × per-family-per-day ,  40-trip cap × 24 ÷ horizon )
+```
+
+Worked at the current defaults — a 5h horizon and the proposed 5h cooldown, so a 10h
+cycle, **2.4 trips per family per day**:
+
+| Families in play | Ceiling (trips/day) | Days per 10 trips | Binding constraint |
+|---|---|---|---|
+| 5 | 12 | ~1 | family count |
+| 10 | 24 | <1 | family count |
+| 20 | 48 | <1 | family count |
+| 84+ | 192 | — | the 40-trip concurrency cap |
+
+**The family count binds, not the cap** — the cap would allow ~192/day at a 5h horizon,
+and it only takes over above ~84 families. So sample size is governed by how many
+distinct families the plan produces per cycle, which is picks plus single-gate
+near-misses. On the old fused constant at the evening touch the cycle was 9.5 + 19 =
+28.5h, i.e. **0.84 trips per family per day** — the severance roughly triples throughput
+at the evening touch and leaves the morning largely unchanged, which is the right shape:
+it buys the most where observation time is greatest.
+
+`paperCapacity()` computes this from live values and `paperCapacityLine()` renders it on
+the paper surface with the binding constraint named — a cap nobody can see is a cap
+nobody accounts for.
