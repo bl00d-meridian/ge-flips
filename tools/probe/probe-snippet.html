@@ -4338,6 +4338,237 @@
   } catch(e){
     out.push("FAIL cadence :: " + (e && e.stack || e));
   }
+
+  // ─── §41: MARKET VOLUME INDEX + `measured` TIER + FILE-CARRIED RULINGS ───
+  //          (user ruling, Aug 12 2026 — the Jul 24 volume artifact)
+  try {
+    /* Series ending on a chosen date, so the Jul-24 straddle test is exact
+       rather than relative to when the suite happens to run. The date is
+       INJECTED, never derived from the clock — the case law's fifth entry. */
+    const inDays = n => new Date(Date.now() + n * 86400e3).toLocaleDateString("en-CA");
+    const daysTo = (n, endISO, midFn, volFn) => Array.from({ length: n }, (_, i) => ({
+      d: new Date(Date.parse(endISO + "T00:00:00Z") - (n - 1 - i) * 86400e3).toISOString().slice(0, 10),
+      mid: midFn(i), vol: volFn(i) }));
+    /* 40 days ending well after the break: nothing straddles.
+       Volume steps ×`v` and price ×1.10 over the last fortnight. */
+    const post = (v, p) => daysTo(40, "2026-09-30",
+      i => i < 26 ? 1000 : 1000 * (p == null ? 1.10 : p), i => i < 26 ? 100 : 100 * v);
+
+    // ---- R41.1 the index itself ----
+    ok("[R41.1] volRatioOf is the ratio the term is built from (last 7 ÷ 2–3wk ago)",
+       Math.abs(volRatioOf(post(5)) - 5) < 1e-9 && volRatioOf(daysTo(15, "2026-09-30", () => 1, () => 1)) === null,
+       String(volRatioOf(post(5))));
+    const ixRows = [{ ratio: 5 }, { ratio: 6 }, { ratio: 5.4 }, { ratio: 30 }, { ratio: 5.2 }];
+    ok("[R41.1] the index is the MEDIAN, so one control in a story of its own cannot drag it",
+       volIndexFrom(ixRows).ratio === 5.4 && volIndexFrom(ixRows).n === 5,
+       JSON.stringify(volIndexFrom(ixRows)));
+    ok("[R41.1] under " + VOL_INDEX_MIN + " usable controls there is NO index — never a guess from two",
+       volIndexFrom([{ ratio: 5 }, { ratio: 6 }, { ratio: 5.4 }]) === null
+       && volIndexFrom([{ ratio: 5 }, { ratio: 0 }, { ratio: null }, { ratio: 6 }]) === null,
+       "min-controls floor holds");
+
+    // ---- R41.2 the whole point: relative, not raw ----
+    const keptPace = post(5), beatMkt = post(7);
+    const rawKept = slvSeriesStats(keptPace, null);
+    const relKept = slvSeriesStats(keptPace, 5);
+    const relBeat = slvSeriesStats(beatMkt, 5);
+    /* The defect, still reachable in raw mode — which is what makes the
+       assertion below able to fail if normalisation is ever removed. */
+    ok("[R41.2] RAW volume flags an item that merely kept pace with the market (the Jul 24 defect)",
+       rawKept.accum === true && rawKept.volMode === "raw" && Math.round(rawKept.rise14v) === 400,
+       JSON.stringify({ mode: rawKept.volMode, v: rawKept.rise14v, accum: rawKept.accum }));
+    ok("[R41.2] NORMALISED, that same item is not flagged — it moved WITH the market, not against it",
+       relKept.accum === false && relKept.volMode === "relative" && Math.abs(relKept.rise14vRel) < 1e-9,
+       JSON.stringify({ mode: relKept.volMode, rel: relKept.rise14vRel, accum: relKept.accum }));
+    ok("[R41.2] an item that beats the index by ≥25pp still flags — the detector is normalised, not disabled",
+       relBeat.accum === true && relBeat.volMode === "relative" && Math.abs(relBeat.rise14vRel - 40) < 1e-9,
+       JSON.stringify({ rel: relBeat.rise14vRel, accum: relBeat.accum }));
+    ok("[R41.2] the price leg is untouched — a volume-only mover never flags",
+       slvSeriesStats(post(7, 1.0), 5).accum === false,
+       JSON.stringify(slvSeriesStats(post(7, 1.0), 5)));
+
+    // ---- R41.3 cross-break suppression, and its self-expiry ----
+    const strad = daysTo(40, "2026-08-10", i => i < 26 ? 1000 : 1100, i => i < 26 ? 100 : 1000);
+    const stStrad = slvSeriesStats(strad, 5);
+    ok("[R41.3] windows straddling " + VOL_BREAK_D + " suppress the volume term outright",
+       volWindowsStraddle(strad) === true && stStrad.volMode === "suppressed" && stStrad.volLeg === null,
+       JSON.stringify({ mode: stStrad.volMode, leg: stStrad.volLeg }));
+    ok("[R41.3] suppressed means NOT FLAGGED — price alone never stands in for the missing half",
+       stStrad.accum === false && stStrad.rise14p >= 4 && stStrad.rise14v >= 25,
+       JSON.stringify({ p: stStrad.rise14p, rawV: stStrad.rise14v, accum: stStrad.accum }));
+    /* Self-expiry: the identical numeric shape, dated after the break. If the
+       suppression were a flag rather than a date test, this would still be
+       suppressed and the assertion fails. */
+    const later = daysTo(40, "2026-09-30", i => i < 26 ? 1000 : 1100, i => i < 26 ? 100 : 1000);
+    ok("[R41.3] the suppression is date-driven and expires on its own once the baseline clears the break",
+       volWindowsStraddle(later) === false && slvSeriesStats(later, 5).volMode === "relative",
+       JSON.stringify({ straddle: volWindowsStraddle(later), mode: slvSeriesStats(later, 5).volMode }));
+    ok("[R41.3] a series wholly BEFORE the break does not straddle either — one side is not a span",
+       volWindowsStraddle(daysTo(40, "2026-07-10", () => 1000, () => 100)) === false,
+       "pre-break series is not a straddle");
+
+    // ---- R41.4 the index states where it stands and decomposes ----
+    const keepIx = DB.volIndex, keepFlags = DB.anomalyFlags, keepSup = S.anomSuppressed, keepScan = S.anomScanned;
+    DB.volIndex = { at: Date.now(), d: "2026-08-12", ratio: 5.4, n: 6, tried: 8, straddle: 0,
+      rows: [{ id: 561, name: "Nature rune", ratio: 5.2, straddle: 0 },
+             { id: 385, name: "Shark", ratio: 5.6, straddle: 0 }] };
+    S.anomSuppressed = 0; S.anomRaw = 0; S.anomScanned = 40;
+    DB.anomalyFlags = [];
+    S.tab = "sleeve"; renderSleeve(); renderClusters();
+    const anomH = document.querySelector("#anomBody").innerHTML;
+    ok("[R41.4] the panel states the index, its date and how many controls it rests on",
+       /Volume index/.test(anomH) && /5\.40×/.test(anomH) && /2026-08-12/.test(anomH)
+       && /6 of 8 controls/.test(anomH) && /2 did not return a usable series/.test(anomH),
+       anomH.slice(0, 500));
+    ok("[R41.4] the index is an aggregate and opens to its control rows through the shared primitive",
+       /data-drill="anom:volindex"/.test(anomH)
+       && (() => { S.drillOpen = new Set(["anom:volindex"]);
+                   const b = drillBoxHTML("anom:volindex");
+                   return /Nature rune/.test(b) && /5\.20×/.test(b) && /Shark/.test(b)
+                       && /Control item/.test(b); })(),
+       anomH.slice(0, 300));
+    /* Honest subset: 8 controls tried, 2 rows supplied — the primitive must
+       say so rather than presenting two rows as the whole basket. */
+    ok("[R41.4] the expansion declares itself a subset when controls are missing",
+       (() => { S.drillOpen = new Set(["anom:volindex"]);
+                return /showing 2 of 8/i.test(drillBoxHTML("anom:volindex")); })(),
+       drillBoxHTML("anom:volindex").slice(0, 600));
+    S.drillOpen = new Set();
+    DB.volIndex = { at: Date.now(), d: "2026-08-12", ratio: null, n: 2, tried: 8, straddle: 0, rows: [] };
+    renderSleeve();
+    ok("[R41.4] an unavailable index says so and names the risk — never a silent fallback to raw",
+       /Index unavailable/.test(document.querySelector("#anomBody").innerHTML)
+       && /RAW volume term/.test(document.querySelector("#anomBody").innerHTML)
+       && /Jul 24 2026 artifact/.test(document.querySelector("#anomBody").innerHTML),
+       document.querySelector("#anomBody").innerHTML.slice(0, 400));
+    DB.volIndex = { at: Date.now(), d: "2026-08-12", ratio: 5.4, n: 6, tried: 8, straddle: 0, rows: [] };
+    S.anomSuppressed = 12; S.anomScanned = 40;
+    renderSleeve();
+    ok("[R41.4] an empty scan names its own cause — suppression is reported, not read as a quiet market",
+       /SUPPRESSED for 12 of 40/.test(document.querySelector("#anomBody").innerHTML)
+       && /cannot tell/.test(document.querySelector("#anomBody").innerHTML)
+       && /expires on its own/.test(document.querySelector("#anomBody").innerHTML),
+       document.querySelector("#anomBody").innerHTML.slice(0, 600));
+    S.anomSuppressed = 0;
+
+    // ---- R41.5 every flag names the term that raised it ----
+    DB.anomalyFlags = [
+      { id: 1, itemId: 9001, name: "Probe alpha", at: Date.now(), d: today(), strength: 10,
+        rise14p: 8, rise14v: 400, volMode: "relative", rise14vRel: 40, mktRatio: 5.4 },
+      { id: 2, itemId: 9002, name: "Probe beta", at: Date.now(), d: today(), strength: 9,
+        rise14p: 7, rise14v: 380 } ];
+    renderSleeve();
+    const flagH = document.querySelector("#anomBody").innerHTML;
+    ok("[R41.5] a normalised flag reports the relative term and shows the raw one it replaced",
+       /\+40% vs the market index/.test(flagH) && /index 5\.40×/.test(flagH)
+       && /raw \+400% before normalising/.test(flagH),
+       flagH.slice(flagH.indexOf("Probe alpha"), flagH.indexOf("Probe alpha") + 500));
+    ok("[R41.5] a PRE-INDEX flag says so — it must not read as one the index confirmed",
+       /raw \+380%, pre-index/.test(flagH) && /market-wide feed change/.test(flagH),
+       flagH.slice(flagH.indexOf("Probe beta"), flagH.indexOf("Probe beta") + 500));
+    ok("[R41.5] the analyst export carries the volume mode, so the desk knows which term it is answering",
+       (() => { DB.lastBriefImportAt = 0;
+                const ex = analystFlagsPending().flags.filter(f => f.kind === "anomaly");
+                return ex.length === 2 && ex.some(f => f.volMode === "relative")
+                    && ex.some(f => f.volMode === "raw-preindex")
+                    && ex.some(f => /vs the market index/.test(f.detail)); })(),
+       JSON.stringify(analystFlagsPending().flags.filter(f => f.kind === "anomaly").map(f => f.volMode)));
+    DB.anomalyFlags = keepFlags; DB.volIndex = keepIx;
+    S.anomSuppressed = keepSup; S.anomScanned = keepScan;
+
+    // ---- R41.6 the `measured` rung ----
+    DB.intel = [];
+    const mkM = over => Object.assign({ id: "m-1", type: "demand-context", confidence: "measured",
+      title: "Tape claim", thesis: "th", direction: "unclear", items: [{ id: 9004 }],
+      sources: [{ url: "https://prices.runescape.wiki/api/v1/osrs/timeseries?id=561", note: "n", tier: 1 }],
+      validUntil: inDays(30) }, over);
+    const impM = importIntelligence({ records: [mkM({})] });
+    ok("[R41.6] `measured` is accepted on a tape claim and survives as itself",
+       impM.added === 1 && DB.intel[0].confidence === "measured",
+       JSON.stringify({ impM, c: DB.intel[0] && DB.intel[0].confidence }));
+    ok("[R41.6] measured outranks confirmed for tape claims; confirmed still outranks the rest",
+       CONF_RANK.measured > CONF_RANK.confirmed && CONF_RANK.confirmed > CONF_RANK.polled,
+       JSON.stringify(CONF_RANK));
+    const impMC = importIntelligence({ records: [
+      mkM({ id: "m-cat", type: "catalyst", catalyst: { name: "X", windowStart: inDays(10), windowEnd: inDays(40) } }),
+      mkM({ id: "m-catu", type: "catalyst-update", updatesCatalyst: "X" }) ] });
+    ok("[R41.6] a catalyst claiming `measured` is REJECTED, not quietly downgraded — no honest coercion exists",
+       impMC.confMisapplied === 2 && impMC.added === 0
+       && !DB.intel.some(x => x.id === "m-cat" || x.id === "m-catu"),
+       JSON.stringify(impMC));
+    ok("[R41.6] the tier renders with its meaning attached, and the glossary defines it",
+       /Measured: computed directly from the price API/.test(intelRecordHTML(DB.intel[0], true))
+       && GLOSSARY.some(g => (g.entries || []).some(e => e.id === "gov-measured" && e.what && e.from && e.do)),
+       "measured badge + glossary entry");
+
+    // ---- R41.7 a ruling carried in the file ----
+    DB.intel = []; DB.decisionLog = [];
+    importIntelligence({ records: [mkM({ id: "d-1", confidence: "rumor" })] });
+    DB.intel[0].status = "ratified"; DB.intel[0].ruledAt = Date.now();
+    const impD = importIntelligence({ records: [mkM({ id: "d-1", confidence: "rumor",
+      disposition: { action: "dismiss", reason: "volume evidence withdrawn — Jul 24 feed artifact", ruledOn: "2026-08-12" } })] });
+    const dRec = DB.intel.find(x => x.id === "d-1");
+    ok("[R41.7] a dismissal carried in the file applies on import, against a record already ratified",
+       impD.dismissedByFile === 1 && dRec.status === "dismissed"
+       && /Jul 24 feed artifact/.test(dRec.dismissReason || ""),
+       JSON.stringify({ impD, status: dRec.status }));
+    ok("[R41.7] it is decision-logged with the REASON and an auto stamp — why, not merely that",
+       (() => { const e = (DB.decisionLog || []).find(x => x.kind === "intel" && /dismiss/.test(x.action));
+                return !!e && e.auto === 1 && /Jul 24 feed artifact/.test(e.reason)
+                    && /2026-08-12/.test(e.action); })(),
+       JSON.stringify(DB.decisionLog));
+    ok("[R41.7] the dismissal renders its reason where the record renders",
+       /dismissed: volume evidence withdrawn/.test(intelRecordHTML(dRec, true)),
+       intelRecordHTML(dRec, true).slice(0, 400));
+    /* The asymmetry is the ruling: dismissing DROPS an advisory record,
+       ratifying ARMS one, and arming stays a press in the tool. */
+    DB.intel = []; DB.decisionLog = [];
+    importIntelligence({ records: [mkM({ id: "d-2", confidence: "rumor",
+      disposition: { action: "ratify", reason: "looks right to me" } })] });
+    ok("[R41.7] RATIFICATION is not carriable — only dismissal travels in the file",
+       DB.intel[0].status === "pending" && !DB.intel[0].teeth
+       && !(DB.decisionLog || []).some(x => /ratif/i.test(x.action || "")),
+       JSON.stringify({ status: DB.intel[0].status, log: DB.decisionLog }));
+    ok("[R41.7] a disposition with no reason is ignored — a dismissal without a why is not a record",
+       (() => { DB.intel = []; DB.decisionLog = [];
+                importIntelligence({ records: [mkM({ id: "d-3", confidence: "rumor",
+                  disposition: { action: "dismiss", reason: "  " } })] });
+                return DB.intel[0].status === "pending"; })(),
+       JSON.stringify(DB.intel.map(x => x.status)));
+
+    // ---- R41.8 corrections to already-ratified records must land ----
+    DB.intel = []; DB.decisionLog = [];
+    importIntelligence({ records: [mkM({ id: "c-1", confidence: "confirmed", thesis: "volume +930% since the ship" })] });
+    const cRec0 = DB.intel.find(x => x.id === "c-1");
+    cRec0.status = "ratified"; cRec0.ruledAt = Date.now(); cRec0.teeth = 1;
+    const impC1 = importIntelligence({ records: [mkM({ id: "c-1", confidence: "confirmed",
+      thesis: "CORRECTION: the volume claim is withdrawn — it was a market-wide feed change" })] });
+    const cRec = DB.intel.find(x => x.id === "c-1");
+    ok("[R41.8] a revised RATIFIED record is corrected in place, not absorbed into silence",
+       impC1.corrected === 1 && impC1.absorbed === 0
+       && /CORRECTION: the volume claim is withdrawn/.test(cRec.thesis),
+       JSON.stringify({ impC1, thesis: cRec.thesis.slice(0, 60) }));
+    ok("[R41.8] the correction keeps the ratification and its teeth — copy changed, nothing re-armed",
+       cRec.status === "ratified" && cRec.teeth === 1 && !!cRec.correctedAt
+       && /copy revised by the/.test(cRec.corrected || ""),
+       JSON.stringify({ status: cRec.status, teeth: cRec.teeth, corrected: cRec.corrected }));
+    ok("[R41.8] and it SAYS it was corrected, where the record renders — you ratified other words",
+       /corrected<\/span>/.test(intelRecordHTML(cRec, true))
+       && /you ratified an earlier version/.test(intelRecordHTML(cRec, true)),
+       intelRecordHTML(cRec, true).slice(0, 500));
+    const impC2 = importIntelligence({ records: [mkM({ id: "c-1", confidence: "confirmed",
+      thesis: "CORRECTION: the volume claim is withdrawn — it was a market-wide feed change" })] });
+    ok("[R41.8] an UNCHANGED re-import of a ratified record is still absorbed — no correction churn",
+       impC2.corrected === 0 && impC2.absorbed === 1,
+       JSON.stringify(impC2));
+    ok("[R41.8] the new metric and governance terms carry all three glossary fields",
+       ["met-volindex", "met-relvol", "gov-corrected", "gov-filedismiss"].every(id =>
+         GLOSSARY.some(g => (g.entries || []).some(e => e.id === id && e.what && e.from && e.do))),
+       "glossary coverage for the Aug 12 terms");
+    DB.intel = []; DB.decisionLog = []; S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL volume index / measured tier :: " + (e && e.stack || e));
+  }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter

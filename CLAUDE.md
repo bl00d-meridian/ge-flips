@@ -150,6 +150,43 @@ exactly what is measured and no more. Gate health is the reference implementatio
 it) is never conflated with "traded after unbenching" (re-admission latency only — the
 gate eventually agreeing with itself is not the user being right against it).
 
+## Case law: the Jul 24 volume artifact (user ruling, Aug 12 2026)
+
+**A data-feed methodology change was read as market signal for four sweeps.** On
+2026-07-24 reported GE volume stepped ~5–7× across the entire market at once —
+nature runes, sharks, ranarr, coal, dragon boots, uncut sapphire — with prices
+flat. Nothing had happened in the game. The accumulation-anomaly scan compares
+each item's recent volume against its own volume 2–3 weeks earlier, so every
+baseline straddling that date showed a several-hundred-percent gain, and the scan
+duly raised seven flags reading "+418%", "+546%", "+930%". Four of them went to
+the analyst desk for up to four sweeps hunting a story that did not exist,
+generating watch-notes and a suspected-pump escalation off a number that measured
+the API. Normalised against a control band, not one flagged item showed
+item-specific volume growth; three were *below* market.
+
+**The rule: a detector that compares an item to its own past must be normalised
+against a market-wide control, because a feed change moves every item at once and
+looks like news on each of them individually.** Self-comparison cannot distinguish
+"this item moved" from "the ruler changed length". The fix is `VOL_INDEX_BASKET`
+in `index.html` — eight liquid items chosen for having nothing to do with each
+other — and the volume term is now item-relative-to-index. The interim
+cross-break suppression is **date-driven and self-expiring**: it stops firing once
+baselines clear 2026-07-24, with no flag day to remember.
+
+Three corollaries, each of which cost something here:
+
+- **Suppression means not flagged, not flagged-on-half.** The accumulation
+  signature is price AND volume; with the volume leg unreadable the honest answer
+  is "cannot tell", and flagging on price alone invents the missing half.
+- **A detector's own denominator is an aggregate and decomposes like any other.**
+  The index's one failure mode — a future update moving the whole basket together
+  — is visible only in its control rows, so the panel opens to them.
+- **Corrections must reach the tool, not just the brief.** Withdrawing the
+  contaminated numbers exposed a second defect: re-importing an already-ratified
+  record was silently absorbed, so eleven corrected records would have left the
+  wrong numbers on screen while the brief claimed they were fixed. Shipping a
+  correction means shipping the path by which it lands.
+
 ## Complexity governance (standing — user ruling, Aug 10 2026)
 
 - **Attention budget as a probe.** The walk-up targets ≤2 min of rulings, enforced by

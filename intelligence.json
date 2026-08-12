@@ -1,8 +1,128 @@
 {
-  "generatedAt": "2026-08-11T13:20:00Z",
-  "coversFrom": "2026-08-10",
-  "coversTo": "2026-08-11",
+  "generatedAt": "2026-08-12T12:00:00Z",
+  "coversFrom": "2026-08-11",
+  "coversTo": "2026-08-12",
   "records": [
+    {
+      "id": "2026-08-12-volume-reporting-break",
+      "type": "demand-context",
+      "confidence": "measured",
+      "title": "Reported GE volume stepped ~5-7x market-wide on 2026-07-24 — every open anomaly flag's volume term is measuring the data feed, not the market",
+      "thesis": "Five unrelated control items spanning completely different market segments each show a single-day, sustained step in reported daily volume on 2026-07-24, with no corresponding price move. Nature rune: 3.58m/day avg over Jul 1-23 (daily range 0.64m-5.38m) to 26.35m/day over Jul 25-Aug 10, x7.4. Shark 611k to 3.46m/day (x5.7). Ranarr weed 135k to 815k (x6.1). Dragon boots 1,466 to 7,976 (x5.4). Uncut sapphire 236k to 1.32m (x5.6). Across the same windows their prices move -5.7% to +16.6% — ordinary drift. A genuine 5-7x sustained increase in real trading across nature runes, sharks and dragon boots at once, with flat prices, is not a market event; the leading explanation is a change in the coverage or aggregation of the OSRS Wiki real-time-prices volume feed on that date. NO OFFICIAL SOURCE STATES THIS: the measurement is confirmed and reproducible from the cited timeseries endpoints, the CAUSE is inferred and unsourced. Consequence for the tracker: the anomaly scan compares a recent window against a 2-3-weeks-ago baseline, and until roughly 2026-08-14 every such baseline straddles 2026-07-24, so every liquid item shows a several-hundred-percent volume gain by construction. Normalised against the control band (x5.4-7.4), all seven currently flagged items sit at or BELOW market: Inquisitor's armour set x4.9, Inquisitor's hauberk x5.7, Venator bow x5.9, Bandos chestplate x5.2, Bandos tassets x5.0, Soulreaper axe x4.9, Harmonised orb x2.9. Not one shows item-specific volume expansion. The price components of those flags (+4.6% to +28.4%) are separately real and unaffected by this.",
+      "direction": "unclear",
+      "items": [
+        { "id": 24488, "name": "Inquisitor's armour set" },
+        { "id": 24420, "name": "Inquisitor's hauberk" },
+        { "id": 24511, "name": "Harmonised orb" },
+        { "id": 11832, "name": "Bandos chestplate" },
+        { "id": 11834, "name": "Bandos tassets" },
+        { "id": 28338, "name": "Soulreaper axe" },
+        { "id": 27612, "name": "Venator bow (uncharged)" }
+      ],
+      "sources": [
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=561", "note": "Control: nature rune, 0.65-5.4m/day through Jul 23 then 18.0-33.8m/day from Jul 24 onward, price +16.6%", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=385", "note": "Control: shark, 77k-839k/day through Jul 23 then 2.9-4.1m/day from Jul 24, price +5.2%", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=207", "note": "Control: ranarr weed, x6.1 volume, price +2.4%", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11840", "note": "Control: dragon boots, 260-2,139/day through Jul 23 then 6,831-9,618/day from Jul 24, price -4.7%", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=1623", "note": "Control: uncut sapphire, x5.6 volume, price -5.7%", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24511", "note": "Flagged item with the lowest relative volume growth in the set (x2.9, well below the control band) despite carrying a +378% volume flag", "tier": 1 }
+      ],
+      "sourceTier": 1,
+      "validUntil": "2026-09-15",
+      "contrary": "The control set is five items chosen for spread, not a random sample, so the market-wide factor (x5.4-7.4) is an estimate with wide error bars; per-item ratios against it should be read as 'inside the band', not as precise multiples. A real game-wide trading surge cannot be excluded outright — the Jul 22 gear update landed two days before the step and Wyrmscraig launched 2026-07-29 — but neither event falls on 2026-07-24, neither moved prices, and neither plausibly lifts nature rune and shark volume 5-7x for three straight weeks. If the cause turns out to be a genuine coverage expansion of the feed, then the NEW level is the correct one and only cross-break comparisons are invalid, not the current data.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "Not a market claim, so nothing can be priced in. The measured quantity is the size of the discontinuity: control items x5.4-7.4 in reported daily volume across 2026-07-24 against price multiples of 0.94-1.17 over the same windows." }
+    },
+    {
+      "id": "2026-08-12-cox-ancestral-reweight",
+      "type": "deflation-flag",
+      "confidence": "confirmed",
+      "title": "Chambers of Xeric reweighting SHIPPED 2026-08-12: Ancestral pieces 53.3% more common in regular raids, 64.3% in Challenge Mode",
+      "thesis": "The Chambers of Xeric unique loot table was reweighted in today's game update (12 August 2026). Each Ancestral piece goes from weighting 3 of 69 to 4 of 60 in regular raids and 4 of 56 in Challenge Mode — 53.3% and 64.3% more common per unique respectively. The purple rate itself is unchanged, so this is a pure composition shift: Ancestral supply per raid-hour rises by roughly half. Jagex's stated intent is that CoX GP/hr holds while individual item prices move, and they name Ancestral explicitly as 'the most significant shift'. The change was PROPOSED with these exact numbers in the 22 July 2026 newspost and shipped 21 days later, and the market front-ran it from the day after publication: all three pieces broke lower on 2026-07-23 on a step-change in flow. Budget note for the sleeve: on today's live book Ancestral hat (~42.1m) and Ancestral robe bottom (~59.3m) sit inside the 60m budget while Ancestral robe top (~90.1m) does not; no position is proposed on any of them — this record is a refusal tag, not a thesis.",
+      "direction": "down",
+      "items": [
+        { "id": 21018, "name": "Ancestral hat" },
+        { "id": 21021, "name": "Ancestral robe top" },
+        { "id": 21024, "name": "Ancestral robe bottom" }
+      ],
+      "sources": [
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Official 12 Aug 2026 update newspost: full old/new/CM weighting table and the rationale", "tier": 0 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up-gear--pvm-changes?oldschool=1", "note": "Official 22 Jul 2026 newspost: the 'something a little more radical' proposal with the identical numbers — this is the repricing event", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep_Up_-_Agility_%26_Chambers_of_Xeric_Changes", "note": "Wiki update page corroborating the shipped table and the 12 Aug 2026 date", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=21021", "note": "Robe top: 118.61m on Jul 22, 112.30m on Jul 23, 96.02m on Aug 11", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=1h&id=21024", "note": "Robe bottom intraday on ship day", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-11-30",
+      "contrary": "The same update cuts prayer-scroll weighting by 20-26%, so uniques per raid are unchanged and Jagex expects raid GP/hr to hold — this is redistribution, not new supply entering the game. Roughly three weeks of front-running is already in the price, so the remaining supply-driven downside may be small or already overshot: note the Aug 3-7 bounce, when the hat retraced from 42.8m back up to 46.9m before rolling over again. Jagex also state explicitly that they will leave further tweaks on the table, in either direction, if the numbers do not land where they want.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Measured from the 2026-07-22 close (the day the numbers were published) to the live book at ~11:55 UTC on ship day: Ancestral hat 55.85m to ~42.1m (-24.6%), robe top 118.61m to ~90.1m (-24.0%), robe bottom 82.44m to ~59.3m (-28.1%). The direction is heavily priced in over three weeks. The implementation itself landed this morning and NO post-implementation tape exists yet: the 24h series has no bucket past 2026-08-11 and the last complete 1h bucket is 10:00Z, at or just before the update. Ship-day drift to 10:00Z was -2.5% to -3.5% across the three pieces." }
+    },
+    {
+      "id": "2026-08-12-cox-prayer-scrolls",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Same CoX reweighting cuts Arcane and Dextrous prayer scroll supply 19.5% (regular) / 26.1% (CM) — already run, do not chase",
+      "thesis": "The other half of today's Chambers of Xeric reweighting: each prayer scroll goes from weighting 20 of 69 to 14 of 60 in regular raids and 12 of 56 in Challenge Mode, making scrolls 19.5% and 26.1% less common respectively — the change Jagex describes as addressing 'the volume of purple lights that become Prayer scrolls'. Supply falls; the direction is up. This record exists to state that the move has already happened, not to propose one: both scrolls repriced from the day after the 22 July proposal and printed 30-day highs on the eve of implementation. Note the exact wiki item name is 'Dexterous prayer scroll'; the newsposts spell it 'Dextrous'.",
+      "direction": "up",
+      "items": [
+        { "id": 21079, "name": "Arcane prayer scroll" },
+        { "id": 21034, "name": "Dexterous prayer scroll" }
+      ],
+      "sources": [
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Shipped weighting table, 12 Aug 2026", "tier": 0 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up-gear--pvm-changes?oldschool=1", "note": "22 Jul 2026 proposal with the same numbers", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=21034", "note": "Dexterous: 15.58m Jul 22, 16.96m Jul 23, 19.49m Jul 24, 22.64m Aug 10 (30-day high)", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=21079", "note": "Arcane: 5.26m Jul 22, 6.66m Aug 10 (30-day high)", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-11-30",
+      "contrary": "Scroll demand is a one-off unlock per account (Rigour / Augury), not a consumable, so the demand side is a slowly-exhausting stock rather than a flow — a supply cut into finite demand can fade rather than compound. Both scrolls also traded DOWN on ship-day morning (Arcane -1.6%, Dexterous -2.7% against their Aug 11 hourly average), which is the shape of a realised event unwinding rather than a fresh leg.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "From the 2026-07-22 close to the live book at ~11:55 UTC on ship day: Arcane 5.26m to ~6.34m (+20.6%), Dexterous 15.58m to ~21.45m (+37.7%). Both peaked on 2026-08-10 (6.66m / 22.64m), one day before implementation. The move is three weeks old and the news is now out." }
+    },
+    {
+      "id": "2026-08-12-cox-other-uniques",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Remaining seven CoX uniques become 15% (regular) / 23.2% (CM) more common — modest supply increase, filed as context rather than a refusal tag",
+      "thesis": "Because the unique-table total drops from 69 to 60 (56 in Challenge Mode) while their absolute weightings are unchanged, every non-Ancestral, non-scroll CoX unique becomes 15% more common in regular raids and 23.2% more common in Challenge Mode: Twisted bow, Twisted buckler, Dragon hunter crossbow, Dragon claws, Elder maul, Kodai insignia and Dinh's bulwark. Supply per raid-hour rises by about a seventh. FILING NOTE, stated so it can be overruled: this is deliberately a demand-context note and NOT a deflation-flag, because 15% is a modest shift, the purple rate is unchanged, and a deflation-flag would make the sleeve refuse Twisted buckler (~14.1m), Dinh's bulwark (~12.5m), Dragon hunter crossbow (~31.4m) and Dragon claws (~41.0m) outright — four in-budget items — on a change whose direction is already partly in the price. If you would rather have the refusal tag, say so and it becomes a deflation-flag next run; the tool has not made that call for you.",
+      "direction": "down",
+      "items": [
+        { "id": 20997, "name": "Twisted bow" },
+        { "id": 21000, "name": "Twisted buckler" },
+        { "id": 21012, "name": "Dragon hunter crossbow" },
+        { "id": 13652, "name": "Dragon claws" },
+        { "id": 21003, "name": "Elder maul" },
+        { "id": 21043, "name": "Kodai insignia" },
+        { "id": 21015, "name": "Dinh's bulwark" }
+      ],
+      "sources": [
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Shipped table: all seven at +15 regular / +23.2 CM", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep_Up_-_Agility_%26_Chambers_of_Xeric_Changes", "note": "Wiki corroboration of the shipped table", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=21000", "note": "Twisted buckler 17.44m Jul 22 to 14.08m Aug 10 (-19.3%), the largest mover of the seven", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=13652", "note": "Dragon claws 40.96m Aug 11 vs 41.07m Jul 18-27 baseline — essentially unmoved, the counter-example", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-11-30",
+      "contrary": "The cohort's tape does not move as one, which argues against reading the weighting change as the dominant driver: since 2026-07-22, Twisted buckler -19.3% and Dragon hunter crossbow -15.3% but Dragon claws is flat (+1.1% vs baseline) and Elder maul -2.5%. Twisted bow's -10.3% over the same span sits inside its ordinary drift for a 1.3bn item. Some of the cohort's weakness is also the CoX complex repricing generally, not their own +15%.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "From 2026-07-22 to the last complete bucket: Twisted buckler 17.44m to 14.08m (-19.3%), DHCB 37.06m to 31.39m (-15.3%), Twisted bow 1,486.1m to ~1,333m (-10.3%), Dinh's bulwark to 12.51m (-5.0% vs baseline), Elder maul -2.5%, Kodai insignia -3.0%, Dragon claws +1.1%. Mixed: the liquid mid-value pieces repriced, the top and bottom of the range did not." }
+    },
+    {
+      "id": "2026-08-12-sepulchre-requirement-cut",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Hallowed Sepulchre floors 4 and 5 opened up on Aug 12 (77/87, boostable; Grand Coffin now openable at 84 Thieving) — more runners at the ring floors",
+      "thesis": "Today's update lowers Hallowed Sepulchre Floor 4 entry to Agility 77 (from 82) and Floor 5 to 87 (from 92), permits boosting for floor entry, and adds an 84 Thieving alternative to the 92 Agility requirement on Floor 5's Grand Coffin (also boostable). The eligible population for the two loot-bearing floors widens materially. The tradeable consequence runs through Ring of endurance (uncharged), the Sepulchre's marquee GE item. FLAGGED AS INFERENCE: the newspost states the requirement changes and says nothing about market effects; the supply link is the analyst's reading of who can now open the coffins, not a sourced claim. Direction down, magnitude unknown.",
+      "direction": "down",
+      "items": [{ "id": 24844, "name": "Ring of endurance (uncharged)" }],
+      "sources": [
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Floor 4 to 77, Floor 5 to 87, boosting permitted, Grand Coffin at 84 Thieving or 92 Agility", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep_Up_-_Agility_%26_Chambers_of_Xeric_Changes", "note": "Wiki corroboration of the requirement changes", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24844", "note": "3.78m Jul 18-27 baseline to 3.56m on Aug 10 (-3.7%), already drifting", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-10-31",
+      "contrary": "A five-level entry cut is not the binding constraint on Sepulchre participation — the activity is gated far more by its difficulty and attention cost than by the requirement, and the players newly admitted at 77-87 Agility are the ones least likely to farm Floor 5 efficiently. The ring is also charge-consumed in play, so supply and demand both scale with participation and may cancel. The item was already drifting down before this change, on nothing.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "The change shipped this morning; nothing about it can be in the price. Pre-change state: 3.78m over the Jul 18-27 baseline, 3.56m on 2026-08-10 (-3.7%), volume growth x3.8 against a market-wide reporting step of x5.4-7.4, i.e. below-market flow." }
+    },
     {
       "id": "2026-08-10-graveyard-quest-calendar",
       "type": "catalyst",
@@ -12,7 +132,7 @@
       "direction": "unclear",
       "items": [],
       "sources": [
-        { "url": "https://oldschool.runescape.wiki/w/Upcoming_updates", "note": "Confirmed-updates entry: timeline, agility course requirements", "tier": 1 }
+        { "url": "https://oldschool.runescape.wiki/w/Upcoming_updates", "note": "Confirmed-updates entry: timeline, agility course requirements (re-checked 2026-08-12, unchanged)", "tier": 1 }
       ],
       "sourceTier": 1,
       "validUntil": "2026-11-30",
@@ -24,26 +144,27 @@
       "id": "2026-08-10-hallowfell-new-supply",
       "type": "deflation-flag",
       "confidence": "confirmed",
-      "title": "Hallowfell in launch-supply decay since July 29",
-      "thesis": "Hallowfell (two-handed sword, 75 Attack, cleaves up to two additional targets) entered the game with Wyrmscraig on 2026-07-29. New boss-drop supply is still ramping while launch demand fades; the standard trajectory is continued decline until supply and demand equilibrate.",
+      "title": "Hallowfell in launch-supply decay since July 29; drop rate published Aug 12 at 1 in 127",
+      "thesis": "Hallowfell (two-handed sword, 75 Attack, cleaves up to two additional targets) entered the game with Wyrmscraig on 2026-07-29. The 12 August 2026 update published the drop rate for the first time: 1 in 127 from The Mad Angel. New boss-drop supply is still ramping while launch demand fades; the standard trajectory is continued decline until supply and demand equilibrate. The tape through 2026-08-10 is following it without interruption.",
       "direction": "down",
       "items": [{ "id": 34027, "name": "Hallowfell" }],
       "sources": [
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "12 Aug 2026: Wyrmscraig drop rates published — Hallowfell 1 in 127 from The Mad Angel", "tier": 0 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Item introduced with Wyrmscraig launch", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig-is-out-today?oldschool=1", "note": "Official launch newspost (linked from wiki update page; direct fetch returned 403 this sweep)", "tier": 0 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=34027", "note": "Price history since listing", "tier": 1 }
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig-is-out-today?oldschool=1", "note": "Official launch newspost", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=34027", "note": "Price history since listing: 6.24m Jul 29 to 2.29m Aug 10", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-10-01",
-      "contrary": "A pending-poll buff to the related Jeweller's chisel shows Jagex is still tuning Wyrmscraig rewards; a Hallowfell buff, if one ever polls, would invalidate the decay path.",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "6.24m at listing (2026-07-29) to 2.49m on 2026-08-10, a 60% decline in 12 days on ~7,300 units/day; drop-source supply is still ramping, so further decline is plausible but most of the launch premium is already gone." }
+      "contrary": "A pending-poll buff to the related Jeweller's chisel shows Jagex is still tuning Wyrmscraig rewards; a Hallowfell buff, if one ever polls, would invalidate the decay path. The Mad Angel also got a killcount fix and a clue-tier change on Aug 12, both of which nudge kill rates without touching the drop table.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "6.24m at listing (2026-07-29) to 2.29m on 2026-08-10, a 63% decline in 12 days; daily volume has itself fallen from ~7,500 to ~3,300 as the launch rush thins. Drop-source supply is permanent and now known to be 1 in 127, so further decline is plausible, but most of the launch premium is gone. Note: volume comparisons for this item are clean — it listed on 2026-07-29, after the 2026-07-24 reporting break." }
     },
     {
       "id": "2026-08-10-golem-crafting-uncut-gems",
       "type": "deflation-flag",
       "confidence": "confirmed",
-      "title": "Wyrmscraig Golem Crafting adds a new uncut gem supply source",
-      "thesis": "Golem Crafting (Wyrmscraig, live since 2026-07-29) drops uncut sapphires, emeralds, rubies, and diamonds, adding a standing supply source for all four. Daily traded volume has roughly 2.5x'd since launch while prices have so far held, which means supply pressure is real but currently absorbed.",
+      "title": "Wyrmscraig Golem Crafting adds a new uncut gem supply source (volume evidence withdrawn — it was the reporting break)",
+      "thesis": "Golem Crafting (Wyrmscraig, live since 2026-07-29) drops uncut sapphires, emeralds, rubies and diamonds, adding a standing supply source for all four. CORRECTION TO THIS RECORD, 2026-08-12: the earlier claim that daily traded volume had 'roughly 2.5x'd since launch' was an artifact of the market-wide reporting step on 2026-07-24 and is withdrawn. Measured strictly post-break (Jul 25-31 against Aug 4-10), gem volume is flat: sapphire -8%, emerald +3%, ruby -1%, diamond -2%. Prices are also flat over the same window (-1.1% to +1.6%). What remains is the drop-table fact — a new permanent supply source exists, and today's update routed its gems straight into the Gem Bag, which lowers the friction of banking them. There is no measurable supply pressure in the tape yet.",
       "direction": "down",
       "items": [
         { "id": 1623, "name": "Uncut sapphire" },
@@ -53,19 +174,21 @@
       ],
       "sources": [
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Golem Crafting drop table includes the four uncut gems", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig-is-out-today?oldschool=1", "note": "Official launch newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "12 Aug 2026: Golem Crafting gems now go straight into an open Gem Bag", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=1623", "note": "Post-break re-measurement: 229 gp / 1.43m per day (Jul 25-31) to 227 gp / 1.31m per day (Aug 4-10)", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-09-30",
-      "contrary": "Twelve days of 2.5x volume have NOT moved prices (sapphire 0%, emerald -1.2%, ruby -0.1%, diamond +3.9% since Jul 29) — crafting sink demand may be fully absorbing the new supply, in which case this flag expires harmlessly.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "Since 2026-07-29: uncut sapphire 223 gp flat (vol 501k to 1.27m/day), emerald 492 to 486, ruby 1114 to 1113 (vol 739k to 1.88m/day), diamond 2406 to 2500. No price decline yet; the flag is forward-looking caution against accumulating, not a claim the drop already happened." }
+      "contrary": "Now stronger than when this record was written: with the volume claim withdrawn, there is NO tape evidence of supply pressure at all — prices flat, volume flat over three clean post-break weeks. Crafting sink demand may be fully absorbing the new supply, in which case this flag expires harmlessly and should be dismissed rather than renewed.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "Measured post-break only (Jul 25-31 vs Aug 4-10): uncut sapphire 229 to 227 gp, emerald 492 to 487, ruby 1,117 to 1,113, diamond 2,443 to 2,483. No price decline, no volume expansion. Forward-looking caution against accumulating, not a claim that any drop has happened." },
+      "disposition": { "action": "dismiss", "ruledOn": "2026-08-12", "reason": "Dismissed on the Jul 24 2026 volume artifact. The record's only tape evidence was 'daily traded volume has roughly 2.5x'd since launch', and that was the market-wide feed step rather than Golem Crafting supply: re-measured on clean post-break windows (Jul 25-31 vs Aug 4-10) all four gems are flat on BOTH legs — volume -8% to +3%, price -1.1% to +1.6%. What remains is a drop-table fact with no observable market effect after three clean weeks, which is a deflation-flag with teeth and no evidence. Re-raise it if the tape ever moves." }
     },
     {
       "id": "2026-08-10-goat-horn-supply",
       "type": "deflation-flag",
       "confidence": "confirmed",
-      "title": "Wyrmscraig goat hunting adds goat horn supply; drop rate buffed Aug 5",
-      "thesis": "Wyrmscraig goat hunting (live 2026-07-29) drops goat horns, feeding the combat potion ingredient chain, and the 2026-08-05 update buffed hunter-rumour hoof drops from 1/50 to 1/48, speeding the activity. Goat horn dust is already down 18% since launch on doubled volume.",
+      "title": "Wyrmscraig goat hunting adds goat horn supply; hoof rate confirmed 1 in 48 on Aug 12, prices still falling on clean data",
+      "thesis": "Wyrmscraig goat hunting (live 2026-07-29) drops goat horns, feeding the combat potion ingredient chain, and the 2026-08-05 update buffed hunter-rumour hoof drops from 1/50 to 1/48 — a rate the 12 August update republished as confirmed (Wyrmscraig Goat Hoof: 1 in 48 on rumour). Unlike the gem record, this one survives re-measurement on post-break-only windows: raw goat horn -19.8% and goat horn dust -16.9% between Jul 25-31 and Aug 4-10, with horn volume genuinely up 42% over that clean span. The decay is real and the supply source is permanent.",
       "direction": "down",
       "items": [
         { "id": 9735, "name": "Goat horn" },
@@ -73,20 +196,21 @@
       ],
       "sources": [
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Goat horns on the goat hunting loot table", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "12 Aug 2026: goat hoof rate published as 1 in 48 on rumour", "tier": 0 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "2026-08-05 drop-rate buff to goat hunter rumours", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=9735", "note": "Post-break: 32 gp / 54k per day (Jul 25-31) to 26 gp / 77k per day (Aug 4-10)", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-09-30",
-      "contrary": "Raw goat horn has only fallen ~6% (33 to 31 gp) — most of the move is concentrated in the dust, so the grinding bottleneck, not horn supply, may be what repriced.",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29: goat horn 33 to 31 gp (-6.1%, vol 21k to 64k/day); goat horn dust 105 to 86 gp (-18.1%, vol 18k to 34k/day). Decline underway, supply source is permanent and was buffed Aug 5." }
+      "contrary": "Dust volume is DOWN 16% over the same clean window while its price fell 17%, which is a demand-side pattern rather than a supply flood — the grinding bottleneck, not horn supply, may still be what is repricing. The horn-side move (-19.8% on +42% volume) is the cleaner supply signature of the two.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Re-measured post-break to avoid the 2026-07-24 discontinuity: goat horn 32 to 26 gp (-19.8%) on volume 54k to 77k per day (+42%); goat horn dust 103 to 86 gp (-16.9%) on volume 43k to 37k per day (-16%), comparing Jul 25-31 against Aug 4-10. Decline underway on clean data; supply source is permanent and was buffed Aug 5." }
     },
     {
       "id": "2026-08-10-jewellers-chisel-poll",
       "type": "demand-context",
       "confidence": "polled",
-      "title": "Poll #270 OPEN (closes Aug 12): Jeweller's chisel bolt-tip buff (opal/jade/topaz chain)",
-      "thesis": "Poll #270 (Wyrmscraig - Jeweller's Chisel) opened 2026-08-05 and closes 2026-08-12: buff the Jeweller's chisel to cut bolt tips from gems in 2 ticks instead of 5, with a 1-in-10 chance to cut 2 gems at once. If it passes, bolt tip production speed roughly doubles for chisel owners, changing throughput economics across the uncut opal/jade/red topaz and bolt tip chain in directions that depend on where the bottleneck currently sits. Results due 2026-08-12.",
+      "title": "Poll #270 (Jeweller's chisel bolt-tip buff) still OPEN at midday on its close date — no result yet; chisel drop rate published at 1 in 300",
+      "thesis": "Poll #270 (Wyrmscraig - Jeweller's Chisel) opened 2026-08-05 and closes 2026-08-12: buff the Jeweller's chisel to cut bolt tips from gems in 2 ticks instead of 5, with a 1-in-10 chance to cut 2 gems at once. If it passes, bolt tip production speed roughly doubles for chisel owners, changing throughput economics across the uncut opal/jade/red topaz and bolt tip chain in directions that depend on where the bottleneck currently sits. STATUS AT THIS SWEEP: checked directly at 2026-08-12 ~11:55 UTC and the official poll page still reports POLL_STATE_RUNNING — the result is NOT yet published, and the wiki's poll page carries an unpopulated results template (it renders a 2-vote 50/50 'tie', which is placeholder data, not the outcome). Next sweep must read the result. Separately, today's update published the chisel's own drop rate for the first time (1 in 300 from Golem Crafting) and fixed its interaction with Sunlight Antelope antlers.",
       "direction": "unclear",
       "items": [
         { "id": 1625, "name": "Uncut opal" },
@@ -97,14 +221,15 @@
         { "id": 9188, "name": "Topaz bolt tips" }
       ],
       "sources": [
+        { "url": "https://oldschool.runescape.com/polls/2026/1763", "note": "Official poll page, read 2026-08-12 ~11:55 UTC: POLL_STATE_RUNNING, close date 12 August 2026, no vote counts rendered", "tier": 0 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "12 Aug 2026: Jeweller's Chisel drop rate 1 in 300 from Golem Crafting; antler interaction fixed", "tier": 0 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Proposal text in the Aug 5 update post", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 },
-        { "url": "https://oldschool.runescape.wiki/w/Poll:Wyrmscraig_-_Jeweller%27s_Chisel", "note": "Poll #270 page: opened 2026-08-05, closes 2026-08-12, exact question text (live vote tallies not yet populated on the wiki)", "tier": 1 }
+        { "url": "https://oldschool.runescape.wiki/w/Poll:Wyrmscraig_-_Jeweller%27s_Chisel", "note": "Wiki poll page — results template UNPOPULATED as of this sweep; do not read its vote figures as the outcome", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-09-15",
-      "contrary": "The chain is already moving on Wyrmscraig supply before the poll resolves: since Jul 29 uncut jade -32.8% and uncut red topaz -26.4% on ~2.5x volume (mechanism unsourced - no record claims it), while topaz bolt tips are +23.9% and opal bolt tips -21.2%. Mixed, high-variance chain; and the poll may fail (results 2026-08-12).",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29 (re-verified evening 2026-08-10): uncut opal 74 to 75 gp, uncut jade 140 to 92 gp, uncut red topaz 2099 to 1580 gp; opal bolt tips 30 to 26 gp, jade bolt tips 6 gp flat, topaz bolt tips 94 to 114 gp. Large moves already occurred in parts of the chain, but they trace to Wyrmscraig supply, not to the still-open poll this record is about." }
+      "contrary": "The chain moved on Wyrmscraig supply before the poll could resolve: since Jul 29 uncut jade -32.8% and uncut red topaz -26.4%, while topaz bolt tips are +23.9% and opal bolt tips -21.2% (mechanism unsourced — no record claims it). Mixed, high-variance chain, and the poll may still fail. The volume figures in the previous version of this record spanned 2026-07-24 and are withdrawn; the price figures are unaffected.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Since 2026-07-29: uncut opal 74 to 75 gp, uncut jade 140 to 92 gp, uncut red topaz 2,099 to 1,580 gp; opal bolt tips 30 to 26 gp, jade bolt tips 6 gp flat, topaz bolt tips 94 to 114 gp. Large moves already occurred in parts of the chain, but they trace to Wyrmscraig supply, not to the still-open poll this record is about." }
     },
     {
       "id": "2026-08-10-archaic-emblems-ge-listing",
@@ -119,12 +244,12 @@
       ],
       "sources": [
         { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_%26_Sailing_Changes", "note": "Emblems made GE-tradeable; Deadman's Chest supply mechanic", "tier": 1 },
-        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost (linked from wiki; direct fetch 403 this sweep)", "tier": 0 }
+        { "url": "https://secure.runescape.com/m=news/wyrmscraig--sailing-changes?oldschool=1", "note": "Official Aug 5 newspost", "tier": 0 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-09-15",
       "contrary": "Demand exists only inside the permanent Deadman world loop; if that mode's population fades, both emblems fade with it. Thin-book items are also classic manipulation targets.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "Timeseries for ids 12746 and 12751 returned empty on 2026-08-10 - no GE trade history exists yet. Nothing can be priced in; equally, nothing about a fair price is known." }
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "Timeseries for ids 12746 and 12751 returned empty on 2026-08-10 — no GE trade history exists yet. Nothing can be priced in; equally, nothing about a fair price is known." }
     },
     {
       "id": "2026-08-10-fractured-archive-rewards-locked",
@@ -150,131 +275,175 @@
       "type": "demand-context",
       "confidence": "rumor",
       "title": "Inquisitor's armour set repricing sits on TWO confirmed events: Jul 22 set rework shipped + TFA crush-megarare confirmation (answers anomaly flag)",
-      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Inquisitor's armour set. The set ran from a ~320m mid-July base to a ~387m peak on 2026-08-05, and sits at ~367m as of 2026-08-10 on roughly doubled daily volume. Two confirmed events sit under the move: (1) the 22 July 2026 Summer Sweep-Up Gear & PvM Changes shipped a full Inquisitor's rework — the set bonus was removed, pieces now carry independent Crush damage/accuracy percentage bonuses, and negative Stab/Slash bonuses were removed; (2) the 2026-07-30 TFA rewards blog detailed the Breaker, a best-in-slot Crush megarare whose damage scales with NPC size, and community discussion explicitly links Inquisitor's (the crush-synergy set) to it, including a front-page suggestion to add a TFA Inquisitor's armour kit. Which driver dominates, and the TFA-synergy link itself, remain community speculation; the two events are confirmed.",
+      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Inquisitor's armour set. The set ran from a ~320m mid-July base to a ~387m peak on 2026-08-05 and is ~354m on the live book at 2026-08-12, five days into a retrace. Two confirmed events sit under the move: (1) the 22 July 2026 Summer Sweep-Up Gear & PvM Changes shipped a full Inquisitor's rework — the set bonus was removed, pieces now carry independent Crush damage/accuracy percentage bonuses, and negative Stab/Slash bonuses were removed; (2) the 2026-07-30 TFA rewards blog detailed the Breaker, a best-in-slot Crush megarare whose damage scales with NPC size, and community discussion explicitly links Inquisitor's to it, including a front-page suggestion to add a TFA Inquisitor's armour kit. Which driver dominates, and the TFA-synergy link itself, remain community speculation; the two events are confirmed. VOLUME CORRECTION 2026-08-12: the '+418% volume' component of the flag, and the '+125%' figure in the previous version of this record, are artifacts of the market-wide reporting step on 2026-07-24. Measured against that break the set's volume grew x4.9, at the BOTTOM of the x5.4-7.4 control band — i.e. below market. Only the price move is real.",
       "direction": "unclear",
       "items": [{ "id": 24488, "name": "Inquisitor's armour set" }],
       "sources": [
         { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Breaker crush megarare confirmed passing 88.4% on 2026-08-10", "tier": 0 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "22 Jul 2026 shipped update: Inquisitor's set bonus removed, pieces gain independent Crush damage/accuracy bonuses", "tier": 1 },
         { "url": "https://oldschool.runescape.wiki/w/The_Fractured_Archive", "note": "Reward details; notably lists NO changes to existing boss defences", "tier": 1 },
-        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "Front-page post linking Inquisitor's set to the Obligator (crush-synergy framing)", "tier": 2, "community": "r/2007scape" },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "30-day price/volume history", "tier": 1 }
+        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "Front-page post linking Inquisitor's set to the Obligator (crush-synergy framing); still in the top-of-week feed on 2026-08-12", "tier": 2, "community": "r/2007scape" },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "30-day price/volume history; volume growth x4.9 across the 2026-07-24 reporting break, below the x5.4-7.4 control band", "tier": 1 }
       ],
       "sourceTier": 0,
       "community": "r/2007scape",
       "validUntil": "2026-09-30",
-      "contrary": "The set peaked Aug 5 and has retraced ~5% into the Aug 10 poll result - consistent with news-realization unwinding, not fresh accumulation. No official source links Inquisitor's to TFA: the wiki's TFA page lists no boss-defence changes, and the 'Nex crush defence is being reduced' claim circulating in comments is unsourced. Commenters also allege the recurring buff-Inquisitor's suggestion posts are mercher-driven - see the companion promotion-warning record.",
-      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~320.0m, peak ~387m on Aug 5, ~366.7m on Aug 10; recent(Aug 7-10) vs baseline: price +17.7%, volume +125% (tracker's flag math: +23.4% / +418% on its own baseline). The move predates the poll close by a week and is already partially retracing; nothing here supports chasing." }
+      "contrary": "The set peaked Aug 5 and has retraced ~8% since — consistent with news-realization unwinding, not fresh accumulation. No official source links Inquisitor's to TFA: the wiki's TFA page lists no boss-defence changes, and the 'Nex crush defence is being reduced' claim circulating in comments is unsourced. Commenters also allege the recurring buff-Inquisitor's suggestion posts are mercher-driven — see the companion promotion-warning record. And with the volume term withdrawn, the flag that summoned this record rests on a +18% price move alone.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~320.0m, peak ~386.9m on Aug 5, 366.7m on Aug 10, ~354.2m live on Aug 12: +18.1% price vs baseline. Volume x4.9 across the 2026-07-24 break against a x5.4-7.4 market factor — below market, not accumulation. The move predates the poll close by a week and is retracing; nothing here supports chasing." }
     },
     {
       "id": "2026-08-10-inquisitors-promotion-warning",
       "type": "promotion-warning",
       "confidence": "rumor",
       "title": "Inquisitor's armour set being promoted in r/2007scape — possible coordinated accumulation",
-      "thesis": "Recurring suggestion posts proposing buffs or new synergies for the Inquisitor's set are appearing in r/2007scape while the set runs +18% on doubled volume, the latest being a front-page 2026-08-10 post proposing a TFA Inquisitor's armour kit hours before the tracker's anomaly flag tripped. Multiple commenters in that thread independently allege the pattern is mercher-driven ('Is this a psyop by inquisitor merchers? I swear it's like every week there is a suggestion to upgrade inquisitors'). The existence and cadence of the promotion content is the datum; its claims are not. Correct posture on a suspected accumulation story is absence.",
+      "thesis": "Recurring suggestion posts proposing buffs or new synergies for the Inquisitor's set are appearing in r/2007scape while the set trades ~18% above its mid-July base, the vehicle being a 2026-08-10 front-page post proposing a TFA Inquisitor's armour kit that went up hours before the tracker's anomaly flag tripped and was still in the top-of-week feed on 2026-08-12. Multiple commenters in that thread independently allege the pattern is mercher-driven ('Is this a psyop by inquisitor merchers? I swear it's like every week there is a suggestion to upgrade inquisitors'). The existence and cadence of the promotion content is the datum; its claims are not. Correct posture on a suspected accumulation story is absence. VOLUME CORRECTION 2026-08-12: the 'doubled volume' framing in the previous version rested on the 2026-07-24 reporting break and is withdrawn — the set's volume growth is below the market-wide band.",
       "direction": "caution",
       "items": [{ "id": 24488, "name": "Inquisitor's armour set" }],
       "sources": [
-        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "The promotion vehicle: buff-suggestion post, front page during the price run", "tier": 2, "community": "r/2007scape" },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "Price/volume anomaly the promotion coincides with", "tier": 1 }
+        { "url": "https://old.reddit.com/r/2007scape/comments/1vkqyxl/round_out_raid_4_rewards_with_a_guthix_themed/", "note": "The promotion vehicle: buff-suggestion post, front page during the price run, still top-of-week on 2026-08-12", "tier": 2, "community": "r/2007scape" },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24488", "note": "Price anomaly the promotion coincides with; volume component withdrawn as a reporting artifact", "tier": 1 }
       ],
       "sourceTier": 1,
       "community": "r/2007scape",
       "validUntil": "2026-09-10",
-      "contrary": "A genuine T0 catalyst sits adjacent (the TFA crush megarare was confirmed in the same window), so elevated attention has an organic explanation. No explicit buy-calls, price targets, or urgency framing were found in the public threads - the promotion is suggestion-shaped - and the 'merchers' allegation is itself an unproven community claim.",
-      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Same data as the companion demand-context record: ~320m baseline to ~387m Aug 5 peak, ~366.7m Aug 10; +17.7% recent-vs-baseline on +125% volume. Whatever the accumulation story was, most of it has already printed." }
+      "contrary": "A genuine T0 catalyst sits adjacent (the TFA crush megarare was confirmed in the same window), so elevated attention has an organic explanation. No explicit buy-calls, price targets, or urgency framing were found in the public threads across four sweeps — the promotion is suggestion-shaped — and the 'merchers' allegation is itself an unproven community claim. The withdrawal of the volume evidence weakens the accumulation reading further: what is left is a price move with an organic story attached.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Same data as the companion demand-context record: ~320m baseline to ~386.9m Aug 5 peak, ~354.2m live on Aug 12; +18.1% price against baseline, volume growth below the market-wide reporting step. Whatever the accumulation story was, most of it has already printed and is now unwinding." }
     },
     {
       "id": "2026-08-10-soulreaper-sweepup-buff",
       "type": "demand-context",
       "confidence": "confirmed",
-      "title": "Soulreaper axe repriced on June blog, volume wave on Jul 22 ship (answers anomaly flag)",
-      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Soulreaper axe. The Summer Sweep-Up 2026 blog (published 4 June, revised 9 June) proposed major Soulreaper buffs, and the 22 July 2026 Summer Sweep-Up Gear & PvM Changes shipped them: soul stacks no longer drain HP at all (was 8 per stack), stack decay delay raised from 20 to 50 ticks, +4 Strength, and special attack accuracy doubled per stack with a new minimum-hit bonus. The price repriced on the BLOG (~277m May avg to ~383m mid-June, +38%), then the SHIP brought the volume wave (33/day the week before, 433/day the week after) with only ~+3% further price. The tracker's flag (vol +930% vs its 2-3wk baseline) is that post-ship volume regime, not fresh news.",
+      "title": "Soulreaper axe repriced on the June blog; the 'post-ship volume wave' is withdrawn as a reporting artifact (answers anomaly flag)",
+      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Soulreaper axe. The Summer Sweep-Up 2026 blog (published 4 June, revised 9 June) proposed major Soulreaper buffs, and the 22 July 2026 Summer Sweep-Up Gear & PvM Changes shipped them: soul stacks no longer drain HP at all (was 8 per stack), stack decay delay raised from 20 to 50 ticks, +4 Strength, and special attack accuracy doubled per stack with a new minimum-hit bonus. The price repriced on the BLOG (~277m May avg to ~383m mid-June, +38%) and has drifted since. MATERIAL CORRECTION 2026-08-12: the previous version of this record claimed the ship brought a volume wave, '33/day the week before to 433/day the week after'. That step is dated 2026-07-24, two days after the ship, and it happened to every item in the game simultaneously — the axe's volume multiple across the break is x4.9 against a x5.4-7.4 control band, i.e. BELOW market. There was no Soulreaper volume wave. The flag's '+930% volume' is the same artifact. What survives is the price story, which was already seven weeks old when the flag tripped.",
       "direction": "unclear",
       "items": [{ "id": 28338, "name": "Soulreaper axe" }],
       "sources": [
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "22 Jul 2026 shipped update page: exact Soulreaper changes", "tier": 1 },
         { "url": "https://oldschool.runescape.wiki/w/Soulreaper_axe", "note": "Item changelog confirming the 22 Jul 2026 changes verbatim", "tier": 1 },
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_2026", "note": "The 4/9 June blog that proposed the changes (the repricing event)", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=28338", "note": "Full-year timeseries: May 277m / mid-Jun 383m / pre-ship 405m / Aug 436m; vol 33 to 433/day across the ship date", "tier": 1 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=28338", "note": "May 277m / mid-Jun 383m / pre-ship 405m / Aug 11 423.5m. Volume x4.9 across the 2026-07-24 break, below the control band — the 'ship volume wave' does not exist", "tier": 1 }
       ],
       "sourceTier": 1,
       "validUntil": "2026-09-30",
-      "contrary": "Price is still grinding up post-ship (peak 449m on Aug 3, 432m Aug 10) - if the buffed axe's new equilibrium isn't found yet there could be further drift; but nothing here is early information, the catalyst is 7 weeks old.",
-      "pricedIn": { "checked": true, "verdict": "yes", "detail": "May avg 277m; post-blog mid-June 383m; pre-ship Jul 15-21 405m; post-ship Jul 22-28 416m; Aug 1-10 436m. The repricing is 7 weeks old and ~90% of it predates the ship date; the flag caught the volume regime, not the move." }
+      "contrary": "The price rolled over after 2026-08-03 (447.5m peak to 423.5m on Aug 11), so even the price story is now unwinding rather than grinding up. Nothing here is early information; the catalyst is seven weeks old and the volume evidence that made the flag look urgent has been withdrawn.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "May avg 277m; post-blog mid-June 383m; pre-ship Jul 15-21 ~404m; peak 447.5m on 2026-08-03; 423.5m on 2026-08-11. The repricing is seven weeks old and ~90% of it predates the ship date. The flag caught a reporting artifact, not a volume regime." }
     },
     {
       "id": "2026-08-10-venator-deferred-buff",
       "type": "demand-context",
       "confidence": "hinted",
-      "title": "Venator bow consistency buff announced, then deferred to 'a future batch' (answers anomaly flag)",
-      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Venator bow (uncharged). The Summer Sweep-Up blog proposed making the bow's bouncing-arrow target-finding more consistent via new engine capabilities. The 22 July 2026 update page then stated the bow was mentioned there in error: 'there have been no changes to its target-finding with today's Game Update and we expect to make this change in a future batch.' A confirmed-intent, undated buff is outstanding, and the tape (price +5.9%, volume +153% vs mid-July baseline, sitting near its 30-day high of ~70.4m) is consistent with positioning ahead of it - though no public source declares that motive.",
+      "title": "Venator bow consistency buff announced, then deferred to 'a future batch' — still unshipped after the Aug 12 batch (answers anomaly flag)",
+      "thesis": "Answers the tracker's 2026-08-10 anomaly flag on Venator bow (uncharged). The Summer Sweep-Up blog proposed making the bow's bouncing-arrow target-finding more consistent via new engine capabilities. The 22 July 2026 update page then stated the bow was mentioned there in error: 'there have been no changes to its target-finding with today's Game Update and we expect to make this change in a future batch.' CHECKED THIS SWEEP: the 12 August 2026 batch — the second Summer Sweep-Up batch — does NOT contain it either. A confirmed-intent, undated buff remains outstanding after two batches. VOLUME CORRECTION 2026-08-12: the flag's '+772% volume' and this record's previous '+153%' are the 2026-07-24 reporting artifact; the bow's volume multiple across the break is x5.9, inside the x5.4-7.4 control band. Price is +5.7% against the Jul 18-27 baseline and flat for two weeks.",
       "direction": "unclear",
       "items": [{ "id": 27612, "name": "Venator bow (uncharged)" }],
       "sources": [
         { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "The deferral note: change expected 'in a future batch'", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Batch II, 12 Aug 2026 — checked in full, contains no Venator bow change", "tier": 0 },
         { "url": "https://oldschool.runescape.wiki/w/Venator_bow", "note": "Changelog confirms NO 2026 change has shipped", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=27612", "note": "30-day price/volume history", "tier": 1 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=27612", "note": "Baseline 65.7m to 69.0m on Aug 11; volume x5.9 across the reporting break, inside the control band", "tier": 1 }
       ],
-      "sourceTier": 1,
+      "sourceTier": 0,
       "validUntil": "2026-10-31",
-      "contrary": "The buff is undated and 'future batch' can mean months; the elevated volume also coincides with the broad endgame-PvM wave (TFA hype window), so the deferred buff may not be the driver at all.",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Baseline Jul 18-27 avg 66.2m, recent Aug 7+ avg 70.1m (+5.9%) on vol +153%, near the 30d high. Part of a deferred-buff repricing may already be in; the buff itself remains unshipped and undated." }
+      "contrary": "Two Sweep-Up batches have now passed without it, which pushes 'a future batch' further out and weakens any positioning thesis; the price has been flat between 68.9m and 70.4m since 2026-08-02, so whatever anticipation existed has stopped compounding. With the volume component withdrawn, this flag has essentially no live evidence behind it.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Baseline Jul 18-27 avg 65.7m, 69.0m on 2026-08-11 (+5.7%), 30-day peak 70.4m on Aug 3. Part of a deferred-buff repricing may already be in; the buff itself remains unshipped and undated after two batches." }
+    },
+    {
+      "id": "2026-08-11-inquisitors-hauberk-flag",
+      "type": "demand-context",
+      "confidence": "confirmed",
+      "title": "Inquisitor's hauberk repricing follows its Jul 22 piece-level buff and the TFA Breaker window; six days into a retrace (answers anomaly flag)",
+      "thesis": "Answers the tracker's 2026-08-11 anomaly flag on Inquisitor's hauberk. The piece-level story is the set's story. The 22 July 2026 Summer Sweep-Up rework removed the set bonus and made pieces independently strong, and the hauberk was the largest single beneficiary: crush attack +12 to +16, stab/slash penalties -3 to 0, and its individual crush damage/accuracy contribution doubled from 0.5% to 1% per the wiki changelog. The TFA Breaker (BiS crush megarare, passed 88.4% on 2026-08-10) supplies the speculative second driver via community crush-synergy framing — speculation only; the wiki's hauberk page contains no TFA reference. Tape: ~117.7m Jul 18-27 baseline, 149.9m peak on Aug 5 (same peak day as the set), 136.7m on Aug 11 (+20.3% vs baseline) — six straight days of retrace. VOLUME CORRECTION 2026-08-12: the flag's '+518% volume' and this record's previous '+123%' are the 2026-07-24 reporting artifact; the hauberk's multiple across the break is x5.7, inside the x5.4-7.4 control band. The flag tripped on a price move that is already unwinding, with no volume anomaly at all.",
+      "direction": "unclear",
+      "items": [{ "id": 24420, "name": "Inquisitor's hauberk" }],
+      "sources": [
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "22 Jul 2026 shipped rework: set bonus removed, pieces gain independent crush bonuses", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Inquisitor%27s_hauberk", "note": "Changelog: crush +12 to +16, stab/slash -3 to 0, individual crush contribution 0.5% to 1%; page contains NO TFA reference", "tier": 1 },
+        { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Breaker crush megarare confirmed passing 88.4% on 2026-08-10", "tier": 0 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24420", "note": "Peak 149.9m Aug 5, 136.7m Aug 11; volume x5.7 across the reporting break, inside the control band", "tier": 1 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-30",
+      "contrary": "The parent set carries an active ratified promotion-warning and a SUSPECTED PUMP flag in the tracker — piece-level moves inherit that caution in full; the Breaker synergy portion of the story is community speculation with no official source; and the price has now retraced ~9% from the Aug 5 peak over six sessions, so anything entered here chases an unwinding move.",
+      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~117.7m, peak 149.9m on 2026-08-05, 136.7m on 2026-08-11: +20.3% vs baseline. The move peaked six days before the flag was exported and has retraced every session since. Volume growth is inside the market-wide reporting band, so the flag's volume term carries no information." }
     },
     {
       "id": "2026-08-10-harmonised-orb-watch",
       "type": "watch-note",
       "confidence": "rumor",
-      "title": "Harmonised orb: sustained accumulation at a NEW 30-day high, no public story after 3 sweeps",
-      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its THIRD consecutive no-story sweep (2026-08-11). The orb printed a new 30-day high (~428.7m on 2026-08-10, +6.4% price / +38% volume vs the Jul 18-27 baseline) and is still climbing - the only member of the flagged cluster still making highs while everything else retraces or plateaus. Three sweeps of T2 feeds plus repeated open-web wider-net searches (rule 9a) surface no post, no promotion, and no announcement naming it. Either early information or coordinated quiet accumulation; posture remains absence unless the catalyst can be named. One candidate mechanism exists but is NOT claimed as the explanation: the June Summer Sweep-Up blog listed harmonised orb weighting/functionality consolidation among uncommitted long-term suggestions requiring future content - that mention is 2 months old and cannot explain an August accumulation on its own.",
+      "title": "Harmonised orb: NEW 30-day high on the FOURTH consecutive no-story sweep, and its volume is now measured as below-market",
+      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its FOURTH consecutive no-story sweep (2026-08-12). The orb printed another new 30-day high — 436.8m on 2026-08-11, ~438.8m on the live book — and is the ONLY member of the flagged cluster still making highs while every other member retraces or rolls over. Four sweeps of T2 feeds plus repeated open-web wider-net searches (rule 9a) surface no post, no promotion and no announcement naming it; today's game update does not mention it either. NEW THIS SWEEP, and it sharpens the picture rather than resolving it: the orb's volume growth across the 2026-07-24 market-wide reporting break is x2.9, far BELOW the x5.4-7.4 control band and the lowest relative flow of any flagged item. So the '+378% volume' in the flag is not merely an artifact — after normalising, this item is trading LESS than the market while making new highs. That is the signature of a thin book drifting up on few actors, not of broad accumulation. The price move is real (373.4m on Jul 22 to ~438.8m, +17.5%) and its inflection is dated 2026-07-23, the day after the Jul 22 newspost; but that post contains nothing about Nightmare orbs, so the date coincidence has no named mechanism behind it and is not claimed as one. Either early information or quiet accumulation on a thin book; posture remains absence unless the catalyst can be named. One stale candidate mechanism exists and is NOT claimed: the June Summer Sweep-Up blog listed harmonised orb weighting consolidation among uncommitted long-term suggestions requiring future content — that mention is two months old, was not actioned in either Sweep-Up batch, and cannot explain an August move on its own.",
       "direction": "caution",
       "items": [{ "id": 24511, "name": "Harmonised orb" }],
       "sources": [
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24511", "note": "New 30d high 428.7m on 2026-08-10, climbing 4 straight days; +6.4% price / +38% volume vs Jul 18-27 baseline on 24h data (tracker's own baseline shows +9.3%/+378%)", "tier": 1 },
-        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_2026", "note": "Candidate mechanism only: orb consolidation listed as uncommitted long-term suggestion", "tier": 1 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24511", "note": "New 30d high 436.8m on 2026-08-11; 373.4m Jul 22 to 403.8m Jul 23 to 436.8m Aug 11. Volume x2.9 across the 2026-07-24 break vs a x5.4-7.4 control band — below market", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_2026", "note": "Candidate mechanism only, NOT claimed: orb consolidation listed as an uncommitted long-term suggestion (June blog)", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Harmonised_orb", "note": "Checked this sweep: no 2026 changelog entry, no pending change; page last modified 2026-05-20", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Negative source: Summer Sweep-Up Batch II contains no Nightmare or orb changes", "tier": 0 }
       ],
-      "sourceTier": 1,
+      "sourceTier": 0,
       "validUntil": "2026-09-10",
-      "contrary": "Volume elevation on 24h data is mild (+11%), so the 'accumulation' may be thinner than the tracker's short-baseline math suggests; a 146/day book this size moves on few actors.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "There is no named catalyst to be priced in - that is the point of this record. The observed move: 396.0m Jul 18-27 baseline to 428.7m on 2026-08-10, a new 30d high with no retrace across three sweeps (Aug 6-10: 417.9, 416.8, 417.1, 423.4, 428.7m)." }
+      "contrary": "The below-market volume finding cuts both ways: it removes the 'accumulation' reading's best evidence, since a book doing ~173 units a day against a market that trebled its reported flow is not being bought aggressively — a price this size moves on very few actors, and four weeks of drift on thin flow is equally consistent with ordinary illiquidity. The orb has also never had a story in four sweeps, which at some point is evidence that there is no story rather than that the story is hidden.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "There is no named catalyst to be priced in — that is the point of this record. Observed: 396.0m Jul 18-27 baseline, 373.4m on Jul 22, step to 403.8m on Jul 23, then a grind to a new 30-day high of 436.8m on 2026-08-11 (~438.8m live 2026-08-12), with no retrace across four sweeps and below-market flow throughout." }
     },
     {
       "id": "2026-08-10-bandos-chestplate-watch",
       "type": "watch-note",
       "confidence": "rumor",
-      "title": "Bandos chestplate: set-wide drift on doubled volume, no public story after 3 sweeps",
-      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its THIRD consecutive no-story sweep (2026-08-11). Chestplate +7.1% on +100% volume vs the Jul 18-27 baseline; price has plateaued around 24.0m since Aug 6 (peak 24.1m on Aug 9, small dip Aug 10) - the drift has stalled but not retraced, and volume remains doubled. Its sibling Bandos tassets is now on its own watch-note (2nd no-story sweep). No public story: T2 feeds, repeated open-web wider-net searches, and the Summer Sweep-Up pages (which explicitly contain no Bandos changes) all come up empty. Fits the broad endgame-melee repricing window (Sweep-Up buffs + TFA hype) but that class-level fit is analyst inference, not a sourced story. Either early information or quiet accumulation; posture is absence.",
+      "title": "Bandos chestplate: rolled over from its Aug 9 peak on the fourth no-story sweep; volume evidence withdrawn, Jul 29 Wyrmscraig launch offered as a candidate date",
+      "thesis": "Escalation of the tracker's persistent anomaly flag, now on its FOURTH consecutive no-story sweep (2026-08-12). Chestplate +6.9% on the Jul 18-27 baseline, but the drift has ENDED: peak 24.13m on Aug 9, 23.88m Aug 10, 23.74m Aug 11 — two consecutive lower closes. No public story: T2 feeds across four sweeps, repeated open-web wider-net searches, the Summer Sweep-Up pages (which contain no Bandos changes in either batch) and today's update all come up empty. VOLUME CORRECTION 2026-08-12: the flag's '+546% volume' and this record's previous '+100%' are the 2026-07-24 market-wide reporting artifact — the chestplate's multiple across the break is x5.2, inside the x5.4-7.4 control band. There was no volume doubling. CANDIDATE DATE, not a claim: the price inflection is dated 2026-07-29, not Jul 22 — the chestplate fell from 22.59m on Jul 22 to 21.31m on Jul 28, then turned on Jul 29 (22.22m) and Jul 30 (22.74m). 2026-07-29 is Wyrmscraig launch day, a new mid-game PvM area, and mid-game melee demand is the obvious mechanism — but no source connects them and the wiki lists no Bandos change, so this is a date coincidence offered for your judgement, not a story.",
       "direction": "caution",
       "items": [{ "id": 11832, "name": "Bandos chestplate" }],
       "sources": [
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11832", "note": "Baseline 22.4m to recent 24.0m (+7.1%) on vol 916 to 1,836/day; plateau since Aug 6, peak 24.1m Aug 9, 23.9m Aug 10", "tier": 1 },
-        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: the gear sweep contains no Bandos changes", "tier": 1 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11832", "note": "22.43m Jul 18-27 baseline to 23.74m Aug 11 (+6.9%); trough 21.31m Jul 28, turn on Jul 29, peak 24.13m Aug 9, two lower closes since. Volume x5.2 across the reporting break — inside the control band", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: Batch I contains no Bandos changes", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Negative source: Batch II, 12 Aug 2026, contains no Bandos changes", "tier": 0 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Wyrmscraig_Is_Out_Today!", "note": "Candidate date only, NOT claimed as the mechanism: Wyrmscraig launched 2026-07-29, the day the chestplate turned", "tier": 1 }
       ],
-      "sourceTier": 1,
+      "sourceTier": 0,
       "validUntil": "2026-09-10",
-      "contrary": "GWD gear is a perennial mid-game demand staple; a +5-7% drift on doubled volume during a game-wide PvM hype window may be ordinary demand, not accumulation.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: chestplate 22.4m baseline to 24.0m, plateaued since Aug 6 (24.1m peak Aug 9, 23.9m Aug 10); tassets 15.2m to 16.1m, peak Jul 30, flat since." }
+      "contrary": "The case for this being anything has weakened on both legs this sweep: the volume evidence is withdrawn as a reporting artifact, and the price has stopped making highs (peak Aug 9, two lower closes). GWD gear is a perennial mid-game demand staple and a +7% drift that has already rolled over during a game-wide PvM window is ordinary demand, not accumulation. On current evidence this flag is a candidate for dismissal rather than renewal.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: 22.43m baseline, trough 21.31m Jul 28, turn Jul 29, peak 24.13m Aug 9, 23.74m Aug 11 (+6.9% vs baseline, -1.6% off the peak). Volume growth inside the market-wide reporting band." },
+      "disposition": { "action": "dismiss", "ruledOn": "2026-08-12", "reason": "Dismissed on the Jul 24 2026 volume artifact. The flag's '+546% volume' was a market-wide data-feed step, not this item: measured against five unrelated controls the chestplate's volume multiple is x5.2 inside a x5.4-7.4 control band, i.e. at or below market. With the volume leg withdrawn the flag rests on a +6.9% price drift that has already ended — peak 24.13m Aug 9, then two lower closes — after four sweeps with no public story. Nothing left to hear." }
+    },
+    {
+      "id": "2026-08-11-bandos-tassets-watch",
+      "type": "watch-note",
+      "confidence": "rumor",
+      "title": "Bandos tassets: same set-wide pattern as the chestplate, third no-story sweep, also rolled over; volume evidence withdrawn",
+      "thesis": "Escalation under the unexplained-flag rule, now on its THIRD consecutive no-story sweep (2026-08-12). Tassets +5.6% on the Jul 18-27 baseline, peak 16.38m on 2026-07-30, 15.89m on Aug 10 — the price has been drifting DOWN for eleven days and never made a August high. Three sweeps of T2 feeds plus open-web wider-net search surface nothing; neither Summer Sweep-Up batch contains a Bandos change. Basket check: still in no basket — the would-be GWD/melee basket has no attached catalyst, so the map has no story for it. VOLUME CORRECTION 2026-08-12: the flag's '+473% volume' and this record's previous '+108%' are the 2026-07-24 market-wide reporting artifact — the tassets' multiple across the break is x5.0, inside the x5.4-7.4 control band. The 'three weeks of doubled volume' claim in the previous version is withdrawn; there was no volume doubling. Same Jul 29 candidate date as the chestplate (14.89m Jul 24 trough, 15.79m Jul 29, 16.38m Jul 30), offered as a coincidence with Wyrmscraig launch, not as a mechanism.",
+      "direction": "caution",
+      "items": [{ "id": 11834, "name": "Bandos tassets" }],
+      "sources": [
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11834", "note": "15.21m Jul 18-27 baseline to 15.89m Aug 10 (+5.6%); peak 16.38m Jul 30, drifting down since. Volume x5.0 across the reporting break — inside the control band", "tier": 1 },
+        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: Batch I contains no Bandos changes", "tier": 1 },
+        { "url": "https://secure.runescape.com/m=news/summer-sweep-up---agility--chambers-of-xeric-changes?oldschool=1", "note": "Negative source: Batch II, 12 Aug 2026, contains no Bandos changes", "tier": 0 }
+      ],
+      "sourceTier": 0,
+      "validUntil": "2026-09-10",
+      "contrary": "Stronger than for the chestplate: the tassets peaked on 2026-07-30 and have fallen for eleven straight sessions, so the 'ongoing accumulation' reading has no live price support either. With the volume evidence withdrawn as an artifact, this flag now rests on a +5.6% drift that ended two weeks ago. It should probably be dismissed.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: 15.21m baseline to 15.89m on 2026-08-10, peak 16.38m on 2026-07-30, eleven sessions of decline since. Volume growth inside the market-wide reporting band." },
+      "disposition": { "action": "dismiss", "ruledOn": "2026-08-12", "reason": "Dismissed on the Jul 24 2026 volume artifact, same reasoning as the chestplate and stronger. The '+473% volume' and the 'three weeks of doubled volume' claim were the market-wide feed step: measured, the tassets' multiple is x5.0 inside a x5.4-7.4 control band. The price peaked 16.38m on Jul 30 and has fallen for eleven straight sessions, so the ongoing-accumulation reading has no live support either, after three sweeps with no public story." }
     },
     {
       "id": "2026-08-10-gathering-efficiencies-hunter-supply",
       "type": "long-catalyst",
       "confidence": "hinted",
       "title": "Gathering Efficiencies QoL (passed Apr 9, undated): hunter supply buff overhangs chinchompas trading at highs",
-      "thesis": "The Gathering Efficiencies QoL lock-in poll passed 2026-04-09 (confidence capped at hinted per long-horizon rule because implementation is UNDATED). Among its 14 changes: stackable hunter net traps, which materially speed chinchompa hunting and raise supply per hour. Red chinchompas are +27% since the poll passed (1,163 gp Apr avg to 1,477 gp Aug 1-10) and black chinchompas +10% (2,848 to 3,146), both on multi-x volume - the market is pricing hunter DEMAND (Wyrmscraig-era training) and giving no weight to the approved supply buff. HISTORICAL ANALOG (catalyst class: shipped efficiency-QoL to a gathering/supply loop): enhanced crystal weapon seed fell 10.2% in the month after the July 2026 Gauntlet QoL (130.8m Jun 15-Jul 8 avg to 117.5m Aug 1-10) on ~8x daily volume; goat horn dust fell 18% in 12 days after the Aug 5 hunter-rumour rate buff. ASYMMETRY: no long entry exists here and none is proposed - the asymmetry is defensive: chins are T1-band, high-volume staples the sleeve should refuse as accumulation candidates while this overhang is live; the analog move to avoid is a 10-20% repricing on implementation day, and if implementation slips a year the cost of that caution is zero.",
+      "thesis": "The Gathering Efficiencies QoL lock-in poll passed 2026-04-09 (confidence capped at hinted per the long-horizon rule because implementation is UNDATED, and it did not appear in either Summer Sweep-Up batch). Among its 14 changes: stackable hunter net traps, which materially speed chinchompa hunting and raise supply per hour. Red chinchompas are +27% since the poll passed (1,163 gp Apr avg to 1,458 gp Aug 4-10) and black chinchompas +10% (2,848 to 3,130) — the market is pricing hunter DEMAND (Wyrmscraig-era training) and giving no weight to the approved supply buff. HISTORICAL ANALOG (catalyst class: shipped efficiency-QoL to a gathering/supply loop): enhanced crystal weapon seed fell 10.2% in the month after the July 2026 Gauntlet QoL, 130.8m over Jun 15-Jul 8 to 117.5m over Aug 1-10; goat horn fell 19.8% and its dust 16.9% in the two clean weeks after the Aug 5 hunter-rumour rate buff. ANALOG CORRECTION 2026-08-12: the earlier claim that the crystal seed's decline came 'on ~8x daily volume' is withdrawn — that multiple was the market-wide 2026-07-24 reporting step, not seed-specific flow; measured post-break the seed's volume is DOWN 22% (Jul 25-31 vs Aug 4-10). The analog's PRICE receipt stands and is what the analogy rests on. ASYMMETRY: no long entry exists here and none is proposed — the asymmetry is defensive. Chins are T1-band, high-volume staples the sleeve should refuse as accumulation candidates while this overhang is live; the analog move to avoid is a 10-20% repricing on implementation day, and if implementation slips a year the cost of that caution is zero.",
       "direction": "down",
       "items": [
         { "id": 10034, "name": "Red chinchompa" },
         { "id": 11959, "name": "Black chinchompa" }
       ],
       "sources": [
-        { "url": "https://oldschool.runescape.wiki/w/Upcoming_updates", "note": "Gathering Efficiencies: poll passed 2026-04-09, 14 improvements incl. stackable net traps, no release window announced", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=10034", "note": "Red chin +27% Apr to Aug on rising volume", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=25859", "note": "Analog receipt: enhanced crystal weapon seed -10.2% on ~8x volume in the month after the Jul 2026 Gauntlet QoL", "tier": 1 }
+        { "url": "https://oldschool.runescape.wiki/w/Upcoming_updates", "note": "Gathering Efficiencies: poll passed 2026-04-09, 14 improvements incl. stackable net traps, no release window announced (re-checked 2026-08-12, still undated)", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=10034", "note": "Red chin +27% Apr to Aug; post-break Jul 25-31 vs Aug 4-10 is +0.2% price on +5% volume — the demand story has stalled", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=25859", "note": "Analog price receipt: enhanced crystal weapon seed -10.2% in the month after the Jul 2026 Gauntlet QoL. Volume claim withdrawn — post-break the seed is -22% on volume", "tier": 1 }
       ],
       "sourceTier": 1,
       "validUntil": "2027-03-31",
-      "contrary": "Chinchompa demand is genuinely strong and could absorb the supply buff the way crafting demand absorbed Golem Crafting's uncut gems (zero price decline in 12 days); stackable traps may also ship nerfed or last in the batch.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "The passed poll is 4 months old and chins are +10-27% since - the supply-buff direction is not priced in at all; the market is trading the demand story." },
+      "contrary": "Chinchompa demand is genuinely strong and could absorb the supply buff the way crafting demand appears to be absorbing Golem Crafting's uncut gems (zero price decline in three clean post-break weeks); stackable traps may also ship nerfed or last in the batch. Two Summer Sweep-Up batches have now passed without any Gathering Efficiencies content, which pushes the window later and lengthens the period over which this caution costs option value.",
+      "pricedIn": { "checked": true, "verdict": "no", "detail": "The passed poll is four months old and chins are +10-27% since — the supply-buff direction is not priced in at all; the market is trading the demand story. Post-break the demand story has flattened: red chin +0.2% and black +2.5% between Jul 25-31 and Aug 4-10." },
       "catalyst": { "name": "Gathering Efficiencies QoL implementation", "windowStart": "2026-09-01", "windowEnd": "2027-03-31" }
     },
     {
@@ -282,8 +451,8 @@
       "type": "catalyst-update",
       "confidence": "polled",
       "updatesCatalyst": "The Fractured Archive raid release",
-      "title": "TFA incumbent-displacement basket: repricing already measurable, propose linking to the calendar entry",
-      "thesis": "Update to the TFA calendar entry now that rewards are locked (poll finished 2026-08-10, everything passed). Displacement repricing of incumbent gear is already measurable since the Jul 30 rewards blog: Armadyl crossbow (incumbent vs Ascension Crossbows) -9.0% on +143% volume; Tome of water (adjacent to Zorya's Tome) +14.0% on +173% volume; Inquisitor's mace (crush incumbent) flat on +147% volume. Proposal: link this basket to the TFA calendar entry so entry-watch/ramping detection runs against the actual release window as it firms. Inquisitor's armour set is already covered by its own records. NOTE: Inquisitor's mace (~336m) exceeds the 60m sleeve budget - watch-only, no position is proposable on it.",
+      "title": "TFA incumbent-displacement basket: re-measured on clean data, the repricing is real but roughly a third the size previously reported",
+      "thesis": "Update to the TFA calendar entry now that rewards are locked (poll finished 2026-08-10, everything passed). MEASUREMENT CORRECTION 2026-08-12: the previous version compared a 'pre-blog Jul 11-29 baseline' against post-Jul-30 data, a window that straddles the market-wide reporting break of 2026-07-24, so its volume figures (+143%, +173%, +147%) are artifacts and are withdrawn, and its price deltas were distorted by the pre-break days. Re-measured on post-break windows only (Jul 25-31 against Aug 4-10): Armadyl crossbow -3.5% on -4% volume (previously reported -9.0%); Tome of water +12.4% on +5% volume (previously +14.0%); Inquisitor's mace +1.9% on -14% volume (previously flat). Displacement repricing is present in the ACB and the tome and is directionally as described, but it is smaller and thinner than the earlier numbers implied, and the mace has ticked UP rather than staying flat. Proposal unchanged: link this basket to the TFA calendar entry so entry-watch/ramping detection runs against the actual release window as it firms. Inquisitor's armour set is already covered by its own records. NOTE: Inquisitor's mace (~342m) exceeds the 60m sleeve budget — watch-only, no position is proposable on it.",
       "direction": "unclear",
       "items": [
         { "id": 11785, "name": "Armadyl crossbow" },
@@ -292,50 +461,14 @@
       ],
       "sources": [
         { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Locked rewards slate this basket maps against", "tier": 0 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11785", "note": "ACB -9.0% / vol +143% since Jul 30 blog (pre-blog Jul 11-29 baseline)", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=25576", "note": "Tome of water +14.0% / vol +173% since Jul 30", "tier": 1 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24417", "note": "Inquisitor's mace flat / vol +147% since Jul 30", "tier": 1 }
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11785", "note": "ACB 36.39m to 35.11m (-3.5%) on -4% volume, Jul 25-31 vs Aug 4-10 (post-break windows)", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=25576", "note": "Tome of water 494k to 556k (+12.4%) on +5% volume, same clean windows", "tier": 1 },
+        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24417", "note": "Inquisitor's mace 336.0m to 342.3m (+1.9%) on -14% volume, same clean windows", "tier": 1 }
       ],
       "sourceTier": 0,
       "validUntil": "2026-12-31",
-      "contrary": "Basket membership is analyst-selected, not sourced from any official displacement statement; lock-in rewards regularly change stats between poll and release, which would re-scramble the incumbents; release is still only 'late 2026'.",
-      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Displacement repricing began on the Jul 30 blog (ACB -9%, tome +14%, mace flat, all on ~2.5x volume) but the release window is months out and unnamed; historical displacement concentrates near release." }
-    },
-    {
-      "id": "2026-08-11-inquisitors-hauberk-flag",
-      "type": "demand-context",
-      "confidence": "confirmed",
-      "title": "Inquisitor's hauberk repricing follows its Jul 22 piece-level buff and the TFA Breaker window; already retracing (answers anomaly flag)",
-      "thesis": "Answers the tracker's 2026-08-11 anomaly flag on Inquisitor's hauberk (+28.4% / vol +518% on the tracker's baseline, strength 175.6 - the strongest flag it has raised). The piece-level story is the set's story. The 22 July 2026 Summer Sweep-Up rework removed the set bonus and made pieces independently strong, and the hauberk was the largest single beneficiary: crush attack +12 to +16, stab/slash penalties -3 to 0, and its individual crush damage/accuracy contribution doubled from 0.5% to 1% per the wiki changelog. The TFA Breaker (BiS crush megarare, passed 88.4% on 2026-08-10) supplies the speculative second driver via community crush-synergy framing - speculation only; the wiki's hauberk page contains no TFA reference. Tape: ~117.7m Jul 18-27 baseline, 149.9m peak on Aug 5 (same peak day as the set), 137.5m on Aug 10 (+21.3% vs baseline on +123% volume) - five straight days of retrace. The flag tripped on a move that is already unwinding.",
-      "direction": "unclear",
-      "items": [{ "id": 24420, "name": "Inquisitor's hauberk" }],
-      "sources": [
-        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "22 Jul 2026 shipped rework: set bonus removed, pieces gain independent crush bonuses", "tier": 1 },
-        { "url": "https://oldschool.runescape.wiki/w/Inquisitor%27s_hauberk", "note": "Changelog: crush +12 to +16, stab/slash -3 to 0, individual crush contribution 0.5% to 1%; page contains NO TFA reference", "tier": 1 },
-        { "url": "https://oldschool.runescape.com/polls/2026/1762", "note": "Breaker crush megarare confirmed passing 88.4% on 2026-08-10", "tier": 0 },
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=24420", "note": "30-day price/volume history: peak Aug 5, retracing since", "tier": 1 }
-      ],
-      "sourceTier": 0,
-      "validUntil": "2026-09-30",
-      "contrary": "The parent set carries an active ratified promotion-warning and a SUSPECTED PUMP flag in the tracker - piece-level moves inherit that caution in full; the Breaker synergy portion of the story is community speculation with no official source; and the price has already retraced ~8% from the Aug 5 peak, so anything entered now chases an unwinding move.",
-      "pricedIn": { "checked": true, "verdict": "yes", "detail": "Baseline Jul 18-27 avg ~117.7m, peak 149.9m on 2026-08-05, 137.5m on 2026-08-10; recent (Aug 7+) vs baseline: price +21.3%, volume +123% (tracker's flag math: +28.4% / +518% on its own baseline). The move peaked six days before the flag was exported and has retraced five straight days." }
-    },
-    {
-      "id": "2026-08-11-bandos-tassets-watch",
-      "type": "watch-note",
-      "confidence": "rumor",
-      "title": "Bandos tassets: set-wide drift on doubled volume, no public story after 2 sweeps",
-      "thesis": "Escalation under the unexplained-flag rule (2nd consecutive no-story sweep, still elevated). Tassets +5.6% on +108% volume vs the Jul 18-27 baseline; the price peaked at 16.4m on Jul 30 and has plateaued around 16.0m since, but the doubled-volume regime has now persisted three weeks with no story. Two sweeps of T2 feeds plus open-web wider-net search surface nothing; the Summer Sweep-Up pages explicitly contain no Bandos changes. Basket check: in no basket - the would-be GWD/melee basket has no attached catalyst, so the map has no story for it. Set-wide move with Bandos chestplate (own watch-note, now on its 3rd no-story sweep). Either early information or quiet accumulation; posture is absence unless the catalyst can be named.",
-      "direction": "caution",
-      "items": [{ "id": 11834, "name": "Bandos tassets" }],
-      "sources": [
-        { "url": "https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=24h&id=11834", "note": "Baseline 15.2m to recent 16.1m (+5.6%) on vol 1,041 to 2,168/day; peak 16.4m Jul 30, flat since", "tier": 1 },
-        { "url": "https://oldschool.runescape.wiki/w/Update:Summer_Sweep-Up_Gear_%26_PvM_Changes", "note": "Negative source: the gear sweep contains no Bandos changes", "tier": 1 }
-      ],
-      "sourceTier": 1,
-      "validUntil": "2026-09-10",
-      "contrary": "GWD gear is a perennial mid-game demand staple and +5-6% on doubled volume during a game-wide PvM hype window may be ordinary demand; unlike Harmonised orb, the price stopped making highs on Jul 30 - consistent with a demand wave already fading rather than ongoing accumulation.",
-      "pricedIn": { "checked": true, "verdict": "no", "detail": "No named catalyst to price in. Observed: 15.2m baseline to 16.1m recent, peak 16.4m on 2026-07-30, plateau since; volume regime (roughly 2x) still active as of Aug 9." }
+      "contrary": "Basket membership is analyst-selected, not sourced from any official displacement statement; lock-in rewards regularly change stats between poll and release, which would re-scramble the incumbents; release is still only 'late 2026'. The corrected numbers weaken the case further — a -3.5% move in the ACB on falling volume is within ordinary drift for that item, and the mace moving the wrong way undercuts the crush-displacement leg of the thesis.",
+      "pricedIn": { "checked": true, "verdict": "partial", "detail": "Re-measured on post-break windows (Jul 25-31 vs Aug 4-10): ACB -3.5% on -4% volume, Tome of water +12.4% on +5% volume, Inquisitor's mace +1.9% on -14% volume. Some displacement repricing has begun, but it is modest and the release window is months out and unnamed; historical displacement concentrates near release." }
     }
   ]
 }

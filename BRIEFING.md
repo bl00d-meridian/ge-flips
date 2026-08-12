@@ -47,10 +47,23 @@ minimum bar for a source — and it is a bar, not a guarantee of honesty.
 ## Standing rules (binding)
 
 1. **Never launder rumor into fact.** Every record carries a confidence tier —
-   `confirmed` (official news post / patch notes), `polled` (passed or scheduled poll),
-   `hinted` (dev statement, blog aside, beta datamine), `rumor` (community speculation)
-   — and the record's copy must claim exactly what the tier supports. A rumor phrased
-   as certainty is a defect, not enthusiasm.
+   `measured` (see below), `confirmed` (official news post / patch notes), `polled`
+   (passed or scheduled poll), `hinted` (dev statement, blog aside, beta datamine),
+   `rumor` (community speculation) — and the record's copy must claim exactly what the
+   tier supports. A rumor phrased as certainty is a defect, not enthusiasm.
+
+   **1a. The `measured` tier (user ruling, Aug 12 2026).** A claim computed directly
+   from the price API and reproducible from the endpoints the record cites. The other
+   four rungs describe what a SOURCE SAYS; this one describes what the DATA SHOWS, and
+   the ladder had no rung for it — the Jul 24 volume artifact was found by measurement,
+   not by anyone announcing it, and filing it as `confirmed` would have claimed a source
+   said something no source said. **`measured` outranks `confirmed` for claims about the
+   tape**, because for a tape claim a measurement beats a statement about it;
+   `confirmed` stays the top tier for announcements. It is therefore a **category error
+   on an announcement-shaped record** — a `catalyst`, `catalyst-update` or
+   `long-catalyst` claiming `measured` is REJECTED at import and counted, never quietly
+   downgraded. Cite the exact endpoints, state which part is measured and which is
+   inferred, and expect the user to re-run it.
 2. **No source, no record.** Every record cites at least one URL. A claim that cannot
    be cited is dropped, not softened.
 3. **No proposals for flipping-inventory items.** The briefing must not propose sleeve
@@ -255,6 +268,31 @@ Type-specific extras:
   measured numbers) and a mandatory **ASYMMETRY** line (entry price vs analog move vs
   downside if the catalyst slips a year). Arrives WITH a proposed item basket. Max
   [4] per deep-sweep, ranked by asymmetry.
+**Optional on any record — `disposition` (user ruling, Aug 12 2026).** A ruling the user
+gave at the desk, travelling back inside the file rather than waiting to be re-pressed in
+the tracker:
+
+```json
+"disposition": { "action": "dismiss", "ruledOn": "2026-08-12", "reason": "why, in full" }
+```
+
+This is not the analyst ruling for the user: the file is the handshake THEY carry and
+press Import on, which is the constitution's explicit press. The tracker applies it,
+decision-logs it with an `auto` stamp plus the reason and the ruled-on date, and renders
+the reason where the record renders. Two constraints, both enforced at import:
+**only `dismiss` travels** — dismissing drops an advisory record while ratifying arms
+one, and the arming direction stays a press in the tool — and **a disposition with no
+reason is ignored**, because a dismissal without a why is not a record. Never write one
+the user did not actually give.
+
+**Corrections to already-ratified records now land (Aug 12 2026).** Re-importing a
+ratified id used to be absorbed silently, so a run that withdrew a number from a record
+the user had ratified left the wrong number standing in the tracker while the brief
+claimed it was fixed. A revised ratified record is now corrected in place, keeps its
+ratification and teeth, and is stamped `corrected` so the user knows to re-read it. Write
+the correction INTO the record's own copy — say what was withdrawn and why — rather than
+only in the brief.
+
 - `watch-note` — the unexplained-flag escalation shape (standing rule 9a): an item on
   its **second consecutive no-story sweep, still elevated**, becomes its own record —
   "sustained accumulation, no public story after 2 sweeps — either early information

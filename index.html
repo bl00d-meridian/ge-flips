@@ -1250,7 +1250,7 @@ let DB = {
   sleeveExits: [],    // realized sleeve exits [{t,d,posId,itemId,name,qty,price,basis,net,rung}] — never mixed into DB.flips or any flipping stat
   sleeveRungPct: 5,   // a price rung arms when the exit-guidance price is within this % of its trigger
   catalysts: [],      // catalyst calendar [{id,name,windowStart,windowEnd,items:[ids],clusters:[ids],notes,src,createdAt}] — the user's (or ratified briefings')
-  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v,dismissed?,noStory?,storyId?}] — "reason unknown; find the catalyst"; 30d retention; dismissed (ms stamp) silences the tape-question reminder only, never the pump fingerprint; noStory = consecutive no-story sweeps (analyst feedback), storyId = the intel record that answered it
+  anomalyFlags: [],   // accumulation anomalies [{id,itemId,name,at,d,strength,rise14p,rise14v,volMode?,rise14vRel?,mktRatio?,dismissed?,noStory?,storyId?}] — volMode: which volume term raised it (relative to the market index / raw / absent = pre-index, Jul 24 2026 artifact suspect) — "reason unknown; find the catalyst"; 30d retention; dismissed (ms stamp) silences the tape-question reminder only, never the pump fingerprint; noStory = consecutive no-story sweeps (analyst feedback), storyId = the intel record that answered it
   flagArchive: [],    // story-resolution feedback (ruled Aug 10 2026): explained flags archive with their market signature [{itemId,name,flagAt,storyId,storyType,storyConf,peakToFlagD,retracePct,at}] — builds the LAG PROFILE the anomaly scan displays; attention only, never authority
   rampFlags: [],      // entry-watch DISCOUNTED→RAMPING transitions on calendar items [{catId,catName,itemId,name,at,runwayD}] — a tape question about the CATALYST ("is the window moving up?"); 30d retention
   entryWatchState: {},// "catId:itemId" → last entry-watch verdict, so transitions are detectable across sessions
@@ -1262,6 +1262,7 @@ let DB = {
   shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
+  volIndex: null,     // market volume index (ruled Aug 12 2026) {at,d,ratio,n,tried,rows:[{id,name,ratio,straddle}],straddle} — the anomaly scan's volume denominator; null = never measured
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
   lastBriefImportAt: 0,   // when intelligence.json was last imported (the analyst-freshness clock)
@@ -9705,12 +9706,84 @@ async function slvDailyFor(id){
   return rec;
 }
 
+/* ── MARKET VOLUME INDEX (user ruling, Aug 12 2026) ───────────────────────
+   Case law, the Jul 24 2026 volume artifact: reported GE volume stepped ~5–7×
+   across the ENTIRE market on 2026-07-24 — nature runes, sharks, ranarr,
+   dragon boots and uncut sapphire all at once, with prices flat. It was a
+   change in the data feed, not in the market, and the anomaly scan read it as
+   news on every item individually: seven flags, four of which spent up to four
+   analyst sweeps hunting a story that never existed.
+
+   A detector that compares an item to ITS OWN past cannot tell a feed change
+   from a market event, because a feed change moves every item at once and
+   looks like news on each of them. So the volume term is measured RELATIVE to
+   a market-wide control index: the median volume ratio of a basket of liquid
+   items chosen for having nothing to do with each other or with endgame PvM.
+   An item is only interesting when it moves against the market, not with it.
+
+   The basket is deliberately boring — a consumable rune, a food, a herb, a
+   gem, a log, an ore, a rune and a mid-game boot drop. If a future update ever
+   moves all eight at once the index is compromised, which is why the panel
+   renders its constituent rows: the index is an aggregate and decomposes like
+   any other. */
+const VOL_INDEX_BASKET = [
+  { id: 561,   name: "Nature rune" },
+  { id: 385,   name: "Shark" },
+  { id: 207,   name: "Grimy ranarr weed" },
+  { id: 1623,  name: "Uncut sapphire" },
+  { id: 1515,  name: "Yew logs" },
+  { id: 453,   name: "Coal" },
+  { id: 560,   name: "Death rune" },
+  { id: 11840, name: "Dragon boots" }
+];
+const VOL_INDEX_MIN = 4;          // below this many usable controls the index is not computed
+const VOL_INDEX_TTL = 20 * 3600e3;
+/* The known discontinuity. Windows that straddle it cannot be compared at all
+   — not even relatively, because the index itself is measured across the same
+   break and inherits its noise. The suppression is DATE-DRIVEN and expires on
+   its own: once the prior window (day -28 to -14) starts after the break,
+   nothing straddles and this stops firing. No flag day to remember. */
+const VOL_BREAK_D = "2026-07-24";
+
+/* The raw ratio the volume term is built from: last-7 median against the
+   2–3-weeks-ago median. Pure; the index and the per-item term use the same
+   one, so the numerator and denominator can never be computed differently. */
+function volRatioOf(days){
+  if (!days || days.length < 21) return null;
+  const vols = days.map(x => x.vol || 0);
+  const last7v = medianOf(vols.slice(-7)), priorV = medianOf(vols.slice(-28, -14));
+  return priorV > 0 ? last7v / priorV : null;
+}
+/* True when the two windows sit on opposite sides of the break — i.e. the
+   comparison spans it. Reads the series' own date labels, so it is exact
+   rather than a guess from "how long ago was that". */
+function volWindowsStraddle(days, breakD){
+  if (!days || days.length < 21) return false;
+  const bd = breakD || VOL_BREAK_D;
+  const prior = days.slice(-28, -14), last7 = days.slice(-7);
+  if (!prior.length || !last7.length) return false;
+  return prior.some(x => x.d < bd) && last7.every(x => x.d >= bd);
+}
+/* The index itself: median of the basket's ratios. Median, not mean, so one
+   control caught in a real story of its own cannot drag it. */
+function volIndexFrom(rows){
+  const ok = (rows || []).filter(r => Number.isFinite(r.ratio) && r.ratio > 0);
+  if (ok.length < VOL_INDEX_MIN) return null;
+  return { ratio: medianOf(ok.map(r => r.ratio)), n: ok.length, rows: ok };
+}
+
 /* Pure series verdicts — probe-tested. Baseline = median of everything
    except the last 14 days; current = last-7 median. The accumulation
    signature compares the last week against 2–3 weeks ago on BOTH price and
    volume — rising together is the front-running shape. Under 21 days of
-   data the answer is null, never a guess. */
-function slvSeriesStats(days){
+   data the answer is null, never a guess.
+
+   `mkt` is the market volume index ratio. Given one, the volume term is
+   ITEM-RELATIVE-TO-MARKET and that is what the accumulation gate reads; the
+   raw figure is kept alongside it for the record, never for the decision.
+   Given none, the term is raw and `volMode` says so — a legacy reading is
+   labelled, not silently passed off as a normalised one. */
+function slvSeriesStats(days, mkt){
   if (!days || days.length < 21) return null;
   const mids = days.map(x => x.mid), vols = days.map(x => x.vol || 0);
   const last7m = medianOf(mids.slice(-7)), last7v = medianOf(vols.slice(-7));
@@ -9719,10 +9792,26 @@ function slvSeriesStats(days){
   const priceVs = basem > 0 ? (last7m / basem - 1) * 100 : null;
   const volVs = basev > 0 ? (last7v / basev - 1) * 100 : null;
   const rise14p = priorM > 0 ? (last7m / priorM - 1) * 100 : null;
-  const rise14v = priorV > 0 ? (last7v / priorV - 1) * 100 : null;
-  const accum = rise14p != null && rise14v != null && rise14p >= 4 && rise14v >= 25;
+  const volRatio = priorV > 0 ? last7v / priorV : null;
+  const rise14v = volRatio != null ? (volRatio - 1) * 100 : null;
+  const straddle = volWindowsStraddle(days);
+  const mktOk = Number.isFinite(mkt) && mkt > 0;
+  const rise14vRel = (!straddle && mktOk && volRatio != null) ? (volRatio / mkt - 1) * 100 : null;
+  const volMode = straddle ? "suppressed" : (rise14vRel != null ? "relative" : "raw");
+  /* The volume leg of the accumulation signature, by mode:
+       relative   — the item outran the market by the same 25pp it used to have
+                    to outrun its own past
+       raw        — no index available; the old test, honestly labelled
+       suppressed — the windows straddle the break, so there IS no usable
+                    volume reading. The signature is price AND volume; without
+                    a trustworthy volume leg the answer is "cannot tell", and
+                    flagging on price alone would be inventing the missing half. */
+  const volLeg = volMode === "suppressed" ? null
+    : volMode === "relative" ? rise14vRel : rise14v;
+  const accum = rise14p != null && volLeg != null && rise14p >= 4 && volLeg >= 25;
   const gpVolDay = medianOf(days.slice(-14).map(x => (x.vol || 0) * x.mid));
-  return { priceVs, volVs, rise14p, rise14v, accum, gpVolDay, last7m };
+  return { priceVs, volVs, rise14p, rise14v, volRatio, rise14vRel, volMode, volLeg,
+           accum, gpVolDay, last7m };
 }
 const entryVerdict = st => !st ? null
   : (st.priceVs != null && st.priceVs <= -2) ? "DISCOUNTED"
@@ -9831,9 +9920,40 @@ function crossoverFlags(){
   return flags;
 }
 
+/* Recomputes the market volume index from the basket's own 90-day series,
+   politely (same cache and spacing as everything else). Persisted so the panel
+   can state when it was last measured and from what, and so a scan that could
+   not reach the network says "index unavailable" rather than quietly reverting
+   to the raw term that caused the incident. */
+async function computeVolIndex(force){
+  const prev = DB.volIndex;
+  if (!force && prev && Date.now() - (prev.at || 0) < VOL_INDEX_TTL) return prev;
+  const rows = [];
+  for (const b of VOL_INDEX_BASKET){
+    try {
+      const days = (await slvDailyFor(b.id)).days;
+      const ratio = volRatioOf(days);
+      if (ratio != null) rows.push({ id: b.id, name: b.name, ratio: Math.round(ratio * 1000) / 1000,
+                                     straddle: volWindowsStraddle(days) ? 1 : 0 });
+    } catch(e){ /* polite: a control that will not fetch is simply absent */ }
+    await new Promise(r => setTimeout(r, 250));
+  }
+  const ix = volIndexFrom(rows);
+  DB.volIndex = ix
+    ? { at: Date.now(), d: today(), ratio: Math.round(ix.ratio * 1000) / 1000, n: ix.n,
+        tried: VOL_INDEX_BASKET.length, rows: ix.rows,
+        straddle: ix.rows.some(r => r.straddle) ? 1 : 0 }
+    : { at: Date.now(), d: today(), ratio: null, n: rows.length, tried: VOL_INDEX_BASKET.length, rows, straddle: 0 };
+  save();
+  return DB.volIndex;
+}
+
 /* Weekly accumulation-anomaly scan. Pre-screens >1m items by 24h gp flow to
    the top 40 (politeness cap — stated in the panel, never silent), fetches
-   their 90d series 300ms apart, flags at most 5 by strength. */
+   their 90d series 300ms apart, flags at most 5 by strength. The volume term
+   is normalised against the market index first (user ruling, Aug 12 2026);
+   when the windows straddle the Jul 24 break nothing is flagged at all, and
+   the panel says so rather than presenting an empty scan as a quiet market. */
 let anomalyBusy = false;
 async function runAnomalyScan(force){
   if (anomalyBusy) return;
@@ -9858,12 +9978,20 @@ async function runAnomalyScan(force){
     cands.sort((a, b) => b.gp - a.gp);
     const short = cands.slice(0, 40);
     S.anomScanned = short.length; S.anomPool = cands.length;
+    /* The index is measured BEFORE the scan, from the same endpoint and cache,
+       so every item in this pass is judged against one reading rather than a
+       moving one. */
+    const ix = await computeVolIndex(force);
+    const mkt = ix && ix.ratio > 0 ? ix.ratio : null;
     const hits = [];
+    let suppressed = 0, rawMode = 0;
     for (const c of short){
       try {
-        const st = slvSeriesStats((await slvDailyFor(c.id)).days);
+        const st = slvSeriesStats((await slvDailyFor(c.id)).days, mkt);
+        if (st && st.volMode === "suppressed") suppressed++;
+        if (st && st.volMode === "raw") rawMode++;
         if (st && st.accum)
-          hits.push({ itemId: c.id, st, strength: st.rise14p * (1 + Math.max(0, st.rise14v) / 100) });
+          hits.push({ itemId: c.id, st, strength: st.rise14p * (1 + Math.max(0, st.volLeg) / 100) });
       } catch(e){ /* polite: skip this item, keep scanning */ }
       await new Promise(r => setTimeout(r, 300));
     }
@@ -9872,9 +10000,15 @@ async function runAnomalyScan(force){
     for (const h of hits.slice(0, 5))
       DB.anomalyFlags.push({ id: now + DB.anomalyFlags.length, itemId: h.itemId, name: itemName(h.itemId),
         at: now, d: today(), strength: Math.round(h.strength * 10) / 10,
-        rise14p: Math.round(h.st.rise14p * 10) / 10, rise14v: Math.round(h.st.rise14v) });
+        rise14p: Math.round(h.st.rise14p * 10) / 10, rise14v: Math.round(h.st.rise14v),
+        volMode: h.st.volMode,
+        ...(h.st.rise14vRel != null ? { rise14vRel: Math.round(h.st.rise14vRel) } : {}),
+        ...(mkt != null ? { mktRatio: Math.round(mkt * 1000) / 1000 } : {}) });
     DB.anomalyFlags = DB.anomalyFlags.filter(x => now - x.at < 30 * 86400e3).slice(-40);
     DB.lastAnomalyScanAt = now;
+    /* What the scan could and could not judge — read by the panel so an empty
+       result names its own cause instead of reading as "nothing is happening". */
+    S.anomSuppressed = suppressed; S.anomRaw = rawMode; S.anomMkt = mkt;
     save();
   } finally {
     anomalyBusy = false;
@@ -9953,11 +10087,13 @@ function renderSleeveEngine(){
   $("#anomSub").textContent = (DB.lastAnomalyScanAt ? "last scan " + ago(DB.lastAnomalyScanAt) : "never run")
     + (S.anomScanned != null ? " · screened top " + S.anomScanned + " of " + S.anomPool + " >1m items by gp flow" : "");
   const lagP = flagLagProfile();
-  $("#anomBody").innerHTML = fresh.length ? fresh.slice().reverse().map(f => {
+  $("#anomBody").innerHTML = volIndexPanelHTML() + (fresh.length ? fresh.slice().reverse().map(f => {
     const pf = suspectedPump(f.itemId);
     return '<div class="bench-row"' + (f.dismissed ? ' style="opacity:.55"' : '') + '><span><b>' + esc(f.name) + '</b> — being accumulated: price +'
-    + f.rise14p + '% and volume +' + f.rise14v + '% vs 2–3 weeks ago · strength ' + f.strength
+    + f.rise14p + '% and volume +' + (f.volMode === "relative" && f.rise14vRel != null ? f.rise14vRel + '% vs the market index' : f.rise14v + '% vs 2–3 weeks ago')
+    + ' · strength ' + f.strength
     + (f.dismissed ? ' <span class="badge b-warn" title="Dismissed by you — this silences the tape-question briefing reminder for this flag only. It never lifts a pump defense; only dismissing the warning record does that.">dismissed</span>' : '')
+    + anomVolLine(f)
     + (f.storyId ? '<div class="dim">answered by the analyst: record ' + esc(f.storyId) + '</div>'
       : (wn => wn
           ? '<div class="dim">escalated to watch-note <b>' + esc(wn.id) + '</b>'
@@ -9975,7 +10111,83 @@ function renderSleeveEngine(){
     + '<span class="r">' + esc(f.d)
     + (f.dismissed ? '' : ' <button class="sm ghost" data-anomdismiss="' + f.id + '" title="Silences the tape-question briefing reminder for this flag. Does NOT lift any pump defense — that takes dismissing the warning record itself.">dismiss</button>')
     + '</span></div>'; }).join("")
-    : '<div class="bench-row"><span class="dim">No anomaly flags in the last 30 days.</span></div>';
+    : '<div class="bench-row"><span class="dim">No anomaly flags in the last 30 days.</span></div>');
+}
+
+/* The index states where it stands, and decomposes to the controls that
+   produced it — it is an aggregate like any other, and one whose failure mode
+   (a game update moving the whole basket at once) is only visible in the rows.
+   An unavailable index is reported as unavailable, never as a silent fallback
+   to the raw term that caused the Jul 24 incident. */
+function volIndexPanelHTML(){
+  const ix = DB.volIndex;
+  const head = '<div class="plan-note" style="margin-bottom:6px">';
+  if (!ix || !ix.at)
+    return head + '<b>Volume index: not yet measured.</b> The volume term of this scan is measured '
+      + 'relative to a market-wide control basket (' + VOL_INDEX_BASKET.length + ' liquid, unrelated items), because a '
+      + 'change in the price feed moves every item at once and looks like news on each of them. Run the scan and the '
+      + 'index is measured first.</div>';
+  const rows = (ix.rows || []).map(r => ({
+    name: r.name, id: r.id,
+    ratio: (Number(r.ratio) || 0).toFixed(2) + "×", _ratio: Number(r.ratio) || 0,
+    span: r.straddle ? "spans Jul 24" : "clean",
+    _txt: r.name + " " + r.ratio }));
+  const face = ix.ratio != null ? ix.ratio.toFixed(2) + "×" : "unavailable";
+  const box = drill("anom:volindex", face, {
+    head: "the control basket behind the market volume index — median of these ratios",
+    cols: [{ k: "name", lab: "Control item" }, { k: "ratio", lab: "Vol ratio (last 7d ÷ 2–3wk ago)", num: 1, sortk: "_ratio" },
+           { k: "span", lab: "Windows" }],
+    rows,
+    total: ix.tried,
+    empty: "No controls returned usable series — the index cannot be computed, and the volume term says so rather than falling back.",
+    note: 'The index is the MEDIAN of these ratios, so one control caught in a story of its own cannot drag it. '
+        + 'An item is flagged only when its own volume ratio beats the index by the same 25pp it used to have to beat '
+        + 'its own past — it must move against the market, not with it. If every row here moves together on some future '
+        + 'update, the index is compromised and this is the surface that shows it.' });
+  const bits = [head + '<b>Volume index ' + box + '</b> '
+    + '<span class="dim">— measured ' + esc(ix.d || "") + ' from ' + ix.n + ' of ' + ix.tried + ' controls'
+    + (ix.n < ix.tried ? ' (' + (ix.tried - ix.n) + ' did not return a usable series)' : '') + '</span>'];
+  if (ix.ratio == null)
+    bits.push('<div class="neg">⚠ Index unavailable — fewer than ' + VOL_INDEX_MIN + ' controls returned usable series. '
+      + 'The scan falls back to the RAW volume term, which is the term that produced the Jul 24 2026 artifact; treat '
+      + 'anything it flags as unverified until the index is back.</div>');
+  else if (ix.straddle)
+    bits.push('<div class="dim">Some controls still span 2026-07-24, so the index itself carries that break — which is '
+      + 'why items whose own windows straddle it are suppressed outright rather than normalised.</div>');
+  if (S.anomSuppressed > 0)
+    bits.push('<div class="neg">⚠ Volume term SUPPRESSED for ' + S.anomSuppressed + ' of ' + (S.anomScanned || 0)
+      + ' screened item' + (S.anomSuppressed === 1 ? '' : 's') + ': their 2–3-weeks-ago window sits before 2026-07-24 and '
+      + 'their recent window after it, so the comparison spans the feed break and there is no usable volume reading. '
+      + 'The accumulation signature is price AND volume — with the volume leg unreadable the answer is "cannot tell", '
+      + 'and flagging on price alone would be inventing the missing half. This expires on its own: once the baseline '
+      + 'window starts after 2026-07-24 nothing straddles. Re-run the scan then.</div>');
+  if (S.anomRaw > 0)
+    bits.push('<div class="dim">' + S.anomRaw + ' item' + (S.anomRaw === 1 ? '' : 's') + ' judged on the RAW volume term '
+      + '(no index available at scan time) — labelled on each flag.</div>');
+  return bits.join("") + '</div>';
+}
+/* The volume half of a flag's claim, in one phrase, used everywhere the claim
+   is restated — the panel, the pump fingerprint, the tape-question reminder
+   and the analyst export. One helper so the four can never disagree about what
+   the number means. */
+function anomVolPhrase(f){
+  return (f.volMode === "relative" && f.rise14vRel != null)
+    ? "volume +" + f.rise14vRel + "% vs the market index (raw +" + f.rise14v + "%)"
+    : "volume +" + f.rise14v + "% vs 2–3wk ago" + (f.volMode ? "" : " (RAW, pre-index — inflated by the Jul 24 2026 feed change)");
+}
+/* One line per flag saying which volume term produced it — a flag raised
+   before the index existed must not read as one the index confirmed. */
+function anomVolLine(f){
+  if (f.volMode === "relative" && f.rise14vRel != null)
+    return '<div class="dim">volume term: <b>+' + f.rise14vRel + '% vs the market index</b> ('
+      + (f.mktRatio != null ? 'index ' + f.mktRatio.toFixed(2) + '×, ' : '')
+      + 'raw +' + f.rise14v + '% before normalising) — this item moved against the market, not with it</div>';
+  if (f.volMode === "raw")
+    return '<div class="dim">volume term: <b>raw +' + f.rise14v + '%</b> — no market index was available at scan time, '
+      + 'so this figure is not normalised against market-wide flow</div>';
+  return '<div class="dim">volume term: <b>raw +' + f.rise14v + '%, pre-index</b> — raised before the market volume '
+    + 'index existed (Aug 12 2026). Raw volume comparisons spanning 2026-07-24 are inflated by a market-wide feed '
+    + 'change, not by this item; re-scan to re-judge it.</div>';
 }
 
 /* ── engine wiring ── */
@@ -10082,8 +10294,27 @@ $("#anomRun").onclick = () => { runAnomalyScan(true); toast("Anomaly scan starte
    the reserve — structurally (nothing here writes them) and in the copy
    (where intel and realized history disagree, history wins and says so). */
 const INTEL_TYPES = ["catalyst", "catalyst-update", "cluster-membership", "demand-context", "deflation-flag", "promotion-warning", "long-catalyst", "watch-note"];
-const CONF_RANK = { rumor: 0, hinted: 1, polled: 2, confirmed: 3 };
-const CONF_BADGE = { confirmed: "b-tax", polled: "b-ok", hinted: "b-warn", rumor: "b-risk" };
+/* Confidence tiers. `measured` was added Aug 12 2026 (user ruling) after the
+   Jul 24 volume artifact: the finding that broke the case open was neither an
+   announcement nor a rumor but a DIRECT COMPUTATION from the price API,
+   reproducible from the cited endpoints — and none of the four existing rungs
+   described it. Forcing it into `confirmed` would have claimed a source said
+   something no source said.
+
+   The two top rungs answer different questions, which is why `measured`
+   outranks `confirmed` numerically without demoting it:
+     confirmed — what a SOURCE SAYS. Top tier for announcements, and the only
+                 tier an announcement-shaped record may claim.
+     measured  — what the DATA SHOWS. Outranks confirmed for claims about the
+                 tape itself, because for a tape claim a measurement beats a
+                 statement about the measurement.
+   A catalyst-shaped record (catalyst / catalyst-update / long-catalyst) is a
+   claim about an announced event, so `measured` is a category error there and
+   is rejected on import rather than coerced — there is no honest coercion. */
+const CONF_RANK = { rumor: 0, hinted: 1, polled: 2, confirmed: 3, measured: 4 };
+const CONF_BADGE = { measured: "b-ok", confirmed: "b-tax", polled: "b-ok", hinted: "b-warn", rumor: "b-risk" };
+/* Types whose subject is an announcement — `measured` cannot apply. */
+const CONF_ANNOUNCEMENT_TYPES = ["catalyst", "catalyst-update", "long-catalyst"];
 const INTEL_DIRS = ["up", "down", "unclear", "caution"];
 const TIER_BADGE = t => t == null ? "" : '<span class="badge ' + (t >= 3 ? "b-risk" : t === 2 ? "b-warn" : "b-tax")
   + '" title="' + (t >= 3 ? "T3 trading community — adversarial by default: evidence someone WANTS the price to move, never that it will"
@@ -10147,6 +10378,7 @@ function intelTagText(id){
 function importIntelligence(d){
   if (!d || typeof d !== "object" || !Array.isArray(d.records)) throw new Error("not an intelligence.json (no records array)");
   let added = 0, updated = 0, absorbed = 0, noSource = 0, malformed = 0, resurfaced = 0, tierRejected = 0;
+  let confMisapplied = 0, corrected = 0, dismissedByFile = 0;
   const acceptedRecs = [];   // records that actually entered/updated the queue — rejected or absorbed ones never stamp a story
   for (const raw of d.records){
     if (!raw || typeof raw !== "object"){ malformed++; continue; }
@@ -10174,6 +10406,10 @@ function importIntelligence(d){
     if ((type === "catalyst" || type === "catalyst-update" || type === "long-catalyst") && !(sourceTier != null && sourceTier <= 1)){
       tierRejected++; continue;
     }
+    /* `measured` is a claim about the tape, not about an announcement — a
+       catalyst claiming it is a category error with no honest coercion, so it
+       is rejected and counted rather than quietly downgraded (ruled Aug 12 2026). */
+    if (conf === "measured" && CONF_ANNOUNCEMENT_TYPES.includes(type)){ confMisapplied++; continue; }
     const items = [...new Set((Array.isArray(raw.items) ? raw.items : [])
       .map(x => +((x && x.id) != null ? x.id : x)).filter(x => x > 0))];
     const rec = { id, type,
@@ -10206,8 +10442,35 @@ function importIntelligence(d){
     if (!rec.validUntil || !Number.isFinite(Date.parse(rec.validUntil + "T00:00:00"))){ malformed++; continue; }
     const conflicts = items.filter(x => sleeveMandateConflict(x)).map(x => itemName(x));
     if (conflicts.length) rec.conflict = conflicts.join(", ");
+    /* ── A ruling carried in the file (Aug 12 2026) ────────────────────────
+       `disposition: {action:"dismiss", reason, ruledOn}` lets a ruling the
+       user gave at the desk travel back with the briefing. This is not the
+       tool ruling for itself: the file is the handshake the user carries and
+       PRESSES Import on, which is the explicit press the constitution asks
+       for. It is logged with an `auto` stamp naming the reason and the date
+       the user ruled, so the decision log records WHY and not merely that;
+       and dismissal is reversible — the record resurfaces on a material
+       change like any other dismissed record.
+       Only `dismiss` is honoured. Ratification is deliberately NOT carriable:
+       dismissing drops an advisory record, while ratifying arms one, and the
+       arming direction stays a press in the tool. */
+    const dispRaw = (raw.disposition && typeof raw.disposition === "object" && !Array.isArray(raw.disposition))
+      ? raw.disposition : null;
+    const disp = (dispRaw && dispRaw.action === "dismiss" && String(dispRaw.reason || "").trim())
+      ? { reason: String(dispRaw.reason).trim().slice(0, 600), ruledOn: String(dispRaw.ruledOn || "").slice(0, 10) } : null;
+    const applyDismissal = (target) => {
+      target.status = "dismissed"; target.ruledAt = Date.now();
+      target.dismissReason = disp.reason;
+      logDecision("intel", target.title || target.id,
+        "dismiss — ruled at the desk" + (disp.ruledOn ? " " + disp.ruledOn : ""), disp.reason, 1);
+      dismissedByFile++;
+    };
     const existing = DB.intel.find(x => x.id === id);
     if (existing){
+      if (disp && existing.status !== "dismissed"){
+        Object.assign(existing, rec, { importedAt: existing.importedAt, status: existing.status });
+        applyDismissal(existing); continue;
+      }
       if (existing.status === "pending"){ Object.assign(existing, rec, { importedAt: existing.importedAt }); updated++; acceptedRecs.push(existing); continue; }
       if (existing.status === "dismissed"
           && (CONF_RANK[conf] > CONF_RANK[existing.confidence] || rec.direction !== existing.direction)){
@@ -10216,8 +10479,32 @@ function importIntelligence(d){
         DB.intel = DB.intel.filter(x => x.id !== id);
         DB.intel.push(rec); resurfaced++; acceptedRecs.push(rec); continue;
       }
+      /* A RATIFIED record whose copy materially changed is a CORRECTION, and
+         it must land (Aug 12 2026). Before this, re-importing a ratified id
+         was absorbed silently — so an analyst run that withdrew a number from
+         a record the user had already ratified left the wrong number standing
+         in the tool while the brief claimed it was fixed. The correction
+         updates in place and KEEPS the ratification (its teeth are unchanged;
+         nothing about a gate or a cap moves), but stamps `corrected` so the
+         queue can show it needs re-reading. Attention, not authority. */
+      if (existing.status === "ratified"){
+        const changed = ["thesis", "title", "contrary"].some(k => String(existing[k] || "") !== String(rec[k] || ""))
+          || String((existing.pricedIn || {}).detail || "") !== String((rec.pricedIn || {}).detail || "")
+          || String((existing.pricedIn || {}).verdict || "") !== String((rec.pricedIn || {}).verdict || "")
+          || existing.confidence !== rec.confidence || existing.direction !== rec.direction;
+        if (changed){
+          const wasConf = existing.confidence;
+          Object.assign(existing, rec, { importedAt: existing.importedAt, status: "ratified",
+            teeth: existing.teeth, outcome: existing.outcome });
+          existing.corrected = "copy revised by the " + today() + " briefing"
+            + (wasConf !== rec.confidence ? " · confidence " + wasConf + " → " + rec.confidence : "");
+          existing.correctedAt = Date.now();
+          corrected++; acceptedRecs.push(existing); continue;
+        }
+      }
       absorbed++; continue;
     }
+    if (disp){ DB.intel.push(rec); applyDismissal(rec); continue; }
     const mset = new Set(items);
     const variantOf = items.length ? DB.intel.find(x => {
       if (x.status !== "dismissed" || x.type !== type) return false;
@@ -10274,7 +10561,8 @@ function importIntelligence(d){
     }
   }
   save();
-  return { added, updated, absorbed, noSource, malformed, resurfaced, tierRejected };
+  return { added, updated, absorbed, noSource, malformed, resurfaced, tierRejected,
+           confMisapplied, corrected, dismissedByFile };
 }
 
 /* LAG PROFILE from the flag archive: median peak-to-flag lag, dominant story
@@ -10336,7 +10624,7 @@ function suspectedPump(id){
   if (anom)
     return { firstSeen: Math.max(wFirst, anom.at),
       why: "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
-      + "%, volume +" + anom.rise14v + "% vs 2–3wk ago)." + lift };
+      + "%, " + anomVolPhrase(anom) + ")." + lift };
   const flow = dailyGpFlow(id);
   const thin = DB.pumpThinGp != null ? DB.pumpThinGp : 10e6;
   if (flow != null && flow < thin)
@@ -10405,7 +10693,10 @@ const intelPending = () => (DB.intel || []).filter(r => r.status === "pending");
 const intelToGrade = () => (DB.intel || []).filter(r => r.status === "ratified" && intelExpired(r) && !r.outcome);
 
 function intelRecordHTML(r, compact){
-  const conf = '<span class="badge ' + (CONF_BADGE[r.confidence] || "b-ok") + '">' + r.confidence + '</span>';
+  const conf = '<span class="badge ' + (CONF_BADGE[r.confidence] || "b-ok") + '"'
+    + (r.confidence === "measured"
+       ? ' title="Measured: computed directly from the price API and reproducible from the cited endpoints — what the DATA SHOWS, as distinct from what a source says. Outranks confirmed for claims about the tape itself; confirmed stays the top tier for announcements."' : '')
+    + '>' + r.confidence + '</span>';
   const dir = r.direction === "up" ? "↑" : r.direction === "down" ? "↓" : "·";
   const srcs = (r.sources || []).map((s, i) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" title="' + esc(s.note || s.url) + '">[' + (i + 1) + ']</a>').join(" ");
   return '<div style="border:1px solid var(--line);border-radius:3px;background:var(--panel2);padding:8px 11px;margin-bottom:6px">'
@@ -10414,7 +10705,12 @@ function intelRecordHTML(r, compact){
     + ' <b>' + dir + ' ' + esc(r.title) + '</b>'
     + ' <span class="dim">until ' + esc(r.validUntil) + '</span> ' + srcs
     + (r.resurfaced ? ' <span class="badge b-warn" title="' + esc(r.resurfaced) + '">resurfaced</span>' : '')
+    + (r.corrected ? ' <span class="badge b-warn" title="This record was already ratified when a later briefing revised its copy. The ratification stands and nothing about its teeth changed — but the words you ratified are not the words here now, so re-read it.">corrected</span>' : '')
     + '</div>'
+    + (r.corrected ? '<div class="plan-note" style="margin-top:4px">✎ ' + esc(r.corrected)
+        + ' — you ratified an earlier version; the revision is below. Nothing was re-armed and no teeth changed.</div>' : '')
+    + (r.status === "dismissed" && r.dismissReason
+        ? '<div class="dim" style="white-space:normal">dismissed: ' + esc(r.dismissReason) + '</div>' : '')
     + (r.thesis ? '<div style="white-space:normal;margin-top:2px">' + esc(r.thesis) + '</div>' : '')
     + (r.items && r.items.length ? '<div class="dim" style="white-space:normal">affects: ' + esc(r.items.map(id => itemName(id)).join(", ")) + '</div>' : '')
     + (r.pricedIn && r.pricedIn.verdict ? '<div class="dim" style="white-space:normal">priced-in check: <b>' + esc(r.pricedIn.verdict) + '</b>' + (r.pricedIn.detail ? ' — ' + esc(r.pricedIn.detail) : '') + '</div>' : '')
@@ -10592,8 +10888,11 @@ $("#intelFile").onchange = e => {
       renderSleeve();
       toast("Briefing imported: " + res.added + " new, " + res.updated + " updated, " + res.resurfaced + " resurfaced, "
         + res.absorbed + " absorbed by prior rulings"
+        + (res.corrected ? ", " + res.corrected + " RATIFIED record(s) corrected in place — re-read them" : "")
+        + (res.dismissedByFile ? ", " + res.dismissedByFile + " dismissed by a ruling carried in the file" : "")
         + (res.noSource ? ", " + res.noSource + " REJECTED (no source, no record)" : "")
         + (res.tierRejected ? ", " + res.tierRejected + " catalyst record(s) REJECTED (no T0/T1 primary source)" : "")
+        + (res.confMisapplied ? ", " + res.confMisapplied + " REJECTED (a catalyst cannot be 'measured' — that tier is for tape claims)" : "")
         + (res.malformed ? ", " + res.malformed + " malformed dropped" : "")
         + ". Nothing activates until you ratify.");
     } catch(err){ alert("Briefing import failed: " + err.message); }
@@ -10915,7 +11214,7 @@ function tapeQuestionFlags(){
   for (const f of (DB.anomalyFlags || [])){
     if (f.dismissed || now - f.at >= 30 * 86400e3 || f.at <= last) continue;
     out.push({ kind: "anomaly", itemId: f.itemId, name: f.name, firstSeen: f.at,
-      detail: "being accumulated: price +" + f.rise14p + "% / volume +" + f.rise14v + "% vs 2–3wk ago — reason unknown" });
+      detail: "being accumulated: price +" + f.rise14p + "% / " + anomVolPhrase(f) + " — reason unknown" });
   }
   const promoted = new Set();
   for (const r of (DB.intel || []))
@@ -10947,7 +11246,8 @@ function analystFlagsPending(){
     flags.push({ kind: "anomaly", itemId: f.itemId, name: f.name,
       firstSeen: new Date(f.at).toISOString(), newSinceBrief: f.at > last,
       noStorySweeps: f.noStory || 0,   // consecutive sweeps the analyst found no public story — ≥1 triggers the wider-net re-hearing, ≥2 the watch-note escalation
-      detail: "price +" + f.rise14p + "% / volume +" + f.rise14v + "% vs 2–3wk ago · strength " + f.strength });
+      volMode: f.volMode || "raw-preindex",   // which volume term raised it: relative (normalised against the market index), raw (no index at scan time), raw-preindex (raised before the index existed — Jul 24 2026 artifact suspect)
+      detail: "price +" + f.rise14p + "% / " + anomVolPhrase(f) + " · strength " + f.strength });
   }
   const promoted = new Set();
   for (const r of (DB.intel || []))
@@ -12055,7 +12355,27 @@ const GLOSSARY = [
         + "sit unattended.",
     from: "The plan build.",
     do: "Nothing directly — it is context for the plan's ORDER. What should change your decisions is the stated reason on "
-        + "each line, not its rank." }
+        + "each line, not its rank." },
+  { id: "met-volindex", term: "Market volume index",
+    what: "The median volume ratio — last 7 days against 2–3 weeks ago — of a basket of eight liquid items chosen for "
+        + "having nothing to do with each other or with endgame PvM: a rune, a food, a herb, a gem, a log, an ore, a "
+        + "second rune and a mid-game boot drop. It is the market's own background rate of volume change.",
+    from: "The same 24h series and cache the anomaly scan uses, re-measured at the start of each scan.",
+    do: "Open it before you trust any volume figure the scan reports. If every control row has moved together, some "
+        + "game-wide event or feed change is in play and the index is compromised — which is the one failure mode the "
+        + "number itself cannot show you.",
+    caveat: "It exists because of the Jul 24 2026 artifact: reported volume stepped 5–7× across the whole market in one "
+          + "day, prices flat, and the scan read that as news on seven items individually." },
+  { id: "met-relvol", term: "Relative volume", aka: "volume vs the market index",
+    what: "An item's own volume ratio divided by the market volume index. +25% relative means it traded 25% more than the "
+        + "market-wide change explains. This — not raw volume growth — is the volume leg of the accumulation signature.",
+    from: "The item's 24h series against the index, computed in the same pass so both sides use one reading.",
+    do: "Read a flag's volume claim as \"against the market\", not \"against its own past\". An item that merely kept pace "
+        + "with a market-wide move is not being accumulated, and before Aug 12 2026 the scan could not tell the "
+        + "difference.",
+    caveat: "When an item's two comparison windows straddle 2026-07-24 the term is SUPPRESSED rather than normalised — "
+          + "the index inherits the same break, so there is no trustworthy reading to normalise against, and the scan "
+          + "says \"cannot tell\" instead of guessing." }
 ]},
 
 { g: "governance", title: "How the tool governs itself — rulings, records and its own honesty",
@@ -12122,6 +12442,30 @@ const GLOSSARY = [
         + "<code>flags-pending.json</code> out.",
     from: "Architecture, not a workaround.",
     do: "Carry the file. This is deliberate — there is no sync infrastructure to fix." },
+  { id: "gov-measured", term: "measured (confidence tier)",
+    what: "The fifth confidence rung on a briefing record, added Aug 12 2026: a claim computed directly from the price "
+        + "API and reproducible from the endpoints it cites. The other four rungs describe what a SOURCE SAYS "
+        + "(confirmed, polled, hinted, rumor); this one describes what the DATA SHOWS.",
+    from: "The analyst's own computation, with the endpoints in the record's source list so you can re-run it.",
+    do: "Judge it by re-running it, not by trusting the tier — that is the whole point of the rung. For a claim about "
+        + "the tape, measured outranks confirmed, because a measurement beats a statement about the measurement.",
+    caveat: "It cannot apply to an announcement: a catalyst, catalyst-update or long-catalyst claiming `measured` is a "
+          + "category error and is rejected on import rather than quietly downgraded. Confirmed stays the top tier for "
+          + "anything Jagex announced." },
+  { id: "gov-corrected", term: "corrected (on a ratified record)",
+    what: "A record you already ratified whose copy a later briefing revised — usually because a number in it was "
+        + "withdrawn. The ratification stands and its teeth are untouched; only the words changed.",
+    from: "The briefing import, which used to absorb re-imports of ratified records silently — so a withdrawn number "
+        + "stayed on your screen while the brief claimed it was fixed.",
+    do: "Re-read the record. You ratified an earlier version of the argument, and the correction is precisely the part "
+        + "you have not seen." },
+  { id: "gov-filedismiss", term: "Dismissed by a ruling carried in the file",
+    what: "A dismissal you gave at the desk, travelling back inside <code>intelligence.json</code> instead of waiting to "
+        + "be re-pressed in the tool. Only dismissal travels this way — never ratification.",
+    from: "A <code>disposition</code> block on the record, applied on import and decision-logged with an <code>auto</code> "
+        + "stamp, the reason, and the date you ruled.",
+    do: "Check the decision log entry says why, not merely that. The asymmetry is deliberate: dismissing drops an "
+        + "advisory record, while ratifying arms one, and arming stays a press in the tool." },
   { id: "gov-export", term: "Export the log",
     what: "The full store as JSON. Your flip log exists only in this browser's localStorage.",
     from: "The export button on the Flip Log tab.",
@@ -14305,6 +14649,17 @@ function validateImport(d){
           }).filter(Boolean),
           sleeveExitLiqPct: Math.min(100, Math.max(1, num(d.sleeveExitLiqPct) != null ? num(d.sleeveExitLiqPct) : 15)),
           lastAnomalyScanAt: Math.max(0, num(d.lastAnomalyScanAt) || 0),
+          volIndex: (d.volIndex && typeof d.volIndex === "object" && !Array.isArray(d.volIndex) && num(d.volIndex.at) > 0)
+            ? { at: num(d.volIndex.at), d: String(d.volIndex.d || "").slice(0, 10),
+                ratio: num(d.volIndex.ratio) > 0 ? num(d.volIndex.ratio) : null,
+                n: Math.max(0, num(d.volIndex.n) || 0), tried: Math.max(0, num(d.volIndex.tried) || 0),
+                straddle: d.volIndex.straddle ? 1 : 0,
+                rows: (Array.isArray(d.volIndex.rows) ? d.volIndex.rows : []).map(r => {
+                  const id = num(r && r.id);
+                  if (!(id > 0)) return null;
+                  return { id, name: String(r.name || itemName(id)), ratio: num(r.ratio) || 0, straddle: r.straddle ? 1 : 0 };
+                }).filter(Boolean).slice(0, 40) }
+            : null,
           lastBriefImportAt: Math.max(0, num(d.lastBriefImportAt) || 0),
           rulingsCap: Math.min(10, Math.max(1, num(d.rulingsCap) != null ? num(d.rulingsCap) : 5)),
           briefRemindDismissKey: String(d.briefRemindDismissKey || ""),
@@ -14316,10 +14671,10 @@ function validateImport(d){
           intel: (Array.isArray(d.intel) ? d.intel : []).map(r => {
             const id = String((r && r.id) || "").trim();
             const type = ["catalyst","catalyst-update","cluster-membership","demand-context","deflation-flag","promotion-warning","long-catalyst","watch-note"].includes(r && r.type) ? r.type : null;
-            const conf0 = ["confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
+            const conf0 = ["measured","confirmed","polled","hinted","rumor"].includes(r && r.confidence) ? r.confidence : null;
             /* long-catalyst confidence stays capped at hinted (ruled) — the cap
                must survive a round trip, not just first import */
-            const conf = (type === "long-catalyst" && (conf0 === "confirmed" || conf0 === "polled")) ? "hinted" : conf0;
+            const conf = (type === "long-catalyst" && ["confirmed","polled","measured"].includes(conf0)) ? "hinted" : conf0;
             const sources = (Array.isArray(r && r.sources) ? r.sources : [])
               .filter(s => s && /^https?:\/\//.test(String(s.url || ""))).map(s => {
                 const o2 = { url: String(s.url), note: String(s.note || "") };
@@ -14352,6 +14707,9 @@ function validateImport(d){
             if (r.resurfaced) o.resurfaced = String(r.resurfaced);
             if (r.expiredUnruled) o.expiredUnruled = 1;
             if (r.edited) o.edited = 1;
+            if (r.corrected) o.corrected = String(r.corrected).slice(0, 200);
+            if (num(r.correctedAt) > 0) o.correctedAt = num(r.correctedAt);
+            if (r.dismissReason) o.dismissReason = String(r.dismissReason).slice(0, 600);
             return o;
           }).filter(Boolean).slice(-200),
           catalysts: (Array.isArray(d.catalysts) ? d.catalysts : []).map(c => {
@@ -14370,6 +14728,9 @@ function validateImport(d){
             return { id: num(f.id) || uid(), itemId, name: String(f.name || itemName(itemId)),
               at, d: String(f.d || "").slice(0, 10), strength: num(f.strength) || 0,
               rise14p: num(f.rise14p) || 0, rise14v: num(f.rise14v) || 0,
+              ...(["relative", "raw", "suppressed"].includes(f.volMode) ? { volMode: f.volMode } : {}),
+              ...(num(f.rise14vRel) != null && f.rise14vRel != null ? { rise14vRel: num(f.rise14vRel) } : {}),
+              ...(num(f.mktRatio) > 0 ? { mktRatio: num(f.mktRatio) } : {}),
               ...(num(f.dismissed) > 0 ? { dismissed: num(f.dismissed) } : {}),
               ...(num(f.noStory) > 0 ? { noStory: Math.min(20, num(f.noStory)) } : {}),
               ...(f.storyId ? { storyId: String(f.storyId).slice(0, 80) } : {}) };
