@@ -283,6 +283,16 @@ tr.worst td{background:#3a1b18}
 .err{background:#3a1b18;border:1px solid #6b2b26;color:#e6a49c;padding:8px 12px;border-radius:3px;margin:12px 0;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .warnbar{background:#3a2e13;border:1px solid #6b551b;color:#e8cf92;padding:7px 12px;border-radius:3px;margin:10px 0;font-size:12.5px}
 .note{font-size:11.5px;color:var(--dim);line-height:1.5}
+/* Teaching notes and standing truths live behind a disclosure (ruled Aug 12
+   2026 — surface noise). Relocation, never deletion: the summary is the one
+   line that stays, the full text is the disclosure's own content, so the tap
+   cannot fail to reach it. */
+details.teach{margin:3px 0}
+details.teach>summary{font-size:11.5px;color:var(--dim);cursor:pointer;list-style:none;line-height:1.5}
+details.teach>summary::-webkit-details-marker{display:none}
+details.teach>summary::before{content:"▸ ";color:var(--dim)}
+details.teach[open]>summary::before{content:"▾ "}
+details.teach>.note{padding:4px 0 2px 12px;border-left:1px solid var(--line);margin-top:3px}
 .ac{position:relative;flex:1;min-width:170px}
 .ac ul{
   position:absolute;z-index:20;top:100%;left:0;right:0;margin:2px 0 0;padding:0;list-style:none;
@@ -6036,12 +6046,17 @@ function shadowScanStateLine(P){
   const s = shadowScanState(P);
   const quiet = s.lastOpen ? Date.now() - s.lastOpen : null;
   const stale = quiet != null && quiet > 2 * 3600e3;
+  /* The STATE renders always and short — it is load-bearing. The explanation
+     of WHY the line exists is a teaching note and only earns space in the
+     state it warns about; a rationale that renders on every healthy render is
+     the wallpaper that hides the stall it was written for. */
   return '<div class="' + (stale ? "plan-note" : "dim") + '" style="white-space:normal">'
     + (stale ? '⚠ <b>Nothing has opened for ' + fmtHrs(quiet / 3600e3) + '.</b> ' : '')
     + 'Paper book: ' + esc(s.why) + '. '
     + s.openN + ' open of ' + s.cap + (s.candidates != null ? ' · ' + s.candidates + ' eligible candidate' + (s.candidates === 1 ? '' : 's') + ' this cycle' : '')
-    + (s.lastOpen ? ' · last opened ' + ago(s.lastOpen) : ' · nothing ever opened')
-    + '. <span class="dim">A book that is not opening accrues nothing, so this line renders whether or not anything is wrong.</span></div>';
+    + (s.lastOpen ? ' · last opened ' + ago(s.lastOpen) : ' · nothing ever opened') + '.'
+    + (stale ? ' <span class="dim">A book that is not opening accrues nothing, so this line renders whether or not anything is wrong.</span>' : '')
+    + '</div>';
 }
 function shadowScan(P){
   if (!S.latestAt) return;
@@ -7057,6 +7072,27 @@ function gateStreamDirs(g, ghRows, shBucket){
    shared decomposition primitive; the review keeps a one-line summary that
    links here. Three sections: the ROI-regime curves with the divergence
    ledger, per-gate outcomes, and the cohort ledger (the FILTER question). */
+/* ═══ SURFACE NOISE (user ruling, Aug 12 2026) ════════════════════════════
+   79 persistent blocks, 22,608 characters, ~594 phone lines — against a
+   walk-up budget of 7 decisions. Every block was individually justified; in
+   aggregate they render at the same weight and nothing is louder than
+   anything else, which is how the contamination register and the stall line
+   get missed.
+
+   RELOCATION AND STATE-GATING, NEVER DELETION. `teach()` is the primitive:
+   the summary is the one line that stays on the surface, and the disclosure's
+   own content is the ORIGINAL text, unchanged. That construction is what
+   makes the claims-vs-computation rule survive the edit — the tap cannot fail
+   to reach the full text, because the full text is what the tap opens. A
+   caveat moved behind a link that has to resolve elsewhere could strand; this
+   cannot.
+
+   Use `teach` for standing truths and teaching notes. Do NOT use it for a
+   conditional warning — those render at full weight in their state and vanish
+   otherwise, which is the whole point of the exercise. */
+function teach(summary, fullHTML){
+  return '<details class="teach"><summary>' + esc(summary) + '</summary><div class="note">' + fullHTML + '</div></details>';
+}
 function paperCaveat(){
   return '<div class="plan-note">Screening tool, not evidence — the sim assumes a book you\'re not in; thin books change when you post. '
     + 'This view\'s output is a ranked shortlist of probation candidates for live half-size tests (the exception lane); realized trips remain the only path to a waiver. '
@@ -7402,7 +7438,23 @@ function calibReplaySell(e, pts){
    • NO SPLIT PERCENTAGE BELOW n = 8. Under eight cases a single trip moves
      the split by more than twelve points, which is more precision than the
      data has. Counts always render; percentages wait for the sample. */
-const SELL_DILUTION_GAP_PCT = 1.0;
+/* ═══ THE DERIVATION IS FROZEN (user ruling, Aug 12 2026) ═════════════════
+   RULED at 1.0%, and the derivation above is recorded as HISTORY rather than
+   as a live formula. This constant does NOT track `GATE.roi`: if the ROI floor
+   moves, this does not move with it.
+
+   The reasoning is about the classifier's own comparability. A threshold
+   defined as a function of a strategy parameter makes its own history
+   incomparable — last week's "dilution" and next month's would mean different
+   things, and a split measured across a floor change would be pooling two
+   different questions without anything saying so. A classifier has to hold
+   still to be a measuring instrument at all.
+
+   If the floor changes materially, this is RE-RULED EXPLICITLY. That is a
+   deliberate cost: the two numbers can drift apart, and the drift is visible
+   here rather than hidden inside a formula that silently kept them aligned. */
+const SELL_DILUTION_GAP_PCT = 1.0;          // frozen; derived once from a 1.2% ROI floor, does not track it
+const SELL_DILUTION_DERIVED_FROM_ROI = 1.2; // the floor as it stood when 1.0 was ruled — for drift reporting only
 const SELL_MISLOC_GAP_PCT = 5.0;
 const SELL_MISLOC_SUSTAIN = 0.7;
 const SELL_CLASSIFY_MIN_N = 8;
@@ -7420,7 +7472,7 @@ function classifySellFailure(buckets, ask){
   const withVol = withPx.filter(b => (b.hv || 0) > 0);
   base.volShare = Math.round(withVol.length / bs.length * 100) / 100;
   if (!withVol.length)
-    return { ...base, cls: "unclassified", sub: "no-liquidity",
+    return { ...base, cls: "no-liquidity",
       why: "prints but no high-side volume anywhere in the window — an illiquidity finding, which is neither dilution nor mislocation" };
   const gaps = withVol.map(b => (b.hi - ask) / ask * 100);
   const medGapPct = Math.round(medianOf(gaps) * 100) / 100;
@@ -7439,6 +7491,60 @@ function classifySellFailure(buckets, ask){
        + "%) and the mislocation bar (" + SELL_MISLOC_GAP_PCT + "% sustained over " + Math.round(SELL_MISLOC_SUSTAIN * 100)
        + "%) — neither signature fits, which is a finding rather than a residue" };
 }
+/* Drift between the frozen threshold and the floor it was once derived from.
+   Reported, never acted on — the point of freezing is that this number moving
+   is a prompt for a ruling, not a trigger for an adjustment. */
+function sellThresholdDrift(){
+  const now = GATE.roi;
+  const moved = Math.abs(now - SELL_DILUTION_DERIVED_FROM_ROI) > 0.001;
+  return { rooFloorNow: now, floorWhenRuled: SELL_DILUTION_DERIVED_FROM_ROI, moved,
+    note: moved
+      ? "The ROI floor has moved from " + SELL_DILUTION_DERIVED_FROM_ROI + "% to " + now
+        + "% since the 1.0% dilution threshold was ruled. The threshold deliberately did NOT follow — a classifier that "
+        + "tracks a strategy parameter makes its own history incomparable. Re-rule it explicitly if the gap now matters."
+      : null };
+}
+/* ═══ IS A GLOBAL PERCENTAGE THE RIGHT SHAPE? (user-directed, Aug 12 2026) ══
+   1% below the ask means something different on an item with a 15% spread
+   than on one with a 1.5% spread. So the same population is classified a
+   SECOND way — threshold expressed as a fraction of the item's own realized
+   spread — and the two classifications are compared. NOTHING CHANGES on the
+   strength of this: it is a report, gated on the sample existing, and the
+   live classifier remains the absolute one until ruled otherwise.
+
+   The shadow threshold is a third of the item's own spread, chosen so that on
+   an item whose spread equals the current ROI floor it lands near the ruled
+   1.0% — the two agree at the population the absolute figure was derived on
+   and diverge exactly where the question is whether they should. */
+const SELL_SPREAD_REL_FRACTION = 1 / 3;
+function sellShapeReport(cases){
+  const cs = (cases || []).filter(c => c && c.spreadPct > 0 && c.medGapPct != null);
+  if (cs.length < SELL_CLASSIFY_MIN_N)
+    return { n: cs.length, enough: false,
+      note: "Spread-shape comparison needs " + SELL_CLASSIFY_MIN_N + " classified cases carrying a spread; there "
+          + (cs.length === 1 ? "is " : "are ") + cs.length + ". Reported as insufficient rather than estimated." };
+  const spreads = cs.map(c => c.spreadPct).sort((a, b) => a - b);
+  const q = p => spreads[Math.min(spreads.length - 1, Math.floor(p * spreads.length))];
+  let differ = 0;
+  for (const c of cs){
+    const relBand = c.spreadPct * SELL_SPREAD_REL_FRACTION;
+    const relCls = c.medGapPct >= -relBand ? "dilution"
+                 : (c.medGapPct <= -SELL_MISLOC_GAP_PCT && c.sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
+                 : "unclassified";
+    if (relCls !== c.cls) differ++;
+  }
+  return { n: cs.length, enough: true,
+    spreadMedianPct: Math.round(q(0.5) * 100) / 100,
+    spreadP10Pct: Math.round(q(0.1) * 100) / 100, spreadP90Pct: Math.round(q(0.9) * 100) / 100,
+    wouldReclassify: differ, wouldReclassifyPct: Math.round(differ / cs.length * 100),
+    note: differ === 0
+      ? "A spread-relative threshold would classify every case identically — on this population the absolute figure is "
+        + "not doing any harm, and the shape question is answered in favour of leaving it alone."
+      : differ + " of " + cs.length + " cases would classify differently under a spread-relative threshold ("
+        + Math.round(differ / cs.length * 100) + "%). That is the ruling material: item spreads here run "
+        + Math.round(q(0.1) * 100) / 100 + "%–" + Math.round(q(0.9) * 100) / 100 + "%, so a single absolute band is "
+        + "doing different work at the two ends." };
+}
 /* A population's split. Counts always; percentages only once the sample can
    support them, and it SAYS which it is doing. */
 function sellSplitOf(cases){
@@ -7448,7 +7554,7 @@ function sellSplitOf(cases){
   const enough = n >= SELL_CLASSIFY_MIN_N;
   return { n, enough,
     dilution: by("dilution"), mislocated: by("mislocated-window"), unclassified: by("unclassified"),
-    noLiquidity: cs.filter(c => c.sub === "no-liquidity").length,
+    noLiquidity: by("no-liquidity"),
     pct: enough ? k => Math.round(by(k) / n * 100) : null,
     note: n === 0 ? "no failed sells in this population yet — nothing to classify"
         : enough ? null
@@ -7461,6 +7567,7 @@ function calibSellCases(c){
   return ((c && c.rows) || []).filter(r => r.sell && r.sell.lenient && r.sell.lenient.verdict !== "sold")
     .map(r => Object.assign({ item: r.item, itemId: r.itemId, verdict: r.sell.lenient.verdict,
       creditedPct: r.sell.lenient.creditedPct },
+      { spreadPct: (r.ask > 0 && r.bid > 0) ? Math.round((r.ask / r.bid - 1) * 10000) / 100 : null },
       classifySellFailure((r.sell.trace || []).map(b => ({ hi: b.hi, hv: b.hv })), r.ask)));
 }
 /* Population B: the live book. A trip that resolved without its sell leg
@@ -7472,7 +7579,8 @@ function paperSellCases(){
   return paperSellFailures().map(p => Object.assign(
     { item: p.name || itemName(p.itemId), itemId: p.itemId,
       verdict: p.state, creditedPct: Math.round(100 * (p.sellQ || 0) / Math.max(1, p.qty)),
-      buyPct: Math.round(100 * (p.buyQ || 0) / Math.max(1, p.qty)), obsPct: shadowObsPct(p) },
+      buyPct: Math.round(100 * (p.buyQ || 0) / Math.max(1, p.qty)), obsPct: shadowObsPct(p),
+      spreadPct: (p.ask > 0 && p.bid > 0) ? Math.round((p.ask / p.bid - 1) * 10000) / 100 : null },
     classifySellFailure(p.sellTrace || [], p.ask)));
 }
 /* One replayed flip, both legs. Extracted so an assertion can test the WIRING
@@ -7649,15 +7757,20 @@ function calibSellHTML(c){
        Measurement falsified it. The old claim is quoted rather than quietly
        swapped, because the user read it and acted on it — a correction that
        cannot be recognised as a correction has not landed. */
-    + '<div class="plan-note">✎ <b>Corrected — the earlier caveat here was wrong.</b> This panel used to say the '
+    /* The CORRECTION MARKER stays visible at full weight — it is a landing
+       path and the corrections rule binds. Only its explanation moves. */
+    + '<div class="plan-note">✎ <b>Corrected — the earlier caveat here was wrong.</b> Self-comparison does NOT bite '
+    + 'the sell leg: <b>' + sellAtPrice(c) + ' at-price bucket' + (sellAtPrice(c) === 1 ? '' : 's')
+    + '</b>, bounds identical by construction, so a fast-sell failure above is a REAL model error.'
+    + teach("What the old caveat claimed, and why the measurement reversed it",
+      'This panel used to say the '
     + 'self-comparison artifact applied to sells "and harder", on the reasoning that a sell completing in minutes '
-    + 'leaves almost no bucket that is not the trade itself. Measured: <b>' + sellAtPrice(c) + ' at-price bucket'
-    + (sellAtPrice(c) === 1 ? '' : 's') + '</b> on the sell side, and the two bounds are identical. Your own print is '
+    + 'leaves almost no bucket that is not the trade itself. Your own print is '
     + 'one of many in a liquid item\'s 5m bucket, so the average never lands on your fill. '
     + '<b>What that means for reading the table:</b> the bounds differ only where a bucket is at-price or '
     + 'live-touched, and this replay can produce neither — so their being identical is a property of the harness, not '
     + 'a finding about the market, and a fast-sell failure above is a REAL model error rather than a measurement '
-    + 'artifact.</div>'
+    + 'artifact.') + '</div>'
     + sellDiscriminatorHTML(c);
 }
 /* THE SPLIT, RENDERED. Per population, never pooled — calibration replays
@@ -7720,7 +7833,26 @@ function sellDiscriminatorHTML(c){
     + sellSplitHTML("Calibration — replayed real flips, every logged sell completed", cal, "sell:cls:calib",
         "any verdict but sold is a model error") + ' ' + provTag(false)
     + sellSplitHTML("Live book — simulated sells that never completed", live, "sell:cls:live",
-        "zero or partial sell credit on a resolved trip") + ' ' + provTag(true);
+        "zero or partial sell credit on a resolved trip") + ' ' + provTag(true)
+    /* AMENDMENT (b): is a global percentage the right shape at all? Reported
+       once the sample permits; nothing changes on it without a ruling. */
+    + (() => {
+        const rep = sellShapeReport(cal.concat(live));
+        const drift = sellThresholdDrift();
+        return '<div class="note" style="margin-top:6px"><b>Is a global percentage the right shape?</b> '
+          + esc(rep.note || "")
+          + (rep.enough ? ' <span class="dim">Item spreads across the failed-sell population: '
+              + rep.spreadP10Pct + '% – ' + rep.spreadMedianPct + '% – ' + rep.spreadP90Pct + '% (p10/median/p90).</span>' : '')
+          + (drift.note ? ' <b>' + esc(drift.note) + '</b>' : '')
+          + teach('Why the threshold is frozen rather than derived',
+              'The 1.0% band was derived once from a 1.2% ROI floor and is now a FIXED constant that does not track it. '
+            + 'A threshold defined as a function of a strategy parameter makes its own history incomparable — last '
+            + 'week\'s "dilution" and next month\'s would mean different things, and a split measured across a floor '
+            + 'change would pool two different questions with nothing saying so. A classifier has to hold still to be a '
+            + 'measuring instrument. If the floor moves materially the threshold is re-ruled explicitly, and the drift '
+            + 'is reported here rather than silently corrected.')
+          + '</div>';
+      })();
 }
 /* Shared by the panel and the export so the corrected figure cannot drift
    between the two surfaces that carry the correction. */
@@ -7740,7 +7872,8 @@ function calibSection(){
      not in a footnote — a reviewer seeing a depressed proven bound has to
      know whether it is the market or the measurement. */
   const atP = c ? (c.rows || []).reduce((a, r) => a + (r.atPriceBuckets || 0), 0) : 0;
-  const selfNote = '<div class="plan-note">⚠ <b>The proven bound is depressed here by SELF-COMPARISON, and that is an '
+  const selfNote = teach("Why the proven bound reads low here — the measurement, not the market",
+    '<b>The proven bound is depressed here by SELF-COMPARISON, and that is an '
     + 'artifact of the measurement rather than evidence of an unreachable market.</b> Calibration compares each bucket '
     + 'against your OWN realized fill price, so a bucket whose average low lands exactly on it very likely CONTAINS '
     + 'the trade being measured — your fill is one of the prints averaged into that bucket. Equality is therefore '
@@ -7749,20 +7882,22 @@ function calibSection(){
         + 'one credited on the possible bound and refused on the proven one. ' : '')
     + '<b>This does NOT apply to the paper book</b>, where the comparison price is a SIMULATED bid that never traded — '
     + 'no trade of yours can be inside those buckets, so equality there is genuinely ambiguous and the bracket means '
-    + 'what it says. Two different constructs; do not read one bound against the other.</div>';
-  const capNote = '<div class="plan-note">⊘ <b>The capture share (' + Math.round(GATE.capture * 100)
+    + 'what it says. Two different constructs; do not read one bound against the other.');
+  const capNote = teach("The " + Math.round(GATE.capture * 100) + "% capture share is ungraded, not validated",
+    '<b>The capture share (' + Math.round(GATE.capture * 100)
     + '%) is UNGRADED, not validated.</b> It cannot be tested against paper trips — those fills were generated with it, '
     + 'so measuring it there is circular. Only realized flips can grade it, and this harness will once the replayable '
     + 'sample is large enough to separate capture from the reach and drift effects around it. Until then every fill-time '
     + 'and sizing figure that depends on it rests on an unverified constant, and it is listed here rather than left to '
-    + 'look implicitly confirmed by a green calibration.</div>';
-  const note = selfNote + capNote + '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
+    + 'look implicitly confirmed by a green calibration.');
+  const note = selfNote + capNote + teach("What a disagreement below means, and which one matters",
+    'Every logged real round trip completed both legs — that is what makes it a log entry. '
     + 'So every disagreement below is a MODEL error with a known direction, and the one that matters is <b>false '
     + 'never-filled</b>: if the model routinely says the bid never got the tape for flips you actually completed, then '
     + 'it is pessimistic and no conclusion drawn from paper fill rates survives. The two columns are the reachability '
     + 'BOUNDS. The operative reading lies between them and cannot be replayed at all — it needs a live instabuy '
     + 'observation from inside each bucket, which a historical replay does not have — so it is only ever measurable '
-    + 'going forward.</div>';
+    + 'going forward.');
   if (!c) return head + note + '<div class="dim">Not run yet. It needs flips inside the 5-minute tape\'s ~'
     + CALIB_5M_RETENTION_H + '-hour retention, so it is a ROLLING test: run it while recent flips are still replayable, '
     + 'not once.</div>';
@@ -7898,9 +8033,14 @@ function paperRegimeSection(){
     bits.push(neverFedNote("The regime race",
       (DB.shadowBook || []).length + " paper trips exist and not one carries a regime, so the three curves below have "
       + "no membership at all — they are not flat, they are empty."));
-  bits.push('<div class="note">Three ROI-regime equity curves side by side, on ONE shared scale — the ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&amp;L). '
+  /* The load-bearing half — "comparison only, not a magnitude" — is what
+     stops these being misread, so it stays visible. The mechanics move. */
+  bits.push('<div class="note"><b>Comparison only, not a magnitude</b> — the three regimes screen the same population, '
+    + 'so only the DIFFERENCE between these sums carries information. Never read one as what the book earned.'
+    + teach('How the three curves are built, and why the raw sum survives only here',
+      'Three ROI-regime equity curves side by side, on ONE shared scale — the ROI floor one notch each way, all three SIMULATED with the same honest fill rules (never compare to realized P&amp;L). '
     + 'The number under each curve is the closed-trip net for that regime and opens to its trips; the curve is the daily cumulative reading from the divergence ledger. '
-    + '<b>These three sums are COMPARISON ONLY, not a magnitude</b> (ruled Aug 12 2026) — the raw summed net was retired as a headline everywhere else, and survives here alone because the three regimes screen the SAME population, so the level cancels out and only the difference between them carries information. Do not read any one of them as what the book earned.</div>');
+    + 'Ruled Aug 12 2026: the raw summed net was retired as a headline everywhere else, and survives here alone because the level cancels out across a shared population.') + '</div>');
   bits.push('<div class="curves">' + regs.map(r => {
     const arr = closed.filter(p => (p.regimes || []).includes(r.key));
     const thinReg = paperThin().filter(p => (p.regimes || []).includes(r.key)).length;
@@ -8333,7 +8473,9 @@ function freshnessInline(){
     lines.push('<div class="plan-note"><b class="neg">⚠ Price-history fetching is paused</b> — '
       + Math.ceil((S.tsPauseUntil - Date.now()) / 60e3) + ' minutes left on the circuit breaker after '
       + S.tsFail + ' consecutive /timeseries failures. Anything chart-derived below (trend gates, the hours ledger\'s market stream, sparklines) is running on cached data. Live prices are unaffected.</div>');
-  lines.push('<div class="plan-note"><b>Every accrual in this tool ticks off the app being open — and VISIBLE.</b> The poll skips entirely while the tab is hidden (backgrounded or minimized), so a fortnight behind another tab accrues nothing at all: no paper fills, no stratum samples, no daily snapshots. Nothing is lost, but nothing is gained either. A stalled stream and a quiet one look identical on a chart, so each stream states when it last accrued. <b>Scheduled</b> streams can be late; <b>event-driven</b> ones are silent when nothing happened, and that silence is data, not a fault.</div>');
+  /* Standing truth: true on every render, so it is one line plus a tap. */
+  lines.push(teach('Accrual needs the tab open AND visible — what that means for every stream below',
+    '<b>Every accrual in this tool ticks off the app being open — and VISIBLE.</b> The poll skips entirely while the tab is hidden (backgrounded or minimized), so a fortnight behind another tab accrues nothing at all: no paper fills, no stratum samples, no daily snapshots. Nothing is lost, but nothing is gained either. A stalled stream and a quiet one look identical on a chart, so each stream states when it last accrued. <b>Scheduled</b> streams can be late; <b>event-driven</b> ones are silent when nothing happened, and that silence is data, not a fault.'));
   lines.push(stale.length
     ? '<div class="plan-note"><b class="neg">⚠ ' + stale.length + ' stream' + (stale.length === 1 ? '' : 's')
       + ' behind schedule:</b> ' + stale.map(r => esc(r.name) + ' (' + ago(r.at) + ')').join(" · ")
@@ -10454,15 +10596,19 @@ function gateStreamsSection(){
 function gateDieOffSection(){
   const d0 = gateHealthAudit().dieOff;
   const voidLine = d0 && d0.voided
+    /* The COUNT is the conditional warning and stays at full weight in its
+       state; the reasoning behind it is a teaching note and moves. */
     ? '<div class="plan-note" style="margin-top:6px">⊘ <b>' + d0.voided + ' episode'
-      + (d0.voided === 1 ? '' : 's') + ' auto-voided as noise</b> (your Aug 12 2026 ruling): each recovered inside one '
-      + 'touch gap, so it never affected a placement — nothing is placed or repriced between touches. '
-      + (d0.voidHs.length ? 'Median time to recovery ' + fmtHrs(medianOf(d0.voidHs)) + '. ' : '')
+      + (d0.voided === 1 ? '' : 's') + ' auto-voided as noise</b> (your Aug 12 2026 ruling)'
+      + (d0.voidHs.length ? ' — median time to recovery ' + fmtHrs(medianOf(d0.voidHs)) : '') + '.'
+      + teach("Why voiding them is right, and what it does to the denominator",
+        'Each recovered inside one touch gap, so it never affected a placement — nothing is placed or repriced between '
+      + 'touches. '
       + 'They are excluded from the recovery counts above and from the denominator: a false positive is not an episode '
       + 'the tag got right OR wrong, and counting it as a recovery would let the scorecard flatter itself. '
       + 'Confirmation depth is <b>' + DIEOFF_CONFIRM_REFRESHES + ' consecutive below-floor 5m samples</b> (~'
       + (DIEOFF_CONFIRM_REFRESHES * 5) + ' minutes), ruled Aug 12 2026 and separate from the volume gate\'s own '
-      + VOL5_BIND_REFRESHES + '-refresh binding rule, which is unchanged.</div>'
+      + VOL5_BIND_REFRESHES + '-refresh binding rule, which is unchanged.') + '</div>'
     : '';
   if (!d0 || !d0.episodes)
     return '<div class="dim">No die-off episodes in the last 30 days — the volume floor has not benched anything on a 5m-confirmed die-off against a passing 1h book.</div>' + voidLine;
@@ -16339,6 +16485,8 @@ function analysisCalibration(){
               + "so mislocation cannot occur there by construction. If dilution dominates in both populations the "
               + "mechanism is the credit rule; if mislocation appears in calibration while the live book fails anyway, "
               + "there are two distinct defects and each needs its own fix.",
+            thresholdFrozen: sellThresholdDrift(),
+            isAGlobalPercentageTheRightShape: sellShapeReport(calibSellCases(c).concat(paperSellCases())),
             calibration: shape("replayed real flips — every logged sell completed, so any verdict but sold is a model error",
               calibSellCases(c), false),
             liveBook: shape("epoch-2 simulated sells that never completed", paperSellCases(), true) };

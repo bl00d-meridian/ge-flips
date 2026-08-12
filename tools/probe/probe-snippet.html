@@ -5369,7 +5369,7 @@
        every aggregate below it goes on rendering as though it were live. */
     ok("[R56.3] the paper surface states whether the book is OPENING, whether or not anything is wrong",
        /Paper book: /.test(shadowScanStateLine(null))
-       && /A book that is not opening accrues nothing/.test(shadowScanStateLine(null)),
+       && /[0-9]+ open of [0-9]+/.test(shadowScanStateLine(null)),
        shadowScanStateLine(null).slice(0, 200));
     ok("[R56.3] and when the cooldown is what stopped it, the line says so and names it as a SAMPLING rule",
        (() => { DB.shadowBook = [{ id: 2, fam: "f-a", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
@@ -5385,7 +5385,7 @@
        which is the reimplementation trap wearing the wiring's hat. */
     ok("[R56.3] and the paper headline actually RENDERS it — the generator's state leads the aggregates it produced",
        /Paper book: /.test(paperHeadlineSection())
-       && /A book that is not opening accrues nothing/.test(paperHeadlineSection()),
+       && /[0-9]+ open of [0-9]+/.test(paperHeadlineSection()),
        paperHeadlineSection().slice(0, 200));
     ok("[R56.3] a long quiet spell is flagged, not merely reported",
        (() => { DB.shadowBook = [{ id: 3, fam: "f-b", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
@@ -5700,7 +5700,12 @@
        /did not spend money that is not there/.test(paperHeadlineSection()),
        "within-capital line");
     ok("[R44.4] the raw summed net survives ONLY in the regime comparison, labelled comparison-only",
-       /COMPARISON ONLY, not a magnitude/.test(paperRegimeSection())
+       /* The load-bearing half stays VISIBLE after the noise edit; the
+          mechanics moved behind a tap, so the tap's text is asserted too —
+          a caveat whose tap does not reach its full text is the stranding
+          this edit is most likely to produce. */
+       /Comparison only, not a magnitude/.test(paperRegimeSection())
+       && /only the DIFFERENCE between these sums carries information/.test(paperRegimeSection())
        && /the level cancels out/.test(paperRegimeSection()),
        "regime comparison label");
     DB.shadowBook = keep44b; DB.bank = keepBank44; DB.reserve = keepRes44; DB.shadowReserve = keepSh44;
@@ -6122,6 +6127,54 @@
     ok("[R48.1] and the frozen 43-trip replay headline is stated in the file, not only in chat",
        x48.honesty.some(h => /43-TRIP REPLAY HEADLINE IS FROZEN/.test(h) && /launder the same defect/.test(h)),
        "freeze note absent");
+    /* ═══ §60 SURFACE NOISE — RELOCATION MUST NOT STRAND (ruled Aug 12 2026) ═══
+       The claims-vs-computation rule binds after the edit exactly as before:
+       if a number's honest description moves behind a tap, the tap must exist
+       and reach it. This is the mechanical form of that scan, written to
+       generalise — any future `teach()` inherits it. */
+    const strandedIn = html => {
+      const d = document.createElement("div");
+      d.innerHTML = html;
+      return [...d.querySelectorAll("details.teach")].filter(el => {
+        const s = el.querySelector("summary"), body = el.querySelector(".note");
+        return !s || !s.textContent.trim() || !body || body.textContent.trim().length < 40;
+      }).length;
+    };
+    const teachCount = html => {
+      const d = document.createElement("div"); d.innerHTML = html;
+      return d.querySelectorAll("details.teach").length;
+    };
+    ok("[R60.1] every relocated caveat's tap REACHES its full text — no summary without a body",
+       (() => { const surfaces = [calibSection(), paperRegimeSection(), freshnessInline(),
+                                  calibSellHTML({ rows: [], sellLeg: { strict: { n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0,medianCreditedWhenWrongPct:10,byDuration:{fast:{n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0},slow:{n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0}} }, lenient: { n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0,medianCreditedWhenWrongPct:10,byDuration:{fast:{n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0},slow:{n:1,agree:0,falsePartial:1,falseNever:0,agreePct:0}} } } }), gateDieOffSection()];
+                return surfaces.every(h => strandedIn(h) === 0); })(),
+       "a stranded caveat is worse than the noise removed");
+    ok("[R60.1] and the relocation actually happened — the surfaces carry disclosures rather than standing prose",
+       teachCount(calibSection()) >= 3 && teachCount(paperRegimeSection()) >= 1
+       && teachCount(freshnessInline()) >= 1,
+       JSON.stringify({ calib: teachCount(calibSection()), regime: teachCount(paperRegimeSection()),
+                        fresh: teachCount(freshnessInline()) }));
+    ok("[R60.2] the load-bearing half stays VISIBLE — a conditional warning is never demoted to a disclosure",
+       (() => { const grp = { n: 1, agree: 0, falsePartial: 1, falseNever: 0, agreePct: 0 };
+                const sum = { n: 1, agree: 0, falsePartial: 1, falseNever: 0, agreePct: 0,
+                              medianCreditedWhenWrongPct: 10, byDuration: { fast: grp, slow: grp } };
+                const c = calibSellHTML({ rows: [], sellLeg: { strict: sum, lenient: sum } });
+                /* the correction marker is a landing path and must not be
+                   behind a tap; only its explanation may be */
+                const d = document.createElement("div"); d.innerHTML = c;
+                const det = d.querySelector("details.teach");
+                const outside = c.replace(det ? det.outerHTML : "", "");
+                return /Corrected — the earlier caveat here was wrong/.test(outside); })(),
+       "the correction marker must render outside the disclosure");
+    ok("[R60.2] the stall line's STATE renders always; only its rationale is gated on the stall",
+       (() => { const kB = DB.shadowBook;
+                DB.shadowBook = [];
+                const healthy = shadowScanStateLine(null);
+                DB.shadowBook = kB;
+                return /Paper book: /.test(healthy)
+                    && !/A book that is not opening accrues nothing/.test(healthy); })(),
+       shadowScanStateLine(null).slice(0, 160));
+
     /* ═══ §59 THE SELL DISCRIMINATOR (user ruling, Aug 12 2026) ═══
        Computed per case, never read off a trace. Thresholds proposed. */
     const mkB = (gapPct, hv, n) => Array.from({ length: n }, () => ({ hi: Math.round(1200 * (1 + gapPct / 100)), hv }));
@@ -6145,8 +6198,10 @@
                     && /a finding rather than a residue/.test(c.why); })(),
        JSON.stringify(classifySellFailure(mkB(-3, 500, 10), 1200)));
     ok("[R59.1] and a third mechanism surfaces by name — prints with no volume is an ILLIQUIDITY finding, not dilution",
+       /* Its OWN class, not a sub-label on "unclassified" (ruled Aug 12 2026):
+          a third mechanism that is real gets a name, or it reads as residue. */
        (() => { const c = classifySellFailure(mkB(-0.5, 0, 10), 1200);
-                return c.cls === "unclassified" && c.sub === "no-liquidity"
+                return c.cls === "no-liquidity"
                     && /neither dilution nor mislocation/.test(c.why); })(),
        JSON.stringify(classifySellFailure(mkB(-0.5, 0, 10), 1200)));
     ok("[R59.2] a population under the bar reports COUNTS ONLY and says so — no percentage from a handful",
@@ -6195,6 +6250,33 @@
                 if (kL) S.latest[9002] = kL; if (kM) S.min5[9002] = kM;
                 return tr.length > 0 && tr.every(b => b.credited === 0) && tr[0].hi === 100; })(),
        "zero-credit buckets must be recorded by the tick");
+    /* AMENDMENT (a): the classifier must hold still to be an instrument. */
+    ok("[R59.5] the dilution threshold is FROZEN — it does not follow the ROI floor it was derived from",
+       (() => { const kR = GATE.roi;
+                const a = classifySellFailure(mkB(-0.9, 500, 10), 1200).cls;
+                GATE.roi = 5.0;                       // move the floor materially
+                const b = classifySellFailure(mkB(-0.9, 500, 10), 1200).cls;
+                const drift = sellThresholdDrift();
+                GATE.roi = kR;
+                return a === "dilution" && b === "dilution" && SELL_DILUTION_GAP_PCT === 1.0
+                    && drift.moved === true && /deliberately did NOT follow/.test(drift.note); })(),
+       "a classifier that tracks a strategy parameter makes its own history incomparable");
+    /* AMENDMENT (b): report the shape question, do not act on it. */
+    ok("[R59.6] the spread-shape comparison reports INSUFFICIENT below the bar rather than estimating",
+       (() => { const r = sellShapeReport([{ spreadPct: 3, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }]);
+                return r.enough === false && /insufficient rather than estimated/.test(r.note); })(),
+       JSON.stringify(sellShapeReport([])));
+    ok("[R59.6] and once the sample exists it reports the spread distribution and what WOULD reclassify — without changing anything",
+       (() => { const wide = Array.from({ length: 5 }, () => ({ spreadPct: 15, medGapPct: -3, cls: "unclassified", sustainShare: 0 }));
+                const tight = Array.from({ length: 5 }, () => ({ spreadPct: 1.5, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }));
+                const r = sellShapeReport(wide.concat(tight));
+                /* on the wide-spread items a third of 15% is 5%, so a −3% gap
+                   reclassifies to dilution; the tight ones do not move */
+                return r.enough && r.n === 10 && r.wouldReclassify === 5 && r.wouldReclassifyPct === 50
+                    && r.spreadMedianPct > 0 && /doing different work at the two ends/.test(r.note)
+                    && SELL_DILUTION_GAP_PCT === 1.0; })(),
+       JSON.stringify(sellShapeReport(Array.from({ length: 5 }, () => ({ spreadPct: 15, medGapPct: -3, cls: "unclassified", sustainShare: 0 }))
+         .concat(Array.from({ length: 5 }, () => ({ spreadPct: 1.5, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }))))));
     ok("[R59.4] both populations render SEPARATELY with their own n — never pooled",
        (() => { const h = sellDiscriminatorHTML(DB.calib);
                 return /Calibration — replayed real flips/.test(h) && /Live book — simulated sells/.test(h)
