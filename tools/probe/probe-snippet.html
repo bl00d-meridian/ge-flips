@@ -3181,10 +3181,59 @@
        (() => { DB.strataStats = { gap: { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6, filled: 5,
                                           net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
                 const gapLine = gapBandInline();
-                return /The band prints/.test(gapLine)
-                    && /exact price range/.test(gapLine)
+                return /exact price range/.test(gapLine)
                     && !/Depends on approximate stratum classification/.test(gapLine); })(),
        gapBandInline().slice(0, 900));
+    /* ═══ §53 GAP BAND: held proposal, standing verdict, contamination ═══ */
+    DB.strataStats = { gap: { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6, filled: 5,
+                              net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
+    const gl53 = gapBandInline();
+    ok("[R53.1] the per-cycle sample is 10, and the copy states the number it actually draws",
+       /* The drawn count and the copy are asserted TOGETHER: a constant raised
+          without its copy following is the claims-vs-computation defect, and
+          checking only the constant would not catch it. */
+       /* The drawn count and the copy are asserted TOGETHER: a constant raised
+          without its copy following is the claims-vs-computation defect, and
+          checking only the constant would not catch it. The copy lives in the
+          drill spec, which is production state the render populates. */
+       GAP_BAND_N === 10 && gapBandSample().pick.length <= 10
+       && /drawn 10 items per cycle from a seeded shuffle/.test((DRILLS.get("gap:samp") || {}).note || ""),
+       String(GAP_BAND_N) + " :: " + ((DRILLS.get("gap:samp") || {}).note || "no gap:samp drill"));
+    ok("[R53.2] the verdict arrives as a standing REPORT — clean and contaminated counted apart, never pooled",
+       /Standing verdict:/.test(gl53) && /clean <b>\d+<\/b> trip/.test(gl53)
+       && /contaminated <b>\d+<\/b> trip/.test(gl53),
+       gl53.slice(gl53.indexOf("Standing verdict"), gl53.indexOf("Standing verdict") + 320));
+    ok("[R53.2] and while the paper book has open defects the scanner proposal is HELD, with the reason named",
+       /Scanner proposal HELD/.test(gl53) && /open defects/.test(gl53)
+       && /no trip closing now is clean evidence/.test(gl53)
+       && !/The band prints/.test(gl53),
+       gl53.slice(gl53.indexOf("HELD") - 60, gl53.indexOf("HELD") + 340));
+    ok("[R53.2] the verdict counts what the register says, through production — not a probe-side recount",
+       (() => { const v = gapBandVerdict(DB.strataStats.gap, stratumTrips("gap"));
+                return v.clean.n === 0 && v.ready === false && v.bar === GAP_BAND_VERDICT_TRIPS; })(),
+       JSON.stringify(gapBandVerdict(DB.strataStats.gap, stratumTrips("gap"))));
+    /* ═══ §54 CONTAMINATION LABELLING (user ruling, Aug 12 2026) ═══
+       Both directions render. A label only on the contaminated figures decays
+       into "unlabelled means nobody checked". */
+    ok("[R54.1] a paper-downstream figure states the dependency AND the book's health state",
+       /downstream of the paper book — provisional/.test(provTag(true))
+       && /instant trips/.test(provTag(true)) && /sell-credit under-count/.test(provTag(true)),
+       provTag(true));
+    ok("[R54.1] and a clean figure says it is NOT downstream, so clean is identifiable at a glance",
+       /not downstream of the paper book/.test(provTag(false))
+       && /realized fills, the market feed or sampling counts/.test(provTag(false)),
+       provTag(false));
+    ok("[R54.2] the four named surfaces carry it: gate health's paper columns, per-stratum sim P&L, the hours paper stream, the gap band",
+       /downstream of the paper book/.test(paperGateSection())
+       && /downstream of the paper book/.test(prospectingInline())
+       && /downstream of the paper book/.test(hoursStreamsNote())
+       && /downstream of the paper book/.test(gl53),
+       "one of the four is unlabelled");
+    ok("[R54.2] and each names its CLEAN counterpart on the same surface, not in a footnote",
+       /realized stream[\s\S]{0,400}not downstream/i.test(paperGateSection())
+       && /Sampling counts[\s\S]{0,400}not downstream/.test(prospectingInline())
+       && /Market[\s\S]{0,400}not downstream/.test(hoursStreamsNote()),
+       "a surface labels the contaminated stream without naming the clean one");
     DB.strataStats = {};
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     DB.strataStats = {};
@@ -5255,6 +5304,53 @@
        DB.shadowBook[0].buyQ > 0,
        JSON.stringify({ buyQ: DB.shadowBook[0].buyQ }));
     DB.shadowBook = keepBookC; S.min5At = keepMin5At; S.pollSeq = keepSeq;
+
+    /* ═══ §55 PREDICTION STAMPED AT OPEN (user-directed, Aug 12 2026) ═══
+       Driven THROUGH shadowScan, not by calling stampPrediction directly — a
+       probe that calls the stamper passes even if the scan stops calling it,
+       which is the reimplementation trap wearing the wiring's hat. */
+    const keep55 = DB.shadowBook, keepSpark55 = S.spark.get(9001), keepW55 = DB.watch;
+    DB.shadowBook = [];
+    S.spark.set(9001, Object.assign({}, S.spark.get(9001) || {}, { at: Date.now(), lows: [
+      { lo: 5000, lv: 3000 }, { lo: 5000, lv: 3000 }, { lo: 5000, lv: 3000 },
+      { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }] }));
+    const c55 = calc(9001);
+    if (c55 && c55.buy != null){
+      shadowScan({ picks: [{ id: 9001, c: c55 }], all: [] });
+      const t55 = DB.shadowBook[0];
+      ok("[R55.1] a trip stamps its PREDICTION at open — the open-time facts no later replay can recover",
+         !!t55 && t55.predBasis != null && t55.predReadings === 6 && t55.predReached === 3
+         && t55.predShare != null && t55.predFlow != null && t55.predCapture === GATE.capture,
+         JSON.stringify(t55 && { b: t55.predBasis, n: t55.predReadings, r: t55.predReached, s: t55.predShare }));
+      ok("[R55.1] including the PRE-Aug-12 total-flow prediction, so before/after is one population not two epochs",
+         !!t55 && t55.predOldH != null && t55.predH !== undefined
+         && (t55.predOldH === "never" || t55.predOldH > 0),
+         JSON.stringify(t55 && { newH: t55.predH, oldH: t55.predOldH }));
+      const x55 = analysisTrip(t55);
+      ok("[R55.2] and the export carries prediction beside observation, per trip",
+         x55.prediction.available === true
+         && x55.prediction.reachSharePct === 25 && x55.prediction.hoursReachingBid === 3
+         && x55.prediction.hourlyReadings === 6 && x55.prediction.basis === "ok"
+         && "predictedFillHoursPreAug12TotalFlow" in x55.prediction
+         && "observedBuyFillHours" in x55,
+         JSON.stringify(x55.prediction));
+      ok("[R55.2] a trip opened before stamping says so rather than being silently absent from the regrade",
+         (() => { const old = Object.assign({}, t55);
+                  for (const k of ["predBasis","predH","predShare","predFlow","predReached","predReadings","predOldH","predCapture"]) delete old[k];
+                  const xo = analysisTrip(old);
+                  return xo.prediction.available === false && /retrofit is impossible/.test(xo.prediction.why); })(),
+         "pre-stamp trips must declare themselves");
+      /* The instant-trip diagnostic: the file could not answer the question
+         being asked of it, because ISO stamps truncate to the second and the
+         minimum-life rule is stated in POLL CYCLES. */
+      ok("[R55.3] the export carries the millisecond duration and the open poll-cycle, so 'resolved instantly' is answerable from the file",
+         "resolvedInMs" in x55 && x55.openPollSeq === S.pollSeq,
+         JSON.stringify({ ms: x55.resolvedInMs, seq: x55.openPollSeq }));
+    } else {
+      ok("[R55.1] fixture: calc(9001) must price for the prediction stamp to be testable", false, "no calc");
+    }
+    DB.shadowBook = keep55; DB.watch = keepW55;
+    if (keepSpark55) S.spark.set(9001, keepSpark55); else S.spark.delete(9001);
 
     // ---- R43.3 every fill rate renders its never-filled count ----
     const keepBook43b = DB.shadowBook;

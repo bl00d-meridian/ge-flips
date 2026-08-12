@@ -363,3 +363,46 @@ cohort. With that file I can produce, per population rather than pooled:
 Per the ruling, the band treatment and the hard bench are **not** re-proposed in this
 pass, and the soft tag's reversion condition is untouched: it reverts on evidence, not on
 the fix landing.
+
+---
+
+## 8. The instant-trip report (user-directed, Aug 12 2026) — diagnosis, no fix
+
+**Reported before fixing, as directed. Nothing about the minimum-life rule was changed.**
+
+### What I traced
+
+Every path that can close a paper trip, and whether the minimum-life rule reaches it:
+
+| Path | Closes via | Guarded by `sameCycle`? | Can it close sub-second? |
+|---|---|---|---|
+| `shadowTick` — buy fills, then sell fills | `state="filled"`, `closedAt = now` | Yes | No. Buy credit lands only on bucket ROLL, so both legs need ≥2 buckets (~10 min) |
+| `shadowTick` — horizon expiry | `unfilled` / `partial` / `unobserved` | Yes | No. Requires `now − t > H`, and `H` falls back to ≥1h when `hzH` is 0 or missing |
+| `shadowTick` — sell force-exit | `forced-exit`, `closedAt = now` | Yes | No. Requires `now − buyDone > H` |
+| `reconReplay` — all four outcomes | `closedAt = bt` (a **bucket** time) | **No such rule exists here** | No. `bt ≥ p.t` is enforced, and buckets are 5 minutes apart |
+
+Both open paths (`shadowScan`'s `add()` and `scannerShadowScan`) stamp `openSeq: S.pollSeq`, and `S.pollSeq` increments only in `doRefresh`. I checked the orderings that could defeat that — `renderDeploy` calling `shadowScan(P); shadowTick();` back to back, `accrueBackground` scanning after the tick, a render firing between polls — and the guard holds in each.
+
+### The finding
+
+**No path in the current code can produce a sub-second resolution.** So the 150 trips were produced by code that is not the code in `main`, or by the one path with no minimum-life rule at all. In likelihood order:
+
+1. **The running app predates the causality fix.** The site deploys from `main` via GitHub Pages, but a browser can hold a cached page, and this app is a single file that also runs from disk. This is by far the most likely explanation for trips opened continuously across five hours.
+2. **The records predate it** and are still inside the 30-day retention window. Ruled less likely, since the trips were opened today.
+3. **`reconReplay` is genuinely unguarded** — it has causality (`bt < p.t` skips) but no minimum-life rule. It cannot produce sub-second closes today, but it is the one path where the rule was never written, and if bucket timestamps were ever wrong it would be the path that failed first. Recorded as a latent gap, not as the cause.
+
+### What was actually wrong: the file could not answer the question
+
+The export carried `openedAt`/`closedAt` as **ISO strings, which truncate to the second** — so "resolved in under a second" and "resolved within the same second" are indistinguishable in it. And the rule is stated in POLL CYCLES while the file carried no cycle at all.
+
+Shipped, as instrumentation rather than as a fix: `resolvedInMs` and `openPollSeq` on every exported trip. **A null `openPollSeq` is the diagnosis** — it means the record was written by code without the fix, which settles (1) and (2) against (3) from the file alone.
+
+**Next step is one line from the operator:** re-export after a hard reload and check whether the sub-second trips carry `openPollSeq`. If they are null, the running app was stale and nothing in `main` needs changing. If they are populated, path (3) becomes the live suspect and the minimum-life rule gets written into `reconReplay`.
+
+## 9. Sell-credit zero at scale — one investigation, two datasets
+
+The live book (12 of 14 observed watchlist trips at zero sell credit, including trips with 100% buy credit and 8+ observed hours) and the calibration failures are being treated as **one defect with two datasets**, per the ruling.
+
+**I have to correct the record on one point:** in the previous pass I reported the mechanism and shipped the sell traces at parity, but I did **not** build the discriminator as a reported figure, which the ruling had asked for. It is owed and is the next build, alongside the same classification over the live book's zero-credit trips. The split across both populations cannot be reported until that classifier ships and the export carries it — reporting it from the traces by eye is precisely what the ruling ruled out.
+
+The mechanism named from the code stands and now has a second dataset consistent with it: `reachCredit` is bimodal per bucket — the gate reads a 5m AVERAGE as if it described the interval, and a passing bucket then credits the bucket's ENTIRE high-side flow. Zero sell credit on a trip with 100% buy credit and an 8-hour observed horizon is what that bimodality looks like when no bucket average clears the ask, and it is consistent with dilution rather than with a mislocated window — the live book's sell leg has no window to mislocate, since it accrues forward from `buyDone` in real time. **That asymmetry is itself evidence**: the calibration harness can mislocate a window and the live book cannot, so a defect present in both is one that does not depend on window placement. Stated as a hypothesis with its discriminator still to ship, not as a conclusion.

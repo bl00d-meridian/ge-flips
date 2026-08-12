@@ -2504,7 +2504,7 @@ function renderScan(){
    are stable). Pure exploration — the slice admits nothing and feeds
    nothing; anything interesting gets manually watched. */
 const BEYOND_NET_N = 15;
-const GAP_BAND_N = 5;                       // gap-band slice size (ruled): the 250k–1m band nothing else watches
+const GAP_BAND_N = 10;                      // gap-band slice size (ruled): the 250k–1m band nothing else watches
 const GAP_LO = 250_000, GAP_HI = 1_000_000; // between the tier-2 scanner ceiling and the anomaly scan's >1m floor
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
@@ -5625,6 +5625,83 @@ function shadowSizeFor(c){
 }
 /* Open shadow candidates from this refresh's plan — dedup per family key
    while open or inside a 2× horizon cooldown. */
+/* ═══ CONTAMINATION LABELLING (user ruling, Aug 12 2026) ══════════════════
+   The claims-vs-computation rule applied to PROVENANCE rather than to
+   definition: a number whose input is under repair is making a claim it cannot
+   support, even when its own arithmetic is correct. So any figure computed
+   from the paper book states that dependency where it renders, and carries the
+   book's current health state.
+
+   The converse is the half that makes it useful: the realized streams, the
+   market stream and the sampling counts state that they are NOT downstream, so
+   the clean figures are identifiable at a glance rather than from memory of
+   which conversation established which. A label only on the bad ones decays
+   into "unlabelled means nobody checked".
+
+   PAPER_DEFECTS is the register. An entry is removed when its defect is fixed
+   AND the book has re-accrued evidence clear of it — not when the fix lands,
+   because the trips already in the book were produced by the defect. */
+const PAPER_DEFECTS = [
+  { id: "instant-trips", label: "instant trips",
+    note: "trips resolving in under a second, under diagnosis — see the paper book's own health line" },
+  { id: "sell-credit", label: "sell-credit under-count",
+    note: "sell credit reads 0 on most observed trips; the same defect the fast-sell calibration failures show" }
+];
+const paperDefectsOpen = () => PAPER_DEFECTS.slice();
+function paperHealthTxt(){
+  const d = paperDefectsOpen();
+  return d.length
+    ? "the paper book, which has open defects (" + d.map(x => x.label).join(", ") + ") — read as provisional"
+    : "the paper book, which has no open defects on the register";
+}
+/* Inline label for a figure. `downstream` true = computed from the paper book.
+   Both branches render; that is the point. */
+function provTag(downstream){
+  return downstream
+    ? '<span class="badge ' + (paperDefectsOpen().length ? "b-risk" : "b-warn") + '" title="'
+      + esc("Downstream of " + paperHealthTxt() + ". This figure's own arithmetic may be correct and still be making a claim its input cannot support.")
+      + '">downstream of the paper book' + (paperDefectsOpen().length ? " — provisional" : "") + '</span>'
+    : '<span class="badge b-tax" title="Computed from realized fills, the market feed or sampling counts — not from the paper book, so the paper book\'s open defects do not reach it.">not downstream of the paper book</span>';
+}
+/* The same statement for a file rather than a screen. */
+function provNote(downstream){
+  return downstream
+    ? "DOWNSTREAM OF THE PAPER BOOK: computed from " + paperHealthTxt()
+      + ". Read as provisional — the arithmetic here may be correct and still rest on an input under repair."
+    : "NOT downstream of the paper book: computed from realized fills, the market feed or sampling counts, so the "
+      + "paper book's open defects do not reach this figure.";
+}
+
+/* ═══ PREDICTION STAMPED AT OPEN (user-directed, Aug 12 2026) ═════════════
+   The paper export could not grade the estimator, because it carried the
+   OBSERVED fill time and no prediction. These are open-time facts — the reach
+   share, the flow reading, which basis was available — and none of them can be
+   reconstructed after the fact from a 5m series that has since rolled. Retrofit
+   is impossible, so every trip stamps them at open and the regrade's sample
+   starts accruing from the first scan after this ships.
+
+   The pre-Aug-12 total-flow prediction rides along deliberately: it costs one
+   division, and it makes before/after measurable on ONE population instead of
+   across two epochs, which is the only way to compare them without the cohort
+   mix moving underneath the comparison. */
+function stampPrediction(rec, qty, c){
+  const r = reachFlow(c.id, c.buy);
+  const pred = estFillH(qty, c);
+  rec.predH = pred == null ? null : (Number.isFinite(pred) ? Math.round(pred * 1000) / 1000 : "never");
+  rec.predBasis = r.state;                       // ok | no-reach | thin | no-series
+  rec.predReadings = r.n;
+  rec.predReached = r.reached;
+  rec.predShare = r.share == null ? null : Math.round(r.share * 1000) / 1000;
+  rec.predFlow = r.flow == null ? null : Math.round(r.flow);
+  rec.predCapture = GATE.capture;
+  /* The pre-fix input, held to the SAME formula and the same capture share —
+     only the flow term differs, so a difference between the two is the input
+     change and nothing else. */
+  const oldFlow = ((c && c.volLow) || 0) * GATE.capture;
+  const oldH = oldFlow > 0 && qty > 0 ? qty / oldFlow : Infinity;
+  rec.predOldH = Number.isFinite(oldH) ? Math.round(oldH * 1000) / 1000 : "never";
+  return rec;
+}
 function shadowScan(P){
   if (!S.latestAt) return;
   const now = Date.now(), cool = 2 * FILLH() * 3600e3;
@@ -5635,8 +5712,10 @@ function shadowScan(P){
     if (!room || recent.has(fam)) return;
     const c = x.c || calc(x.id);
     if (!c || c.buy == null || c.sell == null) return;
-    DB.shadowBook.push(Object.assign({ id: now + DB.shadowBook.length, fam, itemId: x.id,
-      name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
+    const qty0 = shadowSizeFor(c);
+    DB.shadowBook.push(Object.assign(stampPrediction({}, qty0, c),
+      { id: now + DB.shadowBook.length, fam, itemId: x.id,
+      name: itemName(x.id), qty: qty0, bid: c.buy + 1, ask: c.sell - 1,
       t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
       /* Regimes are stamped CENTRALLY here, from the candidate's own effective
          ROI, so no entry path can forget (defect fix, Aug 12 2026 — four of
@@ -5771,14 +5850,16 @@ async function scannerShadowScan(){
           if (!evictable || (evictable.score || 0) >= x.score) continue;
           DB.shadowBook.splice(DB.shadowBook.indexOf(evictable), 1);
         }
-        DB.shadowBook.push({ id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
-          itemId: x.id, name: itemName(x.id), qty: shadowSizeFor(c), bid: c.buy + 1, ask: c.sell - 1,
+        const qtyS = shadowSizeFor(c);
+        DB.shadowBook.push(Object.assign(stampPrediction({}, qtyS, c),
+          { id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
+          itemId: x.id, name: itemName(x.id), qty: qtyS, bid: c.buy + 1, ask: c.sell - 1,
           t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
           regimes: regimesFor(c),
           buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
           benchedBy: nearMiss ? [fl[0].g] : undefined,
-          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" });
+          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" }));
         taken.add(x.id); opened++; changed = true;
       }
     }
@@ -7333,7 +7414,14 @@ function paperRegimeSection(){
 function paperGateSection(){
   const byGate = shadowByGate(true);
   const bits = ['<div class="note">Watchlist + slice cohorts only — the scanner cohort answers the FILTER question on its own ledger, and populations never mix in a gate read. '
-    + 'Every cell opens to the trips behind it: entry and exit, fill or no-fill with the tape evidence, observed share, regime and cohort.</div>'];
+    + 'Every cell opens to the trips behind it: entry and exit, fill or no-fill with the tape evidence, observed share, regime and cohort.</div>',
+    /* Provenance, stated where the columns render (user ruling, Aug 12 2026):
+       these columns' arithmetic can be correct and still rest on an input
+       under repair. The realized columns say the opposite, so the clean ones
+       are identifiable at a glance. */
+    '<div class="plan-note">Paper columns: ' + provTag(true)
+    + ' — every fill rate, net and verdict below is computed from ' + esc(paperHealthTxt()) + '.'
+    + ' The gate\'s REALIZED stream (traded-while-benched, real net) is ' + provTag(false) + '.</div>'];
   if (!byGate.size){
     bits.push('<div class="dim">No closed per-gate paper positions yet — they accrue as benched near-misses age through their horizons.</div>');
     return bits.join("");
@@ -7541,6 +7629,17 @@ function hoursLedger(){
       fillRate: sh[h].n ? sh[h].filled / sh[h].n : null });
   return rows;
 }
+/* Extracted so the provenance labelling is assertable without a fixture that
+   happens to have market rows — the note is the thing under test, and burying
+   it inside a data-gated render would make the assertion depend on the
+   fixture rather than on the copy. */
+function hoursStreamsNote(){
+  return '<div class="plan-note">Two streams, different natures. <b>Market</b> (post-tax spread by hour, from the '
+    + '7-day hourly series) covers every hour equally whether or not you were awake — this is the unbiased one, and it '
+    + 'is ' + provTag(false) + '. <b>Paper</b> (simulated fill rate) only accrues while the tracker is open, so hours '
+    + 'you never observe read "no data", never "bad hour" — and it is ' + provTag(true) + '. Advisory: this sizes '
+    + 'nothing.</div>';
+}
 function hoursLedgerInline(){
   const rows = hoursLedger();
   const withMkt = rows.filter(r => r.mkt != null);
@@ -7551,7 +7650,7 @@ function hoursLedgerInline(){
   const hh = h => String(h).padStart(2, "0") + ":00";
   const lines = [];
   if (shadowEpochNote()) lines.push(shadowEpochNote());
-  lines.push('<div class="plan-note">Two streams, different natures. <b>Market</b> (post-tax spread by hour, from the 7-day hourly series) covers every hour equally whether or not you were awake — this is the unbiased one. <b>Shadow</b> (simulated fill rate) only accrues while the tracker is open, so hours you never observe read "no data", never "bad hour". Advisory: this sizes nothing.</div>');
+  lines.push(hoursStreamsNote());
   lines.push('<div>Average post-tax spread across watched items: <b>' + avg.toFixed(2) + '%</b> · widest hours: '
     + top.map(r => '<b>' + hh(r.h) + '</b> ' + r.mkt.toFixed(2) + '%'
         + (r.n ? ' <span class="dim">(shadow: ' + Math.round((r.fillRate || 0) * 100) + '% fill of ' + r.n + ' sim trips, ' + r.unfilled + ' never filled)</span>'
@@ -10088,7 +10187,12 @@ function prospectingInline(){
   }, { samp: 0, nm: 0, pass: 0, trips: 0, net: 0 });
   const secs = ['<div class="note">The discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&amp;L is <b>simulated</b> screening data, never evidence. Every number opens to its rows.</div>',
     shadowEpochNote(),
-    '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>'];
+    '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>',
+    /* Provenance, per stream rather than per panel — the two live side by side
+       in every stratum row and have different standing. */
+    '<div class="plan-note"><b>Sim P&amp;L and fill rates</b> below are ' + provTag(true)
+    + ' — computed from ' + esc(paperHealthTxt()) + '. <b>Sampling counts</b> (distinct items the gate chain ran on) are '
+    + provTag(false) + ': they count tests, not simulated outcomes, so a paper-book defect cannot reach them.</div>'];
   if (!tot.samp){
     secs.push('<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
     return secs.join("");
@@ -10185,6 +10289,56 @@ function prospectingInline(){
 /* The gap band's own verdict — the question it was built to settle. Its own
    panel in the Prospecting view, because it is a standing question rather
    than one row in a map. */
+/* ═══ THE GAP BAND'S STANDING VERDICT LINE (user ruling, Aug 12 2026) ═════
+   The scanner proposal is HELD. It is reconsidered only when the band has
+   clean, post-fix evidence clearing the same bar any funded item clears — so
+   the decision has to arrive as a report rather than as the operator's
+   intuition, which means the line renders every time, in the same shape, with
+   its contamination state on it.
+
+   "Contaminated" here is not a judgement about the trips: every trip that
+   closed while a paper-book defect is on the register was produced by a book
+   under repair, so its net and its fill are downstream of that defect. Clean
+   trips are those opened after the register cleared. Both counts render,
+   because "N trips" that silently mixes the two is exactly the pooling the
+   never-pool rule forbids. */
+function gapBandCleanFrom(){
+  /* Trips opened at or after the last defect was struck from the register are
+     clean. While anything is open, nothing is clean — stated, not implied. */
+  return paperDefectsOpen().length ? null : (DB.paperDefectsClearedAt || 0);
+}
+function gapBandVerdict(g, trips){
+  const from = gapBandCleanFrom();
+  const clean = from == null ? [] : trips.filter(p => (p.t || 0) >= from);
+  const contaminated = from == null ? trips.slice() : trips.filter(p => (p.t || 0) < from);
+  const netOf = a => a.reduce((s, p) => s + (p.net || 0), 0);
+  const filledOf = a => a.filter(p => p.state === "filled" || p.state === "forced-exit").length;
+  return { n: g ? (g.trips || 0) : 0, rows: trips.length,
+    clean: { n: clean.length, filled: filledOf(clean), net: netOf(clean) },
+    contaminated: { n: contaminated.length, filled: filledOf(contaminated), net: netOf(contaminated) },
+    bar: GAP_BAND_VERDICT_TRIPS, ready: clean.length >= GAP_BAND_VERDICT_TRIPS };
+}
+const GAP_BAND_VERDICT_TRIPS = 5;   // closed CLEAN trips before the band can be ruled on
+function gapBandVerdictLine(g, trips, enough){
+  const v = gapBandVerdict(g, trips);
+  const seg = (lab, s) => lab + ' <b>' + s.n + '</b> trip' + (s.n === 1 ? '' : 's') + ', ' + s.filled
+    + ' filled, net <span class="' + sign(s.net) + '">' + gp(Math.round(s.net)) + '</span> sim';
+  return '<div style="margin-top:4px"><b>Standing verdict:</b> '
+    + seg("clean", v.clean) + ' · ' + seg("contaminated", v.contaminated)
+    + ' ' + provTag(true)
+    + '<div class="dim" style="white-space:normal;margin-top:2px">'
+    + (v.ready
+      ? (v.clean.net > 0
+        ? '<b>The band prints on clean evidence.</b> The held scanner proposal is now reconsiderable — it still needs your ruling, and nothing here builds one.'
+        : '<b>The band is proven empty on clean evidence</b>, not assumed empty — that is the finding, and it is worth as much as the other answer.')
+      : paperDefectsOpen().length
+        ? '<b>Scanner proposal HELD</b> — the paper book has open defects (' + esc(paperDefectsOpen().map(x => x.label).join(", "))
+          + '), so no trip closing now is clean evidence. The proposal is reconsidered only on post-fix trips clearing the same bar any funded item clears; '
+          + 'until then this line reports rather than recommends.'
+        : '<b>Scanner proposal HELD</b> — ' + v.clean.n + ' of ' + v.bar + ' clean closed trips. Accruing.')
+    + (enough && !v.ready ? ' The old total-trip count would have called this ruleable; it pooled contaminated trips with clean ones, which is the same defect one level up.' : '')
+    + '</div></div>';
+}
 function gapBandInline(){
   const g = DB.strataStats.gap;
   const trips = stratumTrips("gap");
@@ -10192,7 +10346,7 @@ function gapBandInline(){
   const secs = ['<div class="note">The band between the T2 scanner ceiling and the anomaly scan\'s &gt;1m floor — watched by nothing but slice luck before this. '
     + 'Membership is an <b>exact price range</b>, not a name-pattern guess, so the stratum classifier caveat does not apply here and claiming it would overstate the dependency.</div>'];
   if (!g || !g.samp){
-    secs.push('<div class="dim"><b>Gap band 250k–1m</b> — no gap-band samples ledgered yet; 5 items per cycle accrue as the scanner runs. '
+    secs.push('<div class="dim"><b>Gap band 250k–1m</b> — no gap-band samples ledgered yet; ' + GAP_BAND_N + ' items per cycle accrue as the scanner runs. '
       + 'This cycle\'s live draw is ' + live.pick.length + ' of ' + live.poolN + ' sanity-passing items in the band.</div>');
     return secs.join("");
   }
@@ -10202,7 +10356,7 @@ function gapBandInline(){
         head: "the distinct gap-band items the gate chain has run on",
         cols: STRATUM_ID_COLS, rows: stratumIdRows("gap"),
         empty: "Nothing sampled yet.",
-        note: 'Exact price-range membership — no classifier caveat applies. The band is drawn 5 items per cycle from a seeded shuffle, so coverage accrues rather than repeating.'
+        note: 'Exact price-range membership — no classifier caveat applies. The band is drawn ' + GAP_BAND_N + ' items per cycle from a seeded shuffle, so coverage accrues rather than repeating.'
       })
     + ' · ' + drill("gap:trips", (g.trips || 0) + ' closed', {
         head: "the gap band's closed paper trips",
@@ -10217,11 +10371,7 @@ function gapBandInline(){
         totalNote: 'durable counter vs pruned rows',
         empty: "No clean-passer rows remain.", note: PAPER_NOTE()
       })
-    + '. ' + (enough
-      ? ((g.net || 0) > 0
-        ? '<b>The band prints.</b> On this evidence it has earned a scanner of its own — a proposal for your ruling; nothing here builds one. <span class="dim">(No classifier caveat on this one: gap-band membership is an exact price range, not a name-pattern guess.)</span>'
-        : '<b>The band is proven empty</b>, not assumed empty — that is the finding, and it is worth as much as the other answer. <span class="dim">(Exact price-range membership — no classifier caveat applies.)</span>')
-      : 'Not enough closed trips to rule either way yet; the band keeps accruing.') + '</div>');
+    + '. ' + gapBandVerdictLine(g, trips, enough) + '</div>');
   secs.push('<div class="dim" style="margin-top:4px">This cycle\'s live draw: ' + live.pick.length + ' of ' + live.poolN
     + ' sanity-passing items in the band — the same seeded sample the scanner renders, so the rows you see are the rows that accrue counterfactuals.</div>');
   return secs.join("");
@@ -13508,10 +13658,16 @@ const GLOSSARY = [
   { id: "prosp-gap", term: "Gap band 250k–1m",
     what: "The price band between the T2 scanner's ceiling and the anomaly scan's floor — watched by nothing but slice "
         + "luck before it got its own sampler.",
-    from: "5 items per cycle, gate-verdicted exactly like the slice.",
-    do: "If it prints, it has earned a scanner of its own — a proposal for your ruling. If it does not, the gap is PROVEN "
-        + "empty rather than assumed empty, which is worth as much as the other answer.",
-    caveat: "Exempt from the stratum classifier caveat: membership here is an exact price range, not a name guess." },
+    from: "10 items per cycle (raised from 5 on Aug 12 2026, so the band's verdict matures faster), gate-verdicted "
+        + "exactly like the slice. The panel carries a STANDING VERDICT LINE — clean and contaminated trip counts, "
+        + "fills and net, side by side — so the decision arrives as a report rather than as your recollection.",
+    do: "Read the CLEAN column only. If the band prints on clean evidence it has earned a scanner of its own — a "
+        + "proposal for your ruling. If it does not, the gap is PROVEN empty rather than assumed empty, which is worth "
+        + "as much as the other answer.",
+    caveat: "The scanner proposal is HELD (ruled Aug 12 2026) and is reconsidered only on clean, post-fix evidence "
+        + "clearing the same bar any funded item clears. While the paper book has open defects on its register, no "
+        + "trip closing now is clean evidence, and the line says so instead of counting them. Exempt from the stratum "
+        + "classifier caveat: membership here is an exact price range, not a name guess." },
   { id: "prosp-hours", term: "Hours ledger", aka: "market stream vs paper stream",
     what: "Two readings of the day. The MARKET stream is post-tax spread by hour-of-day from the 7-day hourly series — "
         + "every hour equally represented whether or not you were awake, so it is the unbiased one. The PAPER stream is "
@@ -15113,6 +15269,39 @@ function analysisTrip(p){
     countsTowardVerdicts: shadowCounts(p),
     excludedByObservationFloor: shadowThin(p),
     openedAt: iso(p.t), closedAt: iso(p.closedAt),
+    /* DIAGNOSTIC (Aug 12 2026): the export carried ISO stamps only, which
+       truncate to the second — so "resolved in under a second" could not be
+       told apart from "resolved in the same second". Both the millisecond
+       duration and the open-cycle stamp ride here now, because the minimum-life
+       rule is stated in terms of the POLL CYCLE and a file that cannot show the
+       cycle cannot show whether the rule held. A null openPollSeq means the
+       record predates the causality fix — which is itself the answer to why it
+       resolved instantly. */
+    resolvedInMs: p.closedAt ? p.closedAt - p.t : null,
+    openPollSeq: p.openSeq != null ? p.openSeq : null,
+    /* PREDICTED vs OBSERVED, per trip (user-directed, Aug 12 2026). Stamped at
+       OPEN — these are open-time facts and none can be reconstructed once the
+       5m series rolls. Trips opened before this shipped carry nulls and say so
+       rather than being silently absent from the regrade. */
+    prediction: p.predBasis == null
+      ? { available: false,
+          why: "opened before predictions were stamped (Aug 12 2026) — retrofit is impossible, "
+             + "since the reach share and flow reading are open-time facts the 5m series no longer holds" }
+      : { available: true,
+          predictedFillHours: p.predH,
+          predictedFillHoursPreAug12TotalFlow: p.predOldH,
+          basis: p.predBasis,
+          basisMeaning: p.predBasis === "ok" ? "reaching flow, median over the readings below"
+            : p.predBasis === "no-reach" ? "no hour reached the bid — forecast is never-fills, and that is a reading"
+            : p.predBasis === "thin" ? "too few hourly readings for a median; the estimator declined rather than substituting total flow"
+            : "no hourly series for this item; the estimator declined",
+          reachSharePct: p.predShare == null ? null : Math.round(p.predShare * 100),
+          hoursReachingBid: p.predReached, hourlyReadings: p.predReadings,
+          reachingFlowPerHour: p.predFlow, captureShare: p.predCapture },
+    observedBuyFillHours: p.buyDone ? r2((p.buyDone - p.t) / 3600e3) : null,
+    observedBuyFillNote: p.buyDone ? null
+      : "the buy leg never completed, so there is no observed fill time to grade the prediction against — "
+      + "count this trip in the false-fit test, not in the ratio distribution",
     qty: p.qty, entryBid: p.bid, exitAsk: p.ask,
     exitPrice: exitPx != null ? exitPx : null,
     outcome: p.state === "filled" ? "filled both legs"
