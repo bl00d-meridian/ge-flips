@@ -6588,11 +6588,11 @@ async function calibrateFillModel(){
           lv: x.lowPriceVolume || 0, hv: x.highPriceVolume || 0 }));
       } catch(e){ /* polite: skip the item, count it */ }
       if (!pts || !pts.length){ skipped.noTape += list.length; continue; }
-      for (const e of list) rows.push(calibReplayOne(e, pts));
+      for (const e of list) rows.push(calibRowFor(e, pts));
       await new Promise(r => setTimeout(r, 300));
     }
     const res = Object.assign({ at: now, rows, skipped, eligible: eligible.length,
-      total: flips.length, retentionH: CALIB_5M_RETENTION_H }, calibSummarise(rows));
+      total: flips.length, retentionH: CALIB_5M_RETENTION_H, sellLeg: calibSummariseSell(rows) }, calibSummarise(rows));
     DB.calib = res; save();
     return res;
   } finally { S.calibBusy = false; if (S.tab === "trade" && S.sub === "paper") renderPaperView(); }
@@ -6660,6 +6660,86 @@ function calibReplayOne(e, pts){
   out.atPriceBuckets = out.trace.filter(x => x.code === "at-price").length;
   return out;
 }
+/* ═══ SELL-LEG CALIBRATION (user ruling, Aug 12 2026) ═════════════════════
+   The buy calibration chains its sell test off the model's OWN buyDone, so a
+   buy the model fails never tests the sell at all — and the sell leg is where
+   9 of 10 failures land in the 43-trip replay. This anchors the sell window
+   independently at logAt − sh, against the trader's realized sell duration,
+   so the leg is graded on its own terms.
+
+   Same three constraints as the buy side, and the same self-comparison
+   caveat: the comparison price is the trader's realized SELL fill, so a
+   bucket whose average high lands exactly on it very likely contains that
+   trade, and the proven bound refuses to credit it by construction. */
+function calibReplaySell(e, pts){
+  const f = e.f, sh = Number(e.sh != null ? e.sh : f.sh);
+  const H = Math.max(0.25, sh * 2) * 3600e3;
+  const start = e.buyDoneReal;                 // the sell leg opens where the buy really finished
+  const out = { sh, fastLeg: sh < 1 ? 1 : 0, trace: [] };
+  for (const mode of ["strict", "lenient"]){
+    let sold = 0;
+    for (const b of pts){
+      if (b.t < start || b.t - start > H) continue;
+      const cr = reachCredit(b.hi, f.sell, b.hv, "sell", false);
+      const add = mode === "strict" ? cr.strict : cr.lenient;
+      sold += add;
+      if (mode === "lenient" && out.trace.length < CALIB_TRACE_CAP)
+        out.trace.push({ t: b.t, minsIn: Math.round((b.t - start) / 60e3),
+          hi: b.hi, hv: b.hv, credited: add,
+          code: b.hi == null ? "no-print" : !(b.hv > 0) ? "no-volume"
+              : b.hi > f.sell ? "proven" : b.hi === f.sell ? "at-price" : "below-price",
+          why: b.hi == null ? "no high print in this bucket"
+             : !(b.hv > 0) ? "no high-side volume"
+             : b.hi > f.sell ? "above the sell price — proven reach"
+             : b.hi === f.sell ? "exactly at the sell price — expected under self-comparison"
+             : "average high " + full(b.hi) + " sat BELOW the sell price " + full(f.sell) + " — never reached" });
+      if (sold >= f.qty) break;
+    }
+    out[mode] = { verdict: sold >= f.qty ? "sold" : sold > 0 ? "partial" : "never-sold",
+      creditedPct: Math.round(100 * Math.min(1, sold / f.qty)) };
+  }
+  out.bucketsInWindow = out.trace.length;
+  out.bucketsReaching = out.trace.filter(x => x.credited > 0).length;
+  out.atPriceBuckets = out.trace.filter(x => x.code === "at-price").length;
+  return out;
+}
+/* One replayed flip, both legs. Extracted so an assertion can test the WIRING
+   — that the sell is graded regardless of what the buy did — rather than only
+   the two replay functions in isolation. A probe that calls calibReplaySell
+   directly passes even if the caller stops invoking it, which is the
+   reimplementation trap wearing a different hat, and it caught me here. */
+function calibRowFor(e, pts){
+  const r = calibReplayOne(e, pts);
+  r.sell = calibReplaySell(e, pts);   /* independently anchored, never gated on the buy's verdict */
+  return r;
+}
+function calibSplitSell(rows, mode){
+  const grp = k => {
+    const v = rows.filter(r => r.sell && (k === "fast") === !!r.sell.fastLeg).map(r => r.sell[mode]);
+    return { n: v.length,
+      agree: v.filter(x => x.verdict === "sold").length,
+      falsePartial: v.filter(x => x.verdict === "partial").length,
+      falseNever: v.filter(x => x.verdict === "never-sold").length,
+      agreePct: v.length ? Math.round(100 * v.filter(x => x.verdict === "sold").length / v.length) : null };
+  };
+  return { fast: grp("fast"), slow: grp("slow") };
+}
+function calibSummariseSell(rows){
+  const out = {};
+  for (const mode of ["strict", "lenient"]){
+    const v = rows.filter(r => r.sell).map(r => r.sell[mode]);
+    out[mode] = {
+      n: v.length,
+      agree: v.filter(x => x.verdict === "sold").length,
+      falsePartial: v.filter(x => x.verdict === "partial").length,
+      falseNever: v.filter(x => x.verdict === "never-sold").length,
+      medianCreditedWhenWrongPct: medianOf(v.filter(x => x.verdict !== "sold").map(x => x.creditedPct)),
+      byDuration: calibSplitSell(rows, mode)
+    };
+    out[mode].agreePct = v.length ? Math.round(100 * out[mode].agree / v.length) : null;
+  }
+  return out;
+}
 /* Duration split (user ruling, Aug 12 2026): reported on EVERY run, because a
    model blind only on fast fills is a bounded defect and a model blind
    everywhere is global pessimism — and the two call for opposite responses.
@@ -6719,6 +6799,38 @@ function calibDurationHTML(c){
     + (skew ? '<div class="plan-note">⚠ The disagreement is concentrated on FAST legs. That is a bounded defect rather '
         + 'than global pessimism — and it means any paper-book fill rate has to be re-read with duration held constant '
         + 'before it supports a conclusion about the market.</div>' : '');
+}
+/* The sell leg, graded on its own anchor. Rendered separately from the buy
+   because the buy calibration only ever tests a sell the model already got
+   the buy for — and in the 43-trip replay 9 of 10 failures were on the sell. */
+function calibSellHTML(c){
+  if (!c || !c.sellLeg) return "";
+  const row = (lab, m) => '<tr><td style="text-align:left">' + lab + '</td>'
+    + '<td class="num">' + m.n + '</td>'
+    + '<td class="num">' + m.agree + (m.agreePct != null ? ' <span class="dim">(' + m.agreePct + '%)</span>' : '') + '</td>'
+    + '<td class="num">' + m.falsePartial + '</td>'
+    + '<td class="num ' + (m.falseNever ? 'neg' : '') + '">' + m.falseNever + '</td>'
+    + '<td class="num dim">' + (m.medianCreditedWhenWrongPct != null ? m.medianCreditedWhenWrongPct + '%' : '—') + '</td></tr>';
+  const dRow = (lab, g) => '<tr><td style="text-align:left">' + lab + '</td><td class="num">' + g.n + '</td>'
+    + '<td class="num">' + g.agree + (g.agreePct != null ? ' <span class="dim">(' + g.agreePct + '%)</span>' : '') + '</td>'
+    + '<td class="num">' + g.falsePartial + '</td>'
+    + '<td class="num ' + (g.falseNever ? 'neg' : '') + '">' + g.falseNever + '</td><td></td></tr>';
+  return '<div style="margin-top:10px"><b>Sell leg — anchored independently</b> '
+    + '<span class="dim">— the buy calibration only ever tests a sell whose buy the model already completed, so a '
+    + 'pessimistic buy hides the sell entirely. This anchors the sell window at the moment the buy REALLY finished '
+    + '(logged sell duration), and grades it on its own. Every logged sell completed, so any verdict other than "sold" '
+    + 'is the model being wrong.</span></div>'
+    + '<div class="tw"><table><thead><tr><th>Reading</th><th>Flips</th><th>Agreed (sold)</th><th>False partial</th>'
+    + '<th>False never-sold</th><th>Median credited when wrong</th></tr></thead><tbody>'
+    + row("proven reach (lower bound)", c.sellLeg.strict) + row("possible reach (upper bound)", c.sellLeg.lenient)
+    + dRow("possible · sell under 1h", c.sellLeg.lenient.byDuration.fast)
+    + dRow("possible · sell 1h and over", c.sellLeg.lenient.byDuration.slow)
+    + dRow("proven · sell under 1h", c.sellLeg.strict.byDuration.fast)
+    + dRow("proven · sell 1h and over", c.sellLeg.strict.byDuration.slow)
+    + '</tbody></table></div>'
+    + '<div class="dim">The self-comparison caveat applies here too, and harder: a sell that completed in minutes leaves '
+    + 'almost no bucket that is not the trade itself, so the proven bound on a fast sell is close to meaningless. Read '
+    + 'the possible bound for fast legs and the bracket for slow ones.</div>';
 }
 function calibSection(){
   const c = DB.calib;
@@ -6794,7 +6906,7 @@ function calibSection(){
     + '</tr></thead><tbody>'
     + line("proven reach (lower bound)", c.strict) + line("possible reach (upper bound)", c.lenient)
     + '</tbody></table></div>'
-    + calibDurationHTML(c)
+    + calibDurationHTML(c) + calibSellHTML(c)
     + '<div data-drillrow="1" style="margin-top:5px">'
     + drill("calib:rows", c.rows.length + ' flip' + (c.rows.length === 1 ? '' : 's') + ' replayed', {
         head: "every logged round trip the model was replayed against, and what it said",
@@ -14852,6 +14964,14 @@ function analysisCalibration(){
       flipsLogged: c.total,
       tapeRetentionHours: c.retentionH,
       skippedByReason: { outsideTapeWindow: c.skipped.tooOld, missingLegTiming: c.skipped.noWindow, noTapeReturned: c.skipped.noTape },
+      sellLeg: c.sellLeg ? {
+        note: "Anchored independently at the moment the buy really finished, so the sell is graded on its own terms "
+            + "rather than only on flips whose buy the model completed. Every logged sell completed, so any verdict "
+            + "other than 'sold' is a model error. The self-comparison caveat is HARDER here: a sell that completed in "
+            + "minutes leaves almost no bucket that is not the trade itself, so a fast leg's proven bound is close to "
+            + "meaningless — read the possible bound there.",
+        provenReachBound: c.sellLeg.strict, possibleReachBound: c.sellLeg.lenient
+      } : null,
       provenReachBound: Object.assign({ depressedBySelfComparison: true }, bound(c.strict)),
       possibleReachBound: bound(c.lenient),
       atPriceBucketsTotal: (c.rows || []).reduce((a, r) => a + (r.atPriceBuckets || 0), 0),

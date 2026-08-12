@@ -5453,6 +5453,64 @@
        && /does NOT apply to the paper book/.test(zPanel)
        && /Two different constructs/.test(zPanel),
        zPanel.slice(0, 200));
+    // ---- R48.1 the sell leg is graded on its OWN anchor ----
+    /* Through production: calibWindow gives the anchor, calibReplaySell the
+       verdict, calibSummariseSell the summary. Tape that reaches the sell
+       price only AFTER the buy really finished — so a replay chained off the
+       model's own buyDone could miss it entirely. */
+    const sFlip = { id: nowAt47, itemId: 9001, name: "Probe alpha", qty: 10,
+      buy: 1000, sell: 1200, bh: 2, sh: 1 };
+    const sW = calibWindow(sFlip, nowAt47 + 60e3);
+    const sPts = [];
+    /* The sell price is reachable only STRICTLY AFTER the buy really finished,
+       with a bucket of clearance — so a window anchored at the buy's START
+       misses it entirely. A fixture where one boundary bucket qualifies under
+       both anchors cannot tell them apart, and the first version of this did
+       exactly that: the anchor seed passed. */
+    for (let t = sW.buyAt; t <= nowAt47 + 3600e3; t += 300e3)
+      sPts.push({ t, lo: 2000, hi: t > sW.buyDoneReal + 300e3 ? 1500 : 900, lv: 100000, hv: 100000 });
+    const sRow = calibReplaySell(sW, sPts);
+    ok("[R48.1] a sell that really completed is graded SOLD when the tape reached its price after the buy finished",
+       sRow.lenient.verdict === "sold" && sRow.strict.verdict === "sold",
+       JSON.stringify({ s: sRow.strict, l: sRow.lenient }));
+    ok("[R48.1] the sell window opens where the BUY really finished — tape before that credits nothing",
+       sRow.trace.length > 0 && sRow.trace.every(x => x.minsIn >= 0),
+       JSON.stringify(sRow.trace[0]));
+    ok("[R48.1] a sell the tape never reached reads FALSE NEVER-SOLD, with how much was credited",
+       (() => { const bad = calibReplaySell(sW, sPts.map(x => Object.assign({}, x, { hi: 1 })));
+                return bad.lenient.verdict === "never-sold" && bad.lenient.creditedPct === 0; })(),
+       "never-sold reachable");
+    /* Through calibRowFor — the WIRING, not the two replay functions in
+       isolation. Calling calibReplaySell directly here would pass even if the
+       caller stopped invoking it for failed buys, which is what the first
+       version of this assertion did. */
+    ok("[R48.1] and the buy leg's own verdict does not gate it — a failed buy still yields a sell grade",
+       (() => { const hard = Object.assign({}, sFlip, { qty: 999999 });
+                const hw = calibWindow(hard, nowAt47 + 60e3);
+                const row = calibRowFor(hw, sPts);
+                return row.lenient.verdict !== "filled" && !!row.sell
+                    && row.sell.lenient.verdict === "partial"; })(),
+       "sell graded independently of the buy, through the row builder");
+    const sSum = calibSummariseSell([{ sell: sRow }]);
+    ok("[R48.1] the summary carries both bounds, the median credited when wrong, and the duration split",
+       sSum.strict && sSum.lenient && "medianCreditedWhenWrongPct" in sSum.lenient
+       && sSum.lenient.byDuration && sSum.lenient.byDuration.fast && sSum.lenient.byDuration.slow
+       && sSum.lenient.byDuration.slow.n === 1 && sSum.lenient.byDuration.fast.n === 0,
+       JSON.stringify(sSum.lenient.byDuration));
+    ok("[R48.1] the panel renders the sell table and warns that a FAST sell's proven bound is near-meaningless",
+       (() => { const keepC2 = DB.calib;
+                DB.calib = Object.assign({ at: Date.now(), rows: [{ sell: sRow, strict: { verdict: "filled", buyPct: 100 },
+                    lenient: { verdict: "filled", buyPct: 100 }, item: "x", qty: 1, bid: 1, ask: 2, bh: 2, sh: 1,
+                    trace: [], atPriceBuckets: 0 }], total: 1, retentionH: CALIB_5M_RETENTION_H,
+                  skipped: { tooOld: 0, noWindow: 0, noTape: 0 },
+                  sellLeg: sSum }, calibSummarise([{ strict: { verdict: "filled", buyPct: 100 },
+                    lenient: { verdict: "filled", buyPct: 100 }, fastLeg: 0 }]));
+                const s = calibSection(), x = analysisCalibration();
+                DB.calib = keepC2;
+                return /Sell leg — anchored independently/.test(s) && /False never-sold/.test(s)
+                    && /close to meaningless/.test(s) && !!x.calibration.sellLeg
+                    && /HARDER here/.test(x.calibration.sellLeg.note); })(),
+       "sell panel + export");
     DB.calib = keepCal; DB.bank = keepBank47;
   } catch(e){
     out.push("FAIL calibration export :: " + (e && e.stack || e));
