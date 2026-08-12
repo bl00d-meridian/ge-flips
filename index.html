@@ -6757,6 +6757,50 @@ function calibSplit(rows, mode){
   return { fast: grp("fast"), slow: grp("slow") };
 }
 
+/* ═══ NEVER BLEND A RATE (user ruling, Aug 12 2026) ═══════════════════════
+   The "net per cohort, never blended" ruling, generalised to EVERY rate:
+   fill rate, credited share, agreement rate, hit rate — anywhere populations
+   answering different questions are currently averaged together.
+
+   The incident that forced the generalisation: paper trips filled at a
+   "median 37% of intended size", which read as a sizing problem across the
+   book. Split by cohort it was watchlist 100%, scanner 37%, discovery slice
+   8.3% — the items closest to fundable fill completely, and the low number
+   was four populations averaged. The same error the net ruling was made
+   about, recurring on a rate because the ruling had been written about net.
+
+   **A blended figure may render only ALONGSIDE its decomposition, never
+   alone.** This primitive is the only sanctioned way to render one: it emits
+   the blend and the per-cohort split together, so a caller cannot produce the
+   first without the second. Parts are {cohort, num, den}. */
+function rateBlend(key, parts, opts){
+  const o = opts || {};
+  const ps = (parts || []).filter(p => p && p.den > 0);
+  const num = ps.reduce((a, p) => a + p.num, 0), den = ps.reduce((a, p) => a + p.den, 0);
+  if (!den) return '<span class="dim">' + esc(o.empty || "no population") + '</span>';
+  const pct = v => Math.round(v * 100) + "%";
+  const rows = ps.map(p => ({ cohort: p.cohort, _cohort: p.cohort,
+    rate: pct(p.num / p.den), _rate: p.num / p.den,
+    n: p.den, _n: p.den, hits: p.num, _txt: p.cohort })).sort((a, b) => b._n - a._n);
+  const face = pct(num / den);
+  const box = drill(key, face, {
+    head: (o.head || "this rate") + " — per cohort, because a blend of populations answering different questions answers none of them",
+    cols: [{ k: "cohort", lab: "Cohort" }, { k: "rate", lab: o.rateLab || "Rate", num: 1, sortk: "_rate" },
+           { k: "hits", lab: o.numLab || "Count", num: 1, sortk: "hits" },
+           { k: "n", lab: o.denLab || "Population", num: 1, sortk: "_n" }],
+    rows, empty: "No cohort has a population here.",
+    note: o.note || 'Cohorts are not interchangeable. The watchlist answers "would a plan candidate have filled", the '
+        + 'discovery slice answers "does anything unwatched fill", the scanner cohort answers the filter question. '
+        + 'Their average answers none of the three.' });
+  /* The decomposition rides BESIDE the number, not only inside the
+     expansion — the ruling is that the blend never renders alone, and an
+     expansion the reader has to open is still alone on the page. */
+  const inline = rows.length > 1
+    ? ' <span class="dim">(' + rows.map(r => esc(r.cohort) + " " + r.rate + " of " + r._n).join(", ") + ')</span>'
+    : ' <span class="dim">(single cohort: ' + esc(rows[0].cohort) + ')</span>';
+  return box + inline;
+}
+
 /* ═══ NEVER-FED DETECTOR (user ruling, Aug 12 2026) ═══════════════════════
    A stat that renders 0 because nothing FEEDS it is indistinguishable, on
    screen, from a stat that renders 0 because nothing QUALIFIED — and the two
@@ -7066,7 +7110,13 @@ function paperGateSection(){
       /* Fill rate with its reachability bracket (ruled Aug 12 2026): the
          operative reading, flanked by proven and possible, the same way the
          two participation readings sit beside each other. */
-      + '<td>' + cell(g, "rate", rate + "%", 'fill rate, operative reading — the outcome of each trip that produced it', s.arr)
+      /* Never blended (ruled Aug 12 2026): the gate's fill rate pools every
+         cohort it benched, and those cohorts fill very differently. */
+      + '<td>' + rateBlend("paper:gate:" + g + ":rateblend",
+            [...new Set(s.arr.map(paperCohortOf))].map(ch => ({ cohort: ch,
+              num: s.arr.filter(p => paperCohortOf(p) === ch && (p.state === "filled" || p.state === "forced-exit")).length,
+              den: s.arr.filter(p => paperCohortOf(p) === ch).length })),
+            { head: g + " — fill rate", rateLab: "Fill rate", numLab: "Filled", denLab: "Closed trips" })
           + ' <span class="dim" title="PROVEN reachable: counting only prints strictly past your price, which show the queue at it had cleared. The lower bound.">↓'
           + (s.n ? Math.round(s.strict / s.n * 100) : 0) + '%</span>'
           + ' <span class="dim" title="POSSIBLY reachable: every print that touched your price counted in full. The upper bound.">↑'
@@ -7278,10 +7328,16 @@ function hoursLedgerInline(){
       empty: "No watched item has an hourly reading for this hour.",
       note: 'The market stream is computed from the 168-point hourly series each watched item already fetches, so <b>every hour is equally represented whether or not the tracker was open</b>. It is the unbiased stream, and it makes no claim about whether those spreads are fillable.'
     });
+    /* Never blended (ruled Aug 12 2026) — an hour's trips span cohorts. */
+    const hourBlend = r.n ? rateBlend("hours:rate:" + r.h,
+      [...new Set(r.trips.map(paperCohortOf))].map(ch => ({ cohort: ch,
+        num: r.trips.filter(p => paperCohortOf(p) === ch && (p.state === "filled" || p.state === "forced-exit")).length,
+        den: r.trips.filter(p => paperCohortOf(p) === ch).length })),
+      { head: hh(r.h) + " — paper fill rate", rateLab: "Fill rate", numLab: "Filled", denLab: "Trips" }) : "";
     const shFace = r.n ? (Math.round((r.fillRate || 0) * 100) + "% of " + r.n + " (" + r.unfilled + " never filled)")
       : r.thin ? '<span class="dim">no counted trips</span>'
       : '<span class="dim">no data — never observed</span>';
-    const shCell = r.n ? drill("hours:sh:" + r.h, shFace, {
+    const shCell = r.n ? hourBlend + " " + drill("hours:sh:" + r.h, shFace, {
       head: hh(r.h) + " paper stream — the simulated trips opened in this hour",
       cols: PAPER_TRIP_COLS, rows: paperTripRows(r.trips),
       empty: "No paper trips opened in this hour.",

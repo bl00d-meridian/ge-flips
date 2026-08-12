@@ -4682,6 +4682,49 @@
     out.push("FAIL volume index / measured tier :: " + (e && e.stack || e));
   }
 
+  // ─── §49: NEVER BLEND A RATE (user ruling, Aug 12 2026) ───
+  try {
+    const parts49 = [{ cohort: "watchlist", num: 8, den: 8 }, { cohort: "slice", num: 1, den: 12 }];
+    const rb = rateBlend("t49", parts49, { head: "test rate" });
+    ok("[R49.1] the blend is computed across the pooled population",
+       /">45%/.test(rb) || /45%/.test(rb), rb.slice(0, 160));
+    ok("[R49.1] and the DECOMPOSITION renders beside it, not only inside the expansion",
+       /watchlist 100% of 8/.test(rb) && /slice 8% of 12/.test(rb),
+       rb.slice(rb.indexOf("</button>")).slice(0, 200));
+    ok("[R49.1] the expansion carries the per-cohort rows through the shared primitive",
+       (() => { S.drillOpen = new Set(["t49"]);
+                const b = drillBoxHTML("t49");
+                S.drillOpen = new Set();
+                return /watchlist/.test(b) && /slice/.test(b) && /Fill rate|Rate/.test(b)
+                    && /answers none of them/.test(b); })(),
+       "per-cohort rows");
+    ok("[R49.1] a single-cohort rate says so rather than implying a split it does not have",
+       /single cohort: watchlist/.test(rateBlend("t49b", [{ cohort: "watchlist", num: 3, den: 4 }], {})),
+       rateBlend("t49b", [{ cohort: "watchlist", num: 3, den: 4 }], {}));
+    ok("[R49.1] an empty population renders as no-population, never as 0%",
+       /no population/.test(rateBlend("t49c", [{ cohort: "x", num: 0, den: 0 }], {})),
+       rateBlend("t49c", [], {}));
+    /* Applied where rates actually render. */
+    const keep49 = DB.shadowBook;
+    const mk49 = (i, coh, st) => Object.assign({ id: 49000 + i, itemId: 9001, name: "Probe alpha", qty: 5,
+      bid: 100, ask: 120, t: Date.now() - 3600e3, closedAt: Date.now(), hzH: 4, obsMs: 4 * 3600e3,
+      state: st, net: 10, regimes: [], benchedBy: ["ROI floor"] }, coh);
+    DB.shadowBook = [mk49(1, {}, "filled"), mk49(2, {}, "filled"),
+                     mk49(3, { slice: 1, stratum: "f2p" }, "unfilled"), mk49(4, { slice: 1, stratum: "f2p" }, "unfilled")];
+    const gs = paperGateSection();
+    ok("[R49.2] the per-gate fill rate renders its cohort split inline — the blend is never alone",
+       /data-drill="paper:gate:ROI floor · daytime:rateblend"/.test(gs)
+       && /watchlist 100% of 2/.test(gs) && /slice 0% of 2/.test(gs),
+       gs.slice(gs.indexOf("rateblend") - 40, gs.indexOf("rateblend") + 260));
+    const hi49 = hoursLedgerInline();
+    ok("[R49.2] the hours ledger's paper fill rate does the same",
+       /data-drill="hours:rate:/.test(hi49) && /watchlist 100% of 2/.test(hi49),
+       hi49.slice(hi49.indexOf("hours:rate:") - 20, hi49.indexOf("hours:rate:") + 220));
+    DB.shadowBook = keep49; S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL never-blend a rate :: " + (e && e.stack || e));
+  }
+
   // ─── §42: ANALYSIS EXPORT (user-directed, Aug 12 2026) ───
   try {
     const nowA = Date.now();

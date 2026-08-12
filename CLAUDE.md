@@ -38,6 +38,19 @@ job: ground truth from lived use, judgment of purpose, and rulings.
   clear an entry — not even a margin test.
 - **Automated decisions show their work.** Every bench, clamp, and cap states its reason
   inline where the user reads it.
+- **Never blend a rate** (user ruling, Aug 12 2026 — generalises the net-per-cohort rule
+  to every rate the tool computes). Fill rate, credited share, agreement rate, hit rate:
+  anywhere populations answering different questions are averaged together, **the blended
+  figure may render only ALONGSIDE its decomposition, never alone** — and beside it on the
+  page, not merely inside an expansion the reader has to open. `rateBlend()` in
+  `index.html` is the sanctioned way to render one; it emits the blend and the split
+  together so a caller cannot produce the first without the second. The incident: paper
+  trips filled at "a median 37% of intended size", which read as a book-wide sizing
+  problem. Split by cohort it was watchlist 100%, scanner 37%, discovery slice 8.3% —
+  the items closest to fundable fill completely, and the low figure was four populations
+  averaged. That is the same defect the net ruling was made about, recurring on a rate
+  because the earlier ruling had been written about net specifically. **When a ruling
+  names a quantity, check whether it is really about the quantity or about the shape.**
 - **Every aggregate decomposes to its rows, in one click** (user ruling, Aug 11 2026).
   Any statistic, verdict, score, or summary the tool renders must open to the constituent
   rows that produced it — which items, which events, with the per-item evidence. A number
