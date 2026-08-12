@@ -5207,6 +5207,104 @@
   } catch(e){
     out.push("FAIL ambiguous-by-touch / calibration :: " + (e && e.stack || e));
   }
+
+  // ─── §46: CALIBRATION WINDOW ANCHOR, TRACE, DURATION SPLIT ───
+  try {
+    /* The defect the first calibration run exposed: the log moment is the end
+       of the ROUND TRIP, so the buy window opens at logAt - (sh + bh), not
+       logAt - bh. Anchoring it at logAt - bh placed every replay later by the
+       whole sell-leg duration. Reproduced here at both leg lengths, because
+       the misplacement is a fixed offset and that is exactly why it looked
+       like a duration effect. */
+    const bkt46 = t => Math.floor(t / 300e3) * 300e3;
+    const logAt46 = bkt46(Date.now());
+    /* Tape: cheap (reachable) during the true BUY window, expensive after it.
+       A correctly anchored replay fills; one shifted by sh sees only the
+       expensive half and credits nothing at all. */
+    const mkTape = (buyStart, buyEnd) => {
+      const pts = [];
+      for (let t = buyStart - 3600e3; t <= logAt46 + 3600e3; t += 300e3)
+        pts.push({ t, lo: (t >= buyStart && t <= buyEnd) ? 900 : 1200, hi: 1500, lv: 100000, hv: 100000 });
+      return pts;
+    };
+    /* The window comes from PRODUCTION (calibWindow), never re-derived here —
+       a probe that computes the anchor itself passes with the harness bug
+       fully intact, which is exactly how the first version of this shipped
+       and exactly the case law this repo already carries. The "wrong" object
+       reproduces the OLD anchor deliberately, as the defect to contrast. */
+    const mkFlip = (bh, sh) => {
+      const f = { id: logAt46, itemId: 9001, name: "Probe alpha", qty: 10, buy: 1000, sell: 1400, bh, sh };
+      const w = calibWindow(f, logAt46 + 60e3);
+      return { f, e: w,
+               wrong: { f, bh, sh, buyAt: logAt46 - bh * 3600e3, sellAt: logAt46 },
+               pts: mkTape(w.buyAt, w.buyDoneReal) };
+    };
+    const fast = mkFlip(0.383, 1.25);     // 23-minute buy, median 1.25h sell
+    const slow = mkFlip(6, 1.25);         // 6-hour buy, same sell
+    ok("[R46.1] correctly anchored, a fast leg that really completed replays as FILLED",
+       calibReplayOne(fast.e, fast.pts).lenient.verdict === "filled",
+       JSON.stringify(calibReplayOne(fast.e, fast.pts).lenient));
+    const wrongFast = calibReplayOne(fast.wrong, fast.pts);
+    ok("[R46.1] anchored at logAt-bh instead, the same fast leg credits ZERO — not partial, zero",
+       wrongFast.lenient.verdict === "unfilled" && wrongFast.lenient.buyPct === 0,
+       JSON.stringify(wrongFast.lenient));
+    ok("[R46.1] the SAME misplacement barely touches a slow leg — which is why it read as a duration effect",
+       calibReplayOne(slow.wrong, slow.pts).lenient.verdict === "filled"
+       && calibReplayOne(slow.e, slow.pts).lenient.verdict === "filled",
+       JSON.stringify({ wrong: calibReplayOne(slow.wrong, slow.pts).lenient.verdict }));
+    /* Through calibWindow itself, so the anchor arithmetic is asserted where
+       it actually lives. */
+    ok("[R46.1] the window opens at logAt-(sh+bh) and the buy ends at logAt-sh — anchored to the trip, not the log",
+       (() => { const w = calibWindow({ id: logAt46, bh: 2, sh: 1 }, logAt46 + 60e3);
+                return w.ok && w.buyAt === logAt46 - 3 * 3600e3 && w.buyDoneReal === logAt46 - 1 * 3600e3; })(),
+       JSON.stringify(calibWindow({ id: logAt46, bh: 2, sh: 1 }, logAt46 + 60e3)));
+    ok("[R46.1] both leg timings are REQUIRED — a flip without sh cannot be located and is skipped, not guessed",
+       calibWindow({ id: logAt46, bh: 0.5 }, logAt46 + 60e3).reason === "noWindow"
+       && calibWindow({ id: logAt46, bh: 0.5, sh: 0 }, logAt46 + 60e3).ok === true,
+       "sh required, and sh=0 is a real value rather than a missing one");
+    ok("[R46.1] a flip outside the 5m retention window is skipped as tooOld, not replayed on stale tape",
+       calibWindow({ id: logAt46 - 40 * 3600e3, bh: 1, sh: 1 }, logAt46).reason === "tooOld",
+       "retention guard");
+
+    // ---- R46.2 the bucket trace explains a zero down to the bucket ----
+    const tr = wrongFast.trace;
+    ok("[R46.2] a zero-credit leg carries a bucket-by-bucket trace, not just a verdict",
+       Array.isArray(tr) && tr.length > 0 && tr.every(x => x.why && Number.isFinite(x.credited)),
+       JSON.stringify(tr.slice(0, 2)));
+    ok("[R46.2] and each bucket says WHY it contributed nothing, naming the two prices",
+       tr.every(x => x.credited === 0) && tr.some(x => /sat ABOVE the fill price/.test(x.why)),
+       JSON.stringify(tr[0]));
+    ok("[R46.2] a reaching bucket is distinguishable from a non-reaching one in the same trace",
+       (() => { const t2 = calibReplayOne(fast.e, fast.pts).trace;
+                return t2.some(x => x.credited > 0 && /proven reach/.test(x.why)); })(),
+       "reaching buckets labelled");
+    ok("[R46.2] the row carries the reach census so the zero is visible before opening the trace",
+       wrongFast.bucketsInWindow > 0 && wrongFast.bucketsReaching === 0
+       && calibReplayOne(fast.e, fast.pts).bucketsReaching > 0,
+       JSON.stringify({ inWindow: wrongFast.bucketsInWindow, reaching: wrongFast.bucketsReaching }));
+
+    // ---- R46.3 the duration split renders every run ----
+    const rows46 = [calibReplayOne(fast.wrong, fast.pts), calibReplayOne(slow.wrong, slow.pts)];
+    /* Through the production summariser, so the split cannot be dropped from
+       the result without this failing. */
+    const sum46 = calibSummarise(rows46);
+    const sp = sum46.lenient.byDuration;
+    ok("[R46.3] the summary always carries the split, and separates legs by their own duration",
+       !!sp && sp.fast.n === 1 && sp.slow.n === 1 && sp.fast.falseNever === 1 && sp.slow.agree === 1
+       && !!sum46.strict.byDuration,
+       JSON.stringify(sp));
+    ok("[R46.3] and it renders on every run, with the bounded-defect reading called out when it skews",
+       (() => { const keepC = DB.calib;
+                DB.calib = { at: Date.now(), rows: rows46, total: 2, retentionH: CALIB_5M_RETENTION_H,
+                  skipped: { tooOld: 0, noWindow: 0, noTape: 0 },
+                  strict: sum46.strict, lenient: sum46.lenient };
+                const s = calibSection(); DB.calib = keepC;
+                return /By buy-leg duration/.test(s) && /under 1h/.test(s) && /1h and over/.test(s)
+                    && /bounded defect/.test(s) && /hold duration constant/.test(s); })(),
+       "duration split renders with its reading");
+  } catch(e){
+    out.push("FAIL calibration anchor / trace / split :: " + (e && e.stack || e));
+  }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter

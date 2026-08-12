@@ -384,6 +384,13 @@ reports the feature as covered. Four named instances, all shipped green:
   named function and point the assertion at that — do not reproduce it in the probe. A
   test that re-derives the answer is testing your arithmetic twice and the product zero
   times. The tell is a probe line that computes rather than calls.
+  **It recurred within the day** (Aug 12 2026), on the calibration harness: the probe
+  built its own replay window instead of calling the anchoring code, so seeding the
+  anchor defect changed nothing the suite could see. Extracted as `calibWindow()` and
+  `calibSummarise()` and re-seeded before it counted as proof. Two instances in one day
+  means the tell is worth checking on every new assertion, not just when something feels
+  off: **if a probe line constructs an input the product would have constructed, the
+  product's constructor is untested.**
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is

@@ -6512,6 +6512,54 @@ function paperRateFace(closed){
      possible — and states that the operative reading lies between them and is
      only measurable going forward, live. */
 const CALIB_5M_RETENTION_H = 36;
+/* WINDOW ANCHORING — extracted so assertions call it rather than re-deriving
+   it (the strataCount pattern; a probe that computes the window itself passes
+   with the harness bug intact, which is how the first version of this shipped).
+
+   Fixed Aug 12 2026, and it invalidated the first calibration run. The log
+   moment is the end of the ROUND TRIP, not the end of the buy:
+       buy starts  →  bh hours  →  buy done  →  sh hours  →  logged
+   so the buy window opens at logAt − (sh + bh), not at logAt − bh. Anchoring
+   at logAt − bh placed every replay LATER by exactly the sell-leg duration —
+   a median of 1.25h in this log. On a multi-hour buy the misplaced window
+   still overlaps the real one and the flip replays as filled; on a sub-hour
+   buy the entire window lands inside or past the SELL period, where the price
+   has moved up toward the ask and never returns to the bid. The credit is not
+   small, it is ZERO. That is the 0%-not-partial signature, and it is a defect
+   in this harness rather than in the fill model.
+
+   BOTH leg timings are required. Without `sh` the buy window cannot be
+   located, and guessing it would fabricate the measurement under test. */
+function calibWindow(f, now){
+  const logAt = f.t || f.id;
+  if (!(logAt > 0)) return { ok: false, reason: "noWindow" };
+  if (now - logAt > CALIB_5M_RETENTION_H * 3600e3) return { ok: false, reason: "tooOld" };
+  const bh = Number(f.bh), sh = Number(f.sh);
+  if (!(bh > 0) || !Number.isFinite(sh) || sh < 0) return { ok: false, reason: "noWindow" };
+  return { ok: true, f, bh, sh, logAt,
+    buyAt: logAt - (sh + bh) * 3600e3,
+    buyDoneReal: logAt - sh * 3600e3,
+    sellAt: logAt };
+}
+/* The summary, also extracted, so the duration split cannot be dropped from
+   the result without an assertion noticing. */
+function calibSummarise(rows){
+  const out = {};
+  for (const mode of ["strict", "lenient"]){
+    const v = rows.map(r => r[mode]);
+    out[mode] = {
+      agree: v.filter(x => x.verdict === "filled").length,
+      falsePartial: v.filter(x => x.verdict === "partial").length,
+      falseNever: v.filter(x => x.verdict === "unfilled").length,
+      falseForced: v.filter(x => x.verdict === "forced-exit").length,
+      medianBuyShortfallPct: medianOf(v.filter(x => x.verdict !== "filled").map(x => x.buyPct)),
+      medianSellShortfallPct: medianOf(v.filter(x => x.verdict === "forced-exit").map(x => x.sellPct)),
+      byDuration: calibSplit(rows, mode)
+    };
+    out[mode].agreePct = rows.length ? Math.round(100 * out[mode].agree / rows.length) : null;
+  }
+  return out;
+}
 async function calibrateFillModel(){
   if (S.calibBusy) return null;
   S.calibBusy = true;
@@ -6521,11 +6569,9 @@ async function calibrateFillModel(){
     const rows = [], skipped = { tooOld: 0, noWindow: 0, noTape: 0 };
     const eligible = [];
     for (const f of flips){
-      const sellAt = f.t || f.id;                       // the log moment ≈ the sell
-      if (!(sellAt > 0)){ skipped.noWindow++; continue; }
-      if (now - sellAt > CALIB_5M_RETENTION_H * 3600e3){ skipped.tooOld++; continue; }
-      if (!(Number(f.bh) > 0)){ skipped.noWindow++; continue; }
-      eligible.push({ f, buyAt: sellAt - Number(f.bh) * 3600e3, sellAt });
+      const w = calibWindow(f, now);
+      if (!w.ok){ skipped[w.reason]++; continue; }
+      eligible.push(w);
     }
     const byItem = new Map();
     for (const e of eligible){
@@ -6545,35 +6591,39 @@ async function calibrateFillModel(){
       for (const e of list) rows.push(calibReplayOne(e, pts));
       await new Promise(r => setTimeout(r, 300));
     }
-    const res = { at: now, rows, skipped, eligible: eligible.length, total: flips.length,
-      retentionH: CALIB_5M_RETENTION_H };
-    for (const mode of ["strict", "lenient"]){
-      const v = rows.map(r => r[mode]);
-      res[mode] = {
-        agree: v.filter(x => x.verdict === "filled").length,
-        falsePartial: v.filter(x => x.verdict === "partial").length,
-        falseNever: v.filter(x => x.verdict === "unfilled").length,
-        falseForced: v.filter(x => x.verdict === "forced-exit").length,
-        medianBuyShortfallPct: medianOf(v.filter(x => x.verdict !== "filled").map(x => x.buyPct)),
-        medianSellShortfallPct: medianOf(v.filter(x => x.verdict === "forced-exit").map(x => x.sellPct))
-      };
-      res[mode].agreePct = rows.length ? Math.round(100 * res[mode].agree / rows.length) : null;
-    }
+    const res = Object.assign({ at: now, rows, skipped, eligible: eligible.length,
+      total: flips.length, retentionH: CALIB_5M_RETENTION_H }, calibSummarise(rows));
     DB.calib = res; save();
     return res;
   } finally { S.calibBusy = false; if (S.tab === "trade" && S.sub === "paper") renderPaperView(); }
 }
-/* One flip, replayed. Pure given its tape, so the probe can drive it. */
+/* One flip, replayed. Pure given its tape, so the probe can drive it.
+   Keeps a BUCKET-LEVEL TRACE (user ruling, Aug 12 2026): a zero on a leg that
+   really completed in 23 minutes has to be explicable down to the bucket, and
+   a summary verdict cannot be interrogated. Each trace row says what the
+   bucket held, whether it reached the price, and what it contributed. */
+const CALIB_TRACE_CAP = 24;
 function calibReplayOne(e, pts){
-  const f = e.f, H = Math.max(0.25, Number(f.bh) * 2) * 3600e3;   // its own realised buy time, doubled, as the horizon
+  const f = e.f, bh = Number(e.bh != null ? e.bh : f.bh);
+  const H = Math.max(0.25, bh * 2) * 3600e3;   // its own realised buy time, doubled, as the horizon
   const out = { item: f.name || itemName(f.itemId), itemId: f.itemId, qty: f.qty,
-    bid: f.buy, ask: f.sell, buyAt: e.buyAt, sellAt: e.sellAt, bh: Number(f.bh) };
+    bid: f.buy, ask: f.sell, buyAt: e.buyAt, sellAt: e.sellAt, bh,
+    sh: Number(e.sh != null ? e.sh : f.sh), fastLeg: bh < 1 ? 1 : 0, trace: [] };
   for (const mode of ["strict", "lenient"]){
     let buy = 0, buyDone = null, sell = 0;
     for (const b of pts){
       if (b.t < e.buyAt || b.t - e.buyAt > H) continue;
       const cr = reachCredit(b.lo, f.buy, b.lv, "buy", false);
-      buy += mode === "strict" ? cr.strict : cr.lenient;
+      const add = mode === "strict" ? cr.strict : cr.lenient;
+      buy += add;
+      if (mode === "lenient" && out.trace.length < CALIB_TRACE_CAP)
+        out.trace.push({ t: b.t, minsIn: Math.round((b.t - e.buyAt) / 60e3),
+          lo: b.lo, lv: b.lv, credited: add,
+          why: b.lo == null ? "no low print in this bucket"
+             : !(b.lv > 0) ? "no low-side volume"
+             : b.lo < f.buy ? "below the fill price — proven reach"
+             : b.lo === f.buy ? "exactly at the fill price — ambiguous"
+             : "average low " + full(b.lo) + " sat ABOVE the fill price " + full(f.buy) + " — never reached" });
       if (buy >= f.qty){ buyDone = b.t; break; }
     }
     if (buyDone == null){
@@ -6590,7 +6640,25 @@ function calibReplayOne(e, pts){
     out[mode] = { verdict: sell >= f.qty ? "filled" : "forced-exit",
       buyPct: 100, sellPct: Math.round(100 * Math.min(1, sell / f.qty)) };
   }
+  out.bucketsInWindow = out.trace.length;
+  out.bucketsReaching = out.trace.filter(x => x.credited > 0).length;
   return out;
+}
+/* Duration split (user ruling, Aug 12 2026): reported on EVERY run, because a
+   model blind only on fast fills is a bounded defect and a model blind
+   everywhere is global pessimism — and the two call for opposite responses.
+   Any conclusion drawn from a replay has to hold duration constant. */
+function calibSplit(rows, mode){
+  const grp = k => {
+    const v = rows.filter(r => (k === "fast") === !!r.fastLeg).map(r => r[mode]);
+    return { n: v.length,
+      agree: v.filter(x => x.verdict === "filled").length,
+      falsePartial: v.filter(x => x.verdict === "partial").length,
+      falseNever: v.filter(x => x.verdict === "unfilled").length,
+      falseForced: v.filter(x => x.verdict === "forced-exit").length,
+      agreePct: v.length ? Math.round(100 * v.filter(x => x.verdict === "filled").length / v.length) : null };
+  };
+  return { fast: grp("fast"), slow: grp("slow") };
 }
 
 /* ═══ NEVER-FED DETECTOR (user ruling, Aug 12 2026) ═══════════════════════
@@ -6610,6 +6678,32 @@ function neverFedNote(what, why){
 }
 /* The headline block: per cohort, as a rate, with its distribution and a
    capital-feasibility check. Never a blended total. */
+/* The duration split, rendered on every run — never folded into the headline.
+   "Blind on fast fills" and "pessimistic everywhere" are different defects
+   with opposite remedies, and a blended agreement rate hides which you have. */
+function calibDurationHTML(c){
+  if (!c || !c.lenient || !c.lenient.byDuration) return "";
+  const row = (lab, g) => '<tr><td style="text-align:left">' + lab + '</td>'
+    + '<td class="num">' + g.n + '</td>'
+    + '<td class="num">' + g.agree + (g.agreePct != null ? ' <span class="dim">(' + g.agreePct + '%)</span>' : '') + '</td>'
+    + '<td class="num">' + g.falsePartial + '</td><td class="num">' + g.falseForced + '</td>'
+    + '<td class="num ' + (g.falseNever ? 'neg' : '') + '">' + g.falseNever + '</td></tr>';
+  const bd = c.lenient.byDuration, bs = c.strict.byDuration;
+  const skew = bd.fast.n && bd.slow.n && bd.fast.agreePct != null && bd.slow.agreePct != null
+    && bd.slow.agreePct - bd.fast.agreePct >= 50;
+  return '<div style="margin-top:8px"><b>By buy-leg duration</b> '
+    + '<span class="dim">— reported every run: a model blind only on FAST fills is a bounded defect, one blind '
+    + 'everywhere is global pessimism, and they call for opposite responses. Any conclusion from a replay has to hold '
+    + 'duration constant.</span></div>'
+    + '<div class="tw"><table><thead><tr><th>Reading · leg</th><th>Flips</th><th>Agreed</th><th>False partial</th>'
+    + '<th>False forced-exit</th><th>False never-filled</th></tr></thead><tbody>'
+    + row("possible reach · under 1h", bd.fast) + row("possible reach · 1h and over", bd.slow)
+    + row("proven reach · under 1h", bs.fast) + row("proven reach · 1h and over", bs.slow)
+    + '</tbody></table></div>'
+    + (skew ? '<div class="plan-note">⚠ The disagreement is concentrated on FAST legs. That is a bounded defect rather '
+        + 'than global pessimism — and it means any paper-book fill rate has to be re-read with duration held constant '
+        + 'before it supports a conclusion about the market.</div>' : '');
+}
 function calibSection(){
   const c = DB.calib;
   const head = '<div class="ph" style="margin-top:10px"><h3>Fill-model calibration</h3>'
@@ -6629,11 +6723,32 @@ function calibSection(){
     + 'not once.</div>';
   const cols = [{ k: "item", lab: "Item" }, { k: "qty", lab: "Qty", num: 1, sortk: "_qty" },
                 { k: "bh", lab: "Real buy time", num: 1, sortk: "_bh" },
-                { k: "strict", lab: "Model — proven reach" }, { k: "lenient", lab: "Model — possible reach" }];
-  const rows = (c.rows || []).map(r => ({ item: r.item, qty: full(r.qty), _qty: r.qty,
-    bh: fmtHrs(r.bh), _bh: r.bh,
+                { k: "reach", lab: "Buckets reaching the price", num: 1, sortk: "_reach" },
+                { k: "strict", lab: "Model — proven reach" }, { k: "lenient", lab: "Model — possible reach" },
+                { k: "trace", lab: "Bucket trace", html: 1 }];
+  const rows = (c.rows || []).map((r, i) => ({ item: r.item, qty: full(r.qty), _qty: r.qty,
+    bh: fmtHrs(r.bh) + (r.fastLeg ? " (fast)" : ""), _bh: r.bh,
+    reach: (r.bucketsReaching != null ? r.bucketsReaching + " of " + r.bucketsInWindow : "—"),
+    _reach: r.bucketsReaching || 0,
     strict: r.strict.verdict + (r.strict.verdict === "filled" ? "" : " (" + r.strict.buyPct + "% of the buy)"),
     lenient: r.lenient.verdict + (r.lenient.verdict === "filled" ? "" : " (" + r.lenient.buyPct + "% of the buy)"),
+    trace: (r.trace && r.trace.length)
+      ? drill("calib:trace:" + i, r.trace.length + " buckets", {
+          head: r.item + " — every 5m bucket inside the replayed buy window, and what it contributed",
+          cols: [{ k: "minsIn", lab: "Min into window", num: 1, sortk: "minsIn" },
+                 { k: "lo", lab: "Bucket avg low", num: 1, sortk: "_lo" },
+                 { k: "lv", lab: "Low-side volume", num: 1, sortk: "lv" },
+                 { k: "credited", lab: "Credited", num: 1, sortk: "credited" },
+                 { k: "why", lab: "Why" }],
+          rows: r.trace.map(x => ({ minsIn: x.minsIn, lo: x.lo != null ? full(x.lo) : "—", _lo: x.lo || 0,
+            lv: full(x.lv), credited: full(x.credited), why: x.why, _txt: x.why })),
+          total: r.bucketsInWindow,
+          totalNote: 'the trace is capped at ' + CALIB_TRACE_CAP + ' buckets per flip to bound the store',
+          empty: "No buckets fell inside the replayed window at all — which is itself the finding.",
+          note: 'A leg that really completed but shows every bucket "never reached" is either a mislocated window or a '
+              + 'price comparison that cannot fire. Both are harness faults, not market findings — read the fill price '
+              + 'against the bucket lows before concluding anything about the model.' })
+      : '<span class="dim">—</span>',
     _txt: r.item + " " + r.strict.verdict + " " + r.lenient.verdict }));
   const line = (lab, m) => '<tr><td style="text-align:left">' + lab + '</td>'
     + '<td class="num">' + m.agree + (m.agreePct != null ? ' <span class="dim">(' + m.agreePct + '%)</span>' : '') + '</td>'
@@ -6647,6 +6762,7 @@ function calibSection(){
     + '</tr></thead><tbody>'
     + line("proven reach (lower bound)", c.strict) + line("possible reach (upper bound)", c.lenient)
     + '</tbody></table></div>'
+    + calibDurationHTML(c)
     + '<div data-drillrow="1" style="margin-top:5px">'
     + drill("calib:rows", c.rows.length + ' flip' + (c.rows.length === 1 ? '' : 's') + ' replayed', {
         head: "every logged round trip the model was replayed against, and what it said",
