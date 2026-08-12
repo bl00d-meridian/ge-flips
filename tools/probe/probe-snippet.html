@@ -4682,6 +4682,56 @@
     out.push("FAIL volume index / measured tier :: " + (e && e.stack || e));
   }
 
+  // ─── §50: FILL FORECAST INPUT + INTERIM SOFT TAG (user ruling, Aug 12 2026) ───
+  try {
+    const keep50 = S.spark.get(9001), keepLog50 = DB.decisionLog, keepSoft = S.fillSoftLogged;
+    const mkLows = arr => Object.assign({}, S.spark.get(9001) || {}, { at: Date.now(), lows: arr });
+    /* Six hourly readings: three reach the bid at 1000 units, three sit above
+       it. Median of [0,0,0,1000,1000,1000] is 1000 under the tool's medianOf. */
+    S.spark.set(9001, mkLows([{ lo: 5000, lv: 9999 }, { lo: 5000, lv: 9999 }, { lo: 5000, lv: 9999 },
+                              { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }]));
+    ok("[R50.1] an hour whose average low sat ABOVE the bid contributes ZERO reaching flow, not a little",
+       reachFlowPerH(9001, 4000) === medianOf([0, 0, 0, 1000, 1000, 1000]),
+       String(reachFlowPerH(9001, 4000)));
+    ok("[R50.1] a bid the tape never reaches yields zero reaching flow, and an infinite forecast",
+       reachFlowPerH(9001, 100) === 0
+       && estFillH(50, { id: 9001, buy: 100, volLow: 999999 }) === Infinity,
+       String(reachFlowPerH(9001, 100)));
+    ok("[R50.1] total low-side flow is NOT what it divides by — the old input would have said it fills",
+       estFillH(50, { id: 9001, buy: 100, volLow: 999999 }) === Infinity
+       && 50 / (999999 * GATE.capture) < 0.01,
+       "reaching flow, not total");
+    ok("[R50.1] the window is the median of the last " + EST_FLOW_HOURS + " hours, so one quiet hour cannot swing it",
+       (() => { S.spark.set(9001, mkLows([{ lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 },
+                                          { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1 }]));
+                return reachFlowPerH(9001, 4000) === 1000; })(),
+       String(reachFlowPerH(9001, 4000)));
+    ok("[R50.1] with no hourly series the forecast falls back to the old input and SAYS which it used",
+       (() => { S.spark.delete(9001);
+                return reachFlowPerH(9001, 4000) === null
+                    && /pre-Aug-12 input/.test(estFillBasis({ id: 9001, buy: 4000 })); })(),
+       estFillBasis({ id: 9001, buy: 4000 }));
+    // ---- R50.2 the interim downgrade, and its decision-log record ----
+    DB.decisionLog = []; S.fillSoftLogged = 0;
+    fillGateSoftLog();
+    const dl = (DB.decisionLog || []).find(e => e.subject === FILL_GATE_SOFT_KEY);
+    ok("[R50.2] the downgrade is decision-logged with the evidence, not just the change",
+       !!dl && dl.auto === 1 && /518×/.test(dl.reason) && /49\.8h/.test(dl.reason)
+       && /downgrade hard bench → soft tag/.test(dl.action),
+       JSON.stringify(dl && dl.action));
+    ok("[R50.2] and it names its own REVERSION, so the interim cannot become permanent by inertia",
+       !!dl && /REVERTS when/.test(dl.reason) && /the reversion is logged too/.test(dl.reason),
+       (dl && dl.reason || "").slice(-120));
+    ok("[R50.2] it logs ONCE, however many plan builds run",
+       (() => { S.fillSoftLogged = 0; fillGateSoftLog(); S.fillSoftLogged = 0; fillGateSoftLog();
+                return (DB.decisionLog || []).filter(e => e.subject === FILL_GATE_SOFT_KEY).length === 1; })(),
+       String((DB.decisionLog || []).filter(e => e.subject === FILL_GATE_SOFT_KEY).length));
+    if (keep50) S.spark.set(9001, keep50); else S.spark.delete(9001);
+    DB.decisionLog = keepLog50; S.fillSoftLogged = keepSoft;
+  } catch(e){
+    out.push("FAIL fill forecast input / soft tag :: " + (e && e.stack || e));
+  }
+
   // ─── §49: NEVER BLEND A RATE (user ruling, Aug 12 2026) ───
   try {
     const parts49 = [{ cohort: "watchlist", num: 8, den: 8 }, { cohort: "slice", num: 1, den: 12 }];

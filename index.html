@@ -1983,7 +1983,7 @@ async function sparkFor(id){
   }
   S.tsFail = 0; S.tsPauseUntil = 0; S.tsNeg.delete(id); clearWarn("ts");
   const raw = (d.data || []).slice(-168);
-  const pts = [], vols = [], byHour = new Array(24).fill(0), hourN = new Array(24).fill(0);
+  const pts = [], vols = [], lows = [], byHour = new Array(24).fill(0), hourN = new Array(24).fill(0);
   /* TIME-STRUCTURE PROSPECTING (user-directed, Aug 11 2026): the same 168
      hourly points already fetched carry a per-hour POST-TAX spread, which is
      the one hour-of-day signal that is NOT biased by when the tracker happens
@@ -1999,6 +1999,9 @@ async function sparkFor(id){
     pts.push(mid);
     const v = (p.highPriceVolume || 0) + (p.lowPriceVolume || 0);
     vols.push(v);
+    /* Per-hour low side, kept so the fill forecast can divide by REACHING
+       flow rather than by all of it (ruled Aug 12 2026). No extra request. */
+    lows.push({ lo, lv: p.lowPriceVolume || 0 });
     const h = new Date(p.timestamp * 1000).getHours();
     byHour[h] += v; hourN[h]++;
     if (hi != null && lo != null && lo > 0){
@@ -2011,7 +2014,7 @@ async function sparkFor(id){
   /* series keeps timestamped midpoints for the markout analysis — price drift
      measured 30m/2h after each of your fills. */
   const series = raw.map((p, i) => ({ t: p.timestamp, mid: pts[i] })).filter(x => Number.isFinite(x.mid));
-  const rec = { at: Date.now(), pts, vols, byHour, roiHour, series, noData: raw.length === 0 };
+  const rec = { at: Date.now(), pts, vols, lows, byHour, roiHour, series, noData: raw.length === 0 };
   S.spark.set(id, rec);
   return rec;
 }
@@ -2970,10 +2973,57 @@ const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round
 /* Buy-leg fill forecast: qty ÷ (buy-side 1h flow × the 15% capture share a
    standing bid realistically takes of it). Shown on every funded line so the
    forecast can be checked against the measured bh times it will grow into. */
+/* ═══ THE FILL FORECAST'S INPUT (user ruling, Aug 12 2026) ════════════════
+   Graded against 43 replayed trips and found wrong in the INPUT, not the
+   formula. Observed/predicted spanned 0.025×–13.17× — a 518× spread — while
+   substituting the flow that actually reached the bid brought the same
+   formula to a 1.9× spread. Two faults, both fixed here:
+
+   • REACH. It divided by TOTAL low-side flow, but only flow printing at or
+     below your bid can fill you. Among the trips it wrongly promised, the
+     median had ONE reaching hour in sixteen. Now it divides by REACHING flow.
+   • DRIFT. It read a single trailing hour, and in-window flow against
+     pre-open flow ran 0–45.6× (median 1.48×). Now it reads the MEDIAN of the
+     last six hourly readings, which is what the ruling specified.
+
+   Measured effect on the same 43: spread 518× → 24.6×, and the count of trips
+   it wrongly promised would fit falls from 12 to 9. What it does NOT fix is
+   the benching harm — see the note on the gate's treatment below. */
+const EST_FLOW_HOURS = 6;
+/* The interim downgrade is a STRATEGY-PARAMETER RULING, so it is written to
+   the decision log once with the evidence that justified it — and the
+   reversion is logged the same way when the band replaces it, so an interim
+   cannot become permanent by inertia. */
+const FILL_GATE_SOFT_KEY = "fill-horizon gate → soft tag (2026-08-12)";
+function fillGateSoftLog(){
+  if (S.fillSoftLogged) return;
+  S.fillSoftLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === FILL_GATE_SOFT_KEY)) return;
+  logDecision("settings", FILL_GATE_SOFT_KEY, "downgrade hard bench → soft tag (interim)",
+    "Graded against 43 replayed paper trips: observed/predicted fill time spanned 0.025×–13.17×, a 518× range, and the "
+    + "gate would have benched 4 of the 10 trips that actually completed (Varrock teleport tablets: predicted 49.8h, "
+    + "filled in 1.3h). A hard bench on an input that noisy costs more in real candidates than the noise it admits. "
+    + "REVERTS when the corrected input is graded and a confidence-band width is ruled; the reversion is logged too.", 1);
+}
+function reachFlowPerH(id, bid){
+  const sp = S.spark.get(id);
+  if (!sp || !Array.isArray(sp.lows) || !sp.lows.length || !(bid > 0)) return null;
+  const last = sp.lows.slice(-EST_FLOW_HOURS);
+  if (!last.length) return null;
+  /* An hour whose average low sat above the bid contributes ZERO reaching
+     flow — not "a little". That is the whole correction. */
+  return medianOf(last.map(x => (x.lo != null && x.lo <= bid) ? (x.lv || 0) : 0));
+}
 function estFillH(qty, c){
-  const flow = (c.volLow || 0) * GATE.capture;
+  const rf = c ? reachFlowPerH(c.id, c.buy) : null;
+  const flow = (rf != null ? rf : (c && c.volLow) || 0) * GATE.capture;
   return flow > 0 && qty > 0 ? qty / flow : Infinity;
 }
+/* Which input the forecast actually used, so the copy can say so rather than
+   implying a precision it does not have. */
+const estFillBasis = c => (c && reachFlowPerH(c.id, c.buy) != null)
+  ? "reaching flow, median of the last " + EST_FLOW_HOURS + " hours"
+  : "total 1h low-side flow — no hourly series yet, so the pre-Aug-12 input";
 
 /* Learned fill times: the log's bh (hours the buy leg took), per item. An item
    whose MEDIAN sits past the fill horizon is benched — unless the most recent
@@ -4227,10 +4277,23 @@ function buildPlan(){
            at the evening touch — and the bench line says which this is. */
         const estH = estFillH(x.qty, x.c);
         const later = qualifiesLaterAt(estH);
-        bench.push({ ...x, failed: "predicted slow fill: ~" + fmtHrs(estH) + " for the planned "
-          + full(x.qty) + " — only " + full(byLiquidity) + " fit this touch's " + fmtHrs(planHorizonH()) + " horizon"
-          + (byLiquidity > 0 ? ", not worth a slot" : "")
-          + (later ? " — " + later.txt : ""), laterTouch: later || undefined });
+        /* SOFT TAG, NOT A BENCH (user ruling, Aug 12 2026 — interim). Graded
+           against 43 replayed trips, this forecast's observed/predicted spanned
+           a 518× range, and it would have benched 4 of the 10 trips that
+           actually completed — Varrock teleport tablets predicted at 49.8h and
+           filled in 1.3h. A hard gate on an input that noisy costs more in real
+           candidates than the noise it lets through, so it queues as NEXT UP
+           with the forecast stated and its own uncertainty stated with it.
+           REVERSION: this returns to a hard bench when the input fix is graded
+           and a band width is ruled. Both the downgrade and the reversion are
+           decision-logged so the interim cannot become permanent by inertia. */
+        fillGateSoftLog();
+        nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
+          wouldExpect: Math.max(0, cap) * x.eMargin, softFillTag: 1,
+          why: "predicted fill ~" + fmtHrs(estH) + " for the planned " + full(x.qty)
+            + " — estimator under repair, input error known to be large (518× observed/predicted range on 43 replayed trips). "
+            + "Soft tag, not a bench: this is a forecast you may override. Basis: " + estFillBasis(x.c) + "."
+            + (later ? " " + later.txt : ""), laterTouch: later || undefined });
         continue;
       }
       nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
@@ -6899,7 +6962,13 @@ function calibSection(){
     + '<b>This does NOT apply to the paper book</b>, where the comparison price is a SIMULATED bid that never traded — '
     + 'no trade of yours can be inside those buckets, so equality there is genuinely ambiguous and the bracket means '
     + 'what it says. Two different constructs; do not read one bound against the other.</div>';
-  const note = selfNote + '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
+  const capNote = '<div class="plan-note">⊘ <b>The capture share (' + Math.round(GATE.capture * 100)
+    + '%) is UNGRADED, not validated.</b> It cannot be tested against paper trips — those fills were generated with it, '
+    + 'so measuring it there is circular. Only realized flips can grade it, and this harness will once the replayable '
+    + 'sample is large enough to separate capture from the reach and drift effects around it. Until then every fill-time '
+    + 'and sizing figure that depends on it rests on an unverified constant, and it is listed here rather than left to '
+    + 'look implicitly confirmed by a green calibration.</div>';
+  const note = selfNote + capNote + '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
     + 'So every disagreement below is a MODEL error with a known direction, and the one that matters is <b>false '
     + 'never-filled</b>: if the model routinely says the bid never got the tape for flips you actually completed, then '
     + 'it is pessimistic and no conclusion drawn from paper fill rates survives. The two columns are the reachability '
@@ -15004,6 +15073,11 @@ function analysisCalibration(){
         + "PAPER BOOK IS A DIFFERENT CONSTRUCT: there the comparison price is a SIMULATED bid that never traded, no "
         + "trade of the trader's can be inside those buckets, and equality is genuinely ambiguous. Do not carry a "
         + "conclusion from one to the other.",
+      "THE CAPTURE SHARE (" + Math.round(GATE.capture * 100) + "%) IS CURRENTLY UNGRADED, not validated. It cannot be "
+        + "tested against paper trips at all, because those fills were generated using it — measuring it there is "
+        + "circular. Only realized flips can grade it, and this harness will do so once the replayable sample is large "
+        + "enough to separate the capture share from the reach and drift effects around it. Until then, treat every "
+        + "fill-time and sizing figure that depends on it as resting on an unverified constant.",
       "PRICES ARE RELATIVE BY DESIGN. Every price appears only as a percentage against the trader's fill price. The "
         + "absolute figures, the gp deltas that would let them be recovered, all realized profit, and every "
         + "gp-denominated capital constant are excluded. Quantities and market volumes are carried; money is not.",
