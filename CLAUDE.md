@@ -391,6 +391,43 @@ reports the feature as covered. Four named instances, all shipped green:
   means the tell is worth checking on every new assertion, not just when something feels
   off: **if a probe line constructs an input the product would have constructed, the
   product's constructor is untested.**
+- **Dead safeguards and dead seeds** (user ruling, Aug 12 2026) — the sixth entry, and
+  the one that generalises the others. Three instances, one root: **a green result can
+  mean the test never ran.**
+
+  **A guard whose trigger condition cannot be reached by its own upstream limits is not
+  protection — it is decoration that reads as protection.** The calibration export
+  trimmed any trace over 60 buckets to its first and last 20, a rule written into the
+  requirements and rendered in the file's own truncation notice. The stored trace cap
+  was 24. The trim could never fire. Nothing was wrong with either number in isolation;
+  the defect lived in the relationship between them, which no single reading of either
+  file would surface. The same shape appeared twice in one build: the export also
+  carried a defensive fallback for an empty duration bucket while `calibSplit()` already
+  guaranteed both groups, so the fallback was unreachable. **The fix is not always to
+  make the guard reachable** — for the trim, the stored cap was raised so the rule has
+  work to do; for the fallback, the dead branch was deleted and the assertion pointed at
+  the upstream guarantee instead. Choose by asking which layer should own the promise,
+  then make sure exactly one does.
+
+  **A seeded defect that lands on unreachable code produces a passing assertion that
+  proves nothing, and on the report it is indistinguishable from real proof.** Seeding
+  the dead fallback above changed no behaviour, so the suite stayed green — which reads
+  exactly like "the assertion is weak" and is in fact "the code you broke never runs".
+  **Standing tell: when seeding a defect, first confirm the modified line executes at
+  all. If the seed changes no observable behaviour, establish whether the code is dead
+  BEFORE concluding the assertion is weak.** A seed is only proof once you have seen it
+  bite.
+
+  **And two defects can hide each other.** Seeding the ambiguous-reachability widening
+  and the reconstruction touch-history rule together (commit `f8a0a73`) left the
+  reconstruction assertion passing: with the widening removed, passing a touch into a
+  rule that ignores touches changes nothing, so the second defect had no way to express
+  itself. Neither seed was wrong; their interaction was. **Seed one defect at a time,
+  and when a batch is unavoidable, re-run any assertion that did not fail in isolation
+  before counting it as proven.**
+
+  All three are the reimplementation trap's siblings: in each, the assertion reported a
+  pass without ever exercising the thing it names.
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is
