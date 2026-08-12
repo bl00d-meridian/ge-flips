@@ -2990,7 +2990,40 @@ const fmtHrs = h => !Number.isFinite(h) ? "∞" : h < 1 ? Math.max(1, Math.round
    Measured effect on the same 43: spread 518× → 24.6×, and the count of trips
    it wrongly promised would fit falls from 12 to 9. What it does NOT fix is
    the benching harm — see the note on the gate's treatment below. */
+/* ═══ THE WINDOW COUNT, AND WHAT IT COSTS ════════════════════════════════
+   Six hours, proposed rather than picked silently, with the reasoning and the
+   price both stated because a constant nobody can argue with is a constant
+   nobody checked.
+
+   Why six. The drift measurement that motivated the change put in-window flow
+   over pre-open flow at a median 1.48× with an IQR of 0.7–2.58× — so the
+   middle half of trips sit inside roughly a 3.7× band and the tails run to
+   45.6×. A median needs enough readings that one tail hour cannot carry it:
+   at n=3 a single outlier is one of two votes either side, at n=6 it is one
+   of six and the median sits between the third and fourth readings. Six is
+   also the shortest window that spans the whole of the shortest touch gap
+   (5.0h), so a placement's estimate rests on readings from the same cadence
+   period it will be judged in, rather than half of one and half of another.
+
+   WHAT IT COSTS: responsiveness to a genuine regime change. A median over six
+   hours needs FOUR bad hours before it moves, so a book that dies at 09:00
+   reads healthy in this input until about 13:00. That is a real cost and it
+   is not hypothetical — the die-off tag exists precisely because books die,
+   and it confirms on two consecutive 5m refreshes, roughly two minutes. So
+   the fast detector and this estimator now disagree for up to four hours by
+   construction. That is deliberate and the right way round: the die-off tag
+   is a RESTRAINT and may act on thin evidence, while this estimator FUNDS
+   things and should not. Where they disagree the tag wins, because it always
+   wins — it benches, and the estimator only forecasts.
+
+   The number is a strategy parameter. It is written here with its cost so a
+   ruling to change it has something to argue against; it does not move
+   without one. */
 const EST_FLOW_HOURS = 6;
+/* Below this many hourly readings the median is not the advertised statistic,
+   and saying "median of the last 6 hours" over two readings is a claim the
+   computation does not support. */
+const EST_FLOW_MIN_HOURS = 3;
 /* The interim downgrade is a STRATEGY-PARAMETER RULING, so it is written to
    the decision log once with the evidence that justified it — and the
    reversion is logged the same way when the band replaces it, so an interim
@@ -3006,25 +3039,88 @@ function fillGateSoftLog(){
     + "filled in 1.3h). A hard bench on an input that noisy costs more in real candidates than the noise it admits. "
     + "REVERTS when the corrected input is graded and a confidence-band width is ruled; the reversion is logged too.", 1);
 }
-function reachFlowPerH(id, bid){
+/* ONE evaluation, returning everything the estimate and its copy need, so the
+   figure and the account of the figure can never come from separate reads.
+   `state` is the vocabulary the surfaces speak:
+     ok         — reaching flow over enough readings; the advertised statistic
+     thin       — fewer than EST_FLOW_MIN_HOURS readings; the median is not
+                  what it claims, so it is NOT used
+     no-reach   — readings exist and NONE reached the bid. A real finding, not
+                  a failure: nothing printed at your price for six hours
+     no-series  — no hourly series at all
+   Reach share (reaching ÷ total low-side flow) rides along, because it is the
+   diagnostic for WHY an estimate is long, and per the interrogability rule an
+   estimate ships with what produced it. */
+function reachFlow(id, bid){
   const sp = S.spark.get(id);
-  if (!sp || !Array.isArray(sp.lows) || !sp.lows.length || !(bid > 0)) return null;
+  if (!sp || !Array.isArray(sp.lows) || !sp.lows.length || !(bid > 0))
+    return { state: "no-series", flow: null, n: 0, reached: 0, share: null };
   const last = sp.lows.slice(-EST_FLOW_HOURS);
-  if (!last.length) return null;
+  const n = last.length;
   /* An hour whose average low sat above the bid contributes ZERO reaching
      flow — not "a little". That is the whole correction. */
-  return medianOf(last.map(x => (x.lo != null && x.lo <= bid) ? (x.lv || 0) : 0));
+  const reachV = last.map(x => (x.lo != null && x.lo <= bid) ? (x.lv || 0) : 0);
+  const totalV = last.map(x => x.lv || 0);
+  const reached = reachV.filter(v => v > 0).length;
+  const sumR = reachV.reduce((a, b) => a + b, 0), sumT = totalV.reduce((a, b) => a + b, 0);
+  const share = sumT > 0 ? sumR / sumT : null;
+  if (n < EST_FLOW_MIN_HOURS)
+    return { state: "thin", flow: null, n, reached, share };
+  if (!reached) return { state: "no-reach", flow: 0, n, reached, share: 0 };
+  return { state: "ok", flow: medianOf(reachV), n, reached, share };
 }
+/* Kept as the scalar accessor the older callers use; it is the same
+   evaluation, so the two can never disagree. */
+/* "ok" and "no-reach" are both COMPUTED readings — zero reaching flow is an
+   answer. "thin" and "no-series" are the absence of one, and return null so a
+   caller cannot mistake a missing measurement for a measured zero. */
+const reachFlowPerH = (id, bid) => { const r = reachFlow(id, bid); return r.flow; };
 function estFillH(qty, c){
-  const rf = c ? reachFlowPerH(c.id, c.buy) : null;
-  const flow = (rf != null ? rf : (c && c.volLow) || 0) * GATE.capture;
+  const r = c ? reachFlow(c.id, c.buy) : { state: "no-series", flow: null };
+  /* HONEST DEGRADATION (user ruling, Aug 12 2026). A thin history or a missing
+     series means the advertised input is unavailable — and an estimate built
+     from a DIFFERENT input than the one advertised is the claims-vs-computation
+     defect. So it does not quietly substitute the old input: it declines, and
+     the surfaces say what could not be computed. `no-reach` is different in
+     kind and is NOT a decline — nothing reaching the bid in six hours is an
+     answer, and the answer is that it does not fill. */
+  if (r.state === "thin" || r.state === "no-series") return null;
+  const flow = (r.flow || 0) * GATE.capture;
   return flow > 0 && qty > 0 ? qty / flow : Infinity;
 }
-/* Which input the forecast actually used, so the copy can say so rather than
-   implying a precision it does not have. */
-const estFillBasis = c => (c && reachFlowPerH(c.id, c.buy) != null)
-  ? "reaching flow, median of the last " + EST_FLOW_HOURS + " hours"
-  : "total 1h low-side flow — no hourly series yet, so the pre-Aug-12 input";
+const estPct = v => v == null ? null : Math.round(v * 100);
+/* Which input the forecast actually used — and where it could not compute one,
+   what was missing. Never a silent fallback. */
+function estFillBasis(c){
+  const r = c ? reachFlow(c.id, c.buy) : { state: "no-series", n: 0 };
+  if (r.state === "ok")
+    return "reaching flow, median of " + r.n + " hourly reading" + (r.n === 1 ? "" : "s")
+      + " (" + r.reached + " of " + r.n + " reached your bid; reach share " + estPct(r.share) + "% of low-side flow)";
+  if (r.state === "no-reach")
+    return "no fill forecast: none of the last " + r.n + " hours printed at or below your bid, so reaching flow is zero"
+      + " — this is a reading, not a gap in the data";
+  if (r.state === "thin")
+    return "no fill forecast: only " + r.n + " hourly reading" + (r.n === 1 ? "" : "s") + " so far and the estimate needs "
+      + EST_FLOW_MIN_HOURS + " for a median worth the name. It does NOT fall back to the old total-flow input — that input"
+      + " was the 518× error, and quietly substituting it would make the number claim an accuracy it does not have";
+  return "no fill forecast: no hourly series for this item yet, so reaching flow cannot be measured at all";
+}
+/* The reach share, beside the estimate rather than only inside a tooltip —
+   it is the diagnostic for why a prediction is long. */
+function estReachInline(c){
+  const r = c ? reachFlow(c.id, c.buy) : { state: "no-series" };
+  if (r.state === "ok")
+    return ' <span class="dim">(reach ' + estPct(r.share) + '%, ' + r.reached + '/' + r.n + 'h)</span>';
+  if (r.state === "no-reach") return ' <span class="neg">(nothing reached your bid in ' + r.n + 'h)</span>';
+  if (r.state === "thin") return ' <span class="dim">(not enough history — ' + r.n + '/' + EST_FLOW_MIN_HOURS + 'h)</span>';
+  return ' <span class="dim">(no hourly series yet)</span>';
+}
+const estFillTip = (qty, c) => "Buy-leg forecast: qty ÷ (REACHING low-side flow × " + Math.round(GATE.capture * 100)
+  + "% capture) — reaching flow is volume from hours whose average low sat at or below your bid; an hour above it "
+  + "contributes zero, not a little. Basis: " + estFillBasis(c)
+  + ". Sanity-check against the measured bh times the lifecycle records.";
+/* Where a forecast is unavailable the surface says which — never a bare dash. */
+const fmtEstH = h => h == null ? "unavailable" : fmtHrs(h);
 
 /* Learned fill times: the log's bh (hours the buy leg took), per item. An item
    whose MEDIAN sits past the fill horizon is benched — unless the most recent
@@ -4291,7 +4387,7 @@ function buildPlan(){
         fillGateSoftLog();
         nextUp.push({ ...x, wouldQty: Math.max(0, cap), wouldCost: Math.max(0, cap) * x.c.buy,
           wouldExpect: Math.max(0, cap) * x.eMargin, softFillTag: 1,
-          why: "predicted fill ~" + fmtHrs(estH) + " for the planned " + full(x.qty)
+          why: "predicted fill ~" + fmtEstH(estH) + " for the planned " + full(x.qty)
             + " — estimator under repair, input error known to be large (518× observed/predicted range on 43 replayed trips). "
             + "Soft tag, not a bench: this is a forecast you may override. Basis: " + estFillBasis(x.c) + "."
             + (later ? " " + later.txt : ""), laterTouch: later || undefined });
@@ -4520,7 +4616,7 @@ const planLineText = (p, i) =>
      ? "TEST first: buy 1 at " + full(Math.ceil(p.c.sell * 1.05)) + ", sell 1 at " + full(Math.floor(p.c.buy * 0.95)) + ", record in Tested. Then "
      : "")
   + "BUY " + full(p.allocQty) + " " + p.name + " at " + full(p.c.buy) +
-  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtHrs(estFillH(p.allocQty, p.c))
+  " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtEstH(estFillH(p.allocQty, p.c))
   + (p.sizeNotes && p.sizeNotes.length ? " [" + p.sizeNotes.join("; ") + "]" : "");
 
 /* Position lifecycle: buying → bought → selling → sold (= log entry).
@@ -5157,7 +5253,12 @@ function renderPlan(P0){
       + '<span title="'+nameTitle(p.name)+'">' + esc(p.name) + '</span>' + (p.tier ? tierBadge(p.tier) : '')
       + ' at <span class="num">' + full(p.c.buy) + '</span> each '
       + '<span class="dim">(' + gp(p.cost) + ')</span> — expect <span class="pos num">~' + gp(p.expect) + '</span>/cycle'
-      + ' · <span class="dim" title="Buy-leg forecast: qty ÷ (buy-side 1h flow × 15% capture). Sanity-check it against the measured bh times the lifecycle records — if reality keeps running slower, the capture share is optimistic for this item.">est. fill ~' + fmtHrs(estFillH(p.allocQty, p.c)) + '</span>'
+      /* This tooltip described the PRE-Aug-12 input for as long as the
+         corrected input has been live — copy claiming what it no longer
+         computes, which is the claims-vs-computation defect. It now states the
+         basis the estimate actually used, and carries the reach share. */
+      + ' · <span class="dim" title="' + esc(estFillTip(p.allocQty, p.c)) + '">est. fill ~' + fmtEstH(estFillH(p.allocQty, p.c))
+      + estReachInline(p.c) + '</span>'
       + (p.filler ? ' <span class="badge b-ok" title="Below the worth-a-slot floor, but this slot would otherwise sit idle — small profit beats none">filler</span>' : '')
       + (p.caution ? (p.cautionProven
           ? ' <span class="badge b-tax" title="Your log shows 3+ profitable round trips in 14 days — full sizing earned">proven '+esc(p.caution.label)+'</span>'
@@ -11162,7 +11263,8 @@ function renderSleeveEngine(){
       : (wn => wn
           ? '<div class="dim">escalated to watch-note <b>' + esc(wn.id) + '</b>'
             + (wn.status === "ratified" ? '' : ' (awaiting your ruling)')
-            + ' — posture absence; lifted by dismissal or expiry of the record</div>'
+            + ' — posture absence; lifted by dismissing the record. At its expiry date it LAPSES instead: still'
+            + ' applying, asking you once on the walk-up to drop or extend it</div>'
           : '<div class="dim">reason unknown; find the catalyst before considering entry — no thesis, no position'
             + (f.noStory ? ' · <b>' + f.noStory + '× no public story</b>' + (f.noStory >= 2 ? ' — watch-note escalation due' : ' — wider-net re-hearing due') : '') + '</div>')
         ((DB.intel || []).find(r => r.type === "watch-note" && r.status !== "dismissed" && !intelExpired(r) && (r.items || []).includes(f.itemId))))
@@ -11387,9 +11489,41 @@ const TIER_BADGE = t => t == null ? "" : '<span class="badge ' + (t >= 3 ? "b-ri
 function intelExpired(r){
   return !!(r.validUntil && Date.parse(r.validUntil + "T23:59:59") < Date.now());
 }
+/* ═══ EXPIRY IS NOT A LIFT (user ruling, Aug 12 2026) ═════════════════════
+   Restraint may auto-arm; deployment never — and REMOVING a restraint counts
+   as deployment, whether by action, by expiry, or by a rule change. A
+   promotion-warning or watch-note reaching `validUntil` used to stop applying
+   at midnight with no press at all: item tags vanished, the sleeve stopped
+   refusing the item, and a sizing haircut lifted. That widens what the
+   allocator may fund, which is the user's press.
+
+   Three classes, because collapsing them would either freeze the calendar
+   entirely or keep the defect:
+
+     NEVER-LAPSE   pump-defense records. The calendar does not touch them at
+                   all. This closes a direct contradiction: the standing rule
+                   is that a flagged pump caution lifts on ONE path — the user
+                   dismissing the warning record, "nothing else" — and
+                   `validUntil` was something else.
+     RESTRAINT     watch-notes, deflation-flags, and anything carrying teeth.
+                   At `validUntil` these go LAPSED: they keep applying, and
+                   ask for a ruling once, batched, on the walk-up.
+     CONTEXT       catalysts, demand-context, cluster-membership. These
+                   restrain nothing, so nothing is deployed when they end;
+                   they expire on the calendar exactly as before, and the
+                   restraint/deployment line puts them outside this rule. */
+const INTEL_NEVER_LAPSE_TYPES = ["promotion-warning"];
+const INTEL_RESTRAINT_TYPES = ["watch-note", "deflation-flag"];
+const intelNeverLapses = r => INTEL_NEVER_LAPSE_TYPES.includes(r.type);
+const intelRestrains = r => intelNeverLapses(r) || INTEL_RESTRAINT_TYPES.includes(r.type) || !!r.teeth;
+/* The only path by which the calendar may stop a record applying. A record
+   that restrains anything is never in it. */
+const intelLapsedOut = r => intelExpired(r) && !intelRestrains(r);
 function intelActive(){
-  return (DB.intel || []).filter(r => r.status === "ratified" && !intelExpired(r));
+  return (DB.intel || []).filter(r => r.status === "ratified" && !intelLapsedOut(r));
 }
+/* Ratified restraints past their date: still applying, awaiting one ruling. */
+const intelLapsed = () => (DB.intel || []).filter(r => r.status === "ratified" && r.lapsed && !intelNeverLapses(r));
 function intelForItem(id){
   return intelActive().filter(r => (r.items || []).includes(id));
 }
@@ -11667,12 +11801,17 @@ function dailyGpFlow(id){
   const v = S.volumes[id];
   return (px > 0 && v > 0) ? px * v : null;
 }
+/* A promotion-warning applies until the user dismisses it. Full stop.
+   Previously it also required EITHER a recent import OR ratified-and-unexpired
+   status, so a warning lifted itself two different ways by the clock — the
+   direct contradiction of the standing rule that a flagged pump caution's only
+   lift path is the user dismissing the record, "nothing else". Note the
+   asymmetry that justifies keeping no window here: a stale caution costs
+   absence on one item, a lifted one costs whatever the pump extracts. */
 function promotionWarningsFor(id){
-  const win = (DB.pumpWindowD != null ? DB.pumpWindowD : 14) * 86400e3;
   return (DB.intel || []).filter(r => r.type === "promotion-warning"
     && r.status !== "dismissed"
-    && (r.items || []).includes(id)
-    && (Date.now() - (r.importedAt || 0) <= win || (r.status === "ratified" && !intelExpired(r))));
+    && (r.items || []).includes(id));
 }
 function suspectedPump(id){
   const warns = promotionWarningsFor(id);
@@ -11684,17 +11823,36 @@ function suspectedPump(id){
      the user dismissing the WARNING record (ruled Aug 10 2026). */
   const anom = (DB.anomalyFlags || []).find(f => f.itemId === id && Date.now() - f.at <= win);
   const wFirst = Math.min(...warns.map(w => w.importedAt || Date.now()));
-  const lift = " Posture: absence — neither buying nor shorting the story. Lifts when the warning record is dismissed or expires.";
+  const lift = " Posture: absence — neither buying nor shorting the story."
+    + " Lifts on one path only: you dismiss the warning record. Not by expiry, not by wins, not by the flag ageing.";
+  /* ONCE FIRED, IT STAYS FIRED (Aug 12 2026). The anomaly leg tests a flag
+     inside `pumpWindowD` days of NOW, so a defense that had already fired
+     un-fired itself as the flag aged — the same calendar lift as expiry, one
+     level down. Stamping the firing on the record keeps the DETECTION rule
+     untouched (pumpWindowD is a strategy parameter and does not move here)
+     while removing the lift: what fires is unchanged, what un-fires is now
+     the user's press alone. */
+  const fired = warns.find(w => w.pumpFiredAt);
+  const stamp = (w, why) => {
+    if (w && !w.pumpFiredAt){ w.pumpFiredAt = Date.now(); w.pumpFiredWhy = why; try { save(); } catch(e){} }
+    return why;
+  };
   if (anom)
     return { firstSeen: Math.max(wFirst, anom.at),
-      why: "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
-      + "%, " + anomVolPhrase(anom) + ")." + lift };
+      why: stamp(warns[0], "SUSPECTED PUMP: promoted in " + src + " AND flagged accumulating (price +" + anom.rise14p
+      + "%, " + anomVolPhrase(anom) + ").") + lift };
   const flow = dailyGpFlow(id);
   const thin = DB.pumpThinGp != null ? DB.pumpThinGp : 10e6;
   if (flow != null && flow < thin)
     return { firstSeen: wFirst,
-      why: "SUSPECTED PUMP: promoted in " + src + " with thin books (" + gp(flow) + "/day vs the "
-      + gp(thin) + " floor) — the structural pump vehicle regardless of anomaly timing." + lift };
+      why: stamp(warns[0], "SUSPECTED PUMP: promoted in " + src + " with thin books (" + gp(flow) + "/day vs the "
+      + gp(thin) + " floor) — the structural pump vehicle regardless of anomaly timing.") + lift };
+  if (fired)
+    return { firstSeen: Math.min(wFirst, fired.pumpFiredAt),
+      why: (fired.pumpFiredWhy || "SUSPECTED PUMP: promoted in " + src + ".")
+      + " The evidence that raised this has since aged out of the " + Math.round(win / 86400e3)
+      + "-day fingerprint window, and the caution STANDS: evidence ageing is not evidence against."
+      + lift };
   return null;
 }
 
@@ -11702,7 +11860,7 @@ function suspectedPump(id){
    for the decision log so the ruling records what it actually did. */
 function activateIntel(r){
   if (r.type === "watch-note")
-    return "watch-note active on " + (r.items || []).length + " item(s) — advisory caution tag; posture is absence, lifted by dismissal or expiry";
+    return "watch-note active on " + (r.items || []).length + " item(s) — advisory caution tag; posture is absence, lifted by dismissal only (its expiry date lapses it, which asks rather than lifts)";
   if (r.type === "catalyst" || r.type === "catalyst-update" || r.type === "long-catalyst"){
     const nm = (r.catalyst && r.catalyst.name) || r.updatesCatalyst || r.title;
     const hit = DB.catalysts.find(c => c.name.toLowerCase() === String(nm).toLowerCase()
@@ -11744,9 +11902,25 @@ function activateIntel(r){
 function intelSweep(){
   let changed = false;
   for (const r of DB.intel || []){
+    /* Pump-defense records are outside the calendar entirely — pending or
+       ratified. Auto-dismissing a PENDING one would lift the defense too:
+       the fingerprint counts any warning that is not dismissed, so the sweep
+       would have been a second calendar lift hiding behind queue hygiene. */
+    if (intelNeverLapses(r)) continue;
     if (r.status === "pending" && intelExpired(r)){
       r.status = "dismissed"; r.expiredUnruled = 1; r.ruledAt = Date.now();
-      logDecision("intel", r.title, "auto-dismiss", "expired unruled — resurface only on material change");
+      /* An unruled record was never armed, so nothing is being lifted here.
+         This is queue hygiene, not a restraint lift, and the log says which. */
+      logDecision("intel", r.title, "auto-dismiss",
+        "expired before you ruled on it — never armed, so nothing it was doing has stopped; queue hygiene only. Resurfaces on material change");
+      changed = true;
+    }
+    /* A ratified restraint reaching its date LAPSES rather than lifting: it
+       keeps applying and asks for one ruling. */
+    if (r.status === "ratified" && !r.lapsed && intelExpired(r) && intelRestrains(r)){
+      r.lapsed = Date.now();
+      logDecision("intel", r.title, "lapsed", "reached " + r.validUntil
+        + " — STILL APPLYING. Removing a caution is deployment and needs your press, so the calendar asks rather than acts; drop it or extend it from the walk-up");
       changed = true;
     }
   }
@@ -11775,6 +11949,16 @@ function intelRecordHTML(r, compact){
         + ' — you ratified an earlier version; the revision is below. Nothing was re-armed and no teeth changed.</div>' : '')
     + (r.status === "dismissed" && r.dismissReason
         ? '<div class="dim" style="white-space:normal">dismissed: ' + esc(r.dismissReason) + '</div>' : '')
+    /* Where it stands, and why — the state a reader would otherwise have to
+       infer from a date that has passed while the tag is still on their plan. */
+    + (r.status === "ratified" && r.lapsed
+        ? '<div class="plan-note" style="margin-top:4px">⏳ <b>Lapsed ' + esc(r.validUntil) + ' — and STILL APPLYING.</b> '
+          + 'Removing a caution widens what the allocator may fund, so the calendar asks rather than acts. '
+          + 'Drop it or extend it; doing neither leaves it in force.</div>' : '')
+    + (r.status === "ratified" && intelNeverLapses(r) && intelExpired(r)
+        ? '<div class="plan-note" style="margin-top:4px">🛡 <b>Past ' + esc(r.validUntil) + ', and deliberately unaffected.</b> '
+          + 'A pump defense does not lapse by calendar at all — its one lift path is you dismissing it. '
+          + 'Wins during a pump are the bait, and a date is not evidence either.</div>' : '')
     + (r.thesis ? '<div style="white-space:normal;margin-top:2px">' + esc(r.thesis) + '</div>' : '')
     + (r.items && r.items.length ? '<div class="dim" style="white-space:normal">affects: ' + esc(r.items.map(id => itemName(id)).join(", ")) + '</div>' : '')
     + (r.pricedIn && r.pricedIn.verdict ? '<div class="dim" style="white-space:normal">priced-in check: <b>' + esc(r.pricedIn.verdict) + '</b>' + (r.pricedIn.detail ? ' — ' + esc(r.pricedIn.detail) : '') + '</div>' : '')
@@ -11786,7 +11970,11 @@ function intelRecordHTML(r, compact){
         ? '<button class="sm" data-intelrat="' + esc(r.id) + '">ratify</button> '
           + '<button class="sm" data-inteledit="' + esc(r.id) + '">edit, then ratify…</button> '
           + '<button class="sm ghost" data-inteldis="' + esc(r.id) + '">dismiss</button>'
-        : r.status === "ratified" && !intelExpired(r)
+        : r.status === "ratified" && r.lapsed
+        ? '<span class="badge b-warn">lapsed — still applying</span> '
+          + '<button class="sm" data-intelextend="' + esc(r.id) + '" title="Extend 30 days. The caution has been applying throughout, so this renews it rather than re-arming it.">extend 30d</button> '
+          + '<button class="sm ghost" data-inteldrop="' + esc(r.id) + '" title="Drop this caution. It stops applying — that is deployment, so it takes this press and a stated reason.">drop…</button>'
+        : r.status === "ratified" && !intelLapsedOut(r)
         ? '<span class="badge b-tax">ratified</span> '
           + (r.items && r.items.length && r.type !== "deflation-flag"
             ? '<button class="sm' + (r.teeth ? ' primary' : '') + '" data-intelteeth="' + esc(r.id)
@@ -12013,6 +12201,44 @@ document.addEventListener("click", e => {
           () => { r.status = "pending"; delete r.ruledAt; save(); renderSleeve(); rerenderCk(); updatePendBadge(); });
     return;
   }
+  /* ── lapsed cautions: the press the calendar is no longer allowed to make ──
+     EXTEND keeps a restraint in force, so it is offered in bulk. DROP lifts
+     one, so it is per-record and decision-logged as a deployment. */
+  const ext = t.closest("[data-intelextend]");
+  if (ext){
+    const which = ext.dataset.intelextend;
+    const rs = which === "all" ? intelLapsed() : intelLapsed().filter(r => r.id === which);
+    if (!rs.length) return;
+    const to = new Date(Date.now() + 30 * 86400e3).toLocaleDateString("en-CA");
+    for (const r of rs){
+      const from = r.validUntil;
+      r.validUntil = to; delete r.lapsed; r.extendedAt = Date.now();
+      logDecision("intel", r.title, "extend", "lapsed at " + from + " → " + to
+        + "; the caution never stopped applying, so this renews rather than re-arms");
+    }
+    save(); renderSleeve(); rerenderCk(); updatePendBadge();
+    toast(rs.length + " caution" + (rs.length === 1 ? "" : "s") + " extended to " + to
+      + " — they were applying throughout; nothing was re-armed.");
+    return;
+  }
+  const drp = t.closest("[data-inteldrop]");
+  if (drp){
+    const r = (DB.intel || []).find(x => x.id === drp.dataset.inteldrop);
+    if (!r || r.status !== "ratified") return;
+    const why = prompt("Why are you dropping this caution? (a dismissal without a reason is not a record)", "");
+    if (why === null) return;
+    if (!String(why).trim()){ toast("No reason given — nothing dropped. A dismissal without a why is not a record."); return; }
+    const wasLapsed = !!r.lapsed;
+    r.status = "dismissed"; r.ruledAt = Date.now(); r.dismissReason = String(why).trim(); delete r.lapsed;
+    logDecision("intel", r.title, "drop", "caution lifted by your press" + (wasLapsed ? " after lapsing at " + r.validUntil : "")
+      + " — " + r.dismissReason);
+    save(); renderSleeve(); if (onWatch()) renderWatch();
+    rerenderCk(); updatePendBadge();
+    toast("Dropped — the caution no longer applies.",
+      () => { r.status = "ratified"; if (wasLapsed) r.lapsed = Date.now(); delete r.ruledAt;
+              save(); renderSleeve(); rerenderCk(); updatePendBadge(); });
+    return;
+  }
   const cc = t.closest("[data-cohconfirm]");
   if (cc){
     const p = (DB.cohProps || []).find(x => x.id === +cc.dataset.cohconfirm);
@@ -12097,7 +12323,9 @@ function rulingsSweep(){
   const now = Date.now(), cut = 30 * 86400e3;
   let changed = false;
   for (const r of DB.intel || [])
-    if (r.status === "pending" && now - (r.importedAt || now) > cut){
+    /* Same carve-out as intelSweep: the 30-day staleness broom must not
+       sweep a pump-defense record out of the fingerprint. */
+    if (!intelNeverLapses(r) && r.status === "pending" && now - (r.importedAt || now) > cut){
       r.status = "dismissed"; r.expiredUnruled = 1; r.ruledAt = now;
       logDecision("intel", r.title, "auto-dismiss", "expired unruled (30d) — resurface only on material change");
       changed = true;
@@ -12126,6 +12354,29 @@ function pendingRulingItems(){
         + ' <button class="sm" data-intelrat="' + esc(r.id) + '">ratify</button>'
         + ' <button class="sm" data-inteledit="' + esc(r.id) + '">edit…</button>'
         + ' <button class="sm ghost" data-inteldis="' + esc(r.id) + '">dismiss</button>' });
+  }
+  /* LAPSED CAUTIONS — one line, whatever the count (user ruling, Aug 12 2026).
+     These are still applying; the line exists because a restraint may not end
+     without a press, not because anything has stopped.
+
+     Only the RESTRAINT-PRESERVING action is offered in bulk. "Extend all"
+     keeps every caution in force, so a fat-fingered press costs nothing but
+     absence — but there is deliberately no "drop all": dropping is the
+     deployment direction, it lifts a caution per item, and a bulk press
+     cannot carry per-item judgment. Dropping stays one record at a time on
+     the desk, which is where the evidence for each one renders. */
+  const lapsed = intelLapsed();
+  if (lapsed.length){
+    const key = "intellapsed";
+    const names = lapsed.slice(0, 3).map(r => r.title).join("; ");
+    items.push({ key, pri: 0, sort: -1, snoozed: rulingSnoozed(key),
+      html: '⚠ ' + lapsed.length + ' caution' + (lapsed.length === 1 ? '' : 's') + ' reached '
+        + (lapsed.length === 1 ? 'its expiry date' : 'their expiry dates') + ' and <b>' + (lapsed.length === 1 ? 'is' : 'are')
+        + ' still applying</b>: ' + esc(names) + (lapsed.length > 3 ? '; +' + (lapsed.length - 3) + ' more' : '')
+        + ' <span class="dim">— removing a caution is deployment and needs your press, so the date asks instead of acting.</span>'
+        + ' <button class="sm" data-intelextend="all" title="Extends every lapsed caution by 30 days. This KEEPS them applying — the safe direction, which is why it is the only bulk press offered here.">extend all 30d</button>'
+        + ' <a href="#" data-goto="review#intelPanel">drop or extend each</a>'
+        + ' <span class="dim">(no bulk drop: dropping lifts a caution, and that is a per-item judgment)</span>' });
   }
   for (const c of sleeveRungCards()){
     const key = "rung:" + c.pos.id + ":" + c.i;
@@ -13592,6 +13843,19 @@ const GLOSSARY = [
         + "stayed on your screen while the brief claimed it was fixed.",
     do: "Re-read the record. You ratified an earlier version of the argument, and the correction is precisely the part "
         + "you have not seen." },
+  { id: "gov-lapsed", term: "lapsed — still applying", names: ["lapsed"],
+    what: "A ratified CAUTION that has reached its expiry date and is <b>still in force</b>. Its tags, its sleeve "
+        + "refusal and any sizing haircut all keep applying; what the date does is put one line on your walk-up asking "
+        + "you to drop it or extend it. Cautions only: a catalyst or demand-context record still expires on the "
+        + "calendar, because it restrains nothing and so nothing is deployed when it ends.",
+    from: "The expiry sweep, which used to LIFT a caution at midnight with no press at all — item tags vanished and a "
+        + "haircut came off by itself. Removing a restraint widens what the allocator may fund, and that is deployment: "
+        + "yours to press, never the calendar's.",
+    do: "Rule it once. Extending keeps it in force and is offered in bulk because a mistaken extension costs only "
+        + "absence; dropping lifts it per item and is deliberately not a bulk button. Doing nothing is safe — it stays "
+        + "in force.",
+    caveat: "A pump-defense record never reaches this state: it does not lapse by calendar at all, because its one "
+        + "stated lift path is your dismissal. See the pump-defense entry." },
   { id: "gov-filedismiss", term: "Dismissed by a ruling carried in the file",
     what: "A dismissal you gave at the desk, travelling back inside <code>intelligence.json</code> instead of waiting to "
         + "be re-pressed in the tool. Only dismissal travels this way — never ratification.",
@@ -16409,6 +16673,13 @@ function validateImport(d){
             if (r.corrected) o.corrected = String(r.corrected).slice(0, 200);
             if (num(r.correctedAt) > 0) o.correctedAt = num(r.correctedAt);
             if (r.dismissReason) o.dismissReason = String(r.dismissReason).slice(0, 600);
+            /* A lapsed caution restores lapsed. Dropping the flag would silently
+               re-arm the calendar against a restraint the user never lifted —
+               the restore path is a channel, and a channel may not lift. */
+            if (num(r.lapsed) > 0) o.lapsed = num(r.lapsed);
+            if (num(r.extendedAt) > 0) o.extendedAt = num(r.extendedAt);
+            if (num(r.pumpFiredAt) > 0) o.pumpFiredAt = num(r.pumpFiredAt);
+            if (r.pumpFiredWhy) o.pumpFiredWhy = String(r.pumpFiredWhy).slice(0, 400);
             return o;
           }).filter(Boolean).slice(-200),
           catalysts: (Array.isArray(d.catalysts) ? d.catalysts : []).map(c => {

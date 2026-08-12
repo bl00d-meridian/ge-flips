@@ -1316,14 +1316,91 @@
     const expPnd = DB.intel.find(x => x.id === "r-exp-pending");
     ok("[R4.4] expired pending auto-archives as expired-unruled, logged",
        expPnd.status === "dismissed" && expPnd.expiredUnruled === 1
-       && DB.decisionLog.some(x => x.kind === "intel" && /expired unruled/.test(x.reason)),
+       && DB.decisionLog.some(x => x.kind === "intel" && /expired before you ruled on it/.test(x.reason)),
        JSON.stringify(expPnd));
+    ok("[R52.3] and the log says it is queue hygiene, not a restraint lift — an unruled record was never armed",
+       DB.decisionLog.some(x => x.kind === "intel"
+         && /never armed, so nothing it was doing has stopped; queue hygiene only/.test(x.reason)),
+       JSON.stringify((DB.decisionLog.find(x => x.kind === "intel") || {}).reason));
     ok("[R4.4] expired ratified awaits grading; scorecard offers the verdicts",
        intelToGrade().some(r => r.id === "r-exp-rat")
        && /window passed — call was/.test(intelScorecardInline()), intelScorecardInline().slice(0, 300));
     DB.intel.find(x => x.id === "r-exp-rat").outcome = "right";
     ok("[R4.4] graded calls accrue a per-tier hit rate",
        /hinted 1\/1 right/.test(intelScorecardInline()), intelScorecardInline());
+
+    /* ═══ §52 EXPIRY IS NOT A LIFT (user ruling, Aug 12 2026) ═══
+       Removing a restraint is deployment, whether by action, expiry or a rule
+       change. Three classes, tested apart, because collapsing them either
+       freezes the calendar or keeps the defect. */
+    const keep52 = DB.intel, keepLog52 = DB.decisionLog;
+    DB.intel = []; DB.decisionLog = [];
+    const mk52 = (id, type, extra) => Object.assign({ id, type, confidence: "hinted", title: "T-" + id,
+      thesis: "t", direction: "caution", items: [9001], sources: [{ url: "https://example.test/" + id }],
+      validUntil: yd2, importedAt: Date.now() - 40 * 86400e3, status: "ratified", teeth: 0, outcome: null }, extra);
+    DB.intel = [ mk52("l-watch", "watch-note"), mk52("l-defl", "deflation-flag"),
+                 mk52("l-teeth", "demand-context", { teeth: 1, direction: "up" }),
+                 mk52("l-ctx", "demand-context", { direction: "up" }),
+                 mk52("l-pump", "promotion-warning", { community: "merch-x" }),
+                 mk52("l-pend", "watch-note", { status: "pending" }) ];
+    intelSweep();
+    const g52 = id => DB.intel.find(x => x.id === id);
+    ok("[R52.1] a ratified CAUTION past its date lapses — and lapsing does not stop it applying",
+       ["l-watch","l-defl","l-teeth"].every(id => g52(id).lapsed > 0 && g52(id).status === "ratified")
+       && ["l-watch","l-defl","l-teeth"].every(id => intelActive().some(r => r.id === id))
+       && intelForItem(9001).length >= 3,
+       JSON.stringify(intelActive().map(r => r.id)));
+    ok("[R52.1] a CONTEXT record still expires on the calendar — it restrains nothing, so nothing is deployed",
+       !g52("l-ctx").lapsed && !intelActive().some(r => r.id === "l-ctx") && intelLapsedOut(g52("l-ctx")),
+       JSON.stringify({ lapsed: g52("l-ctx").lapsed, active: intelActive().some(r => r.id === "l-ctx") }));
+    ok("[R52.1] and the lapse is decision-logged as still-applying, naming the press it is waiting on",
+       DB.decisionLog.some(x => x.action === "lapsed" && /STILL APPLYING/.test(x.reason)
+         && /needs your press/.test(x.reason)),
+       JSON.stringify(DB.decisionLog.map(x => x.action)));
+    /* THE CONTRADICTION (user ruling, Aug 12 2026): the standing rule is that a
+       flagged pump caution lifts on ONE path — the user dismissing the record,
+       "nothing else". validUntil was something else, and so were the two
+       staleness brooms. All three are now closed. */
+    ok("[R52.2] a pump-defense record does not lapse by calendar AT ALL — not expiry, not the pending sweep",
+       !g52("l-pump").lapsed && g52("l-pump").status === "ratified"
+       && intelActive().some(r => r.id === "l-pump"),
+       JSON.stringify({ lapsed: g52("l-pump").lapsed, status: g52("l-pump").status }));
+    ok("[R52.2] nor the 30-day staleness broom, which would have swept it out of the fingerprint",
+       (() => { const p = g52("l-pump"); p.status = "pending"; rulingsSweep();
+                const held = p.status === "pending";
+                p.status = "ratified"; return held; })(),
+       "a pending pump warning survives the 30d sweep");
+    ok("[R52.2] so the defense still fires on an expired, 40-day-old warning",
+       (() => { const keepF = DB.anomalyFlags;
+                DB.anomalyFlags = [{ id: 1, itemId: 9001, name: "x", at: Date.now() - 2 * 86400e3, d: yd2,
+                  strength: 3, rise14p: 40, rise14v: 300 }];
+                const pf = suspectedPump(9001);
+                DB.anomalyFlags = keepF;
+                return !!pf && /SUSPECTED PUMP/.test(pf.why)
+                    && /you dismiss the warning record/.test(pf.why)
+                    && !/or expires/.test(pf.why); })(),
+       JSON.stringify(suspectedPump(9001)));
+    ok("[R52.2] once fired it stays fired — the flag ageing out of the window is not a lift either",
+       (() => { const keepF = DB.anomalyFlags;
+                DB.anomalyFlags = [];          // the anomaly has aged out entirely
+                const pf = suspectedPump(9001);
+                DB.anomalyFlags = keepF;
+                return !!pf && /evidence ageing is not evidence against/.test(pf.why); })(),
+       JSON.stringify(suspectedPump(9001)));
+    /* The walk-up cost the user agreed to: ONE line, whatever the count. */
+    const li52 = pendingRulingItems().filter(x => x.key === "intellapsed");
+    ok("[R52.3] the lapsed cautions take exactly ONE walk-up line, however many there are",
+       li52.length === 1 && /3 cautions reached/.test(li52[0].html) && /still applying<\/b>/.test(li52[0].html),
+       JSON.stringify(li52.map(x => x.html.slice(0, 120))));
+    ok("[R52.3] it offers bulk EXTEND (restraint kept) and no bulk drop (a lift is per-item judgment)",
+       /data-intelextend="all"/.test(li52[0].html) && !/data-inteldrop/.test(li52[0].html)
+       && /no bulk drop/.test(li52[0].html),
+       li52[0].html);
+    ok("[R52.3] and each record states where it stands rather than rendering a passed date with no explanation",
+       /Lapsed .* — and STILL APPLYING/.test(intelRecordHTML(g52("l-watch")))
+       && /deliberately unaffected/.test(intelRecordHTML(g52("l-pump"))),
+       intelRecordHTML(g52("l-watch")).slice(0, 300));
+    DB.intel = keep52; DB.decisionLog = keepLog52;
 
     // ─── R5.1–R5.4: rulings-pending block, cap, priority, staleness, badge ───
     DB.intel = []; DB.clusterCands = []; DB.sleeve = []; DB.sleeveExits = [];
@@ -4787,11 +4864,46 @@
                                           { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1 }]));
                 return reachFlowPerH(9001, 4000) === 1000; })(),
        String(reachFlowPerH(9001, 4000)));
-    ok("[R50.1] with no hourly series the forecast falls back to the old input and SAYS which it used",
+    /* ── R50.3 HONEST DEGRADATION (user ruling, Aug 12 2026) ──
+       The old behaviour fell back to total low-side flow and said so. Saying so
+       is not enough: the fallback input IS the 518× error, so an estimate built
+       on it claims an accuracy it does not have. It now declines. */
+    ok("[R50.3] with no hourly series there is NO forecast — it does not silently substitute the old input",
        (() => { S.spark.delete(9001);
                 return reachFlowPerH(9001, 4000) === null
-                    && /pre-Aug-12 input/.test(estFillBasis({ id: 9001, buy: 4000 })); })(),
+                    && estFillH(50, { id: 9001, buy: 4000, volLow: 999999 }) === null
+                    && /no hourly series for this item yet/.test(estFillBasis({ id: 9001, buy: 4000 }))
+                    && fmtEstH(estFillH(50, { id: 9001, buy: 4000, volLow: 999999 })) === "unavailable"; })(),
        estFillBasis({ id: 9001, buy: 4000 }));
+    ok("[R50.3] a history too short for the median declines too, and names the old input as the reason it will not use it",
+       (() => { S.spark.set(9001, mkLows([{ lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }]));
+                const b = estFillBasis({ id: 9001, buy: 4000 });
+                return estFillH(50, { id: 9001, buy: 4000, volLow: 999999 }) === null
+                    && /only 2 hourly readings/.test(b) && /does NOT fall back/.test(b) && /518×/.test(b); })(),
+       estFillBasis({ id: 9001, buy: 4000 }));
+    ok("[R50.3] zero reaching flow is a READING, not a gap — it forecasts never-fills rather than declining",
+       (() => { S.spark.set(9001, mkLows([{ lo: 9000, lv: 500 }, { lo: 9000, lv: 500 }, { lo: 9000, lv: 500 },
+                                          { lo: 9000, lv: 500 }, { lo: 9000, lv: 500 }, { lo: 9000, lv: 500 }]));
+                const b = estFillBasis({ id: 9001, buy: 4000 });
+                return estFillH(50, { id: 9001, buy: 4000, volLow: 999999 }) === Infinity
+                    && /this is a reading, not a gap in the data/.test(b)
+                    && /nothing reached your bid in 6h/.test(estReachInline({ id: 9001, buy: 4000 })); })(),
+       estFillBasis({ id: 9001, buy: 4000 }));
+    /* ── R50.4 REACH SHARE, reported beside the estimate ── */
+    ok("[R50.4] the reach share ships WITH the estimate — the diagnostic for why a prediction is long",
+       (() => { S.spark.set(9001, mkLows([{ lo: 5000, lv: 3000 }, { lo: 5000, lv: 3000 }, { lo: 5000, lv: 3000 },
+                                          { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }, { lo: 3000, lv: 1000 }]));
+                const r = reachFlow(9001, 4000);
+                /* reaching 3×1000 of 3×1000 + 3×3000 total = 3000/12000 = 25% */
+                return r.state === "ok" && r.reached === 3 && r.n === 6 && estPct(r.share) === 25
+                    && /reach 25%, 3\/6h/.test(estReachInline({ id: 9001, buy: 4000 }))
+                    && /reach share 25% of low-side flow/.test(estFillBasis({ id: 9001, buy: 4000 })); })(),
+       JSON.stringify(reachFlow(9001, 4000)));
+    ok("[R50.4] and the plan line's tooltip states the input it ACTUALLY uses, not the pre-fix formula",
+       (() => { const tip = estFillTip(50, { id: 9001, buy: 4000, volLow: 999999 });
+                return /REACHING low-side flow/.test(tip) && /an hour above it contributes zero, not a little/.test(tip)
+                    && !/qty ÷ \(buy-side 1h flow/.test(tip); })(),
+       estFillTip(50, { id: 9001, buy: 4000, volLow: 999999 }));
     // ---- R50.2 the interim downgrade, and its decision-log record ----
     DB.decisionLog = []; S.fillSoftLogged = 0;
     fillGateSoftLog();

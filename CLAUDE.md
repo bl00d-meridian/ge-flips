@@ -128,9 +128,18 @@ soften these in code or copy.
   costs nothing (absence, lifted by one dismissal), a late defense costs whatever the pump
   extracts before the next walk-up. New features inherit this distinction.
   Escaping instance: intel records auto-expire at `validUntil`, so a promotion-warning or a
-  watch-note lifts with no press at all — the old wording covered *arming* a deployment and
-  said nothing about a caution ending by the calendar. Audited Aug 12 2026; findings and
-  the proposed shape are in `audits/AUDIT-2026-08-12-scope.md`, unapplied pending a ruling.
+  watch-note lifted with no press at all — the old wording covered *arming* a deployment and
+  said nothing about a caution ending by the calendar. **Audited and fixed Aug 12 2026**
+  (`audits/AUDIT-2026-08-12-scope.md` §4): a ratified caution now **lapses** rather than
+  lifting — it keeps applying and asks once, batched, on the walk-up — while context records
+  (catalysts, demand-context) still expire on the calendar, because they restrain nothing
+  and so nothing is deployed when they end. **Pump-defense records do not lapse at all**,
+  closing a direct contradiction: the standing rule says a flagged pump caution lifts on one
+  path, the user's dismissal, "nothing else", and *four* calendar paths contradicted it —
+  expiry, the pending sweep, the 30-day staleness broom, and the anomaly leg's own window,
+  which let a fired defense un-fire as its evidence aged. Evidence ageing is not evidence
+  against. **The bulk action is the restraining one:** "extend all" is offered, "drop all"
+  deliberately is not, because a lift is a per-item judgment.
 - **The file is the press, and it presses in one direction only** (user ruling, Aug 12
   2026 — the *file-as-press* precedent). A `disposition` block arriving inside
   `intelligence.json` is the user's own press, because they carried the file and pressed
@@ -171,6 +180,17 @@ soften these in code or copy.
   they were fixed.
   Escaping instances: a corrected glossary entry and a revised requirement row have no
   landing path at all — the user read them once and nothing tells them the words changed.
+  **⚠ FLAGGED: this entry is weaker than its BINDING placement implies** (user ruling,
+  Aug 12 2026). The Aug 12 detector review found no mechanical check for the general
+  case; per-instance probes exist and nothing enforces the rule itself. It stays BINDING
+  with this flag attached and **the next integration audit gets exactly one attempt** to
+  make it mechanical. The candidate detector, to be tried: *every artefact type the user
+  has read — glossary entry, requirement row, intel record, brief — has a defined update
+  path, enumerated*, the same enumerate-then-check shape that made the restraint-lift
+  scan work. **If that audit cannot produce a check, this moves to DOCTRINE without
+  further argument** — a rule that keeps failing to acquire a detector is the thing the
+  BINDING/DOCTRINE split exists to expose, and arguing for it a second time would be the
+  defect defending itself.
 - **Metric honesty.** Every metric reports **realized quantities only** — actual logged
   round trips, tax netted; no counterfactual fills, no price drift counted as missed
   profit — **and every metric's rendered copy claims exactly what it computes, asked or
@@ -495,7 +515,8 @@ Worse than no test: it occupies the slot where a real one would have gone, and i
 reports the feature as covered.
 
 **The root property, widened Aug 12 2026: a green result can mean the test never ran, OR
-that it ran and passed for a reason other than the property it names.** The original
+that it ran and passed for a reason other than the property it names — and a RED result
+can mean the seed was too broad rather than that the assertion is sound.** The original
 wording covered only the first half, and the R49.2 instance below is the second — an
 assertion that ran, on real production output, and would have passed with the property
 gone. Every named instance is a face of that one root.
@@ -606,6 +627,20 @@ Named instances, all shipped green:
   assertion matches inside that fragment only. **Generalised: match against the narrowest
   container that still contains the property. If the assertion would pass with the
   property deleted from its subject but present elsewhere, the container is too broad.**
+
+- **A seed that fails a form the fix was meant to PRESERVE proves nothing** (user ruling,
+  Aug 12 2026) — the seventh face, and the mirror image of the dead seed. When a fix
+  replaces a weak assertion with a stronger one, the seed has to DISCRIMINATE: the old
+  form passes, the new form fails. A seed that fails **both** has not demonstrated the
+  fix; it has demonstrated that **the fixture cannot distinguish the two forms**, and the
+  correct response is to fix the fixture, not to record the run as proof. The instance is
+  the R49.2 repair above: deleting the split from the one gate blend failed the
+  whole-section match too, because the fixture held only one blend, so a section-wide
+  pattern had nothing else to satisfy it. Rebuilt with two gates carrying identical
+  splits, the seed separated them — and a standing assertion now holds the fixture to
+  carrying that second blend, so the scoping test cannot quietly become untestable again.
+  Where the dead seed changes nothing, this one changes too much; both report as proof.
+  **The tell: a seed whose failure list includes assertions you expected to stay green.**
 
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is

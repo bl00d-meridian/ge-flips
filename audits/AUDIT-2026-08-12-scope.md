@@ -45,7 +45,7 @@ detectors rather than good intentions.
 | 6 | Test-suite root: green can mean *ran and passed for the wrong reason* | The seeding practice + `blendFrag()` scoping helper | **Checkable.** `[R49.2]` fixed and the defect demonstrated (§3) |
 | 7 | Entity state — every entity the user can see, not only allocator-touched | **Scan 2 extended** to entity state | **Checkable by scan.** One live finding in §5 |
 | 8 | Automated decisions state their reason inline | Scan 2 + decision-log `auto` stamps | **Checkable by scan** |
-| 9 | Corrections ship their landing path, for any artefact already read | No mechanical detector for *arbitrary* artefacts; per-instance probes only (`[R48.1]` asserts this one landed) | **Weakly checkable.** Honest status: the general rule is scan-only and the scan is a reading, not a test |
+| 9 | Corrections ship their landing path, for any artefact already read | No mechanical detector for *arbitrary* artefacts; per-instance probes only (`[R48.1]` asserts this one landed) | **Weakly checkable — FLAGGED, on one attempt.** Stays BINDING with the flag; the next integration audit gets exactly one try at the candidate detector (*every artefact type the user has read has a defined update path, enumerated*). If it cannot produce a check, it moves to DOCTRINE without further argument (user ruling, Aug 12 2026) |
 | 10 | Metric honesty — copy claims what it computes, **asked or not** | **Scan 7, claims-vs-computation scan** (new) | **Checkable by scan.** Deliberately a reading of copy against code; no probe can assert this |
 
 Honest summary: **6 of 10 have a mechanical (probe) detector or gained one; 3 more are
@@ -78,10 +78,11 @@ subject but present elsewhere, the container is too broad.*
 
 ---
 
-## 4. Live consequence (b): intel auto-expiry, audited — REPORTED, NOT CHANGED
+## 4. Live consequence (b): intel auto-expiry — audited, then RULED AND BUILT
 
-Per the ruling, this reports what would change before anything changes. **No behaviour
-was modified.**
+Reported first, as the ruling required; the shape was then adopted in full on the same
+day and built. The audit as reported is kept below the ruling, because the enumeration is
+the deliverable and a later reader needs to see what was found, not only what was done.
 
 ### The enumeration (scan 6, first run) — every path that lifts a restraint
 
@@ -113,7 +114,46 @@ There is a third, subtler one worth naming: **the pump defense's stated lift pat
 contradicted by expiry.** The constitution says a flagged pump caution's *only* lift path
 is the user dismissing the record — "nothing else". `validUntil` is something else.
 
-### Proposed shape — NOT APPLIED, awaiting a ruling
+### RULED AND BUILT (user ruling, Aug 12 2026)
+
+The proposed shape below was adopted in full, plus the third finding fixed in both
+directions. What shipped, against what was proposed:
+
+- **Lapsed state** — built. A ratified caution past `validUntil` keeps applying and asks
+  once. `intelLapsedOut()` is now the only path by which the calendar stops a record
+  applying, and a record that restrains anything is never in it.
+- **One batched walk-up line** — built, with a refinement the proposal did not have:
+  only the restraint-preserving action is bulk. "Extend all 30d" keeps every caution in
+  force; there is deliberately no "drop all", because dropping lifts a caution per item
+  and a bulk press cannot carry per-item judgment. Dropping stays per-record, needs a
+  stated reason, and is logged as a deployment.
+- **Context records keep expiring freely** — unchanged, as proposed.
+- **Pending auto-dismissal survives with corrected copy** — an unruled record was never
+  armed, so nothing it was doing has stopped; the log now says it is queue hygiene rather
+  than a restraint lift.
+- **The third finding — the pump-defense contradiction — closed in both directions.**
+  This was the important one. The standing rule says a flagged pump caution lifts on ONE
+  path, the user's dismissal, "nothing else"; **three** calendar paths contradicted it,
+  not the one first reported:
+  1. `validUntil` deactivation via `intelActive()`.
+  2. `intelSweep()` auto-dismissing a pending warning — and the fingerprint counts any
+     warning that is not dismissed, so this was a second lift hiding behind queue hygiene.
+  3. `rulingsSweep()`'s 30-day staleness broom, the same defect a third time.
+  All three now carve out pump-defense records. `promotionWarningsFor()` additionally
+  dropped its import-window and expiry clauses, which lifted the defense two more ways.
+  **And a fourth, found while writing the fix:** the anomaly leg tested for a flag within
+  `pumpWindowD` days of *now*, so a defense that had already fired un-fired itself as its
+  own evidence aged. The firing is now stamped on the record — which leaves the detection
+  rule (a strategy parameter) untouched while removing the lift. Evidence ageing is not
+  evidence against.
+  The copy stops claiming what the code did not do: "lifts when the warning record is
+  dismissed or expires" is gone from the pump line, the anomaly panel and the watch-note
+  activation line.
+
+**Attention cost, as agreed:** +1 walk-up decision on days when cautions lapse, against
+the budget of 7. The probe still asserts the bound.
+
+### The shape as proposed — kept for the record
 
 The distinction that keeps this from becoming noise: expiry should stop *asserting* a
 caution without *lifting* it.
@@ -229,10 +269,97 @@ Note that Fault A is already documented for the BUY side, in the export's
 "THIS COMPARISON BIASES PESSIMISTIC" honesty line. It was never carried on the sell
 panel, so the same known bias went unnamed on the leg where it appears to bind hardest.
 
-### Frozen
+### Frozen (sell leg)
 
 The 43-trip replay's "1 of 43 completing" headline rests on this sell model, which failed
 calibration on 2 of 5 sell legs, both fast. **Not to be re-run until the mechanism is
 understood** — a re-run now would launder the same defect into a new number. The freeze
 is stated in the export's own honesty block, not only here, so the artefact carries its
 own quarantine.
+
+---
+
+## 7. Fill-horizon estimator — it SHIPPED; three gaps closed; the regrade is blocked
+
+### It shipped. Where.
+
+Both input changes are live and were built in commit **`f1a8de3`** ("Fill forecast: soft
+tag now, corrected input, capture marked ungraded"), one commit before the scope audit:
+
+| Change | Location | Requirement |
+|---|---|---|
+| REACH — divide by reaching flow, an hour above the bid contributing zero | `reachFlow()` / `reachFlowPerH()`, `index.html` | R50.1, probe `[R50.1]` |
+| DRIFT — median of the last `EST_FLOW_HOURS = 6` hourly readings | same | R50.1, probe `[R50.1]` |
+| Treatment untouched — the gate is still a soft tag | `fillGateSoftLog()`, the `softFillTag` branch | R50.2, probe `[R50.2]` |
+| Linearity untouched — still `qty ÷ flow` | `estFillH()` | — |
+
+The measured effect was recorded in the code comment at the time: **spread 518× → 24.6×,
+wrongly-promised fits 12 → 9.**
+
+### Three gaps against the ruling as restated, now closed
+
+Auditing the shipped work against the four sub-requirements found three real gaps. All
+three are the same defect class — the copy and the computation had drifted apart.
+
+1. **Reach share was not carried anywhere.** The ruling asked for it as a reported figure
+   alongside the estimate. Built: `reachFlow()` is now one evaluation returning flow,
+   state, reach count and share together — so the figure and the account of the figure
+   cannot come from separate reads — and `estReachInline()` puts `reach 25%, 3/6h` beside
+   the estimate rather than inside a tooltip. R50.4.
+2. **The window count was picked silently, and the comment over-claimed.** It read "which
+   is what the ruling specified"; the ruling asked for the count to be *proposed with
+   reasoning*. Now stated with its derivation (n=6 puts the median between the third and
+   fourth readings against an IQR of 0.7–2.58× with tails to 45.6×; six hours is also the
+   shortest window spanning the whole of the shortest touch gap) **and with its price**:
+   a 6-hour median needs four bad hours to move, so a book dying at 09:00 reads healthy
+   in this input until ~13:00 while the die-off tag confirms in ~2 minutes. The two
+   disagree for up to four hours by construction. That is the right way round — the tag
+   restrains and may act on thin evidence, the estimator funds and may not — and where
+   they disagree the tag wins. R50.5.
+3. **Degradation was a fallback, not a decline — and one case was a live
+   claims-vs-computation defect.** `reachFlowPerH()` computed a "median of the last 6
+   hours" over however many readings existed, so with two readings the basis string
+   claimed a statistic the computation did not support. Built: below three readings, and
+   with no series at all, the estimator DECLINES and says what it could not compute;
+   `fmtEstH()` renders "unavailable" rather than a dash or an ∞ standing in for unknown.
+   **Zero reaching flow is deliberately not a decline** — nothing printing at or below
+   the bid for six hours is a reading, and the reading is that it does not fill. R50.3.
+
+A fourth, found while fixing the third: **the plan line's tooltip still described the
+pre-Aug-12 formula** — "qty ÷ (buy-side 1h flow × 15% capture)" — for as long as the
+corrected input had been live. Copy claiming what it no longer computes, on the surface
+where the number is read. Fixed and asserted.
+
+One orphan noted, not touched: the `estH` field written onto every candidate at
+`index.html:4060` is never read. Write-only data is an orphan-scan finding; recorded here
+rather than removed, since removing production fields was not what was asked.
+
+### The regrade — BLOCKED, and precisely on what
+
+The regrade in the form the ruling demands **cannot be run from this repo.** The 43
+replayed trips live in `DB.shadowBook` in the browser's localStorage; nothing in the
+repository contains them, and nothing may — the flip log is user data and this repo never
+carries it. The earlier "518× → 24.6×, 12 → 9" figures came from a session that had the
+data in hand.
+
+Worse, those earlier figures **do not satisfy the ruling as now stated**, and would be
+the wrong thing to reuse even if I had them: they are pooled across all 43 trips, and the
+never-pool rule binds here — the trips span four cohorts answering different questions.
+A 24.6× spread pooled across watchlist, scanner, discovery-slice and gap-band trips is
+the same error as the 0.7× median that hid a 518× spread, one level up.
+
+**What is needed to unblock it:** `⭳ export for analysis` from the Paper Book tab (or
+`export all three` in the weekly review), which now carries per-trip rows with their
+cohort. With that file I can produce, per population rather than pooled:
+
+- the full observed/predicted distribution — every value, not a median;
+- whether the ~1.3× optimistic lean is a stable constant or dissolves into noise at this
+  sample size, with the per-cohort n stated so "dissolves" is distinguishable from
+  "never had enough trips to tell";
+- false-fit counts before and after — predictions promising a fit inside the horizon for
+  trips that never completed;
+- the reach-share distribution across the 43.
+
+Per the ruling, the band treatment and the hard bench are **not** re-proposed in this
+pass, and the soft tag's reversion condition is untouched: it reverts on evidence, not on
+the fix landing.
