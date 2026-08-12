@@ -406,3 +406,60 @@ The live book (12 of 14 observed watchlist trips at zero sell credit, including 
 **I have to correct the record on one point:** in the previous pass I reported the mechanism and shipped the sell traces at parity, but I did **not** build the discriminator as a reported figure, which the ruling had asked for. It is owed and is the next build, alongside the same classification over the live book's zero-credit trips. The split across both populations cannot be reported until that classifier ships and the export carries it — reporting it from the traces by eye is precisely what the ruling ruled out.
 
 The mechanism named from the code stands and now has a second dataset consistent with it: `reachCredit` is bimodal per bucket — the gate reads a 5m AVERAGE as if it described the interval, and a passing bucket then credits the bucket's ENTIRE high-side flow. Zero sell credit on a trip with 100% buy credit and an 8-hour observed horizon is what that bimodality looks like when no bucket average clears the ask, and it is consistent with dilution rather than with a mislocated window — the live book's sell leg has no window to mislocate, since it accrues forward from `buyDone` in real time. **That asymmetry is itself evidence**: the calibration harness can mislocate a window and the live book cannot, so a defect present in both is one that does not depend on window placement. Stated as a hypothesis with its discriminator still to ship, not as a conclusion.
+
+---
+
+## 10. The opening stall — diagnosed, and it was not a bug
+
+**Cause: the family cooldown, doing exactly what it was written to do, at a horizon
+length that makes it enormous — and saying nothing.**
+
+`shadowScan` blocks a family whose last trip is open OR closed within
+`cool = 2 × FILLH()`. `FILLH()` is the gap to the NEXT touch, so around the evening touch
+the gap is 9.5h and **the cooldown is nineteen hours**. Two consequences that together
+produce exactly the observed pattern:
+
+- **Closing does not release a family.** `recent` counts any family whose trip is open
+  *or* closed inside `cool`, so the wave of closes running to 20:46 freed nothing.
+- **Family keys repeat.** They are derived from the pick or the benched near-miss, so a
+  stable watchlist regenerates the same keys every cycle. Once a wave opens, the book is
+  quiet by construction until the cooldown drains.
+
+Ruled out: the scanner throttle (it gates only the scanner cohort, not the plan-driven
+scan); an empty candidate set (the plan was still producing picks and near-misses); and
+backgrounding (polls continued — trips kept closing, which is the same tick).
+
+**The defect is that none of this was visible.** This is the self-explaining-state rule
+applied to the generator rather than to an entity: a book that stops opening accrues
+nothing, and every aggregate below it goes on rendering as though it were live — a
+stalled generator and a quiet market are identical in every number on the page. Shipped:
+`shadowScanState()` computes the reason from the same values the scan gates on, so the
+two cannot disagree, and the paper headline renders it **whether or not anything is
+wrong**. A quiet spell over two hours is flagged rather than merely reported.
+
+**Not applied, and it needs a ruling:** a cooldown that scales with the horizon is
+longest exactly at the evening touch — which is when the book has the most observation
+time available and the most to learn. Whether it should scale that way is a strategy
+question.
+
+## 11. Epoch 2 — reset built, and why discarding beat filtering
+
+The interim I chose (exclude `openSeq`-null trips from verdicts) was **superseded by the
+user's ruling to reset**, and on reflection the ruling is right for a reason my interim
+missed: a per-trip predicate can exclude *rows*, but the divergence ledger's daily rows,
+the rolled per-stratum counters and the exception lane's grounding evidence are
+**cumulative** — they were computed by mixing good and corrupt trips, and no filter
+applied afterwards can un-mix a rolled total. Excluding works on the book; it does not
+work on anything derived from it.
+
+Kept deliberately: realized streams, the market stream, and per-stratum **sampling**
+history — counts of distinct items the gate chain ran on record *tests performed*, not
+simulated outcomes, so no fill-model defect reaches them. Clearing those would destroy
+real coverage to fix a simulated number. Sim outcomes and sampling counts live in the
+same object, and only one of them is downstream of the fill model.
+
+The reset runs once on load (following the existing `shadowPurgeV1` precedent), because
+the data lives only in the user's browser and there is no other mechanism that can reach
+it. `paperEpoch2Reset()` is extracted so an assertion can call it — inline in `load()` it
+was unreachable, and a seeded defect on it changed nothing the suite could see, which
+reads exactly like a weak assertion and was in fact code no test could reach.

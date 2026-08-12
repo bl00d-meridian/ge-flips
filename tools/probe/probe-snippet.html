@@ -3861,7 +3861,11 @@
                 const young = shadowEpochYoung();
                 const html = paperRegimeSection();
                 DB.shadowEpoch = kEp; DB.shadowDivLog = kLog; DB.shadowBook = kBook;
-                return young && /Accruing since/.test(html) && /prior data discarded/.test(html); })(),
+                return young && /Epoch \d+ — accruing since/.test(html)
+                    && /Prior data discarded \(pre-causality-fix corruption\)/.test(html)
+                    /* the banner names what SURVIVED, not only what went — the
+                       clean streams have to be identifiable from the banner */
+                    && /realized streams/.test(html) && /per-stratum sampling history/.test(html); })(),
        "epoch forced young for the assertion");
     ok("[R35.3] the cohort ledger states where EVERY population stands, including the empty ones",
        (() => { const h = document.querySelector("#paperCohort").innerHTML;
@@ -5304,6 +5308,110 @@
        DB.shadowBook[0].buyQ > 0,
        JSON.stringify({ buyQ: DB.shadowBook[0].buyQ }));
     DB.shadowBook = keepBookC; S.min5At = keepMin5At; S.pollSeq = keepSeq;
+
+    /* ═══ §56 EPOCH 2, THE STALE HOST, AND THE STALLED GENERATOR ═══
+       (user ruling, Aug 12 2026) */
+    const keep56 = DB.shadowBook, keepEp56 = DB.paperEpoch, keepSE56 = DB.shadowEpoch, keepDiv56 = DB.shadowDivLog;
+    /* The detector for the failure that made the reset necessary. Epoch 1 was
+       invisible until a field existed that could show it. */
+    DB.shadowBook = [{ id: 1, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, t: Date.now(), hzH: 4,
+                       state: "open", obsMs: 0, regimes: [] }];
+    ok("[R56.1] a trip with no open-cycle stamp raises a FINDING — a stale host must not pass quietly",
+       paperStaleHostTrips().length === 1
+       && /carries no open-cycle stamp/.test(paperStaleHostNote())
+       && /Reload the page/.test(paperStaleHostNote())
+       && /this is a finding, not a caveat/.test(paperStaleHostNote()),
+       paperStaleHostNote().slice(0, 260));
+    DB.shadowBook[0].openSeq = 5;
+    ok("[R56.1] and it is silent once every trip carries one — the finding is the exception, not a standing banner",
+       paperStaleHostTrips().length === 0 && paperStaleHostNote() === "",
+       "note should be empty");
+    /* THE RESET ITSELF. Extracted from load() so this can call it — inline, a
+       seeded defect on it changed nothing the suite could see. */
+    (() => {
+      const kStrat = DB.strataStats, kExc = DB.shadowExceptions, kLog = DB.decisionLog;
+      DB.shadowBook = [{ id: 9, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, t: 1, state: "filled",
+                         closedAt: 2, net: 500, obsMs: 1, regimes: ["current"] }];
+      DB.shadowDivLog = [{ d: "2026-08-11", cur: 5, loose: 5, tight: 5 }];
+      DB.strataStats = { f2p: { ids: [1, 2, 3], samp: 3, nm: 2, pass: 1, trips: 7, filled: 4, net: 900, first: 1 } };
+      DB.shadowExceptions = [{ id: 1, gate: "ROI floor", status: "active", evidence: { n: 3, filled: 2, net: 10 } }];
+      DB.decisionLog = []; DB.paperEpoch2 = 0;
+      paperEpoch2Reset();
+      const st = DB.strataStats.f2p, e = DB.shadowExceptions[0];
+      const rec = (DB.decisionLog || []).find(x => x.action === "reset — epoch 2");
+      ok("[R56.2] the reset CLEARS the simulated streams — book, divergence ledger, rolled per-stratum outcomes",
+         DB.shadowBook.length === 0 && DB.shadowDivLog.length === 0
+         && st.trips === 0 && st.filled === 0 && st.net === 0,
+         JSON.stringify({ book: DB.shadowBook.length, div: DB.shadowDivLog.length, st }));
+      ok("[R56.2] and KEEPS the sampling history — those count tests performed, not simulated outcomes",
+         st.samp === 3 && st.nm === 2 && st.pass === 1 && st.ids.length === 3,
+         JSON.stringify(st));
+      ok("[R56.2] exception-lane paper evidence is voided while the RULING stands",
+         e.evidenceVoid === 1 && e.status === "active",
+         JSON.stringify(e));
+      ok("[R56.2] it stamps epoch 2 and decision-logs the reason the user gave, verbatim",
+         DB.paperEpoch === 2 && DB.shadowEpoch > 0 && !!rec && rec.auto === 1
+         && /149 of 248 trips positively identified as pre-causality-fix corruption via null openPollSeq/.test(rec.reason)
+         && /epoch 1 discarded rather than filtered/.test(rec.reason),
+         JSON.stringify(rec && rec.reason.slice(0, 160)));
+      DB.strataStats = kStrat; DB.shadowExceptions = kExc; DB.decisionLog = kLog; DB.paperEpoch2 = 1;
+    })();
+    /* The banner names the epoch AND what survived it. */
+    DB.paperEpoch = 2; DB.shadowEpoch = Date.now() - 86400e3; DB.shadowDivLog = []; DB.shadowBook = [];
+    ok("[R56.2] the epoch banner names which epoch, why the last was discarded, and what SURVIVED the reset",
+       /Epoch 2 — accruing since/.test(shadowEpochNote())
+       && /149 of 248/.test(shadowEpochNote())
+       && /discarded rather than filtered/.test(shadowEpochNote())
+       && /cannot un-mix a rolled total/.test(shadowEpochNote())
+       && /realized streams/.test(shadowEpochNote()) && /per-stratum sampling history/.test(shadowEpochNote()),
+       shadowEpochNote().slice(0, 300));
+    /* THE STALLED GENERATOR. A book that stops opening accrues nothing, and
+       every aggregate below it goes on rendering as though it were live. */
+    ok("[R56.3] the paper surface states whether the book is OPENING, whether or not anything is wrong",
+       /Paper book: /.test(shadowScanStateLine(null))
+       && /A book that is not opening accrues nothing/.test(shadowScanStateLine(null)),
+       shadowScanStateLine(null).slice(0, 200));
+    ok("[R56.3] and when the cooldown is what stopped it, the line says so and names the horizon it scales with",
+       (() => { DB.shadowBook = [{ id: 2, fam: "f-a", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
+                                   t: Date.now() - 3600e3, closedAt: Date.now() - 60e3, hzH: 4,
+                                   state: "filled", obsMs: 4 * 3600e3, openSeq: 5, regimes: [] }];
+                const s = shadowScanState(null), line = shadowScanStateLine(null);
+                return s.blocked === 1 && /cooldown/.test(s.why)
+                    && /closing does not release one/.test(line); })(),
+       JSON.stringify(shadowScanState(null)));
+    /* WIRING, not just the function: an assertion that only calls
+       shadowScanStateLine passes with the surface no longer rendering it,
+       which is the reimplementation trap wearing the wiring's hat. */
+    ok("[R56.3] and the paper headline actually RENDERS it — the generator's state leads the aggregates it produced",
+       /Paper book: /.test(paperHeadlineSection())
+       && /A book that is not opening accrues nothing/.test(paperHeadlineSection()),
+       paperHeadlineSection().slice(0, 200));
+    ok("[R56.3] a long quiet spell is flagged, not merely reported",
+       (() => { DB.shadowBook = [{ id: 3, fam: "f-b", itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2,
+                                   t: Date.now() - 5 * 3600e3, closedAt: Date.now() - 4 * 3600e3, hzH: 4,
+                                   state: "filled", obsMs: 4 * 3600e3, openSeq: 5, regimes: [] }];
+                return /Nothing has opened for/.test(shadowScanStateLine(null)); })(),
+       shadowScanStateLine(null).slice(0, 160));
+    /* THE BUILD STAMP. Three states, all distinct — "could not check" must
+       never render as "up to date". */
+    const keepBC = S.buildCheck;
+    S.buildCheck = { state: "stale", latest: "2026-08-13/deadbee" };
+    ok("[R56.4] a stale build is stamped in the header AND leads WHAT CHANGED",
+       /stale — reload/.test(buildStampInline())
+       && !!buildStaleLine() && /running a build from/.test(buildStaleLine().txt)
+       && /reload for the current one/.test(buildStaleLine().txt),
+       buildStampInline());
+    S.buildCheck = { state: "current", latest: BUILD_ID };
+    ok("[R56.4] a current build stamps too — a stamp that appears only when stale cannot be trusted by its absence",
+       /build /.test(buildStampInline()) && /current/.test(buildStampInline()) && buildStaleLine() === null,
+       buildStampInline());
+    S.buildCheck = { state: "unreachable", why: "probe" };
+    ok("[R56.4] and an unreachable check says UNKNOWN rather than implying up-to-date",
+       /staleness unknown/.test(buildStampInline()) && !/current/.test(buildStampInline())
+       && buildStaleLine() === null,
+       buildStampInline());
+    S.buildCheck = keepBC;
+    DB.shadowBook = keep56; DB.paperEpoch = keepEp56; DB.shadowEpoch = keepSE56; DB.shadowDivLog = keepDiv56;
 
     /* ═══ §55 PREDICTION STAMPED AT OPEN (user-directed, Aug 12 2026) ═══
        Driven THROUGH shadowScan, not by calling stampPrediction directly — a

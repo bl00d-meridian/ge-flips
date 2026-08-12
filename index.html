@@ -371,6 +371,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="hstat">
       <span class="dot load" id="dot"></span>
       <span id="status">starting…</span>
+      <span id="buildStamp"></span>
       <button class="sm ghost" id="pendBadge" title="Rulings pending across all queues — briefing proposals, basket candidates, sleeve rungs, audits. Nothing blocks; rule at your pace from Home's digest.">⚖</button>
       <button class="sm" id="refresh">↻ Refresh</button>
       <button class="sm" id="toTop" title="Back to the top of the page — the header travels with you, so this is always one tap.">↑ top</button>
@@ -1260,6 +1261,7 @@ let DB = {
   shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
   shadowExceptions: [], // PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,mkAdverse?,divergence?}] — active = probation (half size, 2× tick floor; 3 real trips adjudicate on net P&L AND adverse markout, ruled Aug 11 2026); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on paper screening alone — screening ranks candidates for the live test; realized trips are the only path to a waiver.
   strataStats: {},    // POND PROSPECTING (user-directed Aug 11 2026): per-stratum discovery ledger, key → {ids:[distinct item ids seen, capped],samp,nm,pass,trips,filled,net,first} — durable across the paper book's 30d pruning, so the quarterly "which pond regions hold edge" map is answerable with a ledger instead of a hunch; observation only, admits nothing
+  paperEpoch: 1,      // which epoch the paper book is in (user ruling, Aug 12 2026). Epoch 2 = the reset after 149 of 248 trips were identified as pre-causality-fix corruption by a null openSeq. Rendered in every paper banner so a figure can be traced to the generation that produced it
   shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
@@ -1343,6 +1345,26 @@ function load(){
              + (voided === 1 ? "" : "s") + " (the RULINGS stand — revoke them by hand if you want them gone)" : "")
           + ". Realized streams untouched: the flip log, markouts and the realized side of gate health are real fills. New epoch starts now; paper surfaces read \"accruing since\" until the first cohort matures.");
     }
+    /* ═══ EPOCH 2 — PAPER BOOK RESET (user ruling, Aug 12 2026) ════════════
+       149 of 248 trips were positively identified as pre-causality-fix
+       corruption via a null `openPollSeq`, and the interim was to exclude them
+       from verdicts. The user ruled the stronger action: discard epoch 1
+       rather than filter it. The reasoning that makes discarding right here —
+       and it is the opposite of the reasoning I gave for the interim — is that
+       a filtered book still MIXES populations in every derived series: the
+       divergence ledger's daily rows, the per-stratum rolled counters and the
+       exception lane's grounding evidence are cumulative, so they cannot be
+       un-mixed by a per-trip predicate. Excluding rows works; excluding rows
+       from a rolled total does not.
+
+       KEPT, deliberately: the realized streams (flip log, markouts, the
+       realized side of gate health), the market stream (the hourly series,
+       which never came from the book), and the per-stratum SAMPLING history —
+       counts of distinct items the gate chain ran on are records of tests
+       performed, not of simulated outcomes, so no fill-model defect reaches
+       them. Clearing them would destroy real coverage to fix a simulated
+       number. */
+    if (!DB.paperEpoch2) paperEpoch2Reset();
     /* One-time: a long-standing Soulreaper axe sell occupies a slot (listed
        Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
        raise Offers back to 7 in the sizing row. */
@@ -2124,6 +2146,9 @@ async function doRefresh(opts = {}){
     try { S.reconLast = await shadowRecover(); } catch(e){}
     shadowTick();   // paper book observes every refresh — fills only accrue while watching
     accrueBackground();   // plan-driven ledgers ride the POLL, not a render path — tab-independent by construction
+    /* Staleness rides the poll and self-throttles to the hour. Not awaited —
+       a slow or blocked fetch must never delay the refresh it is riding. */
+    checkBuildFreshness();
     runScout();
     scannerShadowScan();   // scanner paper cohort — self-throttled to the scout cadence, polite-budgeted
     /* The 7-day chart drives the trend, momentum and volume-trend gates, but
@@ -2162,6 +2187,13 @@ function paintStatus(){
   if (S.err && !S.latestAt){ dot.className = "dot bad"; st.textContent = "offline — no data"; return; }
   dot.className = "dot" + (S.err ? " bad" : age > 3*POLL_MS ? " stale" : "");
   st.textContent = "prices " + ago(S.latestAt) + (S.err ? " · retrying" : "");
+  paintBuildStamp();
+}
+/* The stamp renders ALWAYS, in all three states. A stamp that appears only
+   when stale is a stamp the reader cannot trust the absence of. */
+function paintBuildStamp(){
+  const el = $("#buildStamp");
+  if (el) setHTML(el, buildStampInline());
 }
 setInterval(paintStatus, 1000);
 
@@ -5581,13 +5613,57 @@ const SHADOW_MIN_OBS = 0.25;
 const shadowObsShare = p => Math.min(1, (p.obsMs || 0) / Math.max(1, legHorizonH(p) * 3600e3));
 const shadowObsPct = p => Math.round(shadowObsShare(p) * 100);
 const shadowThin = p => shadowResolved(p) && shadowObsShare(p) < SHADOW_MIN_OBS;
+/* ═══ PRE-CAUSALITY-FIX TRIPS ARE CORRUPT (user ruling, Aug 12 2026) ══════
+   Positively identified, not suspected: of 14 trips carrying `openSeq`, ZERO
+   resolved sub-second; of 234 without it, 149 did. The causality fix holds and
+   the host was serving cached code, so every trip written by that build was
+   produced by a fill model that credited tape printed before the trip existed.
+
+   That is a known-bad population identifiable BY A FIELD, which is what makes
+   an interim possible at all. The choice offered was reset or exclude; exclude
+   is taken, because it is the same shape as the observation floor and the
+   weaker action of the two: the floor gates VERDICTS, never the record. A
+   reset destroys the rows that prove the defect happened, and those rows are
+   the evidence for the reset — so excluding keeps the audit trail and can be
+   escalated to a reset later, while a reset cannot be undone into rows.
+
+   `openSeq` absent means "written before the fix", not "unknown": every open
+   path has stamped it since the fix, so its absence is a positive fact about
+   which build wrote the record. */
+const shadowPreFix = p => p.openSeq == null;
 /* The predicate every VERDICT reads. `shadowResolved` still means "closed";
-   `shadowCounts` means "closed AND observed enough to mean something". */
+   `shadowCounts` means "closed AND observed enough to mean something AND not
+   written by a build whose fill model is known to have been wrong". */
+/* NOT gated on `shadowPreFix` any more: the user escalated the interim to a
+   full epoch reset, which removes the corrupt population outright rather than
+   filtering it, so a per-trip verdict filter would be dead weight guarding
+   against rows that no longer exist. What survives is the DETECTOR — a trip
+   without an open-cycle stamp in epoch 2 means the host is serving cached code
+   again, and `paperStaleHostNote()` raises that as a finding rather than
+   letting it pass quietly. */
 const shadowCounts = p => shadowResolved(p) && shadowObsShare(p) >= SHADOW_MIN_OBS;
 /* Standing sentence for any aggregate reporting an exclusion. The count is
    itself an aggregate, so it opens to its rows like every other number
    (interrogability scan, Aug 11 2026) — a bare "3 excluded" would be a
    number the operator cannot audit, which is the defect this tool refuses. */
+/* The pre-fix exclusion states itself wherever it bites, in its own words —
+   "insufficient observation" and "written by a broken build" are different
+   findings and must never be reported as one number. */
+function preFixNote(trips, key){
+  const bad = (trips || []).filter(p => shadowResolved(p) && shadowPreFix(p));
+  if (!bad.length) return '';
+  const face = '(' + bad.length + ' excluded — opened before the causality fix)';
+  return ' <span class="neg">' + (key
+    ? drill("prefix:" + key, face, {
+        head: "trips written by a build whose fill model credited tape that printed before the trip existed",
+        cols: PAPER_TRIP_COLS, rows: paperTripRows(bad),
+        empty: "None.",
+        note: 'Positively identified by a field, not suspected: of the trips carrying an open-cycle stamp, none resolved '
+            + 'sub-second; of those without one, most did. They are KEPT in the record — the rows are the evidence that '
+            + 'the defect happened — and excluded from every verdict. This is an interim; a full epoch reset remains open.'
+      })
+    : face) + '</span>';
+}
 function thinNote(n, key, trips){
   if (!n) return '';
   const face = '(' + n + ' excluded — insufficient observation, under ' + Math.round(SHADOW_MIN_OBS * 100) + '% of the horizon)';
@@ -5607,15 +5683,72 @@ function thinNote(n, key, trips){
 const shadowEpochYoung = () => !!DB.shadowEpoch
   && ((DB.shadowDivLog || []).length < 7
       || (DB.shadowBook || []).filter(shadowResolved).length < SHADOW_ROW_MIN);
+/* ═══ THE STALE-HOST FINDING (user ruling, Aug 12 2026) ═══════════════════
+   Every trip in epoch 2 must carry an open-cycle stamp. One that does not was
+   written by a build without the causality fix — which is exactly how epoch 1
+   was corrupted — so it RAISES A FINDING rather than passing quietly. This is
+   the detector for the failure that made the reset necessary, and it exists
+   because the last one had none: the corruption was invisible until a field
+   was added that could show it. */
+/* Extracted from load() so an assertion can exercise the reset itself. Left
+   inline it was unreachable from the probe, and a seeded defect on it changed
+   nothing the suite could see — which reads exactly like a weak assertion and
+   was in fact code no test could call. */
+function paperEpoch2Reset(){
+  const hadBook = (DB.shadowBook || []).length, hadDiv = (DB.shadowDivLog || []).length;
+  const hadTrips = Object.values(DB.strataStats || {}).reduce((a, s) => a + (s.trips || 0), 0);
+  const hadBad = (DB.shadowBook || []).filter(p => p.openSeq == null).length;
+  DB.shadowBook = []; DB.shadowDivLog = [];
+  /* Sim OUTCOMES cleared; sampling history kept — the two live in the same
+     object and only one of them is downstream of the fill model. */
+  for (const s of Object.values(DB.strataStats || {})){ s.trips = 0; s.filled = 0; s.net = 0; s.insuf = 0; }
+  let voided = 0;
+  for (const e of (DB.shadowExceptions || []))
+    if (e.evidence && !e.evidenceVoid){ e.evidenceVoid = 1; voided++; }
+  DB.shadowEpoch = Date.now();
+  DB.paperEpoch = 2;
+  DB.paperEpoch2 = 1;
+  logDecision("shadow", "paper book", "reset — epoch 2",
+    "149 of 248 trips positively identified as pre-causality-fix corruption via null openPollSeq; epoch 1 discarded "
+    + "rather than filtered. In this store: " + hadBook + " counterfactual position" + (hadBook === 1 ? "" : "s")
+    + " (" + hadBad + " carrying no open-cycle stamp), " + hadDiv + " daily regime reading" + (hadDiv === 1 ? "" : "s")
+    + " and " + hadTrips + " rolled per-stratum trip" + (hadTrips === 1 ? "" : "s") + " discarded"
+    + (voided ? "; grounding evidence marked void on " + voided + " exception-lane record" + (voided === 1 ? "" : "s")
+       + " (the RULINGS stand — revoke by hand if you want them gone)" : "")
+    + ". Filtering was rejected because the divergence ledger, the rolled per-stratum counters and the exception "
+    + "lane's evidence are CUMULATIVE — a per-trip predicate can exclude rows but cannot un-mix a rolled total. "
+    + "KEPT: realized streams, the market stream, and per-stratum SAMPLING history (records of tests performed, "
+    + "not of simulated outcomes). Epoch 2 starts now, and every trip in it must carry an open-cycle stamp — one "
+    + "that does not raises a stale-host finding rather than passing quietly.", 1);
+}
+const paperStaleHostTrips = () => (DB.shadowBook || []).filter(p => p.openSeq == null);
+function paperStaleHostNote(){
+  const bad = paperStaleHostTrips();
+  if (!bad.length) return "";
+  return '<div class="neg" style="white-space:normal;margin-bottom:6px">⚠ <b>' + bad.length + ' trip'
+    + (bad.length === 1 ? '' : 's') + ' in this epoch carr' + (bad.length === 1 ? 'ies' : 'y') + ' no open-cycle stamp.</b> '
+    + 'That means a build without the causality fix wrote ' + (bad.length === 1 ? 'it' : 'them') + ' — the host is serving '
+    + 'cached code again, which is the exact failure that cost epoch 1. <b>Reload the page</b> (the build stamp in the '
+    + 'header says which build is running), then re-check. These trips are excluded from every verdict until then; '
+    + 'this is a finding, not a caveat.</div>';
+}
 function shadowEpochNote(){
-  if (!shadowEpochYoung()) return "";
+  const stale = paperStaleHostNote();
+  if (!shadowEpochYoung()) return stale;
   const d = new Date(DB.shadowEpoch).toLocaleDateString("en-CA");
   const n = (DB.shadowBook || []).filter(shadowResolved).length;
   const days = Math.max(0, Math.floor((Date.now() - DB.shadowEpoch) / 86400e3));
-  return '<div class="plan-note"><b>Accruing since ' + d + ' — prior data discarded (force-exit defect).</b> '
-    + 'Trips that closed before the fix were exited at the price on the day the tab reopened, booking days of drift as simulated P&amp;L; that baseline would have argued for looser gates on fills that never happened, so it was cleared rather than carried. '
+  const ep = DB.paperEpoch || 1;
+  return stale + '<div class="plan-note"><b>Epoch ' + ep + ' — accruing since ' + d
+    + '. Prior data discarded (pre-causality-fix corruption).</b> '
+    + '149 of 248 trips in epoch 1 were positively identified as corrupt by a null open-cycle stamp: a cached build was '
+    + 'crediting tape that printed before the trip existed. Epoch 1 was discarded rather than filtered, because the '
+    + 'divergence ledger, the rolled per-stratum counters and the exception lane\'s evidence are cumulative — a per-trip '
+    + 'filter can exclude rows but cannot un-mix a rolled total. '
     + n + ' trip' + (n === 1 ? '' : 's') + ' closed in ' + days + ' day' + (days === 1 ? '' : 's')
-    + ' since. <b>Thin here means young, not broken</b> — this notice retires itself once the ledger can support a verdict again. Realized streams (flip log, markouts, the realized side of gate health) were never affected.</div>';
+    + ' since. <b>Thin here means young, not broken</b> — this notice retires itself once the ledger can support a '
+    + 'verdict again. Kept and unaffected: the realized streams (flip log, markouts, the realized side of gate health), '
+    + 'the market stream, and the per-stratum sampling history — those record tests performed, not simulated outcomes.</div>';
 }
 const shadowGaps = () => (DB.shadowBook || []).filter(p => p.state === "unobserved").length;
 function shadowSizeFor(c){
@@ -5701,6 +5834,59 @@ function stampPrediction(rec, qty, c){
   const oldH = oldFlow > 0 && qty > 0 ? qty / oldFlow : Infinity;
   rec.predOldH = Number.isFinite(oldH) ? Math.round(oldH * 1000) / 1000 : "never";
   return rec;
+}
+/* ═══ WHY THE BOOK IS NOT OPENING (user ruling, Aug 12 2026) ══════════════
+   A book that stops opening trips accrues nothing, and nothing on any surface
+   said so. The incident: opening stopped at 18:10 while trips kept closing
+   until 20:46, and every panel went on reporting aggregates as though the
+   book were live.
+
+   Nothing was broken. The family cooldown is `2 × FILLH()`, and FILLH is the
+   gap to the NEXT touch — so around the evening touch the gap is 9.5h and the
+   cooldown is NINETEEN HOURS. A family that opened or closed inside that
+   window cannot reopen, and closing does not release it: `recent` counts any
+   family whose trip is open OR closed within `cool`. With a stable candidate
+   set the family keys repeat every cycle, so once a wave opens, the book is
+   quiet by construction until the cooldown drains.
+
+   That is the machinery working as written. The DEFECT is that it was silent,
+   which is the self-explaining-state rule: an entity that cannot say where it
+   stands reads as broken even when it is correct. `shadowScanState()` is that
+   sentence, computed from the same values the scan gates on so the two can
+   never disagree.
+
+   Note for a future ruling, NOT applied: a cooldown that scales with the
+   horizon is longest exactly at the evening touch, which is when the book has
+   the most observation time available. Whether it should scale that way is a
+   strategy question and moves only on the user's word. */
+function shadowScanState(P){
+  const now = Date.now(), cool = 2 * FILLH() * 3600e3;
+  const openN = shadowOpen().length;
+  const room = Math.max(0, SHADOW_MAX_OPEN - openN);
+  const blocked = new Set(DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < cool).map(p => p.fam));
+  const lastOpen = DB.shadowBook.reduce((a, p) => Math.max(a, p.t || 0), 0);
+  const cand = P ? ((P.picks || []).length + (P.all || []).filter(x => { const f = failProfile(x); return f.nearMiss && f.nearMiss.g !== "blacklist"; }).length) : null;
+  return { room, openN, cap: SHADOW_MAX_OPEN, coolH: Math.round(cool / 3600e3 * 10) / 10,
+           blocked: blocked.size, lastOpen, candidates: cand,
+           why: !S.latestAt ? "no live prices yet — the scan needs a price cycle before it can open anything"
+              : !room ? "at the open cap (" + openN + " of " + SHADOW_MAX_OPEN + ") — nothing opens until a trip closes"
+              : blocked.size ? blocked.size + " famil" + (blocked.size === 1 ? "y is" : "ies are") + " inside the "
+                 + (Math.round(cool / 3600e3 * 10) / 10) + "h cooldown (2× the current " + fmtHrs(FILLH())
+                 + " horizon), and closing does not release one — a family is blocked while its last trip is open OR closed inside that window"
+              : cand === 0 ? "no eligible candidates this cycle — nothing passed, and nothing was a single-gate near-miss"
+              : "opening normally" };
+}
+/* The sentence, for any surface that reports paper aggregates. */
+function shadowScanStateLine(P){
+  const s = shadowScanState(P);
+  const quiet = s.lastOpen ? Date.now() - s.lastOpen : null;
+  const stale = quiet != null && quiet > 2 * 3600e3;
+  return '<div class="' + (stale ? "plan-note" : "dim") + '" style="white-space:normal">'
+    + (stale ? '⚠ <b>Nothing has opened for ' + fmtHrs(quiet / 3600e3) + '.</b> ' : '')
+    + 'Paper book: ' + esc(s.why) + '. '
+    + s.openN + ' open of ' + s.cap + (s.candidates != null ? ' · ' + s.candidates + ' eligible candidate' + (s.candidates === 1 ? '' : 's') + ' this cycle' : '')
+    + (s.lastOpen ? ' · last opened ' + ago(s.lastOpen) : ' · nothing ever opened')
+    + '. <span class="dim">A book that is not opening accrues nothing, so this line renders whether or not anything is wrong.</span></div>';
 }
 function shadowScan(P){
   if (!S.latestAt) return;
@@ -7296,9 +7482,16 @@ function calibSection(){
 }
 function paperHeadlineSection(){
   const closed = paperClosed();
+  /* The generator's own state leads. An empty or thin book means nothing until
+     you know whether the book is OPENING — a stalled generator and a quiet
+     market look identical in every aggregate below. */
+  const gen = shadowScanStateLine(null);
   if (!closed.length)
-    return '<div class="dim">No counted paper trips yet — nothing to report a rate on. (Rates need closed trips that '
+    return gen + '<div class="dim">No counted paper trips yet — nothing to report a rate on. (Rates need closed trips that '
          + 'cleared the observation floor; the raw book may hold rows this says nothing about.)</div>';
+  return gen + paperHeadlineBody(closed);
+}
+function paperHeadlineBody(closed){
   const byCoh = new Map();
   for (const p of closed){
     const k = paperCohortOf(p);
@@ -14772,6 +14965,56 @@ function homeDeltaLines(){
   }
   return L;
 }
+/* ═══ THE BUILD STAMP (user ruling, Aug 12 2026) ══════════════════════════
+   A tool whose host never reloads needs to notice its own staleness. This one
+   runs as a long-lived foreground tab on a machine that does not reload — that
+   is the host DESIGN, not an accident — and the consequence was five hours of
+   paper trips written by a build predating the causality fix, indistinguishable
+   on screen from good ones. The tab was serving cached code and nothing said so.
+
+   The mechanism has to work without a server: the app fetches its own URL with
+   a cache-buster and reads the BUILD_ID out of the fresh copy. Different id
+   means the running page is stale. Silent on failure and on file:// — an
+   unreachable check must never render as "you are up to date", so the three
+   states are up-to-date, STALE, and could-not-check, and they are distinct. */
+const BUILD_ID = "2026-08-12/fb7f251";
+const BUILD_CHECK_EVERY = 60 * 60e3;
+function buildStampInline(){
+  const s = S.buildCheck || { state: "unchecked" };
+  const base = '<span class="dim" title="' + esc("The build this tab is RUNNING, which is not necessarily the newest one — "
+    + "a tab that stays open for days keeps whatever it loaded.") + '">build ' + esc(BUILD_ID) + '</span>';
+  if (s.state === "stale")
+    return base + ' <span class="badge b-risk" title="' + esc("A newer build (" + s.latest + ") is deployed. Everything on "
+      + "this screen was produced by the older one.") + '">stale — reload</span>';
+  if (s.state === "current") return base + ' <span class="badge b-tax">current</span>';
+  if (s.state === "unreachable")
+    return base + ' <span class="badge b-warn" title="' + esc("The staleness check could not run (" + (s.why || "no reason recorded")
+      + "). Unknown is not the same as up to date, so it says so.") + '">staleness unknown</span>';
+  return base;
+}
+/* The WHAT CHANGED line. Only when actually stale — an every-visit nag for a
+   current build would train the eye past it. */
+function buildStaleLine(){
+  const s = S.buildCheck;
+  if (!s || s.state !== "stale") return null;
+  return { txt: "⚠ running a build from " + BUILD_ID.split("/")[0] + " — reload for the current one ("
+    + s.latest + "). Anything this tab produced since then came from the older build.", goto: "" };
+}
+async function checkBuildFreshness(){
+  if (!/^https?:/.test(location.protocol)){ S.buildCheck = { state: "unreachable", why: "running from a local file, so there is nothing to compare against" }; return; }
+  if (S.buildCheckAt && Date.now() - S.buildCheckAt < BUILD_CHECK_EVERY) return;
+  S.buildCheckAt = Date.now();
+  try {
+    const r = await fetch(location.pathname + "?_bust=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const txt = await r.text();
+    const m = txt.match(/const BUILD_ID = "([^"]+)"/);
+    if (!m) throw new Error("the deployed copy carries no build id");
+    S.buildCheck = m[1] === BUILD_ID ? { state: "current", latest: m[1] } : { state: "stale", latest: m[1] };
+  } catch(e){
+    S.buildCheck = { state: "unreachable", why: String((e && e.message) || e) };
+  }
+}
 const HOME_DELTA_CAP = 6;   // mobile parity: truncate with +N more, never hide silently
 function renderHomeDelta(){
   const box = $("#homeDelta");
@@ -14782,6 +15025,11 @@ function renderHomeDelta(){
   const L = raw || [];
   /* Flat-book standing line (user-directed Aug 11 2026): a monitoring visit
      reads like a ticker — the flat state and what accrued while flat lead. */
+  /* Staleness leads: every other line on this screen was produced by whatever
+     build is running, so if that build is old the reader needs to know before
+     reading them. */
+  const bs = buildStaleLine();
+  if (bs) L.unshift(bs);
   if (DB.flatSince){
     const n = (DB.shadowBook || []).filter(p => shadowResolved(p) && (p.closedAt || 0) > DB.flatSince).length;
     L.unshift({ txt: "▭ book flat since " + new Date(DB.flatSince).toLocaleDateString("en-CA")
