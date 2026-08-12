@@ -6602,7 +6602,11 @@ async function calibrateFillModel(){
    really completed in 23 minutes has to be explicable down to the bucket, and
    a summary verdict cannot be interrogated. Each trace row says what the
    bucket held, whether it reached the price, and what it contributed. */
-const CALIB_TRACE_CAP = 24;
+/* Stored trace depth. Deliberately ABOVE the export's 60-bucket head/tail
+   threshold (Aug 12 2026): at 24 the export trim could never fire, so the
+   rule would have been a dead path that read as a live safeguard. A 12-hour
+   window at 5m is 144 buckets, so 160 covers a real one. */
+const CALIB_TRACE_CAP = 160;
 function calibReplayOne(e, pts){
   const f = e.f, bh = Number(e.bh != null ? e.bh : f.bh);
   const H = Math.max(0.25, bh * 2) * 3600e3;   // its own realised buy time, doubled, as the horizon
@@ -6619,6 +6623,10 @@ function calibReplayOne(e, pts){
       if (mode === "lenient" && out.trace.length < CALIB_TRACE_CAP)
         out.trace.push({ t: b.t, minsIn: Math.round((b.t - e.buyAt) / 60e3),
           lo: b.lo, lv: b.lv, credited: add,
+          /* A structured reason code beside the prose, so an export can
+             restate the reason WITHOUT the absolute prices the prose names. */
+          code: b.lo == null ? "no-print" : !(b.lv > 0) ? "no-volume"
+              : b.lo < f.buy ? "proven" : b.lo === f.buy ? "at-price" : "above-price",
           why: b.lo == null ? "no low print in this bucket"
              : !(b.lv > 0) ? "no low-side volume"
              : b.lo < f.buy ? "below the fill price — proven reach"
@@ -6710,7 +6718,9 @@ function calibSection(){
     + '<span class="sub">' + (c ? "last run " + ago(c.at) : "never run") + '</span>'
     + '<span style="margin-left:auto"><button class="sm" id="calibRun"' + (S.calibBusy ? ' disabled' : '')
     + ' title="Replays the fill model against the tape for every logged REAL round trip, and reports where it disagrees with what actually happened.">'
-    + (S.calibBusy ? '… running' : '▸ run calibration') + '</button></span></div>';
+    + (S.calibBusy ? '… running' : '▸ run calibration') + '</button>'
+    + (DB.calib ? ' <button class="sm" data-analysis="calibration" title="Writes analysis-calibration-&lt;date&gt;.json — the measurement and its per-bucket evidence, with your trading record left behind. Prices appear only as percentages against your own fill, there are no gp amounts and no wall-clock times, so reachability is fully legible without publishing what you paid.">⭳ export calibration</button>' : '')
+    + '</span></div>';
   const note = '<div class="note">Every logged real round trip completed both legs — that is what makes it a log entry. '
     + 'So every disagreement below is a MODEL error with a known direction, and the one that matters is <b>false '
     + 'never-filled</b>: if the model routinely says the bid never got the tape for flips you actually completed, then '
@@ -13253,7 +13263,11 @@ const GLOSSARY = [
         + "was truncated.",
     caveat: "This is NOT the state backup. \"Export the log\" writes the whole store so this browser can be restored; "
           + "this writes a capped, readable slice and is not a restore point. Rows are capped newest-first and the cap is "
-          + "declared in the header — a file too big to paste is useless, one that silently truncates is worse." },
+          + "declared in the header — a file too big to paste is useless, one that silently truncates is worse. "
+          + "The fourth export, <b>⭳ export calibration</b>, is the one built to leave your hands: it carries the "
+          + "measurement and its per-bucket evidence with prices as PERCENTAGES against your own fill, no gp amounts "
+          + "and no wall-clock times, so a reviewer can judge reachability without learning what you paid, what you "
+          + "hold, or when you trade." },
   { id: "gov-export", term: "Export the log",
     what: "The full store as JSON. Your flip log exists only in this browser's localStorage.",
     from: "The export button on the Flip Log tab.",
@@ -14699,7 +14713,139 @@ function analysisProspecting(){
       note: "Two streams: the MARKET stream is the hourly ROI series watchlist items already fetch; the PAPER stream is simulated fills. They answer different questions and are never averaged together." })) };
 }
 
-const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting };
+/* ═══ CALIBRATION EXPORT (user-directed, Aug 12 2026) ═════════════════════
+   The measurement leaves; the trading record does not. Same boundary the
+   calibration itself was built under — the flip log lives in the browser and
+   nothing derived from it may carry absolute prices, gp amounts, or wall-clock
+   stamps out of the machine.
+
+   The three exclusions are ENFORCED here, in one place, and probe-asserted
+   against a fixture that contains all of them:
+
+   1. NO ABSOLUTE PRICES. Reachability is expressed as the bucket's average low
+      against the fill price AS A PERCENTAGE, and the round trip's realized
+      spread likewise. A reviewer can see exactly how far the tape sat from the
+      fill without learning what was paid.
+
+      DELIBERATE DEVIATION, flagged rather than silently taken: the brief asked
+      for "delta and percentage". Carrying BOTH is invertible — fill price =
+      delta ÷ (pct/100) recovers the absolute figure exactly, which is the one
+      thing the exclusion exists to prevent. Percentage only, therefore. Say so
+      in the file so the reviewer knows the delta is missing by design.
+   2. NO GP. No realized profit, no bank, no position value. Quantities are
+      carried because they are not money; the gp-denominated capital constants
+      are stripped from the header for the same reason.
+   3. NO WALL CLOCK. Bucket times are minutes from the window's own start, and
+      the window is expressed as durations rather than instants. Nothing here
+      reconstructs when the user was at the machine. */
+const CALIB_EXPORT_FLIPS = 12;      // most recent replayed flips carrying a trace
+const CALIB_EXPORT_TRACE = 60;      // buckets per flip before head/tail trimming
+const pctOf = (v, base) => (base > 0 && Number.isFinite(v)) ? Math.round((v / base - 1) * 10000) / 100 : null;
+/* The header, minus every gp-denominated capital figure. */
+function calibHeaderRedacted(trunc){
+  const h = analysisHeader("calibration", trunc);
+  const c = h.constantsInForce || {};
+  for (const k of ["sleeveBudgetGp", "t1BudgetGp", "t2BudgetGp", "reserveGp", "shadowReserveGp"]) delete c[k];
+  c.capitalConstantsWithheld = "Budget, reserve and Shadow Fund figures are gp amounts and are excluded from this export by design.";
+  return h;
+}
+function analysisCalibration(){
+  const trunc = [];
+  const c = DB.calib;
+  if (!c) return { header: calibHeaderRedacted(trunc),
+    calibration: null,
+    note: "Calibration has never been run in this browser, so there is no measurement to export." };
+  const all = (c.rows || []).slice().sort((a, b) => (b.sellAt || 0) - (a.sellAt || 0));
+  const kept = analysisCap(all, CALIB_EXPORT_FLIPS, "replayedFlips", trunc, "most recently logged first");
+  const bound = m => m ? {
+    agreedFilled: m.agree, falsePartial: m.falsePartial, falseForcedExit: m.falseForced,
+    falseNeverFilled: m.falseNever, agreedPct: m.agreePct,
+    medianBuyCreditedWhenWrongPct: m.medianBuyShortfallPct } : null;
+  /* The split must be PRESENT even when a bucket is empty — it is the field
+     that decides bounded-vs-global, and an omitted zero reads as no data.
+     The guarantee lives UPSTREAM in calibSplit(), which always returns both
+     groups with explicit zeros. A defensive fallback here would be
+     unreachable, and unreachable code that reads as a safeguard is worse than
+     none — so this asserts the contract instead of pretending to enforce it,
+     and R47.2 fails if calibSplit ever stops honouring it. */
+  const dur = d => ({
+    underOneHour: Object.assign({ flips: d.fast.n }, bound(d.fast)),
+    oneHourAndOver: Object.assign({ flips: d.slow.n }, bound(d.slow))
+  });
+  const traceOf = r => {
+    const t = r.trace || [];
+    let rows = t, trimmed = null;
+    if (t.length > CALIB_EXPORT_TRACE){
+      rows = t.slice(0, 20).concat(t.slice(-20));
+      trimmed = "trace held " + t.length + " buckets — first 20 and last 20 kept, " + (t.length - 40) + " omitted from the middle";
+    }
+    return { trimmed, buckets: rows.map(x => ({
+      minutesFromWindowStart: x.minsIn,
+      bucketAvgLowVsFillPct: pctOf(x.lo, r.bid),
+      lowSideVolume: x.lv,
+      creditedUnits: x.credited,
+      reason: x.code === "no-print" ? "no low print in this bucket"
+            : x.code === "no-volume" ? "no low-side volume in this bucket"
+            : x.code === "proven" ? "average low sat BELOW the fill price — proven reach"
+            : x.code === "at-price" ? "average low sat EXACTLY at the fill price — ambiguous"
+            : "average low sat ABOVE the fill price by " + (pctOf(x.lo, r.bid) != null ? pctOf(x.lo, r.bid) + "%" : "an unknown margin")
+              + " — never reached" })) };
+  };
+  return {
+    header: calibHeaderRedacted(trunc),
+    honesty: [
+      "THE OPERATIVE READING IS NOT HERE. The model's live reading lies BETWEEN the two bounds and cannot be "
+        + "replayed: it needs a live instabuy observation from inside each 5m bucket, which a historical replay does "
+        + "not have. It is measurable only going forward.",
+      "THE AMBIGUOUS CLASS IS UNAVAILABLE TO REPLAY for the same reason, so every bucket here resolves to proven, "
+        + "at-price, or never-reached — never to ambiguous.",
+      "THIS COMPARISON BIASES PESSIMISTIC. The replay tests the bucket's AVERAGE low against the realized fill price. "
+        + "If the trader bought at the prevailing instabuy, the bucket average sits at or just above that fill, so "
+        + "neither 'strictly below' nor exact equality fires and a correctly-placed window can still credit nothing. "
+        + "The per-bucket trace is how to tell that apart from a mislocated window: a window error shows the tape far "
+        + "from the fill price throughout, while this bias shows it hovering just above it.",
+      "PRICES ARE RELATIVE BY DESIGN. Every price appears only as a percentage against the trader's fill price. The "
+        + "absolute figures, the gp deltas that would let them be recovered, all realized profit, and every "
+        + "gp-denominated capital constant are excluded. Quantities and market volumes are carried; money is not.",
+      "TIMES ARE RELATIVE BY DESIGN. Bucket times are minutes from each replay window's own start, and windows are "
+        + "expressed as durations. Nothing here reconstructs when the trader was at the machine.",
+      "SAMPLE: " + (c.rows || []).length + " flips replayed of " + c.total + " logged. Skipped — "
+        + c.skipped.tooOld + " fell outside the ~" + c.retentionH + "h 5-minute tape retention (the replay is a rolling "
+        + "test, not a one-off), " + c.skipped.noWindow + " lacked a recorded buy or sell leg duration (without both, the "
+        + "window cannot be located and guessing it would fabricate the measurement), and " + c.skipped.noTape
+        + " returned no tape."
+    ],
+    calibration: {
+      flipsReplayed: (c.rows || []).length,
+      flipsLogged: c.total,
+      tapeRetentionHours: c.retentionH,
+      skippedByReason: { outsideTapeWindow: c.skipped.tooOld, missingLegTiming: c.skipped.noWindow, noTapeReturned: c.skipped.noTape },
+      provenReachBound: bound(c.strict),
+      possibleReachBound: bound(c.lenient),
+      byDuration: { provenReachBound: dur(c.strict && c.strict.byDuration),
+                    possibleReachBound: dur(c.lenient && c.lenient.byDuration) }
+    },
+    replayedFlips: kept.map(r => {
+      const tr = traceOf(r);
+      if (tr.trimmed) trunc.push({ section: "trace:" + r.item, kept: tr.buckets.length,
+        total: (r.trace || []).length, truncated: true, note: tr.trimmed });
+      return {
+        item: r.item, itemId: r.itemId, qty: r.qty,
+        realBuyDurationHours: r2(r.bh), realSellDurationHours: r2(r.sh),
+        fastLeg: !!r.fastLeg,
+        windowStartHoursFromWindowStart: 0,
+        windowEndHoursFromWindowStart: r2(Math.max(0.25, r.bh * 2)),
+        realizedSpreadPct: pctOf(r.ask, r.bid),
+        verdictProvenReach: r.strict.verdict, buyCreditedProvenPct: r.strict.buyPct,
+        verdictPossibleReach: r.lenient.verdict, buyCreditedPossiblePct: r.lenient.buyPct,
+        bucketsReachingThePrice: r.bucketsReaching, bucketsInWindow: r.bucketsInWindow,
+        traceTrimmed: tr.trimmed, trace: tr.buckets };
+    })
+  };
+}
+
+const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting,
+  calibration: analysisCalibration };
 function analysisPayload(view){
   const build = ANALYSIS_BUILDERS[view];
   if (build) return build();

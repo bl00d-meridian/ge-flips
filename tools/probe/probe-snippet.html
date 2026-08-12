@@ -5305,6 +5305,123 @@
   } catch(e){
     out.push("FAIL calibration anchor / trace / split :: " + (e && e.stack || e));
   }
+
+  // ─── §47: CALIBRATION EXPORT — the measurement leaves, the log does not ───
+  try {
+    const keepCal = DB.calib, keepBank47 = DB.bank;
+    /* A fixture carrying EVERY class the export must exclude, with distinctive
+       values so a leak is findable by search rather than by inspection. */
+    const MAGIC = { bid: 987654, ask: 1234567, net: 555555555, bank: 777777777, at: 1700000000000 };
+    DB.bank = MAGIC.bank;
+    const mkRow47 = (n, bh, sh, verdict, traceN) => ({
+      item: "Probe alpha", itemId: 9001, qty: 4242,
+      bid: MAGIC.bid, ask: MAGIC.ask, netGp: MAGIC.net,
+      buyAt: MAGIC.at, sellAt: MAGIC.at + n * 3600e3, bh, sh, fastLeg: bh < 1 ? 1 : 0,
+      bucketsInWindow: traceN, bucketsReaching: 0,
+      strict: { verdict, buyPct: 0, sellPct: 0 },
+      lenient: { verdict, buyPct: 0, sellPct: 0 },
+      trace: Array.from({ length: traceN }, (_, i) => ({
+        t: MAGIC.at + i * 300e3, minsIn: i * 5,
+        lo: MAGIC.bid + 1000, lv: 900, credited: 0, code: "above-price",
+        why: "average low " + MAGIC.bid + 1000 + " sat ABOVE the fill price " + MAGIC.bid + " — never reached" })) });
+    /* The long-trace flip is the NEWEST, so the 12-flip cap keeps it and the
+       head/tail trim is actually exercised. */
+    const rows47 = [mkRow47(99, 0.4, 1.25, "unfilled", 70)];
+    for (let i = 0; i < 15; i++) rows47.push(mkRow47(i + 2, 6, 1, "filled", 4));
+    DB.calib = Object.assign({ at: Date.now(), rows: rows47, total: 40, retentionH: CALIB_5M_RETENTION_H,
+      skipped: { tooOld: 21, noWindow: 3, noTape: 0 } }, calibSummarise(rows47));
+    const X = analysisCalibration();
+    const blob = JSON.stringify(X);
+
+    // ---- R47.1 the measurement and its evidence are all present ----
+    ok("[R47.1] both bound summaries carry all five fields",
+       ["agreedFilled", "falsePartial", "falseForcedExit", "falseNeverFilled", "medianBuyCreditedWhenWrongPct"]
+         .every(k => k in X.calibration.provenReachBound && k in X.calibration.possibleReachBound),
+       JSON.stringify(X.calibration.provenReachBound));
+    ok("[R47.1] per-flip rows carry the durations, both verdicts and the reach census",
+       X.replayedFlips.length > 0 && X.replayedFlips.every(f => f.item && f.qty
+         && Number.isFinite(f.realBuyDurationHours) && Number.isFinite(f.realSellDurationHours)
+         && f.verdictProvenReach && f.verdictPossibleReach
+         && Number.isFinite(f.bucketsReachingThePrice) && Number.isFinite(f.bucketsInWindow)),
+       JSON.stringify(X.replayedFlips[0] && X.replayedFlips[0].item));
+    ok("[R47.1] the bucket trace carries time, relative price, volume, credit and a reason",
+       X.replayedFlips[0].trace.every(b => Number.isFinite(b.minutesFromWindowStart)
+         && "bucketAvgLowVsFillPct" in b && Number.isFinite(b.lowSideVolume)
+         && Number.isFinite(b.creditedUnits) && typeof b.reason === "string" && b.reason.length),
+       JSON.stringify(X.replayedFlips[0].trace[0]));
+    ok("[R47.1] an above-price bucket states the GAP, so reachability is legible without the prices",
+       /sat ABOVE the fill price by [-\d.]+% — never reached/.test(X.replayedFlips[0].trace[0].reason),
+       X.replayedFlips[0].trace[0].reason);
+    ok("[R47.1] the skip census is counted by reason, never silently dropped",
+       X.calibration.skippedByReason.outsideTapeWindow === 21
+       && X.calibration.skippedByReason.missingLegTiming === 3
+       && X.calibration.skippedByReason.noTapeReturned === 0,
+       JSON.stringify(X.calibration.skippedByReason));
+
+    // ---- R47.2 the duration split is present even when a bucket is empty ----
+    const onlySlow = [mkRow47(1, 6, 1, "filled", 3)];
+    DB.calib = Object.assign({ at: Date.now(), rows: onlySlow, total: 1, retentionH: CALIB_5M_RETENTION_H,
+      skipped: { tooOld: 0, noWindow: 0, noTape: 0 } }, calibSummarise(onlySlow));
+    const Y = analysisCalibration();
+    ok("[R47.2] an empty duration bucket renders as an explicit ZERO COUNT, never omitted",
+       Y.calibration.byDuration.possibleReachBound.underOneHour.flips === 0
+       && Y.calibration.byDuration.possibleReachBound.underOneHour.falseNeverFilled === 0
+       && Y.calibration.byDuration.provenReachBound.underOneHour.flips === 0
+       && Y.calibration.byDuration.possibleReachBound.oneHourAndOver.flips === 1,
+       JSON.stringify(Y.calibration.byDuration.possibleReachBound));
+    DB.calib = Object.assign({ at: Date.now(), rows: rows47, total: 40, retentionH: CALIB_5M_RETENTION_H,
+      skipped: { tooOld: 21, noWindow: 3, noTape: 0 } }, calibSummarise(rows47));
+
+    // ---- R47.3 THE EXCLUSIONS, enforced against a fixture containing them ----
+    ok("[R47.3] NO ABSOLUTE PRICES — neither the fill price nor the ask appears anywhere in the file",
+       blob.indexOf(String(MAGIC.bid)) < 0 && blob.indexOf(String(MAGIC.ask)) < 0,
+       "searched the serialized export for both magic prices");
+    ok("[R47.3] and the absolute price is not RECOVERABLE — a gp delta beside a percentage would invert to it",
+       (() => { const b = X.replayedFlips[0].trace[0];
+                return !("bucketAvgLowVsFill" in b) && !("deltaGp" in b) && !("delta" in b)
+                    && Number.isFinite(b.bucketAvgLowVsFillPct); })(),
+       JSON.stringify(X.replayedFlips[0].trace[0]));
+    ok("[R47.3] the realized spread is a PERCENTAGE, not gp",
+       Number.isFinite(X.replayedFlips[0].realizedSpreadPct)
+       && Math.abs(X.replayedFlips[0].realizedSpreadPct - ((MAGIC.ask / MAGIC.bid - 1) * 100)) < 0.02,
+       String(X.replayedFlips[0].realizedSpreadPct));
+    ok("[R47.3] NO GP — no realized profit, no bank value, and the gp capital constants are stripped from the header",
+       blob.indexOf(String(MAGIC.net)) < 0 && blob.indexOf(String(MAGIC.bank)) < 0
+       && !("sleeveBudgetGp" in X.header.constantsInForce)
+       && !("reserveGp" in X.header.constantsInForce)
+       && !("shadowReserveGp" in X.header.constantsInForce)
+       && /excluded from this export by design/.test(X.header.constantsInForce.capitalConstantsWithheld),
+       JSON.stringify(Object.keys(X.header.constantsInForce)));
+    ok("[R47.3] quantities survive — qty is not money",
+       X.replayedFlips[0].qty === 4242, String(X.replayedFlips[0].qty));
+    ok("[R47.3] NO WALL CLOCK — bucket times are minutes from the window start, and no absolute stamp survives",
+       blob.indexOf(String(MAGIC.at)) < 0
+       && X.replayedFlips[0].trace.every(b => !("t" in b) && Number.isFinite(b.minutesFromWindowStart))
+       && X.replayedFlips.every(f => !("buyAt" in f) && !("sellAt" in f)),
+       "searched for the magic timestamp and the raw stamps");
+
+    // ---- R47.4 honesty lines and size discipline ----
+    ok("[R47.4] the header carries all four honesty lines",
+       X.honesty.length >= 4
+       && X.honesty.some(l => /lies BETWEEN the two bounds and cannot be replayed/.test(l))
+       && X.honesty.some(l => /AMBIGUOUS CLASS IS UNAVAILABLE TO REPLAY/.test(l))
+       && X.honesty.some(l => /BIASES PESSIMISTIC/.test(l) && /per-bucket trace is how to tell that apart/.test(l))
+       && X.honesty.some(l => /^SAMPLE: /.test(l) && /rolling/.test(l)),
+       JSON.stringify(X.honesty.map(l => l.slice(0, 40))));
+    ok("[R47.4] traces are capped at the " + CALIB_EXPORT_FLIPS + " most recent flips, and the cap is declared",
+       X.replayedFlips.length === CALIB_EXPORT_FLIPS
+       && X.header.truncation.some(t => t.section === "replayedFlips" && t.truncated === true
+            && t.kept === CALIB_EXPORT_FLIPS && /most recently logged first/.test(t.note)),
+       JSON.stringify(X.header.truncation.filter(t => t.section === "replayedFlips")));
+    ok("[R47.4] a trace over " + CALIB_EXPORT_TRACE + " buckets keeps the first 20 and last 20 and SAYS so",
+       (() => { const big = X.replayedFlips.find(f => f.traceTrimmed);
+                return !!big && big.trace.length === 40 && /first 20 and last 20 kept, 30 omitted/.test(big.traceTrimmed)
+                    && X.header.truncation.some(t => /^trace:/.test(t.section) && t.total === 70); })(),
+       JSON.stringify((X.replayedFlips.find(f => f.traceTrimmed) || {}).traceTrimmed));
+    DB.calib = keepCal; DB.bank = keepBank47;
+  } catch(e){
+    out.push("FAIL calibration export :: " + (e && e.stack || e));
+  }
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter
