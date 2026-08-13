@@ -642,6 +642,31 @@ Named instances, all shipped green:
   Where the dead seed changes nothing, this one changes too much; both report as proof.
   **The tell: a seed whose failure list includes assertions you expected to stay green.**
 
+### The seeding precondition (global rule — user ruling, Aug 12 2026)
+
+> **Confirm the seed applied, changed something observable, and that the change is the
+> one you intended — before reading any result.**
+
+This is the general form of every named instance above, and it is a PRECONDITION rather
+than a check: until all three hold, the run's output carries no information and must not
+be interpreted. The three fail independently, and each has been hit in this project:
+
+1. **Applied.** A scripted substitution can silently match nothing and leave the file
+   untouched; the suite then runs green against unmodified code and the green reads as
+   evidence. Verify the text changed — do not assume the command worked.
+2. **Changed something observable.** The modified line executes *and* the modification
+   alters behaviour. It fails two ways: the line is unreachable (the dead-guard case), or
+   it runs and computes the same value anyway — re-deriving a constant from an expression
+   that happens to evaluate to the original number is the worked example, and a `const` is
+   fixed at load so the derivation never re-runs.
+3. **The change is the one you intended.** Not broader, not narrower. A seed that also
+   breaks forms the fix was meant to preserve has demonstrated only that the fixture
+   cannot tell the forms apart.
+
+Why this earns a rule of its own: in all three cases the report is **indistinguishable
+from real proof**, so the false confidence propagates into everything built on top of the
+assertion it claimed to verify.
+
 **Standing practice: prove every new assertion by seeding the defect it is meant to
 catch, watching it fail, then restoring green.** An assertion that has never failed is
 unproven, and "it passes" is not evidence that it *can* fail. This applies to every new
