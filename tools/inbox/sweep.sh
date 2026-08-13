@@ -67,14 +67,42 @@ MOVED=0
 LINES=""
 say(){ LINES="$LINES$1"$'\n'; }
 
+# SEARCH ROOTS, not just Downloads (corrected Aug 13 2026). Sweeping only the
+# download folder leaves a class with its newest copy in inbox/ and stale copies
+# in a second directory — which is exactly how a 3-hour-old paper export got
+# read while a fresher one existed. The property is "ONE copy per class, the
+# newest, in its destination", and that cannot be enforced by looking at one
+# place. Roots are Downloads plus the repo itself, excluding the destinations,
+# so a file carried in by hand is consolidated like any other.
+# The destination is a root like any other: a file already sitting there must be
+# able to WIN (so it is not displaced by an older copy carried in from
+# elsewhere) and must be able to LOSE (so stale copies do not accumulate in the
+# very folder whose promise is "one per class"). Excluding it broke both.
+find_class(){
+  local pat="$1"
+  find "$DL" -maxdepth 1 -type f -name "$pat" 2>/dev/null
+  find "$REPO" -maxdepth 2 -type f -name "$pat" -not -path "$REPO/.git/*" 2>/dev/null
+}
+# RANK BY THE FILE'S OWN generatedAt, not by mtime. mtime is a fact about the
+# filesystem, not about the export: `mv` carries it, a re-download resets it,
+# and a file consolidated from another directory arrives looking newer than it
+# is. The stamp inside the file is the only honest ordering key; mtime is the
+# fallback for a class that carries no stamp (the state backup).
+rank_of(){
+  local g; g="$(gen_at "$1")"
+  if [ -n "$g" ]; then date -u -d "$g" +%s 2>/dev/null && return; fi
+  date -u -r "$1" +%s 2>/dev/null || echo 0
+}
+
 sweep_class(){
   local label="$1" pat="$2" dest="$3"
-  local newest="" f
-  # Newest by mtime across the class, duplicates included.
+  local newest="" newestRank=-1 f r
+  # Newest by its own generatedAt across every root, duplicates included.
   while IFS= read -r f; do
     [ -f "$f" ] || continue
-    if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest="$f"; fi
-  done < <(find "$DL" -maxdepth 1 -type f -name "$pat" 2>/dev/null)
+    r="$(rank_of "$f")"
+    if [ -z "$newest" ] || [ "$r" -gt "$newestRank" ]; then newest="$f"; newestRank="$r"; fi
+  done < <(find_class "$pat")
 
   if [ -z "$newest" ]; then
     say "$(printf '%-22s none found' "$label")"
@@ -86,17 +114,24 @@ sweep_class(){
   gat="$(gen_at "$newest")"
   ah="$(age_h "$gat")"
 
-  # Older members of the same class go, including the browser's " (N)" copies.
+  # Older members of the same class go, including the browser's " (N)" copies,
+  # and including any that drifted into a directory that is not the destination.
   while IFS= read -r f; do
     [ -f "$f" ] || continue
     [ "$f" = "$newest" ] && continue
     rm -f -- "$f" && dropped=$((dropped+1))
-  done < <(find "$DL" -maxdepth 1 -type f -name "$pat" 2>/dev/null)
+  done < <(find_class "$pat")
 
   mkdir -p "$dest"
-  mv -f -- "$newest" "$dest/$base" 2>/dev/null || {
-    say "$(printf '%-22s MOVE FAILED %s' "$label" "$base")"; MOVED=1; return; }
-  MOVED=1
+  local already=0
+  if [ "$newest" = "$dest/$base" ]; then
+    already=1
+  else
+    mv -f -- "$newest" "$dest/$base" 2>/dev/null || {
+      say "$(printf '%-22s MOVE FAILED %s' "$label" "$base")"; MOVED=1; return; }
+  fi
+  # Already-in-place with nothing pruned is a no-op and stays quiet in --quiet.
+  [ "$already" -eq 1 ] && [ "$dropped" -eq 0 ] || MOVED=1
 
   if [ -z "$gat" ]; then
     note="generatedAt: absent — age unknown, do not read as current"
@@ -107,7 +142,8 @@ sweep_class(){
   else
     note="generatedAt: $gat — ${ah}h old · current"
   fi
-  say "$(printf '%-22s %s -> %s/  · %s%s' "$label" "$base" \
+  say "$(printf '%-22s %s %s %s/  · %s%s' "$label" "$base" \
+    "$([ "$already" -eq 1 ] && printf 'already in' || printf '->')" \
     "$(basename "$dest")" "$note" \
     "$([ "$dropped" -gt 0 ] && printf ' · %d older duplicate(s) deleted' "$dropped")")"
 }
