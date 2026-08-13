@@ -22,7 +22,16 @@
 # Output is a stable, greppable table so a session can act on it without
 # re-deriving anything. Exit 0 always: nothing here should fail a session.
 
+#   - EXPORTS HAPPEN MID-SESSION BY NATURE, so a session-start-only trigger is
+#     the wrong shape: it collects what was already there and misses everything
+#     the user presses export for while working. Run it opportunistically — the
+#     UserPromptSubmit hook does this in --quiet mode, which prints nothing at
+#     all unless something actually moved, so a silent no-op costs nothing and
+#     a collected file always announces itself.
+
 set -u
+QUIET=0
+for a in "$@"; do case "$a" in -q|--quiet) QUIET=1 ;; esac; done
 STALE_H="${STALE_H:-6}"                       # hours after which a file is stale
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INBOX="$REPO/inbox"
@@ -54,6 +63,10 @@ age_h(){
   printf '%s' "$(( (n - e) / 3600 ))"
 }
 
+MOVED=0
+LINES=""
+say(){ LINES="$LINES$1"$'\n'; }
+
 sweep_class(){
   local label="$1" pat="$2" dest="$3"
   local newest="" f
@@ -64,7 +77,7 @@ sweep_class(){
   done < <(find "$DL" -maxdepth 1 -type f -name "$pat" 2>/dev/null)
 
   if [ -z "$newest" ]; then
-    printf '%-22s none found\n' "$label"
+    say "$(printf '%-22s none found' "$label")"
     return
   fi
 
@@ -82,7 +95,8 @@ sweep_class(){
 
   mkdir -p "$dest"
   mv -f -- "$newest" "$dest/$base" 2>/dev/null || {
-    printf '%-22s MOVE FAILED %s\n' "$label" "$base"; return; }
+    say "$(printf '%-22s MOVE FAILED %s' "$label" "$base")"; MOVED=1; return; }
+  MOVED=1
 
   if [ -z "$gat" ]; then
     note="generatedAt: absent — age unknown, do not read as current"
@@ -93,12 +107,11 @@ sweep_class(){
   else
     note="generatedAt: $gat — ${ah}h old · current"
   fi
-  printf '%-22s %s -> %s/  · %s%s\n' "$label" "$base" \
+  say "$(printf '%-22s %s -> %s/  · %s%s' "$label" "$base" \
     "$(basename "$dest")" "$note" \
-    "$([ "$dropped" -gt 0 ] && printf ' · %d older duplicate(s) deleted' "$dropped")"
+    "$([ "$dropped" -gt 0 ] && printf ' · %d older duplicate(s) deleted' "$dropped")")"
 }
 
-echo "INBOX-SWEEP  Downloads: $DL  ·  stale after ${STALE_H}h"
 sweep_class "analysis-paper"       "analysis-paper-*.json"       "$INBOX"
 sweep_class "analysis-prospecting" "analysis-prospecting-*.json" "$INBOX"
 sweep_class "analysis-gates"       "analysis-gates-*.json"       "$INBOX"
@@ -108,4 +121,13 @@ sweep_class "state-backup"         "ge-flips-*.json"             "$INBOX"
 # flags-pending keeps its existing home: the briefing procedure reads it there
 # by name, and generalising the sweep must not move that target.
 sweep_class "flags-pending"        "flags-pending*.json"         "$BRIEFINGS"
+
+# QUIET mode prints only when something actually moved, so the opportunistic
+# hook is silent on the overwhelming majority of turns and impossible to ignore
+# on the ones that matter. Verbose mode always prints the full table, including
+# every "none found", because a reader who asked for the sweep is owed the
+# per-class result rather than a blank.
+if [ "$QUIET" -eq 1 ] && [ "$MOVED" -eq 0 ]; then exit 0; fi
+echo "INBOX-SWEEP  Downloads: $DL  ·  stale after ${STALE_H}h"
+printf '%s' "$LINES"
 exit 0

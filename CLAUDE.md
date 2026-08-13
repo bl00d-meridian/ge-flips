@@ -1113,14 +1113,30 @@ Four properties, each of which is the rule rather than an implementation detail:
 - **Everything collected is gitignored** (`inbox/`, plus the standing `analysis-*.json` /
   `ge-flips-*.json` patterns). The repo carries the tool, never the data it produced.
 
-**The hook is local and the script is tracked.** `.claude/*` is gitignored by standing
-rule, so the `SessionStart` hook lives in `.claude/settings.json` on this machine only;
-the behaviour is inherited through this section and the script. A clone without the hook
-runs the script by hand at session start. Recreate the hook with:
+**Three triggers, because a session-start-only sweep is the wrong shape** (corrected Aug 13
+2026, on the first mid-session export after it shipped): **exports happen mid-session by
+nature.** A session-start run collects what was already sitting there and misses everything
+the user presses export for while working, which is most of them.
+
+| Trigger | Mode | Why |
+|---|---|---|
+| `SessionStart` hook | verbose | the backlog that accumulated between sessions |
+| `UserPromptSubmit` hook | `--quiet` | the opportunistic one that actually matters — silent unless something moved, so a no-op costs nothing and a collected file always announces itself |
+| `/inbox` skill, or `bash tools/inbox/sweep.sh` | verbose | the explicit ask |
+
+**Run it without being asked** whenever the user mentions exporting or dropping a file, and
+**before reading any export** — the copy in `inbox/` may be older than what is in Downloads.
+
+**The hooks are local and the script is tracked.** `.claude/*` is gitignored by standing
+rule, so the hooks live in `.claude/settings.json` on this machine only; the behaviour is
+inherited through this section, the `/inbox` skill (which is tracked) and the script itself.
+Recreate the hooks with:
 
 ```json
-{ "hooks": { "SessionStart": [ { "hooks": [
-  { "type": "command", "command": "bash tools/inbox/sweep.sh", "timeout": 60 } ] } ] } }
+{ "hooks": {
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "bash tools/inbox/sweep.sh",         "timeout": 60 } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "bash tools/inbox/sweep.sh --quiet", "timeout": 30 } ] } ]
+} }
 ```
 
 ## Repo hygiene
