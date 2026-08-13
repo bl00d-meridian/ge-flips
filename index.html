@@ -8087,7 +8087,21 @@ function classifySellFailure(buckets, ask){
   if (!(ask > 0)) return { ...base, cls: "unclassified", why: "no ask price recorded — nothing to measure a gap against" };
   if (!bs.length) return { ...base, cls: "unclassified", why: "no buckets in the sell window — nothing to read" };
   const withPx = bs.filter(b => b.hi != null);
-  if (!withPx.length) return { ...base, cls: "unclassified", why: "no high print in any bucket of the window" };
+  /* NO PRINT AT ALL IS THE STRONGEST ILLIQUIDITY CASE, and it used to be filed
+     as `unclassified` (found Aug 13 2026 reading the first live discriminator
+     run). Two of the ten "neither fits" cases had NO high print across 48
+     buckets — the purest possible illiquidity finding — and landed in the
+     residue bucket, while the weaker condition below (prints, but no volume)
+     got the name. `ofWhichNoLiquidity` therefore reported 0 while two cases
+     were exactly that. **An absence filed as an ambiguity**, which is the
+     recurring shape here: the pile that means "we could not tell" must not
+     absorb the cases that mean "there was nothing there". */
+  if (!withPx.length){
+    base.volShare = 0;
+    return { ...base, cls: "no-liquidity",
+      why: "no high print in ANY bucket of the window — the strongest illiquidity finding, not an ambiguous one: "
+         + "there was no sell-side tape to credit against, so neither dilution nor mislocation can be assessed" };
+  }
   const withVol = withPx.filter(b => (b.hv || 0) > 0);
   base.volShare = Math.round(withVol.length / bs.length * 100) / 100;
   if (!withVol.length)
@@ -8136,6 +8150,16 @@ function sellThresholdDrift(){
    1.0% — the two agree at the population the absolute figure was derived on
    and diverge exactly where the question is whether they should. */
 const SELL_SPREAD_REL_FRACTION = 1 / 3;
+/* EXTRACTED so the report, the export and any assertion all read ONE
+   implementation of the shadow classification. It had been inline in
+   sellShapeReport(), which meant the export could only carry the count and a
+   probe could only re-derive it — the reimplementation tell. */
+function sellRelClassOf(c){
+  const relBand = c.spreadPct * SELL_SPREAD_REL_FRACTION;
+  return c.medGapPct >= -relBand ? "dilution"
+    : (c.medGapPct <= -SELL_MISLOC_GAP_PCT && c.sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
+    : "unclassified";
+}
 function sellShapeReport(cases){
   const cs = (cases || []).filter(c => c && c.spreadPct > 0 && c.medGapPct != null);
   if (cs.length < SELL_CLASSIFY_MIN_N)
@@ -8145,14 +8169,22 @@ function sellShapeReport(cases){
   const spreads = cs.map(c => c.spreadPct).sort((a, b) => a - b);
   const q = p => spreads[Math.min(spreads.length - 1, Math.floor(p * spreads.length))];
   let differ = 0;
+  const moves = [];
   for (const c of cs){
-    const relBand = c.spreadPct * SELL_SPREAD_REL_FRACTION;
-    const relCls = c.medGapPct >= -relBand ? "dilution"
-                 : (c.medGapPct <= -SELL_MISLOC_GAP_PCT && c.sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
-                 : "unclassified";
-    if (relCls !== c.cls) differ++;
+    const relCls = sellRelClassOf(c);
+    if (relCls !== c.cls){ differ++; moves.push({ item: c.item, from: c.cls, to: relCls,
+      spreadPct: c.spreadPct, medGapPct: c.medGapPct }); }
   }
-  return { n: cs.length, enough: true,
+  /* The count opens to the cases that move, and to what each class becomes —
+     a reclassification figure whose rows are missing cannot be ruled on. */
+  const relCounts = { dilution: 0, mislocatedWindow: 0, unclassified: 0, noLiquidity: 0 };
+  for (const c of cs){
+    const k = sellRelClassOf(c);
+    if (k === "dilution") relCounts.dilution++;
+    else if (k === "mislocated-window") relCounts.mislocatedWindow++;
+    else relCounts.unclassified++;
+  }
+  return { n: cs.length, enough: true, cases: moves, classCountsUnderRelative: relCounts,
     spreadMedianPct: Math.round(q(0.5) * 100) / 100,
     spreadP10Pct: Math.round(q(0.1) * 100) / 100, spreadP90Pct: Math.round(q(0.9) * 100) / 100,
     wouldReclassify: differ, wouldReclassifyPct: Math.round(differ / cs.length * 100),
@@ -8438,6 +8470,22 @@ function sellDiscriminatorHTML(c){
     verdict = '<b>Mislocation appears in calibration while the live book fails anyway</b> — and the live book has no '
       + 'window to mislocate, since its sell leg accrues forward from buyDone in real time. That is TWO DISTINCT '
       + 'DEFECTS, each needing its own fix, and it contradicts the single-mechanism hypothesis.';
+  /* THE PREDICTION WAS RECORDED AND IT LOST (user ruling, Aug 13 2026). The
+     hypothesis on the desk was that dilution dominates in BOTH populations, so
+     one credit rule was the whole story and one fix would close it. Measured:
+     it dominates in one and not the other. This branch used to fall through to
+     "does not match either predicted outcome", which is true and says nothing —
+     a falsification is a RESULT and has to read as one, naming the claim, the
+     measurement that beat it, and what follows. */
+  else if (calS.enough !== liveS.enough || (calS.dilution > calS.mislocated) !== (liveS.dilution > liveS.mislocated))
+    verdict = '<b>The single-mechanism prediction is FALSIFIED.</b> It was recorded before the measurement and it lost: '
+      + 'the claim was that dilution dominates in BOTH populations, making the credit rule the whole story and one fix '
+      + 'enough. Measured, dilution dominates <b>' + (calS.dilution > calS.mislocated ? 'calibration' : 'the live book')
+      + '</b> (' + calS.dilution + ' of ' + calS.n + ') and <b>not ' + (calS.dilution > calS.mislocated ? 'the live book' : 'calibration')
+      + '</b> (' + liveS.dilution + ' of ' + liveS.n + '). Per the falsification test as written, populations that '
+      + 'disagree mean <b>TWO DISTINCT DEFECTS, each needing its own fix</b> — not one credit rule. The live book '
+      + 'cannot mislocate by construction, so whatever fails there is not a window problem, and a fix aimed at the '
+      + 'window would leave it untouched.';
   else
     verdict = '<b>The split does not match either predicted outcome.</b> Stated rather than accommodated: the '
       + 'populations disagree in a way neither the dilution nor the mislocation story explains, so the next step is '
@@ -17973,7 +18021,23 @@ function analysisCalibration(){
                 creditedPct: c.creditedPct, buyCreditedPct: c.buyPct, observedPctOfHorizon: c.obsPct,
                 classified: c.cls, subReason: c.sub || null,
                 medianBucketGapVsAskPct: c.medGapPct, bucketsWithVolumeShare: c.volShare,
-                bucketsAtLeast5PctBelowShare: c.sustainShare, bucketsInWindow: c.n, why: c.why })) };
+                bucketsAtLeast5PctBelowShare: c.sustainShare, bucketsInWindow: c.n,
+                /* THE SHAPE REPORT'S ROWS (Aug 13 2026). `wouldReclassify: 3` shipped as a
+                   bare count while the per-case spread it was computed from was exported
+                   nowhere — a rollup without its rows, in a file, which is the
+                   interrogability rule in its widened form. The reader could not check
+                   which three cases moved, or on what spread. Both now travel with every
+                   case, so the count decomposes inside the artefact. */
+                quotedSpreadPct: c.spreadPct,
+                spreadRelativeBandPct: c.spreadPct > 0
+                  ? Math.round(c.spreadPct * SELL_SPREAD_REL_FRACTION * 100) / 100 : null,
+                gapAsShareOfSpread: (c.spreadPct > 0 && c.medGapPct != null)
+                  ? Math.round(Math.abs(c.medGapPct) / c.spreadPct * 100) / 100 : null,
+                wouldReclassifyUnderSpreadRelative: (c.spreadPct > 0 && c.medGapPct != null)
+                  ? (sellRelClassOf(c) !== c.cls) : null,
+                classUnderSpreadRelative: (c.spreadPct > 0 && c.medGapPct != null)
+                  ? sellRelClassOf(c) : null,
+                why: c.why })) };
           };
           return {
             thresholdsProposedNotRuled: {

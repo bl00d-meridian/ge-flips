@@ -7032,6 +7032,70 @@
     out.push("FAIL regime separators :: " + (e && e.stack || e));
   }
 
+  /* ═══ §66 · sell discriminator first-run findings ═══ */
+  try {
+    const bkt = (hi, hv) => ({ hi, hv });
+    /* [R66.1] no print at all is the STRONGEST illiquidity case. The real
+       shape from the live run: 48 buckets, not one high print. */
+    const none = classifySellFailure(Array.from({ length: 48 }, () => bkt(null, 0)), 1000);
+    ok("[R66.1] no high print in ANY bucket classifies as no-liquidity, not as the residue",
+       none.cls === "no-liquidity" && /strongest illiquidity/.test(none.why),
+       JSON.stringify(none));
+    ok("[R66.1] and it is distinguished from prints-without-volume, which keeps its own wording",
+       (() => { const pv = classifySellFailure([bkt(990, 0), bkt(995, 0)], 1000);
+                return pv.cls === "no-liquidity" && /prints but no high-side volume/.test(pv.why); })(),
+       JSON.stringify(classifySellFailure([bkt(990, 0), bkt(995, 0)], 1000)));
+    ok("[R66.1] a real gap still classifies normally — the new branch does not swallow measurable cases",
+       classifySellFailure([bkt(995, 5), bkt(996, 5)], 1000).cls === "dilution",
+       JSON.stringify(classifySellFailure([bkt(995, 5), bkt(996, 5)], 1000)));
+
+    /* [R66.3] sellRelClassOf is ONE implementation, and the export's
+       per-case fields are computed from it. Asserted at the term. */
+    const cRel = { spreadPct: 18.2, medGapPct: -4.3, sustainShare: 0.5, cls: "unclassified", item: "probe" };
+    ok("[R66.3] the spread-relative band reclassifies a wide-spread case the absolute band could not",
+       sellRelClassOf(cRel) === "dilution" && cRel.cls === "unclassified",
+       JSON.stringify({ rel: sellRelClassOf(cRel), abs: cRel.cls, band: cRel.spreadPct * SELL_SPREAD_REL_FRACTION }));
+    ok("[R66.3] and a narrow-spread case with the same gap stays unclassified — the point of the shape",
+       sellRelClassOf({ spreadPct: 4.02, medGapPct: -2.98, sustainShare: 0.13 }) === "unclassified",
+       "narrow spread, same absolute gap");
+    const shape = sellShapeReport([
+      cRel,
+      { spreadPct: 19.17, medGapPct: -3.92, sustainShare: 0.33, cls: "unclassified", item: "b" },
+      { spreadPct: 17.21, medGapPct: -2.17, sustainShare: 0.23, cls: "unclassified", item: "c" },
+      { spreadPct: 6.64, medGapPct: -3.56, sustainShare: 0.05, cls: "unclassified", item: "d" },
+      { spreadPct: 4.02, medGapPct: -2.98, sustainShare: 0.13, cls: "unclassified", item: "e" },
+      { spreadPct: 11.28, medGapPct: -16.73, sustainShare: 0.88, cls: "mislocated-window", item: "f" },
+      { spreadPct: 4.63, medGapPct: -0.94, sustainShare: 0, cls: "dilution", item: "g" },
+      { spreadPct: 8.39, medGapPct: -6.63, sustainShare: 0.8, cls: "mislocated-window", item: "h" }
+    ]);
+    ok("[R66.3] the reclassification count OPENS to the cases that move, by name and with their spreads",
+       shape.enough && shape.wouldReclassify === 3 && shape.cases.length === 3
+       && shape.cases.every(m => m.item && m.spreadPct > 0 && m.from && m.to),
+       JSON.stringify({ n: shape.wouldReclassify, cases: shape.cases }));
+    ok("[R66.3] and it reports what the relative form does to ALL THREE classes, not just the movers",
+       shape.classCountsUnderRelative
+       && shape.classCountsUnderRelative.dilution === 4
+       && shape.classCountsUnderRelative.mislocatedWindow === 2
+       && shape.classCountsUnderRelative.unclassified === 2,
+       JSON.stringify(shape.classCountsUnderRelative));
+    ok("[R66.4] the relative form is a REPORT — the live classifier is still the absolute one",
+       classifySellFailure([bkt(956, 5), bkt(957, 5)], 1000).cls === "unclassified",
+       "a -4.3% gap on a wide-spread item still reads unclassified in the product");
+  } catch(e){
+    out.push("FAIL sell discriminator findings :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R66.2] a falsified prediction reads as a result. Driven through the
+       real verdict builder by seeding the two populations' splits. */
+    const keepBk = DB.shadowBook, keepCal = DB.calib;
+    const html = sellDiscriminatorHTML(null);
+    ok("[R66.2] the panel names the falsification test rather than only its inputs",
+       /falsification test/i.test(html), html.slice(0, 200));
+    DB.shadowBook = keepBk; DB.calib = keepCal;
+  } catch(e){
+    out.push("FAIL sell falsification copy :: " + (e && e.stack || e));
+  }
+
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter
