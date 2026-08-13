@@ -70,6 +70,48 @@ qualifies.**
 
 # 2026-08-13
 
+### M143 · A stale assertion kept passing for an incidental reason after its rule was superseded
+2026-08-13 · found by: noticing the suite stayed green through a ratification · pattern: `TEST-SUITE`
+
+`[R66.4]` asserted *"the relative form is a REPORT — the live classifier is still the
+absolute one"*. When the spread-relative band was ratified and made live, **the suite stayed
+green** — because the assertion called `classifySellFailure` **without a spread**, so the
+fallback band answered and the old expectation still held. The assertion was testing a rule
+that no longer existed, and passing for a reason unrelated to the claim in its own name.
+
+Root cause: the assertion's subject was reachable by an argument shape the product no longer
+uses at that call site. **This is the twelfth face at one remove** — not manufacturing an
+impossible state, but continuing to exercise a now-vestigial code path and reading its
+answer as the product's. The tell is the same and worth carrying: **a ratification that
+changes behaviour and breaks no test has either no coverage or stale coverage, and green is
+not the evidence of which.** Fixed by driving the classifier with the spread the product
+threads, asserting the ratified behaviour in both directions, and seeding the reversion.
+
+Substantiated from: the suite reporting PROBE-PASS immediately after the band was made
+live; REQUIREMENTS.md R66.4 as it read before and after; `tools/probe/probe-snippet.html`.
+
+### M142 · An absence filed as an ambiguity, and a residue that was a threshold artifact
+2026-08-13 · found by: reading the first live discriminator run · pattern: `SILENT-STATE`
+
+Two of the ten "neither fits" sell failures had **no high print across 48 buckets** — the
+strongest possible illiquidity finding — and were filed as `unclassified`, because
+`classifySellFailure` gave the `no-liquidity` name to the *weaker* condition below it
+(prints, but no volume). `ofWhichNoLiquidity` therefore reported **0** while two cases were
+exactly that.
+
+**The pile meaning "we could not tell" must never absorb the cases meaning "there was
+nothing there."** That is the never-fed-aggregate root in a classifier rather than in a
+statistic, and it is why the residue looked like a mechanism worth naming.
+
+The wider finding is recorded as case law rather than here: the whole ten-case pile was a
+**threshold artifact**, an absolute band measuring a phenomenon proportional to each item's
+spread. No third class was invented, and the discriminator's refusal to name one is what
+made the pile legible in the first place.
+
+Substantiated from: `analysis-calibration-2026-08-13.json`, live cases with null
+`medianBucketGapVsAskPct` against `ofWhichNoLiquidity: 0`; REQUIREMENTS.md R66.1; CLAUDE.md
+case law, *the residue that was a threshold artifact*.
+
 ### M141 · Every export class but one had no collector, for a week
 2026-08-13 · found by: user, after paying the cost every session · pattern: `COMPOSITION`
 

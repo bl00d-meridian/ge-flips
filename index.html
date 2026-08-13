@@ -8081,7 +8081,7 @@ function buyAbsorption(p){
 /* One failed sell → one computed classification, with the figures that
    produced it. Buckets are {hi, hv} inside the sell window; `ask` is the
    price the leg was asking. */
-function classifySellFailure(buckets, ask){
+function classifySellFailure(buckets, ask, spreadPct){
   const bs = buckets || [];
   const base = { n: bs.length, medGapPct: null, volShare: null, sustainShare: null };
   if (!(ask > 0)) return { ...base, cls: "unclassified", why: "no ask price recorded — nothing to measure a gap against" };
@@ -8110,11 +8110,27 @@ function classifySellFailure(buckets, ask){
   const gaps = withVol.map(b => (b.hi - ask) / ask * 100);
   const medGapPct = Math.round(medianOf(gaps) * 100) / 100;
   const sustainShare = Math.round(gaps.filter(g => g <= -SELL_MISLOC_GAP_PCT).length / gaps.length * 100) / 100;
-  const out = { ...base, medGapPct, sustainShare };
-  if (medGapPct >= -SELL_DILUTION_GAP_PCT)
+  /* THE DILUTION BAND IS SPREAD-RELATIVE (RATIFIED Aug 13 2026). It was a flat
+     1.0%; it is now a third of the item's OWN spread, because the phenomenon it
+     detects is proportional and an absolute band was doing different work at
+     the two ends of a 3.28%–19.17% spread range. The evidence: of the ten
+     "neither fits" cases in the first live run, the median gap ran 0.13–0.74 of
+     the item's own spread — inside what the spread can explain — while the
+     mislocated pile ran 0.40–2.57, beyond it. The pile was a THRESHOLD
+     ARTIFACT, not a mechanism.
+     The absolute band survives as `absCls` for one week so the two can be seen
+     disagreeing in the wild before it retires; nothing reads it for a verdict. */
+  const relBand = spreadPct > 0 ? spreadPct * SELL_SPREAD_REL_FRACTION : SELL_DILUTION_GAP_PCT;
+  const absCls = medGapPct >= -SELL_DILUTION_GAP_PCT ? "dilution"
+    : (medGapPct <= -SELL_MISLOC_GAP_PCT && sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
+    : "unclassified";
+  const out = { ...base, medGapPct, sustainShare, spreadPct: spreadPct || null,
+                relBandPct: Math.round(relBand * 100) / 100, absCls };
+  if (medGapPct >= -relBand)
     return { ...out, cls: "dilution",
-      why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask with volume present on "
-         + Math.round(out.volShare * 100) + "% of buckets — inside the intra-bucket range, so prints above the ask are plausible" };
+      why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask — inside a third of this item's own "
+         + Math.round(spreadPct * 100) / 100 + "% spread (" + Math.round(relBand * 100) / 100 + "%) — with volume present on "
+         + Math.round(out.volShare * 100) + "% of buckets, so prints above the ask are plausible" };
   if (medGapPct <= -SELL_MISLOC_GAP_PCT && sustainShare >= SELL_MISLOC_SUSTAIN)
     return { ...out, cls: "mislocated-window",
       why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask and " + Math.round(sustainShare * 100)
@@ -8219,7 +8235,8 @@ function calibSellCases(c){
     .map(r => Object.assign({ item: r.item, itemId: r.itemId, verdict: r.sell.lenient.verdict,
       creditedPct: r.sell.lenient.creditedPct },
       { spreadPct: (r.ask > 0 && r.bid > 0) ? Math.round((r.ask / r.bid - 1) * 10000) / 100 : null },
-      classifySellFailure((r.sell.trace || []).map(b => ({ hi: b.hi, hv: b.hv })), r.ask)));
+      classifySellFailure((r.sell.trace || []).map(b => ({ hi: b.hi, hv: b.hv })), r.ask,
+        (r.ask > 0 && r.bid > 0) ? (r.ask / r.bid - 1) * 100 : 0)));
 }
 /* Population B: the live book. A trip that resolved without its sell leg
    completing — including the pattern that raised this: zero sell credit on a
@@ -8232,7 +8249,8 @@ function paperSellCases(){
       verdict: p.state, creditedPct: Math.round(100 * (p.sellQ || 0) / Math.max(1, p.qty)),
       buyPct: Math.round(100 * (p.buyQ || 0) / Math.max(1, p.qty)), obsPct: shadowObsPct(p),
       spreadPct: (p.ask > 0 && p.bid > 0) ? Math.round((p.ask / p.bid - 1) * 10000) / 100 : null },
-    classifySellFailure(p.sellTrace || [], p.ask)));
+    classifySellFailure(p.sellTrace || [], p.ask,
+      (p.ask > 0 && p.bid > 0) ? (p.ask / p.bid - 1) * 100 : 0)));
 }
 /* One replayed flip, both legs. Extracted so an assertion can test the WIRING
    — that the sell is graded regardless of what the buy did — rather than only
@@ -8456,7 +8474,53 @@ function sellSplitHTML(lab, cases, key, extra){
     + (s.n ? row("dilution", s.dilution) + row("mislocated window", s.mislocated)
              + row("neither fits", s.unclassified, s.noLiquidity ? "of which " + s.noLiquidity + " no-liquidity" : "") : '');
 }
+/* THE RETIRED BAND, RENDERED BESIDE THE LIVE ONE FOR ONE WEEK (user ruling,
+   Aug 13 2026). A constant ratified on 16 cases should be seen disagreeing with
+   its predecessor in the wild before the predecessor goes, so the absolute
+   classification is computed alongside and the disagreements are named. It
+   retires on its own date — no flag day to remember, the `shadowPurgeV1`
+   pattern — and while it stands it reports rather than gates: nothing reads
+   `absCls` for a verdict. */
+const SELL_ABS_BAND_RETIRES = Date.UTC(2026, 7, 20);   // Aug 20 2026, one week
+const SELL_REL_BAND_KEY = "sell dilution band → spread-relative (2026-08-13)";
+function sellRelBandLog(){
+  if (S.sellRelLogged) return;
+  S.sellRelLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === SELL_REL_BAND_KEY)) return;
+  logDecision("settings", SELL_REL_BAND_KEY, "flat " + SELL_DILUTION_GAP_PCT + "% → a third of the item's own spread",
+    "RATIFIED. The dilution band detects a phenomenon proportional to the spread, and a flat band was doing different "
+    + "work across a 3.28%–19.17% spread range. The fraction is 1/3, chosen so an item whose spread equals the ROI "
+    + "floor lands near the ruled 1.0% — the two agree on the population the absolute figure came from and diverge "
+    + "only where the question is whether they should. Three of 16 cases move, all wide-spread items whose gap is a "
+    + "fifth to a quarter of their own spread; an independent computation reproduced the export's own wouldReclassify "
+    + "figure, which is the cross-check that made it rulable. The absolute band renders beside it until "
+    + "2026-08-20 and is read for nothing.", 1);
+}
+function sellAbsShadowHTML(cases){
+  if (Date.now() >= SELL_ABS_BAND_RETIRES) return "";
+  const cs = (cases || []).filter(c => c && c.absCls && c.cls);
+  if (!cs.length) return "";
+  const differ = cs.filter(c => c.absCls !== c.cls);
+  const daysLeft = Math.max(0, Math.ceil((SELL_ABS_BAND_RETIRES - Date.now()) / 86400e3));
+  const face = differ.length + " of " + cs.length;
+  return '<div class="note" style="margin-top:6px"><b>The retiring absolute band, for comparison</b> — the flat '
+    + SELL_DILUTION_GAP_PCT + '% dilution threshold the spread-relative band replaced on Aug 13 2026. It is computed '
+    + 'and shown, never read for a verdict, and retires in <b>' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + '</b>. '
+    + 'Disagreements: ' + drill("sell:absshadow", '<b>' + face + '</b>', {
+        head: "cases the two bands classify differently",
+        cols: [{ k: "item", lab: "item" }, { k: "spread", lab: "spread", num: 1 },
+               { k: "gap", lab: "median gap", num: 1 }, { k: "band", lab: "relative band", num: 1 },
+               { k: "abs", lab: "absolute band said" }, { k: "rel", lab: "ratified band says" }],
+        rows: differ.map(c => ({ item: c.item, spread: (c.spreadPct || 0).toFixed(2) + "%",
+          gap: c.medGapPct + "%", band: (c.relBandPct || 0).toFixed(2) + "%", abs: c.absCls, rel: c.cls })),
+        empty: "The two bands agree on every case so far.",
+        note: "The ratified band is a third of each item's own spread. Where they disagree the item's spread is wide "
+            + "enough that a gap the flat 1% called ambiguous sits inside what that spread explains."
+      })
+    + ' case' + (differ.length === 1 ? '' : 's') + '.</div>';
+}
 function sellDiscriminatorHTML(c){
+  try { sellRelBandLog(); } catch(e){}
   const cal = calibSellCases(c), live = paperSellCases();
   const calS = sellSplitOf(cal), liveS = sellSplitOf(live);
   let verdict;
@@ -8497,10 +8561,28 @@ function sellDiscriminatorHTML(c){
     + ' <span class="dim">The live book is the falsification test: its sell leg accrues forward from the moment the buy '
     + 'finished and has no window to place, so mislocation cannot occur there by construction. A defect present in both '
     + 'populations therefore does not depend on window placement.</span></div>'
+    /* THE LOCALISATION, in the words it was ruled in (Aug 13 2026). It is the
+       strongest statement the two populations support together, and it belongs
+       above the split rather than in a caveat: it rules OUT three explanations
+       by construction, which is worth more than any of the counts below. */
+    + '<div class="plan-note" style="white-space:normal"><b>Every real logged sell completed; 17 simulated sells with a '
+    + 'complete buy and a fully observed horizon did not.</b> That localises the defect to the <b>live sell credit '
+    + 'path</b> and rules out window, horizon and observation coverage — the replay reproduces reality on the buy leg '
+    + 'and cannot on the sell leg with buy completion and observation both held at 100%.</div>'
+    /* NO THIRD CLASS (user ruling, Aug 13 2026). Recorded where the pile
+       renders, because the next reader of a large "neither fits" count will
+       otherwise reach for the same explanation this one did not need. */
+    + '<div class="plan-note" style="white-space:normal"><b>The "neither fits" pile was a threshold artifact, not a '
+    + 'mechanism.</b> Its cases sat at 0.13–0.74 of each item\'s own spread — inside what the spread explains — while '
+    + 'the mislocated pile ran 0.40–2.57, beyond it. <b>Fault A is the mechanism for the whole pile</b>: a 5-minute '
+    + 'average read as if it described the interval, already on the register. <b>No third class was invented.</b> The '
+    + 'discriminator did its job precisely by refusing to name a mechanism for cases that turned out to be one already '
+    + 'known — a large residue was evidence about the THRESHOLDS, not about the market.</div>'
     + sellSplitHTML("Calibration — replayed real flips, every logged sell completed", cal, "sell:cls:calib",
         "any verdict but sold is a model error") + ' ' + provTag(false)
     + sellSplitHTML("Live book — simulated sells that never completed", live, "sell:cls:live",
         "zero or partial sell credit on a resolved trip") + ' ' + provTag(true)
+    + sellAbsShadowHTML(cal.concat(live))
     /* AMENDMENT (b): is a global percentage the right shape at all? Reported
        once the sample permits; nothing changes on it without a ruling. */
     + (() => {

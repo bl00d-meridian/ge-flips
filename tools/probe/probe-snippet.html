@@ -7078,9 +7078,25 @@
        && shape.classCountsUnderRelative.mislocatedWindow === 2
        && shape.classCountsUnderRelative.unclassified === 2,
        JSON.stringify(shape.classCountsUnderRelative));
-    ok("[R66.4] the relative form is a REPORT — the live classifier is still the absolute one",
-       classifySellFailure([bkt(956, 5), bkt(957, 5)], 1000).cls === "unclassified",
-       "a -4.3% gap on a wide-spread item still reads unclassified in the product");
+    /* RATIFIED Aug 13 2026 — this assertion previously claimed the absolute
+       band was still live, and kept passing after the ratification only because
+       it called the classifier WITHOUT a spread, so the fallback band answered.
+       A stale assertion passing for an incidental reason. Now driven with the
+       spread the product threads, on the real Rune shield (h4) shape. */
+    const wide = classifySellFailure([bkt(956, 5), bkt(957, 5)], 1000, 18.2);
+    ok("[R66.4] the RATIFIED band is live: a -4.3% gap inside a third of an 18.2% spread is dilution",
+       wide.cls === "dilution" && wide.relBandPct > 6 && wide.relBandPct < 6.2,
+       JSON.stringify(wide));
+    ok("[R66.4] the same gap on a narrow spread is NOT dilution — the band is proportional, not looser",
+       classifySellFailure([bkt(956, 5), bkt(957, 5)], 1000, 4.02).cls === "unclassified",
+       JSON.stringify(classifySellFailure([bkt(956, 5), bkt(957, 5)], 1000, 4.02)));
+    ok("[R66.4] the retiring absolute band is carried ALONGSIDE and disagrees where expected",
+       wide.absCls === "unclassified" && wide.cls === "dilution",
+       JSON.stringify({ abs: wide.absCls, rel: wide.cls }));
+    ok("[R66.4] and the comparison panel names the disagreeing cases while it stands",
+       (() => { const h = sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)]);
+                return /retiring absolute band/.test(h) && /1 of 1/.test(h); })(),
+       sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)]).slice(0, 200));
   } catch(e){
     out.push("FAIL sell discriminator findings :: " + (e && e.stack || e));
   }
@@ -7091,6 +7107,20 @@
     const html = sellDiscriminatorHTML(null);
     ok("[R66.2] the panel names the falsification test rather than only its inputs",
        /falsification test/i.test(html), html.slice(0, 200));
+    ok("[R66.5] the localisation renders in the ruled words, above the split",
+       /Every real logged sell completed/.test(html)
+       && /17 simulated sells with a complete buy and a fully observed horizon did not/.test(html)
+       && /rules out window, horizon and observation coverage/.test(html),
+       html.slice(0, 300));
+    ok("[R66.6] no third class: the pile is recorded as a threshold artifact, and the refusal is stated",
+       /threshold artifact, not a\s+mechanism/.test(html)
+       && /No third class was invented/.test(html)
+       && /evidence about the THRESHOLDS, not about the market/.test(html),
+       html.slice(0, 300));
+    ok("[R66.6] and it forbids the contradicting claim — the pile is never called a new mechanism",
+       !/third (class|mechanism) (is|should be) (proposed|added)/i.test(html)
+       && !/a new mechanism/i.test(html),
+       "negative match, per the eleventh face");
     DB.shadowBook = keepBk; DB.calib = keepCal;
   } catch(e){
     out.push("FAIL sell falsification copy :: " + (e && e.stack || e));

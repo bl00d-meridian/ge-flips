@@ -661,6 +661,46 @@ Three companions, each of which cost something here:
   is the metric-honesty rule catching an operator that was correct arithmetic on a
   denominator whose sign changed its meaning.
 
+## Case law: the residue that was a threshold artifact (user ruling, Aug 13 2026)
+
+**A large "neither fits" pile is evidence about the THRESHOLDS before it is evidence about
+the market.** The sell discriminator's first live run classified 10 of 17 failures as
+neither dilution nor mislocation — a residue larger than both named mechanisms combined,
+and exactly the shape that invites a third class.
+
+There was no third mechanism. Decomposed, the ten were four different things: **2** had no
+high print in 48 buckets (illiquidity, and the classifier was filing that stronger case in
+the residue while giving the name to the weaker prints-but-no-volume condition); **3** sat
+inside a third of the item's own spread; **2** were three and six points of *sustain* short
+of the mislocation bar rather than between the gap bands at all; **3** were genuine
+residue. Measured against each item's own spread, the residue ran **0.13–0.74** — inside
+what the spread explains — while the mislocated pile ran **0.40–2.57**, beyond it.
+
+**Fault A was the mechanism for the whole pile** — a 5-minute average read as if it
+described the interval — and it was already on the contamination register. The pile existed
+because an absolute band was measuring a proportional phenomenon: half a spread lands inside
+the 1% dilution band on a tight item and outside it on a wide one, so the same physics
+classified three different ways depending on the item.
+
+**The discriminator did its job by refusing.** It was built so that "neither fits" is a real
+available outcome rather than a residue forced into one of two buckets, and that refusal is
+what made the pile legible instead of mislabelling ten cases as dilution or mislocation. The
+lesson is the reverse of the intuitive one: **a classifier producing a large unclassified
+pile may be working perfectly, and the first thing to check is whether its thresholds are
+the wrong SHAPE, not whether it is missing a class.**
+
+Three corollaries, each of which cost something here:
+
+- **An absence must never be filed as an ambiguity.** The two no-print cases were the
+  strongest illiquidity finding available and sat in the pile meaning "we could not tell".
+  The named class existed and was pointed at the weaker condition.
+- **A stale-input hypothesis is testable by dimension.** The proposed explanation was a
+  stale or offset ask, which would produce a roughly *constant absolute* gap. The gaps ran
+  −2.17% to −10.87% in proportion to spread, which falsified it without needing new data.
+- **A pattern shared by every case is not a discriminator.** Buy credit 100% and observation
+  100% held for 15 of 17 — including both named classes — so it described what it takes to
+  *have* a failing sell leg, not what caused one.
+
 ## Integration audit (standing discipline — user ruling, Aug 10 2026)
 
 Run by the agent **after any week containing a build session; skip after pure-usage
