@@ -293,6 +293,19 @@ details.teach>summary::-webkit-details-marker{display:none}
 details.teach>summary::before{content:"▸ ";color:var(--dim)}
 details.teach[open]>summary::before{content:"▾ "}
 details.teach>.note{padding:4px 0 2px 12px;border-left:1px solid var(--line);margin-top:3px}
+/* Verdict-first heads. The question is the largest thing on the surface and
+   the answer sits directly under it; everything else folds. */
+.vhead{padding:2px 0 10px}
+.vhead .vq{font-size:16px;font-weight:600;color:var(--fg);line-height:1.35}
+.vhead .va{font-size:14px;line-height:1.5;margin-top:5px}
+.vhead .vs{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:4px}
+.vwait{font-size:14px;line-height:1.5}
+details.fold{margin:5px 0;border-top:1px solid var(--line)}
+details.fold>summary{font-size:12.5px;color:var(--fg);cursor:pointer;list-style:none;padding:7px 0}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"▸ ";color:var(--dim)}
+details.fold[open]>summary::before{content:"▾ "}
+.foldbody{padding-bottom:6px}
 .ac{position:relative;flex:1;min-width:170px}
 .ac ul{
   position:absolute;z-index:20;top:100%;left:0;right:0;margin:2px 0 0;padding:0;list-style:none;
@@ -7092,6 +7105,44 @@ function gateStreamDirs(g, ghRows, shBucket){
    otherwise, which is the whole point of the exercise. */
 function teach(summary, fullHTML){
   return '<details class="teach"><summary>' + esc(summary) + '</summary><div class="note">' + fullHTML + '</div></details>';
+}
+/* ═══ VERDICT-FIRST (user ruling, Aug 12 2026) ════════════════════════════
+   These three surfaces were dense because everything rendered at once BY
+   DESIGN. The copy cut helped the wrong layer. Inverted: each surface opens
+   with its own question answered in one sentence, and everything else
+   collapses behind a disclosure labelled by what it would tell you.
+
+   The accrual state is the part that matters most. An empty table with six
+   caveats is not an answer; "Not yet — 14 of 30 trips needed, ~2 days at the
+   current rate" is, and the rate is computable because the capacity ceiling
+   already is. A progress statement is a satisfying thing to read; a zero-row
+   table is not.
+
+   Interrogability is untouched — the rule says decomposable in ONE CLICK, not
+   permanently exploded. Every row is still one tap away. */
+function verdictHead(question, answerHTML, sub){
+  return '<div class="vhead"><div class="vq">' + esc(question) + '</div>'
+    + '<div class="va">' + answerHTML + '</div>'
+    + (sub ? '<div class="vs">' + sub + '</div>' : '') + '</div>';
+}
+/* A section that collapses. `label` says what opening it would TELL you —
+   "the 14 trips behind this", not "table". */
+function fold(label, innerHTML, open){
+  if (!innerHTML || !String(innerHTML).trim()) return '';
+  return '<details class="fold"' + (open ? ' open' : '') + '><summary>' + esc(label) + '</summary>'
+    + '<div class="foldbody">' + innerHTML + '</div></details>';
+}
+/* NOTHING RENDERS AN EMPTY SHELL. A section with no data states what it needs
+   and when it expects to have it — never a header, never a zero-row table,
+   never its caveats. A caveat about a number that does not exist is noise. */
+function awaiting(what, have, need, perDay){
+  const left = Math.max(0, need - have);
+  const days = perDay > 0 ? Math.ceil(left / perDay) : null;
+  return '<div class="vwait"><b>Not yet</b> — ' + have + ' of ' + need + ' ' + esc(what) + ' needed'
+    + (left > 0 && days != null
+        ? ', ~' + days + ' day' + (days === 1 ? '' : 's') + ' at the current rate'
+        : left > 0 ? ', and nothing is accruing right now' : '')
+    + '.</div>';
 }
 function paperCaveat(){
   return '<div class="plan-note">Screening tool, not evidence — the sim assumes a book you\'re not in; thin books change when you post. '
@@ -16567,6 +16618,75 @@ function analysisExport(view){
    Paper Book, Prospecting and Gate Health render only their own sub-view.
    They present no decisions — every ruling still happens on the plan, the
    row, or the digest — so the walk-up attention budget is untouched. */
+/* ═══ THE THREE QUESTIONS (user ruling, Aug 12 2026) ══════════════════════
+   Each surface exists to answer exactly one, so each says so and answers it
+   before anything else renders. Contamination and stall states are the stated
+   exception: they stay loud and stay above the fold. */
+const SHADOW_ROW_MIN_VERDICT = 30;   // closed counted trips before the paper book can answer its own question
+function paperVerdict(){
+  const closed = paperClosed();
+  const cap = paperCapacity(null);
+  /* Exception to everything below: these render first, at full weight. */
+  const loud = paperStaleHostNote() + (paperDefectsOpen().length
+    ? '<div class="neg" style="white-space:normal;margin-bottom:6px">⚠ <b>Answers here are provisional</b> — '
+      + esc(paperHealthTxt()) + '.</div>' : '');
+  if (closed.length < SHADOW_ROW_MIN_VERDICT)
+    return loud + verdictHead("Does my edge survive honest fills?",
+      awaiting("closed trips", closed.length, SHADOW_ROW_MIN_VERDICT, cap.ceiling),
+      "The paper book screens candidates against a fill model that only credits tape it actually observed. "
+      + "It cannot answer yet, and says so rather than showing an empty table.");
+  const net = closed.reduce((a, p) => a + (p.net || 0), 0);
+  const filled = closed.filter(p => p.state === "filled").length;
+  const rate = Math.round(100 * filled / closed.length);
+  return loud + verdictHead("Does my edge survive honest fills?",
+    (net > 0
+      ? '<b>Yes, on the screen so far</b> — ' + closed.length + ' closed trips, ' + rate + '% filled both legs, net '
+        + '<span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span> simulated.'
+      : '<b>Not on this evidence</b> — ' + closed.length + ' closed trips, ' + rate + '% filled both legs, net '
+        + '<span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span> simulated.'),
+    "Simulated throughout — a screen for candidates, never a claim about realized profit.");
+}
+function gateVerdict(){
+  const gh = gateHealthAudit();
+  const n = (gh.rows || []).length;
+  if (!n)
+    return verdictHead("Are my gates too tight or too loose?",
+      '<div class="vwait"><b>Not yet</b> — no gate has benched anything this week, so there is nothing to judge them on.</div>',
+      "This surface reads two streams per gate: what you traded while it was benching, and what the paper screen says "
+      + "would have happened. It needs benches before either exists.");
+  const tooTight = (gh.rows || []).filter(r => r.dir === "loosen").length;
+  const answer = tooTight > 0
+    ? '<b>' + tooTight + ' gate' + (tooTight === 1 ? ' looks' : 's look') + ' too tight</b> on this week\'s evidence, of '
+      + n + ' with benches. The rest are doing their job.'
+    : '<b>None look too tight</b> — all ' + n + ' gate' + (n === 1 ? '' : 's') + ' with benches this week are supported '
+      + 'by their own outcome evidence.';
+  return verdictHead("Are my gates too tight or too loose?", answer,
+    "A gate is only indicted when realized overrides AND the paper screen agree; disagreement is its own finding.");
+}
+function prospectVerdict(){
+  const keys = Object.keys(DB.strataStats || {});
+  const tot = keys.reduce((a, k) => { const s = DB.strataStats[k]; a.samp += s.samp || 0; a.trips += s.trips || 0;
+    a.net += s.net || 0; return a; }, { samp: 0, trips: 0, net: 0 });
+  if (!tot.samp)
+    return verdictHead("Where in the market is there edge I'm not fishing?",
+      '<div class="vwait"><b>Not yet</b> — no strata sampled. The rotation stamps them as cycles run with the scanner open.</div>',
+      "This surface draws from structural regions of the market nothing else looks at, and keeps a durable count of "
+      + "what it found there.");
+  if (tot.trips < 10)
+    return verdictHead("Where in the market is there edge I'm not fishing?",
+      awaiting("closed trips across all strata", tot.trips, 10, paperCapacity(null).ceiling),
+      tot.samp + " distinct items have been gate-tested across " + keys.length + " stratum"
+      + (keys.length === 1 ? "" : "a") + " — the sampling is working; the outcomes have not matured.");
+  const best = keys.map(k => ({ k, s: DB.strataStats[k] })).filter(x => (x.s.trips || 0) >= 3)
+    .sort((a, b) => (b.s.net || 0) - (a.s.net || 0))[0];
+  return verdictHead("Where in the market is there edge I'm not fishing?",
+    best
+      ? '<b>' + esc(STRATUM_LAB(best.k)) + '</b> leads on simulated net (' + gp(Math.round(best.s.net || 0))
+        + ' over ' + best.s.trips + ' closed trips) across ' + keys.length + ' stratum'
+        + (keys.length === 1 ? '' : 'a') + ' and ' + tot.samp + ' distinct items tested.'
+      : '<b>No stratum has enough closed trips to rank yet</b> — ' + tot.samp + ' items tested, outcomes still maturing.',
+    "Simulated screening data, and stratum membership is name-matched except F2P and the price bands.");
+}
 function renderPaperView(){
   const closed = paperClosed();
   $("#paperRegimeSub").textContent = closed.length + " closed trip" + (closed.length === 1 ? "" : "s")
@@ -16574,26 +16694,35 @@ function renderPaperView(){
     + " · simulated throughout";
   $("#paperGateSub").textContent = shadowByGate().size + " gate" + (shadowByGate().size === 1 ? "" : "s")
     + " with closed outcomes — every cell opens to its trips";
-  setHTML("#paperRegime", paperHeadlineSection() + paperRegimeSection() + calibSection());
-  setHTML("#paperGate", paperGateSection());
-  setHTML("#paperCohort", paperCohortSection());
+  /* Verdict first; the machinery folds behind labels that say what opening
+     them would tell you. The stall line stays above the fold — it is the
+     stated exception, and a book that is not opening invalidates everything
+     below it. */
+  setHTML("#paperRegime", paperVerdict() + shadowScanStateLine(null)
+    + fold("The " + closed.length + " closed trips behind this, per cohort", paperHeadlineSection())
+    + fold("Regime curves — would a looser or tighter ROI floor have done better?", paperRegimeSection())
+    + fold("Fill-model calibration — is the model itself trustworthy?", calibSection()));
+  setHTML("#paperGate", fold("Per-gate outcomes — which gate benched what, and what happened next", paperGateSection()));
+  setHTML("#paperCohort", fold("Per-cohort ledger — watchlist, scanner and discovery slice apart", paperCohortSection()));
 }
 function renderProspectView(){
   const keys = Object.keys(DB.strataStats || {});
   $("#prospectStrataSub").textContent = keys.length + " stratum" + (keys.length === 1 ? "" : "a") + " ledgered"
     + " · durable counters, they outlive the paper book's 30-day pruning";
-  setHTML("#prospectStrata", prospectingInline());
-  setHTML("#prospectGap", gapBandInline());
-  setHTML("#prospectHours", hoursLedgerInline());
+  setHTML("#prospectStrata", prospectVerdict()
+    + fold("Per-stratum map — sampling, near-misses and simulated outcomes by region", prospectingInline()));
+  setHTML("#prospectGap", fold("Gap band 250k–1m — the standing verdict and its trips", gapBandInline()));
+  setHTML("#prospectHours", fold("Hours ledger — which hours of the day carry the widest spreads", hoursLedgerInline()));
 }
 function renderGateView(){
   const gh = gateHealthAudit();
   $("#gateStreamSub").textContent = gh.rows.length + " gate" + (gh.rows.length === 1 ? "" : "s") + " with benches this week";
   $("#gateExcSub").textContent = excActiveN() + " of " + EXC_MAX_ACTIVE + " probation slots in use"
     + (excVoidBasis().length ? " · " + excVoidBasis().length + " on void basis" : "");
-  setHTML("#gateStreams", gateStreamsSection());
-  setHTML("#gateDieOff", gateDieOffSection());
-  setHTML("#gateExc", gateExcSection());
+  setHTML("#gateStreams", gateVerdict()
+    + fold("Two streams per gate — what you traded while benched, and what the screen says", gateStreamsSection()));
+  setHTML("#gateDieOff", fold("Die-off episodes — did the volume tag call real collapses?", gateDieOffSection()));
+  setHTML("#gateExc", fold("Exception lane — items on probation against a gate", gateExcSection()));
 }
 function renderAll(){
   if (S.tab !== "home") renderHomeVitals();   // the strip is global; Home refreshes it inside its own block pass

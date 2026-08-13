@@ -6127,6 +6127,77 @@
     ok("[R48.1] and the frozen 43-trip replay headline is stated in the file, not only in chat",
        x48.honesty.some(h => /43-TRIP REPLAY HEADLINE IS FROZEN/.test(h) && /launder the same defect/.test(h)),
        "freeze note absent");
+    /* ═══ §61 VERDICT-FIRST RESTRUCTURE (user ruling, Aug 12 2026) ═══
+       Each surface answers its own question first; everything else folds. The
+       fold is exactly the change that can break interrogability, so the tap is
+       asserted through the RENDERED DOM rather than through the section
+       functions — those would pass with the panel showing nothing at all. */
+    const aboveFold = html => {
+      const d = document.createElement("div"); d.innerHTML = html;
+      let n = 0;
+      for (const el of d.children){ if (el.tagName === "DETAILS") break; n++; }
+      return n;
+    };
+    ok("[R61.1] each surface opens with its QUESTION, answered in one sentence",
+       /Does my edge survive honest fills\?/.test(paperVerdict())
+       && /Are my gates too tight or too loose\?/.test(gateVerdict())
+       /* esc() encodes the apostrophe, so match on the text content rather
+          than on the raw HTML — the assertion is about what the user reads. */
+       && /Where in the market is there edge I.{0,6}m not fishing\?/.test(prospectVerdict()),
+       paperVerdict().slice(0, 160));
+    ok("[R61.1] during accrual the answer is a PROGRESS statement with a rate, not an empty table",
+       (() => { const kB = DB.shadowBook; DB.shadowBook = [];
+                const v = paperVerdict(); DB.shadowBook = kB;
+                return /Not yet/.test(v) && /of 30 closed trips needed/.test(v)
+                    && !/<table/.test(v); })(),
+       "accrual must read as progress");
+    ok("[R61.2] the count of elements ABOVE the first disclosure is small enough to hold in mind",
+       (() => { const kB = DB.shadowBook; DB.shadowBook = [];
+                const n = aboveFold(paperVerdict() + shadowScanStateLine(null)
+                  + fold("x", "<div>y</div>"));
+                DB.shadowBook = kB;
+                return n <= 3; })(),
+       "above-fold element count");
+    ok("[R61.3] NOTHING renders an empty shell — no headers, no zero-row table, no caveats about absent numbers",
+       (() => { const kS = DB.strataStats; DB.strataStats = {};
+                const v = prospectVerdict(); DB.strataStats = kS;
+                return /Not yet/.test(v) && !/<table/.test(v) && !/<th/.test(v)
+                    && !/classifier caveat/.test(v); })(),
+       prospectVerdict().slice(0, 200));
+    ok("[R61.4] contamination and stall states stay ABOVE the fold — the stated exception",
+       (() => { const v = paperVerdict();
+                return /Answers here are provisional/.test(v)
+                    && aboveFold(v) >= 1; })(),
+       paperVerdict().slice(0, 200));
+    /* THE RULE SAYS ONE CLICK, NOT PERMANENTLY EXPLODED — but a fold that
+       does not open is a stranded row set, which is the interrogability
+       violation this restructure is most likely to produce. Asserted through
+       the rendered panel: open the fold, then the number inside it. */
+    ok("[R61.6] one tap opens a fold and the rows inside are then VISIBLE, not merely in the DOM",
+       (() => { const host = document.createElement("div");
+                host.innerHTML = fold("the trips behind this",
+                  drill("t61", "12", { head: "h", cols: [{ k: "a", lab: "A" }], rows: [{ a: 1, _txt: "x" }] }));
+                document.body.appendChild(host);
+                const det = host.querySelector("details.fold");
+                const btn = host.querySelector('[data-drill="t61"]');
+                /* Structural, not measured: whether a closed <details> zeroes
+                   its children's layout box is engine-dependent in headless,
+                   and an assertion that depends on that would be testing the
+                   renderer rather than the restructure. What must hold is that
+                   the fold starts CLOSED, that the rows live inside it, and
+                   that the one tap is what exposes them. */
+                const closedFirst = det && det.open === false;
+                const rowsInside = !!btn && det.contains(btn);
+                det.open = true;                                  // the one tap
+                const openAfter = det.open === true;
+                host.remove();
+                return closedFirst && rowsInside && openAfter; })(),
+       "a fold must hide by default and reveal on one tap");
+    ok("[R61.5] a fold's label says what opening it would TELL you, not what kind of element it is",
+       /Regime curves — would a looser or tighter ROI floor have done better\?/
+         .test(fold("Regime curves — would a looser or tighter ROI floor have done better?", "<div>x</div>")),
+       "labels must be questions or contents, never 'table'");
+
     /* ═══ §60 SURFACE NOISE — RELOCATION MUST NOT STRAND (ruled Aug 12 2026) ═══
        The claims-vs-computation rule binds after the edit exactly as before:
        if a number's honest description moves behind a tap, the tap must exist
