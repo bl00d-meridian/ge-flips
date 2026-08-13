@@ -14,11 +14,33 @@ bash tools/probe/run.sh
 
 Run from any directory, in Git Bash (the shell that ships with Git for Windows).
 Exit codes: `0` = PROBE-PASS, `1` = setup failure (message says what), `2` = PROBE-FAIL
+(in-page assertions, or the requirements pairing check — see below)
 or script error (read the report), `3` = no report within 90s (see "If the suite hangs").
 
 Prerequisites: Windows with Microsoft Edge installed (the script tries both standard
 install paths; edit `EDGE=` in `run.sh` if yours differs), Windows PowerShell 5.1
 (always present), Git Bash. No network needed — the suite deliberately runs with DNS dead.
+
+## The requirements pairing check (`tools/probe/reqpair.sh`)
+
+Runs after the browser exits, appends a `===PAIRING===` section to the report, and
+**rewrites the report's first line** if it finds anything — so `head -1` never says
+PROBE-PASS while a pairing failure stands. It fails the suite on either direction:
+
+```
+PAIRING FAIL R61.1 — assertion reports this id and REQUIREMENTS.md has no row for it …
+PAIRING FAIL R31.2 — REQUIREMENTS.md cites this assertion and no assertion reported it …
+```
+
+**Fixing the first:** add the requirement row, or retag the assertion to the row it
+actually verifies. A tag with no row reports PASS against nothing.
+**Fixing the second:** write the assertion, correct the citation to the tag that really
+covers the row, or state the row's real verification method — rows verified by
+inspection, UI or documentation cite no probe tag and are exempt automatically.
+
+It lives outside the page because it reads `REQUIREMENTS.md`, which the in-page suite
+cannot. Run it alone against an existing report with
+`bash tools/probe/reqpair.sh . tools/probe/out/probe-report.txt`.
 
 ## Why a beacon instead of --dump-dom
 

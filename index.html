@@ -455,8 +455,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <button data-sub="watch" class="on">Plan &amp; Watchlist</button>
       <button data-sub="scan">Scanner</button>
       <button data-sub="log">Flip Log</button>
-      <button data-sub="paper" title="The paper book: three ROI-regime curves, the divergence ledger, and per-gate simulated outcomes — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
-      <button data-sub="prospect" title="Where the edge lives: the per-stratum map, the gap band's verdict, the hours ledger's two streams, and the recipe basis table — every number opens to its rows.">Prospecting</button>
+      <button data-sub="paper" title="The paper book: three ROI-regime curves, the divergence ledger, the overnight-vs-daytime comparison per cohort, and per-gate simulated outcomes — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
+      <button data-sub="prospect" title="Where the edge lives: the per-stratum map, the gap band's verdict, the hours ledger's two streams — every number opens to its rows.">Prospecting</button>
       <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
     </nav>
 
@@ -466,6 +466,10 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="panel" id="paperRegimePanel">
       <div class="ph"><h2>Paper book — ROI regimes</h2><span class="sub" id="paperRegimeSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="paper" title="Downloads analysis-paper-&lt;date&gt;.json: every closed trip with its provenance, the per-gate rollups and the three regime curves as series. A curated file for handing to an analyst � not the state backup.">⭳ export for analysis</button></span></div>
       <div id="paperRegime"></div>
+    </div>
+    <div class="panel" id="paperShapePanel">
+      <div class="ph"><h2>Overnight vs daytime</h2><span class="sub" id="paperShapeSub"></span></div>
+      <div id="paperShape"></div>
     </div>
     <div class="panel" id="paperGatePanel">
       <div class="ph"><h2>Per-gate paper outcomes</h2><span class="sub" id="paperGateSub"></span></div>
@@ -2843,7 +2847,16 @@ function nextTouchAt(ts){
 function gapHoursAt(ts){
   if (!scheduleOn()) return Math.max(1, DB.fillHorizonH || 4);   // no cadence kept: the old global horizon
   const n = nextTouchAt(ts);
-  return Math.max(1, Math.min(24, (n.at - ts) / 3600e3));
+  /* THE 1-HOUR OUTPUT FLOOR IS GONE (user ruling, Aug 13 2026). It existed so
+     a placement made minutes before a configured touch was not sized for
+     nothing, and it fired constantly because a NOMINAL touch was imminent while
+     the operator was hours away — 1.00h priced against a 10.63h actual return,
+     repeatedly. The paper book no longer reads this at all, and the degenerate
+     input it guarded against (two walk-ups moments apart) is now handled where
+     it arises, by coalescing sessions at SESSION_COALESCE_MIN. One layer owns
+     the promise: the input layer. Only the 24h cap survives, which guards a
+     broken schedule rather than an imminent touch. */
+  return Math.min(24, (n.at - ts) / 3600e3);
 }
 /* The horizon a placement made NOW would run against — what sizing, the
    fill-horizon gate and the fill forecast all read. */
@@ -5492,12 +5505,38 @@ const GATE_CHAIN_ORDER = ["no live price","blacklist","proven-loser bench","ROI 
    dates: the stamp covers days that produced no rows, and the ledger dates
    make the rule work retroactively on a store that predates the stamp,
    without a migration. */
-function observedDaysIn(days){
-  const cutoff = new Date(Date.now() - days * 86400e3).toLocaleDateString("en-CA");
-  const s = new Set((DB.obsDays || []).filter(d => d >= cutoff));
-  for (const e of (DB.gateLog || [])) if (e.d >= cutoff) s.add(e.d);
-  return s.size;
+/* The ledger restricted to a date interval. `observedDaysIn` is the trailing
+   -window case and calls it, so there is one definition of "a day the tool was
+   actually looking" rather than two that can drift apart. `toD` null = open
+   ended. */
+function observedDaySet(fromD, toD){
+  const s = new Set();
+  for (const d of (DB.obsDays || [])) if (d >= fromD && (!toD || d <= toD)) s.add(d);
+  for (const e of (DB.gateLog || [])) if (e.d >= fromD && (!toD || e.d <= toD)) s.add(e.d);
+  return s;
 }
+const dayKeyOf = ts => new Date(ts).toLocaleDateString("en-CA");
+function observedDaysIn(days){
+  return observedDaySet(new Date(Date.now() - days * 86400e3).toLocaleDateString("en-CA"), null).size;
+}
+/* OBSERVED DAYS SPANNED by an interval, expressed as a DURATION so it is
+   directly comparable to a wall-clock day count (user ruling, Aug 13 2026).
+   The −1 is load-bearing and not a fencepost nicety: the set counts calendar
+   days INCLUSIVE, so a trip set running Aug 1 → Aug 8 under perfect coverage
+   holds 8 dates against a wall span of 7.0 days. Comparing that raw count to a
+   ≥7 bar would make the observed clause LOOSER than the wall-clock one it
+   replaced — 6.2 wall days with full coverage would pass a bar 7.0 wall days
+   had failed. Minus one, full coverage equals the wall span exactly and every
+   unobserved day strictly reduces it, which is the only direction this rule is
+   allowed to move. */
+function observedDaysSpanned(fromTs, toTs){
+  return Math.max(0, observedDaySet(dayKeyOf(fromTs), dayKeyOf(toTs)).size - 1);
+}
+/* Retention is a CEILING on both figures and is stated wherever they render:
+   obsDays keeps 30 days and the paper book prunes closed trips at 30, so a
+   60-day record cannot report more than 30 either way. A silently capped span
+   reads as a short history rather than as a truncated one. */
+const SPAN_RETENTION_D = 30;
 /* Returns the PAIR, never a bare count: a caller that renders the numerator
    without its coverage would have to reach into the object to do it, and
    `{n, obs}` interpolated into copy renders as [object Object] rather than as
@@ -5774,8 +5813,18 @@ function shadowEpochNote(){
     + 'the market stream, and the per-stratum sampling history — those record tests performed, not simulated outcomes.</div>';
 }
 const shadowGaps = () => (DB.shadowBook || []).filter(p => p.state === "unobserved").length;
+/* EXTRACTED so an assertion can reach it (the strataCount pattern). Buried
+   inside shadowSizeFor it was untestable in practice: the buy-limit cap clamps
+   both readings to the same number on any ordinary fixture, so reverting this
+   term to FILLH() changed no observable output and a seeded defect passed
+   green. The horizon term is the thing under test, so the horizon term is what
+   gets a name. */
+const shadowHorizonUnits = c => Math.max(1, Math.floor(volGateFor(c).v * GATE.capture * PAPER_HORIZON_H));
 function shadowSizeFor(c){
-  const hu = Math.max(1, Math.floor(volGateFor(c).v * GATE.capture * FILLH()));
+  /* PAPER_HORIZON_H, not FILLH(): a paper trip with a fixed deadline and a
+     schedule-derived SIZE would be half-fixed and invisible (user ruling,
+     Aug 13 2026 — the catch that made the separation complete). */
+  const hu = shadowHorizonUnits(c);
   const cap = planCap(c);
   return Math.max(1, Math.min(hu, cap != null ? cap : hu));
 }
@@ -5863,7 +5912,7 @@ function provNote(downstream){
    Bump this on any change to what a bucket credits. It is not a build id —
    two builds with identical crediting share a model version, because the
    version is a claim about the MEASUREMENT, not about the code. */
-const FILL_MODEL_V = 1;
+const FILL_MODEL_V = 2;   /* 2 = fixed 6h paper horizon (Aug 13 2026); 1 = schedule-derived, never pooled with it */
 function stampPrediction(rec, qty, c){
   rec.fillModelV = FILL_MODEL_V;
   const r = reachFlow(c.id, c.buy);
@@ -5946,6 +5995,29 @@ function stampPrediction(rec, qty, c){
    rides the decision cadence rather than a horizon that shifts underneath it,
    and five fresh hourly readings is what independence means for these inputs.
    Changes only on a further ruling. */
+/* ═══ THE FIXED PAPER HORIZON (user ruling, Aug 13 2026) ═══════════════════
+   The paper book stops predicting when the operator will walk up. Real offers
+   have no deadline — they stand until cancelled — so the horizon was always an
+   artifact of needing the simulation to END somewhere, and tying it to the
+   operator made the book answer "does this fill before he wanders back",
+   which depends on him and cannot converge. Three different verdicts came out
+   of the same 75 trips in one day, each from fixing a LABEL rather than from
+   new data; that is the tell that the dimension was measuring bookkeeping.
+
+   Fixed, every placement gets the same window, and the book answers "does a
+   6h offer fill" — a market question with a stable answer.
+
+   SIX HOURS, from the only uncensored window the book has: of the 26 trips
+   ever given more than 6h, the 14 that filled did so in a median 1.73h, 92%
+   inside 4h, none later than 5.19h. 4h sits on the steep part of that curve
+   where a thinner market moves the answer; 6h clears the observed maximum with
+   margin and buys nothing after that. It costs sample rate — a family is
+   blocked for horizon + 5h cooldown, so 24/11 = 2.18 trips/family/day against
+   2.85 at the old 3.41h median — and that is the trade.
+
+   RE-RULABLE ON EVIDENCE: time-to-fill is recorded per trip, so the curve
+   itself is the argument for moving this number. */
+const PAPER_HORIZON_H = 6;
 const PAPER_FAM_COOLDOWN_H = 5;
 const PAPER_FAM_COOLDOWN_KEY = "paper family cooldown → 5h, severed from the horizon (2026-08-12)";   /* RULED, not interim — approved as proposed */
 function paperCooldownLog(){
@@ -5995,7 +6067,7 @@ const paperFamBlocked = () => {
    would hide that raising the watchlist ceiling and raising the slice ceiling
    are entirely different actions. */
 function paperCapacity(P){
-  const hz = Math.max(0.25, FILLH());
+  const hz = PAPER_HORIZON_H;   /* the book's own horizon, never the schedule's */
   const cycleH = hz + PAPER_FAM_COOLDOWN_H;
   const perFamPerDay = 24 / cycleH;
   const watchFams = P
@@ -6086,7 +6158,9 @@ function shadowScan(P){
     DB.shadowBook.push(Object.assign(stampPrediction({}, qty0, c),
       { id: now + DB.shadowBook.length, fam, itemId: x.id,
       name: itemName(x.id), qty: qty0, bid: c.buy + 1, ask: c.sell - 1,
-      t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
+      t: now, hzH: PAPER_HORIZON_H, grade: "live", openSeq: S.pollSeq,
+      /* Presence at open — an open-time fact, never reconstructable. */
+      anchored: touchAnchoredAt(now),
       /* Regimes are stamped CENTRALLY here, from the candidate's own effective
          ROI, so no entry path can forget (defect fix, Aug 12 2026 — four of
          the six paths used to hardcode an empty set, and in the epoch that
@@ -6197,7 +6271,7 @@ async function scannerShadowScan(){
     let fetches = 0, changed = false;
     for (const t of [1, 2]){
       let opened = 0;
-      for (const x of scanScreenTier(t, SHADOW_LOOSE)){
+      for (const x of scanScreenTier(t, SHADOW_LOOSE, PAPER_HORIZON_H)){
         if (opened >= SHADOW_SCAN_TOP || fetches >= SCOUT_EVAL_PER_TIER) break;
         if (watched.has(x.id) || taken.has(x.id)) continue;
         if (isBlk(x.id)) continue;         // the blacklist is the user's alone (screen already excludes — belt and braces)
@@ -6227,7 +6301,9 @@ async function scannerShadowScan(){
         DB.shadowBook.push(Object.assign(stampPrediction({}, qtyS, c),
           { id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
           itemId: x.id, name: itemName(x.id), qty: qtyS, bid: c.buy + 1, ask: c.sell - 1,
-          t: now, hzH: Math.round(planHorizonH() * 100) / 100, grade: "live", openSeq: S.pollSeq,
+          t: now, hzH: PAPER_HORIZON_H, grade: "live", openSeq: S.pollSeq,
+      /* Presence at open — an open-time fact, never reconstructable. */
+      anchored: touchAnchoredAt(now),
           regimes: regimesFor(c),
           buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
@@ -6701,8 +6777,141 @@ function shadowRegimeEvidence(){
    horizon and not the other is a HORIZON finding, not a gate finding.
    "overnight" is any trip whose own horizon reaches at least the longest
    scheduled gap less an hour's slack; everything else is daytime. */
-const OVERNIGHT_MIN_H = () => { const g = longestGap(); return g ? Math.max(2, g.h - 1) : 8; };
-const shapeOf = p => legHorizonH(p) >= OVERNIGHT_MIN_H() ? "overnight" : "daytime";
+/* ═══ WHICH SCHEDULED GAP A PLACEMENT RAN IN (user ruling, Aug 13 2026) ═════
+   Replaces a DURATION threshold that got the only interesting result in the
+   book wrong rather than merely imprecise. The old rule was
+   `legHorizonH(p) >= longestGap - 1h` → "overnight", which sounds like the
+   evening placement and is not: with the default 7/12/17/21.5 schedule the
+   overnight gap is 9.5h and the bar was 8.5h, so only opens between 21:30 and
+   ~22:30 qualified. Measured on two real exports, 26 trips ran in the
+   overnight gap and 9 of them — including the single largest position in the
+   book, −1.44m opened at 22:38 and held unattended until 07:00 — were filed
+   as "daytime", carrying a bigger loss than the entire labelled cell.
+
+   A placement belongs to the gap CONTAINING ITS OPEN MOMENT, named by position
+   in the schedule. Deriving it from the open time rather than from `hzH` makes
+   it independent of the 1-hour floor, of the 24h cap, and of how much of the
+   gap was left — a late top-up ran in the same gap as a full placement, and
+   that they are different EXPERIMENTS is the separate dimension below, not a
+   different label. */
+function gapAt(ts){
+  const gaps = touchGaps();
+  if (!gaps.length) return null;                       // no cadence kept
+  const d = new Date(ts);
+  const lh = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  for (const g of gaps)
+    if (g.to > g.from ? (lh >= g.from && lh < g.to) : (lh >= g.from || lh < g.to)) return g;
+  return gaps[0];
+}
+/* The gap that wraps midnight is the overnight sit, by POSITION — the property
+   that made "overnight" the right word in the first place. */
+const isOvernightGap = g => !!g && g.to <= g.from;
+const GAP_NO_CADENCE = "no cadence";
+const gapKeyOf = g => g ? g.name.replace(" touch", "") : GAP_NO_CADENCE;
+const gapLabOf = g => g ? gapKeyOf(g) + " → " + touchLabel(g.to) + " (" + g.h + "h"
+  + (isOvernightGap(g) ? ", the overnight sit" : "") + ")" : "no cadence kept";
+/* ═══ GAP LABELLING RETIRED (user ruling, Aug 13 2026) ═════════════════════
+   With no schedule pricing the placements, "evening" and "afternoon" as
+   SCHEDULED GAPS stop meaning anything — they were intervals of a cadence the
+   book no longer uses. The honest residue of the question they were trying to
+   answer is TIME-OF-DAY OPENED, which is a property of the market's clock
+   rather than of the operator's routine, so it converges the way the rest of
+   the book now does. Fixed six-hour buckets, independent of any schedule. */
+const TOD_BUCKETS = [
+  { k: "00–06", from: 0,  to: 6 },
+  { k: "06–12", from: 6,  to: 12 },
+  { k: "12–18", from: 12, to: 18 },
+  { k: "18–24", from: 18, to: 24 }
+];
+const todOf = ts => { const h = new Date(ts).getHours();
+  return TOD_BUCKETS.find(b => h >= b.from && h < b.to) || TOD_BUCKETS[0]; };
+const shapeOf = p => todOf(p.t).k;
+/* THE POPULATIONS THAT MUST NEVER POOL. A trip closed under a schedule-derived
+   horizon and one closed under the fixed 6h window are different experiments,
+   and `fillModelV` is what partitions them — the FILL_MODEL_V precedent, which
+   exists precisely so a model change partitions the book instead of
+   invalidating it. Null means the record predates the stamp. */
+const modelKeyOf = p => p.fillModelV == null ? "pre-stamp" : "fill model v" + p.fillModelV;
+/* REMAINING DURATION IS A SEPARATE DIMENSION, NOT A LABEL (same ruling). A
+   9.5h offer and a 1.5h top-up placed into the same gap are different
+   experiments and must never pool; but they are not different GAPS, and
+   labelling them so is what produced the defect above. Bands are expressed as
+   a share of the gap the trip ran in, so they mean the same thing in a 4.5h
+   gap and a 9.5h one. GROUPING ONLY — nothing gates on them, no gate, bench,
+   size or verdict reads them, and the cuts are unruled. */
+const DUR_BANDS = [
+  { k: "full",  lab: "full gap",    min: 0.8, hint: "placed at or near the touch — the offer the cadence intends" },
+  { k: "mid",   lab: "mid gap",     min: 0.3, hint: "placed well into the gap; less time than the schedule assumes" },
+  { k: "late",  lab: "late top-up", min: 0,   hint: "placed near the end of the gap — a short experiment wearing the gap's name" }
+];
+function durBandOf(p){
+  const g = gapAt(p.t);
+  if (!g || !(g.h > 0)) return null;
+  const share = Math.min(1, Math.max(0, legHorizonH(p) / g.h));
+  return DUR_BANDS.find(b => share >= b.min) || DUR_BANDS[DUR_BANDS.length - 1];
+}
+const durKeyOf = p => { const b = durBandOf(p); return b ? b.k : "unknown"; };
+/* ═══ PRESENCE: TAG, DON'T GATE (user ruling, Aug 13 2026) ═════════════════
+   Measured on two real exports, 76% of trips open more than half an hour from
+   any scheduled touch and 7 opened between 23:00 and 07:00 — the generator
+   runs on the poll and does not need the operator there. Gating it on presence
+   would cost most of the sample, so instead every trip records whether a
+   WALK-UP WAS LOGGED near its open and the two populations are reported apart.
+   If anchored and unanchored trips behave differently, that is the fidelity
+   finding, and it is measured rather than assumed in either direction.
+
+   The anchor is REAL RECORDED PRESENCE (`DB.touchLog`), not clock proximity to
+   a configured touch — the whole open question is whether the configured
+   schedule matches behaviour, so anchoring on the schedule would assume the
+   answer. An OPEN-TIME fact: it cannot be reconstructed later, so trips opened
+   before this shipped carry null and say so rather than defaulting to false. */
+/* ═══ OBSERVED SESSIONS (user ruling, Aug 13 2026) ═════════════════════════
+   The configured schedule is a statement of intent typed once; the walk-up log
+   is what happened. Measured over four days: 1 of 18 walk-ups fell within half
+   an hour of a configured touch. Anything that needs a SESSION BOUNDARY —
+   "has he been back since?" — reads this instead of the schedule, because a
+   logged walk-up is recorded fact where a scheduled hour is an assumption.
+
+   COALESCING AT 10 MINUTES is the only guard against a degenerate gap, ruled
+   as such: a re-open inside ten minutes is the same session (a reload, a tab
+   closed and restored), and ten minutes is short enough that a genuine
+   check-and-return is not swallowed. Because this owns the promise, the old
+   1-hour output floor was deleted rather than kept alongside it — a guard whose
+   trigger another layer forbids is decoration that reads as protection. */
+const SESSION_COALESCE_MIN = 10;
+const SESSION_WINDOW_D = 14;
+function walkUpSessions(){
+  const cut = Date.now() - SESSION_WINDOW_D * 86400e3;
+  const ts = (DB.touchLog || []).filter(t => t && t.t && t.t >= cut).map(t => t.t).sort((a, b) => a - b);
+  const out = [];
+  for (const t of ts)
+    if (!out.length || t - out[out.length - 1] > SESSION_COALESCE_MIN * 60e3) out.push(t);
+  return out;
+}
+const lastSessionAt = () => { const s = walkUpSessions(); return s.length ? s[s.length - 1] : 0; };
+/* Has a session boundary passed since `ts`? The observed replacement for
+   "has a configured touch been crossed". Returns null when there is no
+   behavioural history at all, so a caller can tell "no" from "cannot say" —
+   they are different answers and the schedule version could not express the
+   second. */
+function sessionCrossed(ts){
+  const s = walkUpSessions();
+  if (!s.length) return null;
+  return s.some(t => t > ts);
+}
+/* The empirical gap distribution — the spread IS the point, so this returns
+   the gaps themselves and never a statistic. Feeds the cadence read. */
+function sessionGaps(){
+  const s = walkUpSessions(), out = [];
+  for (let i = 1; i < s.length; i++) out.push((s[i] - s[i - 1]) / 3600e3);
+  return out;
+}
+const TOUCH_ANCHOR_MIN = 20;
+function touchAnchoredAt(ts){
+  const w = TOUCH_ANCHOR_MIN * 60e3;
+  for (const t of (DB.touchLog || [])) if (t && t.t && Math.abs(t.t - ts) <= w) return true;
+  return false;
+}
 const gradeOf = p => p.grade === "reconstructed" ? "reconstructed" : p.grade === "mixed" ? "mixed" : "live";
 /* One line of provenance for any aggregate built from a set of trips. */
 function evidenceNote(arr){
@@ -6723,8 +6932,12 @@ function shadowByGate(byShape){
   /* Watchlist + slice cohorts only — the scanner cohort answers the FILTER
      question on its own ledger line; populations never mix in a gate read. */
   for (const p of DB.shadowBook.filter(p => shadowResolved(p) && p.benchedBy && p.benchedBy.length && p.cohort !== "scanner")){
-    const g = byShape ? p.benchedBy[0] + " · " + shapeOf(p) : p.benchedBy[0];
-    if (!byGate.has(g)) byGate.set(g, { arr: [], thinArr: [], gate: p.benchedBy[0], shape: byShape ? shapeOf(p) : null });
+    /* The second dimension is the FILL MODEL, not the clock (Aug 13 2026): the
+       split exists so two different EXPERIMENTS never pool, and under a fixed
+       horizon that is exactly the v1/v2 partition. Keying it on time-of-day
+       would also make every gate row depend on the hour the suite runs. */
+    const g = byShape ? p.benchedBy[0] + " · " + modelKeyOf(p) : p.benchedBy[0];
+    if (!byGate.has(g)) byGate.set(g, { arr: [], thinArr: [], gate: p.benchedBy[0], shape: byShape ? modelKeyOf(p) : null });
     /* Observed-share floor (ruled Aug 11 2026): thin trips stay on the
        record and stay openable, but no verdict number is built from them. */
     (shadowCounts(p) ? byGate.get(g).arr : byGate.get(g).thinArr).push(p);
@@ -6837,17 +7050,29 @@ function shadowSlice(id, exclScanner){
   if (!all.length) return null;
   if (!closed.length)
     return { n: 0, thin: thinArr.length, thinArr, all, bought: 0, boughtFull: 0, unfilled: 0, net: 0,
-      fillRate: 0, regs: [], spanD: 0, obsMed: medianOf(thinArr.map(shadowObsPct)) || 0, last: [] };
+      fillRate: 0, regs: [], spanD: 0, spanObsD: 0, spanCapped: false,
+      obsMed: medianOf(thinArr.map(shadowObsPct)) || 0, last: [] };
   const bought = closed.filter(p => p.state === "filled" || p.state === "forced-exit").length;
   const boughtFull = closed.filter(shadowFullFilled).length;   // 100%-participation reading — always reported beside the conservative one
   const net = closed.reduce((a, p) => a + (p.net || 0), 0);
   const regs = [...new Set(closed.flatMap(p => p.cohort === "scanner" ? ["scanner·T" + (p.scanTier || "?")]
     : (p.regimes && p.regimes.length) ? p.regimes
     : (p.benchedBy && p.benchedBy.length) ? ["bench: " + p.benchedBy[0]] : ["discovery"]))];
-  const spanD = (Math.max(...closed.map(p => p.closedAt || p.t)) - Math.min(...closed.map(p => p.t))) / 86400e3;
+  const firstAt = Math.min(...closed.map(p => p.t));
+  const lastAt = Math.max(...closed.map(p => p.closedAt || p.t));
+  const spanD = (lastAt - firstAt) / 86400e3;
+  /* The clause counts OBSERVED days (user ruling, Aug 13 2026). Wall clock let
+     five trips straddling a closed laptop read as seven days of evidence: days
+     nobody watched are not evidence either way, and the exception bar is the
+     standard that puts real capital on a waived gate. spanD is kept and
+     rendered beside it, because the difference between the two IS the coverage
+     statement. */
+  const spanObsD = observedDaysSpanned(firstAt, lastAt);
   return { n: closed.length, thin: thinArr.length, thinArr, all, bought, boughtFull,
     unfilled: closed.length - bought, net,
-    fillRate: bought / closed.length, regs, spanD,
+    fillRate: bought / closed.length, regs, spanD, spanObsD, firstAt, lastAt,
+    /* Both ledgers retain 30 days, so a longer record cannot report itself. */
+    spanCapped: spanD >= SPAN_RETENTION_D - 0.5,
     obsMed: medianOf(closed.map(shadowObsPct)),
     last: closed.slice(-5) };
 }
@@ -6899,12 +7124,25 @@ function shadowCite(id){
    agreement at the persistence bar. Exceptions are probes of the gate's
    edges, not a parallel permission system — hence the cap. */
 const EXC_MIN_TRIPS = 5, EXC_FILLRATE = 0.6, EXC_MIN_DAYS = 7, EXC_ADJ_TRIPS = 3, EXC_MAX_ACTIVE = 2;
+/* The span, always as a PAIR with its coverage — the daysBenchedBy
+   construction, for the same reason: a caller who wanted to render the bare
+   number would have to reach past this to do it. The unobserved remainder is
+   named rather than left to be subtracted, and the retention ceiling is stated
+   where the figure renders instead of letting a 60-day record report 30. */
+function spanDaysTxt(s){
+  if (!s || !s.n) return "no counted trips, so no span";
+  const wall = Math.round(s.spanD * 10) / 10, gap = Math.round((s.spanD - s.spanObsD) * 10) / 10;
+  return s.spanObsD + " observed day" + (s.spanObsD === 1 ? "" : "s")
+    + " across a " + wall + "-day span"
+    + (gap > 0.05 ? " (" + gap + " day" + (gap === 1 ? "" : "s") + " nobody watched — not evidence either way)" : " (fully observed)")
+    + (s.spanCapped ? " · at the " + SPAN_RETENTION_D + "-day retention ceiling: both the paper book and the observed-day ledger prune there, so a longer record cannot report itself" : "");
+}
 const excFor = id => (DB.shadowExceptions || []).find(e => e.id === id && e.status !== "revoked");
 const excActiveN = () => (DB.shadowExceptions || []).filter(e => e.status === "active").length;
 /* Evidence bar for ONE item (cap-blind — the caller states the cap). */
 function exceptionEvidence(id){
   const s = shadowSlice(id, true);   // watch/slice cohorts only — scanner trips nominate admission, never probation (one stage per move)
-  if (!s || s.n < EXC_MIN_TRIPS || s.fillRate < EXC_FILLRATE || !(s.net > 0) || s.spanD < EXC_MIN_DAYS) return null;
+  if (!s || s.n < EXC_MIN_TRIPS || s.fillRate < EXC_FILLRATE || !(s.net > 0) || s.spanObsD < EXC_MIN_DAYS) return null;
   if (suspectedPump(id) || isBlk(id) || toxicFor(id)) return null;   // red flags bar the lane entirely
   if (excFor(id)) return null;                                        // already granted or waived
   const gates = {};
@@ -6913,6 +7151,159 @@ function exceptionEvidence(id){
   const gate = Object.entries(gates).sort((a, b) => b[1] - a[1]).map(x => x[0])[0];
   if (!gate) return null;   // regime/discovery trips don't ground an exception — it waives a named gate
   return { id, gate, s };
+}
+/* ═══ THE NEAR-MISS RANKING (user ruling, Aug 13 2026) ═══════════════════
+   The lane rendered its own bar back at the reader — "no candidates clear the
+   evidence bar right now: ≥5 trips, ≥60% fill, profitable, ≥7 days, no red
+   flags" — and named no item, no clause and no distance. That is the F18
+   defect on the exception lane: the surface reports THAT nothing qualifies
+   where it must report WHAT is short and by how much, and the operator's only
+   recourse was to ask someone to read the code.
+
+   Every item is scored against all seven clauses, including the two that were
+   never in the constant list and so were invisible: HAS A GATE TO WAIVE (an
+   item whose trips were clean passers has nothing to except) and THE CAP (at
+   two active, nothing renders however good the evidence).
+
+   Two properties this is built to keep:
+   • DISTANCE IS ONLY MEANINGFUL FOR CLAUSES THAT ACCRUE. Trips and observed
+     days close on their own; fill rate and net can move either way, and a red
+     flag or a missing gate does not close by waiting at all. The ranking says
+     which kind each is instead of projecting an ETA onto all of them.
+   • THE POPULATION IS EVERY ITEM THAT COULD QUALIFY, not every watched item.
+     Discovery-slice and gap-band trips land on UNWATCHED items, so a
+     watchlist-only list would hide real candidates; those render with their
+     provenance stated rather than being silently absent or silently included. */
+const EXC_CLAUSES = [
+  { k: "trips",  lab: "≥" + EXC_MIN_TRIPS + " closed counted trips",         accrues: true },
+  { k: "fill",   lab: "fill rate ≥" + Math.round(EXC_FILLRATE * 100) + "%",  accrues: false },
+  { k: "net",    lab: "paper-profitable",                                     accrues: false },
+  { k: "days",   lab: "≥" + EXC_MIN_DAYS + " OBSERVED days spanned",          accrues: true },
+  { k: "flags",  lab: "no red flags",                                         accrues: false },
+  { k: "gate",   lab: "a named gate to waive",                                accrues: false },
+  { k: "cap",    lab: "a free probation slot",                                accrues: false }
+];
+function excStanding(id){
+  const s = shadowSlice(id, true);
+  const n = s ? s.n : 0;
+  const flags = [];
+  if (suspectedPump(id)) flags.push("pump-suspected");
+  if (isBlk(id)) flags.push("blacklisted");
+  if (toxicFor(id)) flags.push("toxic flow");
+  const gates = {};
+  for (const p of (DB.shadowBook || []).filter(p => p.itemId === id && shadowResolved(p) && p.cohort !== "scanner"))
+    for (const g of (p.benchedBy || [])) gates[g] = (gates[g] || 0) + 1;
+  const gate = Object.entries(gates).sort((a, b) => b[1] - a[1]).map(x => x[0])[0] || null;
+  const capFree = Math.max(0, EXC_MAX_ACTIVE - excActiveN());
+  /* shortfall is normalised to the bar so clauses of different units can be
+     ranked against each other; 0 = met. A blocker that cannot be closed by
+     accruing scores 1 so it always outranks an accruing shortfall. */
+  const cl = {
+    trips: { have: n, need: EXC_MIN_TRIPS, ok: n >= EXC_MIN_TRIPS,
+             short: Math.max(0, (EXC_MIN_TRIPS - n) / EXC_MIN_TRIPS),
+             face: n + " of " + EXC_MIN_TRIPS },
+    fill:  { have: s ? s.fillRate : 0, need: EXC_FILLRATE, ok: !!(s && n && s.fillRate >= EXC_FILLRATE),
+             short: (s && n) ? Math.max(0, (EXC_FILLRATE - s.fillRate) / EXC_FILLRATE) : 1,
+             face: (s && n) ? Math.round(s.fillRate * 100) + "% of " + Math.round(EXC_FILLRATE * 100) + "%" : "no counted trips" },
+    net:   { have: s ? s.net : 0, need: 0, ok: !!(s && s.net > 0),
+             short: (s && s.net > 0) ? 0 : 1,
+             face: (s && n) ? gp(Math.round(s.net)) + " sim" : "no counted trips" },
+    days:  { have: s ? s.spanObsD : 0, need: EXC_MIN_DAYS, ok: !!(s && s.spanObsD >= EXC_MIN_DAYS),
+             short: Math.max(0, (EXC_MIN_DAYS - (s ? s.spanObsD : 0)) / EXC_MIN_DAYS),
+             face: (s && n) ? spanDaysTxt(s) : "no counted trips" },
+    flags: { ok: !flags.length, short: flags.length ? 1 : 0,
+             face: flags.length ? flags.join(" + ") : "none" },
+    gate:  { ok: !!gate, short: gate ? 0 : 1,
+             face: gate || (n ? "every trip cleared every gate — nothing to waive" : "no counted trips") },
+    cap:   { ok: capFree > 0, short: capFree > 0 ? 0 : 1,
+             face: capFree + " of " + EXC_MAX_ACTIVE + " slots free" }
+  };
+  const failing = EXC_CLAUSES.filter(c => !cl[c.k].ok);
+  /* The BINDING clause is the one furthest from met; ties break toward the
+     clause that cannot be closed by waiting, since that is the one that
+     changes what the operator should do. */
+  const binding = failing.slice().sort((a, b) =>
+    (cl[b.k].short - cl[a.k].short) || (Number(a.accrues) - Number(b.accrues)))[0] || null;
+  return { id, name: itemName(id), s, gate, flags, cl, failing, binding,
+    granted: !!excFor(id),
+    watched: (DB.watch || []).some(w => w.id === id),
+    /* Sort key: fewest failing clauses first, then smallest total shortfall. */
+    rank: failing.length * 100 + failing.reduce((a, c) => a + cl[c.k].short, 0) };
+}
+/* ETA only where an ETA is honest — a clause that accrues, at a rate the store
+   can actually evidence. Trips accrue at the item's own observed rate; observed
+   days accrue at most one per calendar day and only on days the tool is open,
+   which is stated rather than assumed away. */
+function excEta(st){
+  if (!st.binding || !st.binding.accrues) return null;
+  const c = st.cl[st.binding.k];
+  if (st.binding.k === "days"){
+    const left = Math.ceil(EXC_MIN_DAYS - c.have);
+    return left + " more observed day" + (left === 1 ? "" : "s") + " — at most one per calendar day, and only on days you open the tool";
+  }
+  const s = st.s;
+  if (!s || !s.n || !s.spanD) return null;
+  const perDay = s.n / Math.max(s.spanD, 1 / 24);
+  if (!(perDay > 0)) return null;
+  const days = Math.ceil((EXC_MIN_TRIPS - s.n) / perDay);
+  return "~" + days + " day" + (days === 1 ? "" : "s") + " at this item's observed rate of "
+    + (Math.round(perDay * 10) / 10) + " counted trips/day";
+}
+/* The ranking, rendered. Replaces the bar-recitation line: same screen space,
+   states which clause binds each item instead of restating the rule. */
+function excStandingsHTML(){
+  const ids = [...new Set(
+    (DB.watch || []).map(w => w.id)
+      .concat((DB.shadowBook || []).filter(shadowResolved).filter(p => p.cohort !== "scanner").map(p => p.itemId)))];
+  if (!ids.length)
+    return '<div class="dim">No items to score: the watchlist is empty and the paper book holds no non-scanner trips. '
+         + 'This lane has no population yet — that is an absence of candidates, not a set of rejected ones.</div>';
+  const sts = ids.map(excStanding).sort((a, b) => a.rank - b.rank);
+  const cell = (st, k, face) => drill("exc:st:" + st.id + ":" + k, face, {
+    head: st.name + " — every counted paper trip behind its exception-lane standing",
+    cols: PAPER_TRIP_COLS,
+    rows: paperTripRows((DB.shadowBook || []).filter(p => p.itemId === st.id && shadowResolved(p) && p.cohort !== "scanner")),
+    empty: "No non-scanner paper trips for this item yet — every clause below reads against an empty record, which is why it is bottom of the ranking.",
+    note: PAPER_NOTE() + ' Scanner-cohort trips are excluded by construction: they nominate an item for scout ADMISSION, never for probation.'
+  });
+  const rows = sts.map(st => {
+    const c = st.cl;
+    const mark = (o, face) => '<span class="' + (o.ok ? "pos" : "neg") + '">' + (o.ok ? "✓ " : "✗ ") + esc(face) + '</span>';
+    const eta = excEta(st);
+    const stand = st.granted
+      ? '<span class="dim">already granted or waived — not a candidate</span>'
+      : !st.failing.length
+        ? '<b class="pos">clears every clause</b>'
+        : '<b>' + esc(st.binding.lab) + '</b> <span class="dim">— binding, of ' + st.failing.length
+          + ' clause' + (st.failing.length === 1 ? '' : 's') + ' short'
+          + (st.binding.accrues ? '' : '; this one does not close by waiting') + '</span>';
+    return '<tr><td style="text-align:left">' + esc(st.name)
+      + (st.watched ? '' : ' <span class="badge b-warn" title="Not on your watchlist — its trips come from the discovery slice or the gap band. It is scored here because it could qualify; a watchlist-only list would hide it.">unwatched</span>')
+      + '</td>'
+      + '<td>' + cell(st, "trips", mark(c.trips, c.trips.face)) + '</td>'
+      + '<td>' + mark(c.fill, c.fill.face) + '</td>'
+      + '<td>' + mark(c.net, c.net.face) + '</td>'
+      + '<td style="text-align:left">' + mark(c.days, c.days.face) + '</td>'
+      + '<td style="text-align:left">' + mark(c.flags, c.flags.face) + '</td>'
+      + '<td style="text-align:left">' + mark(c.gate, c.gate.face) + '</td>'
+      + '<td style="text-align:left">' + stand + (eta ? '<div class="dim">' + esc(eta) + '</div>' : '') + '</td></tr>';
+  }).join("");
+  const capC = sts.length ? sts[0].cl.cap : null;
+  return '<div class="nexthead"><b>Standing against the bar</b> — every item that could qualify, closest first</div>'
+    + '<div class="note">All ' + EXC_CLAUSES.length + ' clauses, including the two that are not evidence: <b>a named gate to waive</b> '
+    + '(an item whose trips cleared every gate has nothing to except) and <b>a free probation slot</b>'
+    + (capC ? ' — currently ' + esc(capC.face) : '') + '. '
+    + '<b>Distance is only meaningful where a clause accrues.</b> Trips and observed days close on their own and carry an ETA; '
+    + 'fill rate and net can move either way, and a red flag or a missing gate does not close by waiting at all — so no ETA is '
+    + 'projected onto them rather than inventing one.' + provTag(true) + '</div>'
+    + '<div class="tw"><table id="excStandTable"><thead><tr><th>Item</th>'
+    + '<th title="Closed counted trips, watchlist and slice cohorts only">Trips</th>'
+    + '<th>' + glTerm("paper-fill", "Fill rate") + '</th><th>Net sim</th>'
+    + '<th>' + glTerm("exc-span", "Observed span") + '</th>'
+    + '<th>Red flags</th><th>Gate to waive</th><th>Binding clause</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<div class="dim" style="margin-top:5px">Nothing here grants anything — the lane reports standing and the grant is your press, '
+    + 'from the bench line or the row\'s expand view. The bar itself is a strategy parameter and moves only on your ruling.</div>';
 }
 function exceptionProposals(){
   if (excActiveN() >= EXC_MAX_ACTIVE) return [];   // at cap the cite says so; no proposal renders
@@ -6958,7 +7349,7 @@ const excVoidBasis = () => (DB.shadowExceptions || [])
    needed? Cap-blind and grant-blind, so it can be asked about a live one. */
 function excNewEpochEvidence(id){
   const s = shadowSlice(id, true);
-  return (s && s.n >= EXC_MIN_TRIPS && s.fillRate >= EXC_FILLRATE && s.net > 0 && s.spanD >= EXC_MIN_DAYS)
+  return (s && s.n >= EXC_MIN_TRIPS && s.fillRate >= EXC_FILLRATE && s.net > 0 && s.spanObsD >= EXC_MIN_DAYS)
     ? s : null;
 }
 function reaffirmException(id){
@@ -6972,7 +7363,7 @@ function reaffirmException(id){
     logDecision("exception", itemName(id), "re-affirmed on the new epoch's evidence",
       e.gate + " — the original grant's paper evidence was discarded with the corrupted book; the new epoch independently clears the same bar ("
       + s.n + " trips, " + s.bought + " filled, net " + gp(Math.round(s.net))
-      + " sim over " + Math.round(s.spanD) + " days). The exception stands on evidence that exists.");
+      + " sim over " + spanDaysTxt(s) + "). The exception stands on evidence that exists.");
   } else {
     const cur = shadowSlice(id, true);
     logDecision("exception", itemName(id), "re-affirmed by hand — no new-epoch evidence yet",
@@ -7191,20 +7582,56 @@ function curveSVG(vals, lo, hi, w, h){
    And a capital-feasibility line, because a counterfactual that quietly
    spends money that does not exist is not screening evidence: peak
    simultaneous simulated notional against working capital, flagged when the
-   sim assumed more than there was. */
+   sim assumed more than there was.
+
+   A SHARE OF A NET IS ONLY A PROPORTION WHEN THE NET IS POSITIVE (Aug 13
+   2026). `top5 / net` on a losing population returns a large negative
+   percentage that reads as a concentration figure and is not one — the
+   denominator is the wrong sign, so the quotient answers no question anybody
+   asked. Both concentration figures return null there and the surfaces state
+   why, rather than rendering a number whose meaning has quietly changed. The
+   defect surfaced while building the horizon split, where the very first cell
+   examined — the gap band's daytime trips — has a negative net. */
 const tripNotional = p => (p.qty || 0) * (p.bid || 0);
 const tripDays = p => Math.max(1 / 24, ((p.closedAt || p.t) - p.t) / 86400e3);
 function paperEconomics(trips){
   const arr = (trips || []).slice();
   const net = arr.reduce((a, p) => a + (p.net || 0), 0);
   const gpDays = arr.reduce((a, p) => a + tripNotional(p) * tripDays(p), 0);
+  /* Summed entry-side size, NOT simultaneous exposure — paperPeakNotional is
+     the figure for "could this have been held at once". Kept apart because
+     the two are read for different things and their names look alike. */
+  const notional = arr.reduce((a, p) => a + tripNotional(p), 0);
   const nets = arr.map(p => p.net || 0).sort((a, b) => a - b);
   const top5 = nets.slice(-5).reduce((a, n) => a + n, 0);
+  const topTrip = arr.slice().sort((a, b) => (b.net || 0) - (a.net || 0))[0] || null;
+  const top1 = topTrip ? (topTrip.net || 0) : 0;
   const outcomes = arr.reduce((a, p) => { a[p.state] = (a[p.state] || 0) + 1; return a; }, {});
-  return { n: arr.length, net, gpDays,
+  const share = v => net > 0 ? v / net : null;
+  /* CONCENTRATION THAT SURVIVES A LOSING CELL (user ruling, Aug 13 2026).
+     Share-of-net is undefined when net ≤ 0, and withholding it there put the
+     blank on exactly the cell that most needed the signal: the gap band's
+     daytime cell was 18 trips at −1.58m, 91% of it a single −1.44m trip, and
+     the column read "—". Gross movement — Σ|net| — is positive whenever the
+     cell has any trips at all, so the dominance figure is always available.
+     It answers a DIFFERENT question and is labelled as such: not "how much of
+     the profit is one trip" but "how much of everything that happened is one
+     trip". The largest mover is taken by |net|, since on a losing cell the
+     trip that carries it is the biggest loser, not the biggest winner. */
+  const gross = arr.reduce((a, p) => a + Math.abs(p.net || 0), 0);
+  const topAbsTrip = arr.slice().sort((a, b) => Math.abs(b.net || 0) - Math.abs(a.net || 0))[0] || null;
+  const topAbs = topAbsTrip ? (topAbsTrip.net || 0) : 0;
+  return { n: arr.length, net, gpDays, notional,
+    gross, topAbsTrip, topAbs,
+    topAbsShare: gross > 0 ? Math.abs(topAbs) / gross : null,
     rate: gpDays > 0 ? net / gpDays : null,          // net gp per gp of notional held for a day
     median: nets.length ? medianOf(nets) : null,
-    top5, top5Share: net !== 0 ? top5 / net : null,
+    top5, top5Share: share(top5),
+    top1, topTrip, top1Share: share(top1),
+    /* Why no share, in words, so the surface never renders a bare dash. */
+    shareBasis: !arr.length ? "no trips here at all"
+      : net > 0 ? null
+      : "net is " + (net < 0 ? "negative" : "zero") + ", and a share of it is not a proportion — the largest trip's own net is reported instead",
     outcomes };
 }
 /* Peak simultaneous notional — the most the sim ever had "committed" at once,
@@ -8033,7 +8460,8 @@ function paperHeadlineBody(closed){
       rate: e.rate != null ? (e.rate * 100).toFixed(3) + "%" : "—", _rate: e.rate || 0,
       net: gp(Math.round(e.net)), _net: Math.round(e.net),
       median: e.median != null ? gp(Math.round(e.median)) : "—", _median: Math.round(e.median || 0),
-      top5: e.top5Share != null ? Math.round(e.top5Share * 100) + "%" : "—", _top5: e.top5Share || 0,
+      /* Never a bare dash: a share is withheld only for a stated reason. */
+      top5: e.top5Share != null ? Math.round(e.top5Share * 100) + "%" : "— net ≤ 0", _top5: e.top5Share || 0,
       outcomes: Object.entries(e.outcomes).map(([s, c]) => c + " " + s).join(", "),
       _txt: k + " " + Object.keys(e.outcomes).join(" ") };
   }).sort((a, b) => b._n - a._n);
@@ -8057,6 +8485,9 @@ function paperHeadlineBody(closed){
         empty: "No counted trips in any cohort.",
         note: 'A cohort whose top-5 share approaches 100% is carried by a handful of trips and its rate should be read as '
             + 'anecdote, not screen quality. The median trip beside the total is there so that is visible at a glance. '
+            + 'A share reads "— net ≤ 0" where the cohort\'s net is not positive: dividing by a negative denominator '
+            + 'returns a large negative percentage that looks like a concentration figure and is not one. '
+            + 'The horizon split above carries the same cohorts at each horizon separately, with the single top trip\'s share. '
             + PAPER_NOTE()
       }) + '</div>');
   bits.push('<div class="' + (over ? 'neg' : 'dim') + '" style="margin-top:5px">'
@@ -8069,6 +8500,457 @@ function paperHeadlineBody(closed){
             : ' — inside working capital, so the sim did not spend money that is not there.')
     + '</div>');
   return bits.join("");
+}
+
+/* ═══ THE HORIZON SPLIT — OVERNIGHT vs DAYTIME (user-directed, Aug 13 2026) ══
+   The four-touch cadence makes two different experiments out of one book: a
+   daytime placement has the gap to the next touch to fill (~5h), the evening
+   placement has the overnight sit (~9.5h). Horizon shape has been a GROUPING
+   dimension since Aug 11 2026 and the per-gate table has carried the badge,
+   but the comparison an operator actually needs — the same cohort at both
+   horizons, side by side — existed nowhere on screen. It could be had only by
+   downloading the analysis export and grouping the trips by hand, because the
+   file's own `byHorizonShape` tally POOLS every cohort into one count and a
+   pooled count cannot show a cohort whose two horizons disagree.
+
+   The finding that forced this onto the surface: the gap band printed +399k
+   on 3 overnight trips against −219k on 16 daytime ones — opposite signs, one
+   population, invisible in every rendered number.
+
+   Four properties the block is built to keep, each of which is a standing rule
+   applied to a cross-tabulation rather than a new idea:
+
+   • n AND NOTIONAL RIDE BESIDE EVERY NET. A net without the size behind it
+     cannot be weighed, and a 3-trip cell is not comparable evidence to a
+     16-trip one however close the two numbers look.
+   • CONCENTRATION RENDERS PER CELL. One 10.6m-notional trip carrying a cell's
+     entire net means the cell holds ONE result, not three. Distribution beside
+     the total is the same rule the headline rate already keeps; here it is
+     load-bearing, because the cells are small enough for one trip to be all of
+     them.
+   • AN EMPTY CELL SAYS SO. The never-fed rule applied to a cross-tabulation,
+     where the empty cells are exactly where the misreading happens: a cohort
+     never sampled overnight renders as a zero row and reads as "tried, earned
+     nothing" unless it says otherwise in its own words.
+   • THE TWO ROWS ARE NEVER SUMMED. They answer different questions, so their
+     total answers neither — the never-pool rule, and the reason the cohort
+     appears twice here instead of once.
+
+   Under the zero-based complexity budget this ABSORBS rather than adds: it is
+   the first and only rendering of the horizon dimension the per-gate badge and
+   the export tally could previously only hint at, and it presents no rulings —
+   no button, nothing queued — so the walk-up attention budget is untouched. */
+/* Cells are (cohort × gap × remaining-duration band). Cohorts come from the
+   trips that EXIST; gaps come from the SCHEDULE, so a gap a cohort has never
+   been placed in is nameable rather than merely absent. Only populated cells
+   get a row — 5 cohorts × 4 gaps × 3 bands is 60 cells and a table of 45
+   blanks teaches nothing — but the gaps a cohort has never used are stated in
+   one line, which meets the never-fed rule without the noise. */
+/* ═══ THE FILL CURVE (user ruling, Aug 13 2026) ════════════════════════════
+   What a fixed horizon buys: horizon stops being a setting and becomes a
+   MEASUREMENT. One uncensored 6h trip that filled at 1.9h contributes a point
+   to every hour of the curve below it — a 2h offer would have filled, a 3h
+   offer would have, a 6h offer would have. Three censored populations at 2h,
+   4h and 6h would have contributed three points instead of one whole answer,
+   which is why one horizon was ruled rather than several.
+
+   CENSORING IS RENDERED, NOT ASSUMED AWAY. The book still holds trips opened
+   under the old schedule-derived horizons, and a trip given 3.41h says nothing
+   about hour 5. `atRisk` at each hour is the count of trips whose own horizon
+   reached that hour; the curve stops being evidence where atRisk collapses, and
+   the surface says where that is rather than drawing a confident line into a
+   region nothing observed. */
+const FILL_CURVE_HOURS = [0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12];
+const tripFillH = p => (p.buyDone && p.t && p.buyDone > p.t) ? (p.buyDone - p.t) / 3600e3 : null;
+function paperFillCurve(trips){
+  const arr = (trips || []).filter(p => shadowCounts(p));
+  return FILL_CURVE_HOURS.map(h => {
+    /* At risk = the trip's own window reached this hour. A shorter trip is not
+       a "no" at hour h, it is silence. */
+    const atRisk = arr.filter(p => legHorizonH(p) >= h - 1e-9);
+    const filled = atRisk.filter(p => { const f = tripFillH(p); return f != null && f <= h + 1e-9; });
+    return { h: h, atRisk: atRisk.length, filled: filled.length,
+      pct: atRisk.length ? filled.length / atRisk.length : null,
+      rows: filled, atRiskRows: atRisk };
+  });
+}
+/* The horizon at which the curve stops resting on a usable population. Named
+   rather than left to the reader to spot a thinning column. */
+const FILL_CURVE_MIN_AT_RISK = 8;
+function fillCurveEvidenceTo(curve){
+  let last = null;
+  for (const c of curve) if (c.atRisk >= FILL_CURVE_MIN_AT_RISK) last = c.h;
+  return last;
+}
+function paperFillCurveHTML(){
+  const closed = paperClosed();
+  if (!closed.length)
+    return '<div class="dim">No counted trips yet — there is no curve to draw. That is an empty population, not a flat one.</div>';
+  const cohorts = [...new Set(closed.map(paperCohortOf))].sort();
+  const evTo = fillCurveEvidenceTo(paperFillCurve(closed));
+  const bits = ['<div class="note"><b>Does an offer of this length fill?</b> Read down a column: of the trips whose own '
+    + 'window reached that hour, how many had completed their buy leg by it. <b>Every cell states its own population</b> — '
+    + 'a trip given 3.4h is silent about hour 5, not a "no" at hour 5, and the curve stops being evidence where that '
+    + 'population thins.'
+    + (evTo != null
+      ? ' On this book it rests on ' + FILL_CURVE_MIN_AT_RISK + '+ trips out to <b>' + fmtHrs(evTo) + '</b>; past that it is drawn from too few.'
+      : ' <b>No hour yet has ' + FILL_CURVE_MIN_AT_RISK + ' trips at risk</b> — nothing here is evidence yet, and the row counts say so.')
+    + provTag(true) + '</div>'];
+  const head = FILL_CURVE_HOURS.map(h => '<th>' + fmtHrs(h) + '</th>').join("");
+  const rowFor = (lab, arr, key) => {
+    const curve = paperFillCurve(arr);
+    return '<tr><td style="text-align:left">' + esc(lab) + '</td>'
+      + curve.map(c => '<td>' + (c.atRisk === 0
+          ? '<span class="dim" title="No trip in this cohort had a window reaching this hour — silence, not a zero.">—</span>'
+          : drill("paper:curve:" + key + ":" + c.h,
+              Math.round(c.pct * 100) + '%<span class="dim">/' + c.atRisk + '</span>', {
+              head: lab + " — filled within " + fmtHrs(c.h) + ", of the " + c.atRisk + " trips whose window reached it",
+              cols: PAPER_TRIP_COLS, rows: paperTripRows(c.rows),
+              empty: "None of the " + c.atRisk + " trips at risk had filled by this hour — that IS the reading, and the "
+                   + "population behind it is stated beside the percentage.",
+              note: 'Denominator is trips whose OWN horizon reached ' + fmtHrs(c.h) + ' — ' + c.atRisk + ' of '
+                  + arr.length + ' in this cohort. Shorter trips are excluded as silent rather than counted as failures. '
+                  + PAPER_NOTE() })) + '</td>').join("")
+      + '</tr>';
+  };
+  bits.push('<div class="tw"><table id="paperCurveTable"><thead><tr><th>Cohort</th>' + head + '</tr></thead><tbody>'
+    + cohorts.map(c => rowFor(c, closed.filter(p => paperCohortOf(p) === c), c)).join("")
+    + '</tbody></table></div>');
+  bits.push('<div class="dim" style="margin-top:4px">Each cell reads <b>fill% / trips at risk</b>. Cohorts are never '
+    + 'pooled into one curve — they answer different questions — and a dash means no trip in that cohort ran long enough '
+    + 'to speak to that hour.</div>');
+  bits.push(paperCadenceRead(closed));
+  return bits.join("");
+}
+/* ═══ THE CADENCE READ (user ruling, Aug 13 2026) ═══════════════════════════
+   Two independent measurements, multiplied — and the separation is the point.
+
+     P(fill | offer stands h hours)   a MARKET property. Converges.
+     the operator's own gap distribution   a BEHAVIOURAL property. Moves when
+                                           the routine moves, and not otherwise.
+
+   Composed: "given how long you actually leave offers standing, what fraction
+   would fill." The old design asked the same question by simulating against a
+   PREDICTED return, which made a market answer contingent on a forecast of the
+   operator; this asks it of a converged curve and applies the operator to it
+   afterwards. That is the property the old design lacked.
+
+   The empirical distribution is used rather than a statistic, on the ruling
+   that the spread is the point: a median gap would hide that the same routine
+   contains 2.15h returns and 10.63h ones, which land on very different parts
+   of the curve. */
+function paperCadenceRead(closed){
+  const gaps = sessionGaps();
+  const head = '<div class="nexthead" style="margin-top:8px"><b>Given how long you actually leave offers standing</b></div>';
+  if (gaps.length < 3)
+    return head + neverFedNote("The cadence read",
+      "It needs your own walk-up gaps and the log holds " + gaps.length + " of them (sessions coalesced at "
+      + SESSION_COALESCE_MIN + " minutes). This is the one figure here that depends on your behaviour rather than the "
+      + "market, so it stays empty rather than substituting a default cadence nobody keeps.");
+  const cohorts = [...new Set((closed || []).map(paperCohortOf))].sort();
+  const lines = cohorts.map(coh => {
+    const arr = closed.filter(p => paperCohortOf(p) === coh);
+    /* Compose: for each observed gap, read the curve at that many hours. A gap
+       longer than the fixed horizon reads at the horizon — the offer stood the
+       whole window and the book cannot speak past it, which is stated. */
+    let sum = 0, capped = 0, usable = 0;
+    for (const g of gaps){
+      const h = Math.min(g, PAPER_HORIZON_H);
+      if (g > PAPER_HORIZON_H) capped++;
+      const atRisk = arr.filter(p => legHorizonH(p) >= h - 1e-9);
+      if (!atRisk.length) continue;
+      const filled = atRisk.filter(p => { const f = tripFillH(p); return f != null && f <= h + 1e-9; });
+      sum += filled.length / atRisk.length; usable++;
+    }
+    if (!usable) return '<div class="dim">' + esc(coh) + ' — no trip in this cohort has a window reaching any of your '
+      + 'observed gaps, so the curve cannot be read at them.</div>';
+    const pct = Math.round(100 * sum / usable);
+    return '<div data-drillrow="1"><b>' + esc(coh) + '</b>: <b>' + pct + '%</b> of offers would fill '
+      + '<span class="dim">— averaging the curve over your ' + usable + ' observed gap'
+      + (usable === 1 ? '' : 's') + (capped ? ', ' + capped + ' of them longer than the ' + PAPER_HORIZON_H
+          + 'h window and read at the window' : '') + '</span> '
+      + drill("paper:cadence:" + coh, 'your gaps', {
+          head: "the walk-up gaps this was averaged over — your behaviour, not the market",
+          cols: [{ k: "gap", lab: "Gap (h)", num: 1, sortk: "_g" }, { k: "read", lab: "Curve read at" },
+                 { k: "note", lab: "" }],
+          rows: gaps.slice().sort((a, b) => a - b).map(g => ({
+            gap: g.toFixed(2), _g: g, read: fmtHrs(Math.min(g, PAPER_HORIZON_H)),
+            note: g > PAPER_HORIZON_H ? "longer than the window — read at " + PAPER_HORIZON_H + "h" : "",
+            _txt: String(g) })),
+          empty: "No gaps.",
+          note: 'Sessions coalesced at ' + SESSION_COALESCE_MIN + ' minutes over a ' + SESSION_WINDOW_D
+              + '-day window. These are YOUR gaps: this figure moves when your routine moves and not otherwise, which is '
+              + 'the whole reason it is computed here instead of simulated into the trips.' })
+      + '</div>';
+  });
+  return head + lines.join("")
+    + '<div class="dim" style="margin-top:4px">Two measurements multiplied: the fill curve above is a <b>market</b> '
+    + 'property and converges; your gap distribution is a <b>behavioural</b> one and moves only when you change. '
+    + '<b>Assumption stated:</b> this treats fill time as independent of the hour an offer was placed. If the market '
+    + 'fills differently at 03:00 than at 15:00 that is not captured here — the time-of-day-opened split below is what '
+    + 'would show it, and conditioning the curve on it is the fix if it does.</div>';
+}
+function paperShapeCells(closed, thin){
+  const arr = closed || paperClosed();
+  const th = thin || paperThin();
+  const cohorts = [...new Set(arr.concat(th).map(paperCohortOf))].sort();
+  /* The key list is the CLOCK, not the schedule (Aug 13 2026): gap labelling
+     retired with the fixed horizon, so these are fixed six-hour buckets that
+     do not move when a setting does. */
+  const gapKeys = TOD_BUCKETS.map(b => b.k);
+  const cells = [], groups = [], missing = [];
+  for (const c of cohorts){
+    for (const gk of gapKeys){
+      const inGap = arr.filter(p => paperCohortOf(p) === c && shapeOf(p) === gk);
+      const thinGap = th.filter(p => paperCohortOf(p) === c && shapeOf(p) === gk);
+      if (!inGap.length && !thinGap.length){ missing.push({ cohort: c, gap: gk }); continue; }
+      groups.push({ key: c + " · " + gk, cohort: c, gap: gk,
+        gapObj: null,
+        trips: inGap, thin: thinGap, econ: paperEconomics(inGap),
+        bands: [...new Set(inGap.map(modelKeyOf))].map(k => ({ b: { k: k, lab: k, min: 0, hint: "Trips graded by this fill model. A schedule-derived horizon and the fixed 6h window are different experiments and never pool." }, n: inGap.filter(p => modelKeyOf(p) === k).length })).filter(x => x.n) });
+      for (const b of [...new Set(inGap.concat(thinGap).map(modelKeyOf))].map(k => ({
+             k: k, lab: k, min: 0,
+             hint: "Trips graded by this fill model — a schedule-derived horizon and the fixed 6h window are different experiments and never pool." }))){
+        const t = inGap.filter(p => modelKeyOf(p) === b.k);
+        const tt = thinGap.filter(p => modelKeyOf(p) === b.k);
+        if (!t.length && !tt.length) continue;
+        cells.push({ key: c + " · " + gk + " · " + b.k, cohort: c, gap: gk, band: b,
+          gapObj: null,
+          trips: t, thin: tt, econ: paperEconomics(t) });
+      }
+    }
+  }
+  return { cells: cells, groups: groups, missing: missing, gapKeys: gapKeys, cohorts: cohorts };
+}
+const todBadge = (gk, _x) => '<span class="badge ' + (gk === "00–06" || gk === "18–24" ? "b-seed" : "b-ok")
+  + '" title="' + esc("The six-hour clock bucket this placement was OPENED in. A property of the market clock, not of any schedule — gap labelling retired Aug 13 2026 with the fixed horizon: "
+      + gk
+      + " local. Time-of-day is the honest residue of the retired gap split.")
+  + '">' + esc(gk) + '</span>';
+/* The panel's own one-line answer. It counts by GAP and says out loud that the
+   counts pool cohorts and durations — the table below is the split. */
+function shapeSubLine(res){
+  const byGap = new Map();
+  for (const g of res.groups) byGap.set(g.gap, (byGap.get(g.gap) || 0) + g.trips.length);
+  if (!byGap.size) return "no counted trips in any scheduled gap yet";
+  return [...byGap.entries()].map(e => e[1] + " in " + e[0]).join(" · ")
+    + " — counts pool cohorts and durations; the table splits both, and gaps are never summed";
+}
+function paperShapeSection(){
+  const closed = paperClosed(), thin = paperThin();
+  const res = paperShapeCells(closed, thin);
+  if (!res.groups.length)
+    return '<div class="dim">No closed paper trips in any scheduled gap yet — this comparison has no population rather '
+         + 'than a null result. Cells appear as trips close.</div>';
+  const bits = [];
+  if (!scheduleOn())
+    bits.push(neverFedNote("The gap comparison",
+      "No cadence is kept (the touch schedule is explicitly empty), so there are no scheduled gaps to place trips into and "
+      + "every trip falls in one undifferentiated bucket."));
+  bits.push('<div class="note">Each row is one <b>scheduled gap</b> — the gap a placement was OPENED in, named by position '
+    + 'in the schedule and <b>never by how long the offer had left</b>. A trip opened at 22:38 that sits until the 07:00 '
+    + 'touch ran in the overnight gap even though only 8.4h remained. <b>Remaining duration is a separate dimension</b>: a '
+    + 'full-gap placement and a late top-up are different experiments and get their own rows, never a shared total.'
+    + teach('Why this replaced the overnight/daytime duration label (Aug 13 2026)',
+        'The old rule called a trip "overnight" when its horizon reached the longest scheduled gap less an hour. With the '
+      + '7/12/17/21.5 schedule that is a 9.5h gap against an 8.5h bar, so only opens between 21:30 and about 22:30 qualified '
+      + 'and everything placed later in the same gap was filed as "daytime". Measured on two real exports: 26 trips ran in '
+      + 'the overnight gap, 9 of them were labelled daytime, and those 9 carried a bigger loss than the entire labelled '
+      + 'overnight cell — including the largest single position in the book, opened at 22:38 and held unattended until 07:00. '
+      + 'The label was wrong rather than imprecise, and it was wrong about the only result the book had produced.') + '</div>');
+  bits.push('<div class="plan-note">Every figure below is ' + provTag(true)
+    + ' — computed from ' + esc(paperHealthTxt()) + '. Trips under the observation floor are excluded from the numbers and '
+    + 'counted in their own column.</div>');
+  const cellDrill = (key, k, face, head, trips, extra) => drill("paper:shape:" + key + ":" + k, face, {
+    head: head, cols: PAPER_TRIP_COLS, rows: paperTripRows(trips),
+    empty: "No trips in this cell.", note: PAPER_NOTE() + (extra ? " " + extra : "")
+  });
+  const concFace = e => {
+    if (!e.n) return '<span class="dim">—</span>';
+    const g = e.topAbsShare != null ? Math.round(e.topAbsShare * 100) + "% of gross" : "—";
+    return g + (e.top1Share != null ? ", " + Math.round(e.top1Share * 100) + "% of net" : "");
+  };
+  const rowFor = (o, isGroup) => {
+    const e = o.econ, key = o.key;
+    const label = isGroup
+      ? '<td style="text-align:left"><b>' + esc(o.cohort) + '</b></td><td>' + todBadge(o.gap) + '</td>'
+        + '<td style="text-align:left"><b>all durations</b> <span class="dim">— '
+        + o.bands.map(x => x.n + " " + x.b.lab).join(", ") + ', split below and never summed as one experiment</span></td>'
+      : '<td style="text-align:left" class="dim">↳</td><td class="dim">' + esc(o.gap) + '</td>'
+        + '<td style="text-align:left">' + esc(o.band.lab)
+        + ' <span class="dim" title="' + esc(o.band.hint) + '">(≥' + Math.round(o.band.min * 100) + '% of the gap)</span></td>';
+    return '<tr' + (isGroup ? ' data-shapegroup="' + esc(key) + '"' : ' data-shapecell="' + esc(key) + '"') + '>'
+      + label
+      + '<td>' + cellDrill(key, "n", String(e.n), o.cohort + " · " + o.gap + (isGroup ? "" : " · " + o.band.lab)
+          + " — every counted closed trip in this cell", o.trips) + '</td>'
+      + '<td>' + cellDrill(key, "notional", gp(Math.round(e.notional)),
+          o.cohort + " · " + o.gap + " — the entry-side size behind this cell", o.trips,
+          'Summed qty × bid, NOT simultaneous exposure.') + '</td>'
+      + '<td class="' + sign(e.net) + '">' + cellDrill(key, "net", gp(Math.round(e.net)),
+          o.cohort + " · " + o.gap + " — simulated net after tax, trip by trip", o.trips) + '</td>'
+      + '<td>' + (e.rate != null ? (e.rate * 100).toFixed(2) + '%' : '<span class="dim">—</span>') + '</td>'
+      + '<td>' + cellDrill(key, "top", concFace(e),
+            o.cohort + " · " + o.gap + " — the single largest mover by absolute net, the trip this cell may rest on",
+            e.topAbsTrip ? [e.topAbsTrip] : [],
+            'Gross share is |top trip| divided by the sum of |net| across the cell — defined on losing cells, where '
+          + 'share-of-net is not. Share of net renders beside it only where the cell net is positive.')
+        + (e.topAbsTrip ? ' <span class="dim">' + esc(e.topAbsTrip.name || itemName(e.topAbsTrip.itemId)) + '</span>' : '')
+        + '</td>'
+      + '<td>' + (o.thin.length
+          ? cellDrill(key, "thin", String(o.thin.length), o.cohort + " · " + o.gap
+              + " — EXCLUDED from every number in this row, under the observation floor", o.thin)
+          : '<span class="dim">0</span>') + '</td></tr>';
+  };
+  const rows = res.groups.map(g =>
+    rowFor(g, true) + res.cells.filter(c => c.cohort === g.cohort && c.gap === g.gap).map(c => rowFor(c, false)).join("")
+  ).join("");
+  bits.push('<div class="tw"><table id="paperShapeTable"><thead><tr>'
+    + '<th>' + glTerm("paper-cohort", "Cohort") + '</th>'
+    + '<th>' + glTerm("paper-gap", "Scheduled gap") + '</th>'
+    + '<th>' + glTerm("paper-durband", "Remaining duration") + '</th>'
+    + '<th title="Closed trips that cleared the observation floor">Trips</th>'
+    + '<th>' + glTerm("met-notional", "Notional") + '</th>'
+    + '<th>Net sim</th>'
+    + '<th>' + glTerm("met-gpday", "Net / gp-day") + '</th>'
+    + '<th>' + glTerm("met-concentration", "Top mover") + '</th>'
+    + '<th>' + glTerm("paper-insufficient", "Excluded") + '</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>');
+  if (res.missing.length){
+    const byC = new Map();
+    for (const m of res.missing) byC.set(m.cohort, (byC.get(m.cohort) || []).concat([m.gap]));
+    bits.push('<div class="dim" style="margin-top:5px"><b>Never placed:</b> '
+      + [...byC.entries()].map(e => esc(e[0]) + ' in the ' + e[1].map(esc).join(", ") + ' gap'
+          + (e[1].length === 1 ? '' : 's')).join(' · ')
+      + '. That is an absence of evidence, not a result of zero — these have no row above rather than a zero row.</div>');
+  }
+  bits.push('<div class="plan-note"><b>Fixed ' + PAPER_HORIZON_H + 'h horizon:</b> this book tests <b>whether an offer fills</b>, not whether it fills before you get back. It <b>no longer models your cadence</b> at all — that question is answered separately, by applying your actual walk-up gaps to the fill curve above.</div>');
+  bits.push(paperConcentrationLine(res.groups));
+  bits.push(paperAnchorLine(closed));
+  bits.push(paperShapeDisagreement(res.groups));
+  bits.push(paperRoutingQuestion(res.groups));
+  return bits.join("");
+}
+/* THE CONCENTRATION LINE. Uses GROSS share so it speaks on losing cells — the
+   defect it was rebuilt for. The callout cut chooses what to NAME and gates
+   nothing; every cell's figure renders in the table regardless. */
+const CONCENTRATION_CALLOUT = 0.5;
+function paperConcentrationLine(groups){
+  const hot = groups.filter(g => g.econ.n > 1 && g.econ.topAbsShare != null && g.econ.topAbsShare >= CONCENTRATION_CALLOUT)
+    .sort((a, b) => b.econ.topAbsShare - a.econ.topAbsShare);
+  const head = '<div class="nexthead" style="margin-top:8px"><b>Concentration</b> — which cells are one trip wearing a plural count</div>';
+  if (!hot.length)
+    return head + '<div class="dim">No cell with more than one counted trip has a single trip carrying '
+      + Math.round(CONCENTRATION_CALLOUT * 100) + '% or more of its gross movement.</div>';
+  return head + hot.map(g => {
+    const e = g.econ, t = e.topAbsTrip;
+    return '<div data-drillrow="1"><b>' + esc(g.cohort) + ' · ' + esc(g.gap) + '</b> — the largest mover ('
+      + esc(t.name || itemName(t.itemId)) + ', ' + gp(Math.round(tripNotional(t))) + ' notional) is '
+      + '<span class="' + sign(t.net || 0) + '">' + gp(Math.round(t.net || 0)) + '</span>, <b>'
+      + Math.round(e.topAbsShare * 100) + '%</b> of the cell\'s <b>' + gp(Math.round(e.gross))
+      + '</b> gross movement across ' + e.n + ' counted trips'
+      + (e.top1Share != null ? ' (and ' + Math.round(e.top1Share * 100) + '% of its ' + gp(Math.round(e.net)) + ' net)' : '')
+      + '. Read this cell as one result until it has trips that stand without it: '
+      + drill("paper:conc:" + g.key, 'the other ' + (e.n - 1) + ' trip' + (e.n - 1 === 1 ? '' : 's'), {
+          head: g.cohort + " · " + g.gap + " — the cell with its largest mover removed",
+          cols: PAPER_TRIP_COLS, rows: paperTripRows(g.trips.filter(p => p !== t)),
+          empty: "Nothing else in this cell — the top trip IS the cell.",
+          note: 'Their net alone is ' + gp(Math.round(e.net - (t.net || 0))) + ' simulated. ' + PAPER_NOTE()
+        })
+      + '.</div>';
+  }).join("");
+}
+/* PRESENCE, TAGGED NOT GATED (user ruling, Aug 13 2026). 76% of trips open
+   more than half an hour from any touch, so gating generation on presence
+   would cost most of the sample. Instead every trip records whether a WALK-UP
+   was logged near its open, and the two populations are reported apart — if
+   they behave differently that IS the fidelity finding, and it gets measured
+   rather than assumed either way. */
+function paperAnchorLine(closed){
+  const known = (closed || []).filter(p => p.anchored != null);
+  const head = '<div class="nexthead" style="margin-top:8px"><b>Placements you were there for</b></div>';
+  if (!known.length)
+    return head + neverFedNote("The touch-anchor split",
+      (closed || []).length + " counted trips exist and not one carries an anchor stamp. The stamp is an OPEN-TIME fact — "
+      + "was a walk-up logged within " + TOUCH_ANCHOR_MIN + " minutes? — and cannot be reconstructed afterwards, so it "
+      + "accrues only from the first scan after it shipped.");
+  const A = known.filter(p => p.anchored), U = known.filter(p => !p.anchored);
+  const seg = (lab, arr, key) => {
+    const e = paperEconomics(arr);
+    return lab + ' ' + drill("paper:anchor:" + key, e.n + ' trip' + (e.n === 1 ? '' : 's'), {
+        head: lab.replace(/<[^>]+>/g, "") + " — the trips behind this", cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
+        empty: "None.", note: PAPER_NOTE() }) + ', net <span class="' + sign(e.net) + '">'
+      + gp(Math.round(e.net)) + '</span>'
+      + (e.rate != null ? ' <span class="dim">(' + (e.rate * 100).toFixed(2) + '%/gp-day)</span>' : '');
+  };
+  const stale = (closed || []).length - known.length;
+  return head + '<div data-drillrow="1">' + seg("<b>Touch-anchored</b>", A, "yes") + ' · ' + seg("<b>Unanchored</b>", U, "no")
+    + '<div class="dim">Anchored means a walk-up was logged within ' + TOUCH_ANCHOR_MIN + ' minutes of the open — actual '
+    + 'recorded presence, not the clock being near a scheduled touch. The generator is gated on neither, deliberately: '
+    + 'gating would cost most of the sample. These two are never summed into a verdict.'
+    + (stale ? ' ' + stale + ' older counted trip' + (stale === 1 ? '' : 's') + ' predate the stamp and are in neither figure.' : '')
+    + '</div></div>';
+}
+/* Where two gaps in the same cohort disagree in SIGN. */
+function paperShapeDisagreement(groups){
+  const byCohort = new Map();
+  for (const g of groups) byCohort.set(g.cohort, (byCohort.get(g.cohort) || []).concat([g]));
+  const head = '<div class="nexthead" style="margin-top:8px"><b>Where two gaps disagree</b></div>';
+  const multi = [...byCohort.entries()].filter(e => e[1].length > 1);
+  const split = multi.filter(e => e[1].some(g => g.econ.net > 0) && e[1].some(g => g.econ.net < 0));
+  if (!multi.length)
+    return head + '<div class="dim">No cohort has counted trips in more than one scheduled gap yet, so nothing here is a '
+      + 'comparison — the rows above are single-gap readings and must not be read against each other across cohorts.</div>';
+  if (!split.length)
+    return head + '<div class="dim">' + multi.length + ' cohort' + (multi.length === 1 ? ' has' : 's have') + ' counted trips '
+      + 'in more than one gap and none changes sign between them. That is a reading, not an absence: on this evidence the '
+      + 'gap is not what separates the winners from the losers.</div>';
+  return head + split.map(e => {
+    const coh = e[0], gs = e[1].slice().sort((a, b) => b.econ.net - a.econ.net);
+    const seg = g => esc(g.gap) + ' <span class="' + sign(g.econ.net) + '">' + gp(Math.round(g.econ.net)) + '</span> on <b>'
+      + g.econ.n + '</b> trip' + (g.econ.n === 1 ? '' : 's') + ' <span class="dim">(' + gp(Math.round(g.econ.notional))
+      + ' notional)</span>';
+    const thin = gs.some(g => g.econ.n < 5);
+    return '<div style="margin-top:3px"><b>' + esc(coh) + '</b> — ' + gs.map(seg).join(' vs ')
+      + '. <span class="dim">Opposite signs across gaps in one cohort: a CADENCE finding, not a gate finding, and no gate '
+      + 'constant follows from it.' + (thin ? ' At least one side is under 5 trips, so this is a question raised, not settled.' : '')
+      + '</span></div>';
+  }).join("");
+}
+function paperRoutingQuestion(groups){
+  const from = paperCleanFrom();
+  const byCohort = new Map();
+  for (const g of groups) byCohort.set(g.cohort, (byCohort.get(g.cohort) || []).concat([g]));
+  const split = [...byCohort.entries()].filter(e => e[1].length > 1
+    && e[1].some(g => g.econ.net > 0) && e[1].some(g => g.econ.net < 0));
+  if (!split.length) return "";
+  const bar = GAP_BAND_VERDICT_TRIPS;
+  const lines = split.map(e => {
+    const coh = e[0];
+    const win = e[1].slice().sort((a, b) => b.econ.net - a.econ.net)[0];
+    const clean = from == null ? [] : win.trips.filter(p => (p.t || 0) >= from);
+    const ec = win.econ;
+    return '<div style="margin-top:3px">• <b>' + esc(coh) + '</b> — the proposal the evidence would support is '
+      + '<b>place it only in the ' + esc(win.gap) + ' gap</b>. Standing against the bar: <b>' + clean.length + ' of ' + bar
+      + '</b> clean closed trips in that cell'
+      + (from == null ? ' <span class="neg">— and nothing is clean right now: the paper book has open defects ('
+          + esc(paperDefectsOpen().map(x => x.label).join(", ")) + ').</span>' : '') + '. '
+      + (ec.topAbsShare != null
+        ? 'Concentration ' + Math.round(ec.topAbsShare * 100) + '% of gross — '
+          + (ec.topAbsShare >= CONCENTRATION_CALLOUT
+            ? 'the count is necessary and not sufficient here, because most of that cell is one trip.'
+            : 'spread across the cell rather than carried by one trip.')
+        : '')
+      + '</div>';
+  });
+  return '<div class="plan-note" style="margin-top:8px"><b>The question this raises — and the one it does not.</b> '
+    + 'A cohort that prints in one gap and bleeds in another raises a <b>routing</b> question: should it be placed only at '
+    + 'the touch whose gap it survives? It does <b>not</b> argue for more coverage of that cohort — the held scanner proposal '
+    + 'answers "does this band deserve its own scanner", a different change with a different cost, and evidence for routing '
+    + 'is not evidence for it. <b>That proposal stays held.</b>'
+    + lines.join("")
+    + '<div class="dim" style="margin-top:4px">Routing is a strategy change and clears the same bar as any other: ' + bar
+    + ' clean post-fix closed trips in the cell, with the concentration reading beside the count. Nothing on this surface '
+    + 'applies anything — there is no button here and nothing is queued.</div></div>';
 }
 function paperRegimeSection(){
   const log = (DB.shadowDivLog || []).slice(-31);
@@ -8161,8 +9043,8 @@ function paperGateSection(){
     const misses = s.arr.filter(p => p.state === "unfilled");
     const rate = s.n ? Math.round((fills.length / s.n) * 100) : 0;
     return '<tr><td style="text-align:left">' + gateChip(s.gate || g)
-      + ' <span class="badge ' + (s.shape === "overnight" ? "b-seed" : "b-ok") + '" title="Trips that ran under an overnight horizon are a different experiment from daytime ones — a finding true at one and not the other is a HORIZON finding, not a gate finding.">'
-      + esc(s.shape || "daytime") + '</span>' + evidenceNote(s.arr) + '</td>'
+      + ' ' + todBadge(s.shape || "—")
+      + evidenceNote(s.arr) + '</td>'
       + '<td>' + cell(g, "n", String(s.n), 'benched by "' + g + '" alone — every closed paper trip it opened', s.arr) + '</td>'
       + '<td>' + cell(g, "fill", String(fills.length), 'would have filled at ' + shadowPartPct() + '% participation — the conservative reading that drives state and net', fills) + '</td>'
       + '<td>' + cell(g, "full", String(s.filledFull), 'would also have filled at 100% participation — the same trips read without the haircut', s.arr.filter(shadowFullFilled)) + '</td>'
@@ -8292,8 +9174,21 @@ function paperSummaryLine(){
   const closed = paperClosed();
   const gates = shadowByGate();
   const evd = shadowRegimeEvidence();
+  /* The horizon split rides the review's one-liner too (ruled Aug 11 2026:
+     one line here, the surface does the work). A sign disagreement between a
+     cohort's two horizons is the kind of thing that should not wait for
+     someone to open a panel. */
+  const shRes = paperShapeCells(closed, paperThin());
+  const shBoth = new Map();
+  for (const g of shRes.groups) shBoth.set(g.cohort, (shBoth.get(g.cohort) || []).concat([g]));
+  const shSplit = [...shBoth.entries()].filter(e => e[1].length > 1
+    && e[1].some(g => g.econ.net > 0) && e[1].some(g => g.econ.net < 0));
   return '<div class="inline"><div>' + closed.length + ' closed paper trip' + (closed.length === 1 ? '' : 's')
     + ' · ' + gates.size + ' gate' + (gates.size === 1 ? '' : 's') + ' with outcomes · '
+    + (shSplit.length
+      ? '<b>' + shSplit.length + ' cohort' + (shSplit.length === 1 ? '' : 's') + ' change sign between scheduled gaps</b> ('
+        + shSplit.map(e => esc(e[0])).join(", ") + ') · '
+      : '')
     + paperRateFace(closed) + ' · '
     + (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence')
     + ' — <a href="#" data-goto="paper#paperRegimePanel">open the paper book →</a></div>'
@@ -8897,7 +9792,7 @@ function deploySparkHTML(){
    requires the FULL plan gate chain (candidateFor) below. minRoiFactor < 1
    (scanner paper cohort only) admits near-the-floor items so single-gate
    ROI near-misses survive the screen — the scout itself always passes 1. */
-function scanScreenTier(t, minRoiFactor){
+function scanScreenTier(t, minRoiFactor, horizonH){
   const f = t === 2 ? DB.filtersT2 : DB.filtersT1;
   const out = [];
   for (const it of S.items){
@@ -8921,7 +9816,10 @@ function scanScreenTier(t, minRoiFactor){
     /* Admission rank = the allocator's own currency: post-tax sustained
        margin × the units a fill horizon can move. */
     const volGate = volGateFor(c).v;   // same binding rule as the plan — one quiet 5m window ranks nothing down
-    const hu = Math.max(1, Math.floor(volGate * GATE.capture * FILLH()));
+    /* horizonH lets the PAPER caller rank on its own fixed window while the
+       live scanner keeps ranking on the operator's touch horizon — the two
+       callers of this function are on opposite sides of the ruling. */
+    const hu = Math.max(1, Math.floor(volGate * GATE.capture * (horizonH || FILLH())));
     out.push({ id: it.i, score: eM * hu, eR, vol: c.volSide, px: c.buy });
   }
   out.sort((a,b) => b.score - a.score);
@@ -10612,7 +11510,7 @@ function gateStreamsSection(){
       : '';
     const shTrips = sh ? sh.arr : [];
     secs.push('<div class="gtree" data-drillrow="1"><div class="gname"><b>' + gateChip((sh && sh.gate) || g) + '</b>'
-      + (sh && sh.shape ? ' <span class="badge ' + (sh.shape === "overnight" ? "b-seed" : "b-ok") + '">' + esc(sh.shape) + '</span>' : '')
+      + (sh && sh.shape ? ' ' + todBadge(sh.shape) : '')
       + evidenceNote(shTrips) + ' — benched '
       + (r ? drill("gate:bench:" + g, r.benched + ' item' + (r.benched === 1 ? '' : 's'), {
               head: g + " — every item it benched this week, with whatever traded afterwards",
@@ -10748,10 +11646,13 @@ function gateExcSection(){
   if (excActiveN() >= EXC_MAX_ACTIVE){
     secs.push('<div class="dim">No candidates render: the lane is at its ' + EXC_MAX_ACTIVE
       + '-active cap. A waiver or revocation frees a slot.</div>');
+    secs.push(excStandingsHTML());
   } else if (!cands.length){
-    secs.push('<div class="dim">No candidates clear the evidence bar right now — ≥' + EXC_MIN_TRIPS + ' closed paper trips, fill rate ≥'
-      + Math.round(EXC_FILLRATE * 100) + '%, paper-profitable, spanning ≥' + EXC_MIN_DAYS
-      + ' days, and no red flags (pump-suspected, blacklisted, or toxic-flow items are barred from the lane entirely).</div>');
+    /* The bar-recitation line this replaces named no item, no clause and no
+       distance — it recited the rule and left the reader to work out which
+       half of it was biting. The ranking below IS that line's replacement, not
+       an addition beside it. */
+    secs.push(excStandingsHTML());
   } else {
     secs.push('<div class="nexthead"><b>Ranked shortlist</b> — best conservative simulated net first, truncated at the free probation slots. The grant is your press, from the bench line or the rulings digest.</div>');
     for (const c of cands)
@@ -10762,7 +11663,7 @@ function gateExcSection(){
             empty: "No rows.",
             note: PAPER_NOTE() + ' Scanner-cohort trips are excluded from this evidence by construction — they nominate an item for scout ADMISSION, never for probation. One stage per move.'
           })
-        + ' over ' + Math.round(c.s.spanD) + ' days</div>');
+        + ' over ' + spanDaysTxt(c.s) + '</div>');
   }
   return secs.join("");
 }
@@ -10855,7 +11756,7 @@ function renderAuditInline(){
      it had outgrown. */
   secs.push('<div class="nexthead"><b>4 · Gate health</b> — both streams per gate, the die-off record and the exception lane now live on their own surface.</div>');
   secs.push(gateSummaryLine());
-  secs.push('<div class="nexthead"><b>5 · Prospecting</b> — the per-stratum map, the gap band\'s verdict, the hours ledger and the recipe basis now live on their own surface.</div>');
+  secs.push('<div class="nexthead"><b>5 · Prospecting</b> — the per-stratum map, the gap band\'s verdict and the hours ledger now live on their own surface.</div>');
   secs.push(prospectSummaryLine());
   /* §5b — APPLIED AUTOMATICALLY (user ruling, Aug 11 2026). The ruling
      traded the ratification ceremony for a reviewable record, so the record
@@ -11034,13 +11935,18 @@ function prospectingInline(){
    trips are those opened after the register cleared. Both counts render,
    because "N trips" that silently mixes the two is exactly the pooling the
    never-pool rule forbids. */
-function gapBandCleanFrom(){
+/* Renamed from gapBandCleanFrom (Aug 13 2026): the definition was never
+   band-specific — it is "when did the paper book last have a clear register" —
+   and the horizon split's routing bar needs the same line drawn. A name that
+   claims a narrower scope than the code has is how the same computation gets
+   written twice under two names. */
+function paperCleanFrom(){
   /* Trips opened at or after the last defect was struck from the register are
      clean. While anything is open, nothing is clean — stated, not implied. */
   return paperDefectsOpen().length ? null : (DB.paperDefectsClearedAt || 0);
 }
 function gapBandVerdict(g, trips){
-  const from = gapBandCleanFrom();
+  const from = paperCleanFrom();
   const clean = from == null ? [] : trips.filter(p => (p.t || 0) >= from);
   const contaminated = from == null ? trips.slice() : trips.filter(p => (p.t || 0) < from);
   const netOf = a => a.reduce((s, p) => s + (p.net || 0), 0);
@@ -11069,6 +11975,19 @@ function gapBandVerdictLine(g, trips, enough){
           + 'until then this line reports rather than recommends.'
         : '<b>Scanner proposal HELD</b> — ' + v.clean.n + ' of ' + v.bar + ' clean closed trips. Accruing.')
     + (enough && !v.ready ? ' The old total-trip count would have called this ruleable; it pooled contaminated trips with clean ones, which is the same defect one level up.' : '')
+    /* ROUTING IS NOT COVERAGE (user ruling, Aug 13 2026). The band's two
+       horizons disagree in sign, and that argues about WHEN to place it, not
+       about how much of it to watch — so it must not be read as the scanner
+       proposal's evidence arriving. Load-bearing beside a HELD decision, so
+       the distinction stays visible and only its reasoning folds. */
+    + ' <b>A split across horizons is a routing question, not this one</b> — '
+    + '<a href="#" data-goto="paper#paperShapePanel">Paper Book → Overnight vs daytime</a>.'
+    + teach('Why the horizon split is not evidence for or against the scanner',
+        'The scanner proposal asks whether the band deserves more COVERAGE — more items watched, more attention spent. A '
+      + 'cohort that prints overnight and bleeds daytime is saying something about WHEN its trips should be placed, which is '
+      + 'a routing change: different cost, different failure mode, different bar. Evidence for one is not evidence for the '
+      + 'other, and reading it across would let a proposal be ratified by a finding that was never about it. Both changes '
+      + 'clear the same ' + GAP_BAND_VERDICT_TRIPS + '-clean-trip bar, separately, in the cell each one is about.')
     + '</div></div>';
 }
 function gapBandInline(){
@@ -11142,7 +12061,7 @@ function prospectSummaryLine(){
     + (best ? ' · best region so far: <b>' + esc(STRATUM_LAB(best.k)) + '</b>' + STRATUM_TRIPWIRE : ' · no region has enough closed trips to rank yet')
     + ' · gap band ' + ((g.trips || 0) >= 5 ? ((g.net || 0) > 0 ? '<b>prints</b>' : '<b>proven empty</b>') : 'still accruing')
     + ' — <a href="#" data-goto="prospect#prospectStrataPanel">open prospecting →</a></div>'
-    + '<div class="dim">The working surface carries the per-stratum map, the gap-band verdict, the hours ledger\'s two streams and the recipe basis table, each opening to its rows.</div></div>';
+    + '<div class="dim">The working surface carries the per-stratum map, the gap-band verdict and the hours ledger\'s two streams, each opening to its rows.</div></div>';
 }
 
 function auditSeedAction(id, act){
@@ -14259,6 +15178,55 @@ const GLOSSARY = [
     from: "Stamped when the position opens.",
     do: "Never read a scanner-cohort result as a gate finding — it is a pipeline finding, and it can only nominate an "
         + "item for the scout's attention at its unchanged admission bar. The funnel moves one stage per ruling." },
+  { id: "exc-span", term: "Observed span", aka: "≥7 observed days, the exception lane's span clause",
+    what: "How many OBSERVED days an item's counted paper trips are spread across — first open to last close, counting "
+        + "only days the tool was actually open and building a plan. Rendered as a duration, so it is directly comparable "
+        + "to the wall-clock span beside it; the difference between the two is the coverage statement.",
+    from: "The observed-day ledger (<code>obsDays</code> plus gate-log dates), intersected with the trip span.",
+    do: "Read it as the dispersion of the evidence, not the age of the item. The clause exists so five trips from one "
+        + "lucky afternoon cannot waive a gate — it wants five different market conditions, not five samples of one.",
+    caveat: "Corrected Aug 13 2026: this counted WALL-CLOCK days, so five trips straddling a five-day closed laptop read "
+          + "as seven days of evidence. Days nobody watched are not evidence either way. Both ledgers prune at 30 days, so "
+          + "a longer record cannot report itself — the line says so when it is at that ceiling." },
+  { id: "paper-gap", term: "Scheduled gap", aka: "morning, midday, afternoon, evening — the badge on a paper trip",
+    what: "Which scheduled gap a placement was OPENED in, named by its position in your touch schedule. The gap that wraps "
+        + "midnight is the overnight sit. It is a property of WHEN the offer was placed, never of how long it had left.",
+    from: "The trip's open timestamp, matched against the touch schedule.",
+    do: "Read the gaps apart and never add them. A cohort that prints in one gap and bleeds in another is telling you WHEN "
+        + "to place it — a routing question — and no gate constant follows from it.",
+    caveat: "Replaced a DURATION label on Aug 13 2026 that was wrong rather than imprecise. \"Overnight\" used to mean a "
+          + "horizon of at least the longest gap less an hour, which on a 9.5h gap is an 8.5h bar — so only opens between "
+          + "21:30 and about 22:30 qualified, and 9 trips that ran the whole overnight sit, including the largest single "
+          + "position in the book, were filed as \"daytime\"." },
+  { id: "paper-durband", term: "Remaining duration band", aka: "full gap, mid gap, late top-up",
+    what: "How much of its gap an offer still had when it was placed, as a share of that gap: full (≥80%), mid (≥30%), "
+        + "late top-up (under 30%). Expressed as a share so it means the same thing in a 4.5h gap and a 9.5h one.",
+    from: "The trip's stamped horizon divided by the length of the gap it opened in.",
+    do: "Never read a full-gap placement and a late top-up as one result — they are different experiments even though they "
+        + "ran in the same gap. This is the dimension that must stay separate from the gap, not folded into it.",
+    caveat: "Grouping only. Nothing gates on these bands — no gate, bench, size or verdict reads them — and the cuts are "
+          + "unruled, so they may be renamed or moved without any strategy consequence." },
+  { id: "paper-anchor", term: "Touch-anchored", aka: "anchored, unanchored",
+    what: "Whether a walk-up was actually logged within 20 minutes of a paper trip opening. Anchored trips are placements "
+        + "you were demonstrably there for; unanchored ones the generator made while the app was merely running.",
+    from: "Your walk-up log, checked at the moment the trip opens.",
+    do: "Compare the two before trusting any paper result as a model of your trading. If anchored and unanchored trips "
+        + "behave differently, the book is partly measuring the poll cycle rather than your placements — and that is a "
+        + "finding about fidelity, not about the market.",
+    caveat: "Real recorded presence, not clock proximity to a configured touch — anchoring on the schedule would assume the "
+          + "very thing in question. An open-time fact: trips opened before Aug 13 2026 carry no stamp, are in neither "
+          + "population, and the line says how many." },
+  { id: "paper-shape", term: "Horizon shape (retired)", aka: "overnight, daytime — the pre-Aug-13-2026 label",
+    what: "RETIRED Aug 13 2026, kept so the term is still findable in older exports and audit reports. It meant: a trip is <b>overnight</b> when its own stamped horizon "
+        + "reaches at least the longest scheduled touch gap less an hour's slack; everything shorter is <b>daytime</b>. "
+        + "With the default four-touch cadence that is a ~9.5h sit against three ~5h ones.",
+    from: "The horizon stamped on the trip when it was placed (<code>hzH</code>) — never the plan's current gap, so a "
+        + "schedule change does not silently reclassify history.",
+    do: "Nothing — it is context for reading records written before Aug 13 2026. The live term is the SCHEDULED GAP. A cohort that prints in one gap and bleeds in another is telling you WHEN to "
+        + "place it, not whether to trust the gate that benched it — the finding is about routing, and no gate constant "
+        + "follows from it. Trade → Paper Book → Overnight vs daytime is the comparison.",
+    caveat: "Grouping dimension, not a filter (ruled Aug 11 2026): a filter defaults to hiding exactly the finding that "
+          + "holds at one horizon and not the other." },
   { id: "paper-filtercost", term: "Filter opportunity cost",
     what: "Scanner-cohort simulated net against watchlist-cohort net over the same window (since the earliest scanner "
         + "entry, so a young cohort is never compared against 30 days of history).",
@@ -14620,6 +15588,24 @@ const GLOSSARY = [
         + "top-5 share beside it before you trust either — a rate carried by one outsized trip is anecdote.",
     caveat: "Simulated throughout. The raw summed net it replaced survives only inside the regime comparison, where the "
           + "three regimes screen the same population so the level cancels out and only the difference means anything." },
+  { id: "met-notional", term: "Notional", aka: "notional deployed, entry-side size",
+    what: "The entry-side size of a paper trip — quantity × bid — summed across whatever population is being reported. It "
+        + "is the size the net was earned ON, which is what makes two nets comparable.",
+    from: "Each counted trip's qty and bid, added up.",
+    do: "Read it beside every net and every trip count. A 400k net on 11m of notional and the same net on 2m are different "
+        + "results, and the count alone will not tell you which you have.",
+    caveat: "SUMMED, never simultaneous — trips overlap, so this is not the capital the sim needed at once. That figure is "
+          + "the capital-feasibility line on the paper headline, which sweeps open and close events instead of adding." },
+  { id: "met-concentration", term: "Top-trip share of net", aka: "concentration",
+    what: "The single largest trip's net as a share of its cell's net. At 100% the cell is one result; above 100% the rest "
+        + "of the cell nets negative against that one trip.",
+    from: "The counted trips in one cohort at one horizon.",
+    do: "Read it before you read the cell's net. A cell of three trips whose top trip carries all of it has a sample size "
+        + "of one, and no count of trips will show you that — this is the number that does. It is why a trip count is a "
+        + "necessary and not a sufficient bar for any routing change.",
+    caveat: "Reported only where the cell's net is POSITIVE. A share of a negative net is not a proportion — it returns a "
+          + "large negative percentage that reads like a concentration figure and is not one — so the column reports the "
+          + "top trip's own net there instead, and says why." },
   { id: "met-capfeas", term: "Capital feasibility",
     what: "The peak amount of simulated notional the paper book ever held at one moment, against your actual working "
         + "capital (bank less reserve and Shadow Fund). Swept over open and close events, not summed, because trips "
@@ -16050,7 +17036,18 @@ function analysisTrip(p){
   return {
     item: p.name || itemName(p.itemId), itemId: p.itemId,
     cohort: paperCohortOf(p),
-    horizonShape: shapeOf(p), horizonHours: r2(legHorizonH(p)),
+    /* Relabelled Aug 13 2026: the scheduled GAP the placement opened in, named
+       by position, never a duration threshold. `remainingDurationBand` is the
+       separate dimension — a late top-up ran in the same gap as a full
+       placement and must not pool with it. */
+    scheduledGap: shapeOf(p),
+    scheduledGapIsOvernightSit: isOvernightGap(gapAt(p.t)),
+    remainingDurationBand: durKeyOf(p),
+    remainingShareOfGap: (() => { const g = gapAt(p.t); return g && g.h > 0 ? r2(legHorizonH(p) / g.h) : null; })(),
+    horizonHours: r2(legHorizonH(p)),
+    /* Presence at open. null = the trip predates the stamp; it is an open-time
+       fact and cannot be reconstructed, so it is never defaulted to false. */
+    touchAnchored: p.anchored == null ? null : !!p.anchored,
     evidenceGrade: gradeOf(p), exitPriceApproximate: !!p.exitApprox,
     observedPctOfHorizon: shadowObsPct(p),
     countsTowardVerdicts: shadowCounts(p),
@@ -16145,6 +17142,21 @@ function analysisHeader(view, truncation){
       byCohort: tally(resolved, paperCohortOf),
       byEvidenceGrade: tally(resolved, gradeOf),
       byHorizonShape: tally(resolved, shapeOf),
+      /* THE POOLED COUNT SHIPS WITH ITS DECOMPOSITION (Aug 13 2026). The
+         horizon tally above pools every cohort into two numbers, and the
+         cohorts disagree — the gap band's two horizons had opposite signs
+         while this file reported one overnight count. A pooled figure may
+         render only alongside its split; that binds a file exactly as it
+         binds a screen. */
+      byCohortAndHorizonShape: tally(resolved, p => paperCohortOf(p) + " · " + shapeOf(p)),
+      byGapAndDurationBand: tally(resolved, p => shapeOf(p) + " · " + durKeyOf(p)),
+      byTouchAnchor: tally(resolved, p => p.anchored == null ? "not stamped (predates Aug 13 2026)"
+        : p.anchored ? "touch-anchored" : "unanchored"),
+      horizonPoolingNote: "byHorizonShape pools all cohorts. Read byCohortAndHorizonShape beside it, and "
+        + "perCohortHorizonRollup below for the net, notional and concentration per cell — the gaps are "
+        + "different experiments and their sum answers none of them. `horizonShape` is now the SCHEDULED GAP the "
+        + "placement opened in, named by position; before Aug 13 2026 it was a duration threshold that filed late "
+        + "overnight-gap placements as \"daytime\".",
       byOutcome: tally(resolved, p => String(p.state))
     },
     observationCoverage: {
@@ -16164,6 +17176,30 @@ function analysisHeader(view, truncation){
       observedShareFloorPct: Math.round(SHADOW_MIN_OBS * 100),
       touchScheduleHours: touchWindows(),
       touchGapsHours: gaps.map(g => r2(g.h)),
+      /* THE TOUCH LEDGER (user-directed, Aug 13 2026) — the CONFIGURED schedule
+         above is a setting; this is behaviour. Without it no reader can tell
+         whether the horizons the book tests correspond to placements the
+         operator would have made or to a schedule they configured and have not
+         followed. Times and derived gaps only: no item, no price, no size, no
+         trading data of any kind. Local hour is carried explicitly because the
+         schedule is expressed in local hours and the stamps are UTC. */
+      touchLedger: (() => {
+        const ts = (DB.touchLog || []).filter(t => t && t.t).sort((a, b) => a.t - b.t);
+        const out = ts.map((t, i) => {
+          const d = new Date(t.t);
+          return { at: iso(t.t), localHour: r2(d.getHours() + d.getMinutes() / 60),
+            kind: t.m || null,
+            hoursSincePrevious: i ? r2((t.t - ts[i - 1].t) / 3600e3) : null };
+        });
+        return { walkUps: out,
+          dateOnlyEntriesWithNoTimestamp: (DB.touchLog || []).filter(t => t && !t.t).length,
+          note: out.length
+            ? "Actual logged walk-ups, oldest first. Compare localHour against touchScheduleHours and "
+              + "hoursSincePrevious against touchGapsHours: the paper book prices every placement for the "
+              + "CONFIGURED gap, so where these diverge the book is testing the setting rather than the behaviour."
+            : "No timestamped walk-ups recorded. The configured schedule cannot be checked against behaviour from "
+              + "this file, and any claim that the book models actual placements is unverified rather than false." };
+      })(),
       touchAttentionMinutes: touchMins(),
       fillHorizonFallbackH: DB.fillHorizonH,
       scheduleKept: scheduleOn(),
@@ -16210,8 +17246,42 @@ function analysisPaper(){
       netSimGp: Math.round(arr.reduce((a, p) => a + (p.net || 0), 0)),
       series: log.map(x => ({ date: x.d, cumulativeNetSimGp: Math.round(Number(x[r.col]) || 0) })) };
   });
+  /* PER COHORT × HORIZON (user-directed, Aug 13 2026) — the comparison this
+     file previously forced the reader to reconstruct by hand. Rows are not
+     duplicated for it: every trip already ships in closedTrips carrying its
+     cohort and horizonShape, so the rollup names the item ids behind each
+     cell and the reader joins on them. Cells with no trips are EMITTED, with
+     `neverSampled`, because an absent cell reads as a zero. */
+  const shapeRes = paperShapeCells();
+  const shapeRoll = shapeRes.groups.concat(shapeRes.cells).map(c => ({
+    cohort: c.cohort, horizonShape: c.gap,
+    scheduledGapIsOvernightSit: isOvernightGap(c.gapObj),
+    remainingDurationBand: c.band ? c.band.k : "all durations (the gap subtotal — never read as one experiment)",
+    grossMovementGp: Math.round(c.econ.gross),
+    topMoverShareOfGrossPct: c.econ.topAbsShare != null ? Math.round(c.econ.topAbsShare * 100) : null,
+    tripsCounted: c.econ.n, tripsExcludedByObservationFloor: c.thin.length,
+    neverSampled: !c.econ.n && !c.thin.length,
+    notionalGpSummed: Math.round(c.econ.notional),
+    notionalNote: "Summed entry-side qty × bid, NOT simultaneous exposure.",
+    netSimGp: Math.round(c.econ.net),
+    netPerGpDayPct: c.econ.rate != null ? r2(c.econ.rate * 100) : null,
+    topTripNetSimGp: c.econ.topTrip ? Math.round(c.econ.top1) : null,
+    topTripNotionalGp: c.econ.topTrip ? Math.round(tripNotional(c.econ.topTrip)) : null,
+    topTripItem: c.econ.topTrip ? (c.econ.topTrip.name || itemName(c.econ.topTrip.itemId)) : null,
+    topTripShareOfNetPct: c.econ.top1Share != null ? Math.round(c.econ.top1Share * 100) : null,
+    topTripShareUnavailableBecause: c.econ.top1Share == null ? (c.econ.shareBasis || null) : null,
+    tripItemIds: c.trips.map(p => p.itemId),
+    tripOpenedAt: c.trips.map(p => iso(p.t))
+  })).concat(shapeRes.missing.map(m => ({
+    /* Emitted, not omitted: an absent row reads as a zero in a file exactly as
+       it does on a screen, and "never placed in this gap" is a finding. */
+    cohort: m.cohort, horizonShape: m.gap, neverSampled: true,
+    tripsCounted: 0, netSimGp: 0, grossMovementGp: 0,
+    note: "This cohort has never been placed in this scheduled gap. Absence of evidence, not a result of zero."
+  })));
   return { header: analysisHeader("paper-book", trunc),
     closedTrips: trips.map(analysisTrip),
+    perCohortHorizonRollup: shapeRoll,
     perGateRollup: gateRoll,
     /* NEVER-FED (ruled Aug 12 2026): a reader must be able to tell "zero
        because nothing qualified" from "zero because nothing was ever fed in".
@@ -16702,6 +17772,14 @@ function renderPaperView(){
     + fold("The " + closed.length + " closed trips behind this, per cohort", paperHeadlineSection())
     + fold("Regime curves — would a looser or tighter ROI floor have done better?", paperRegimeSection())
     + fold("Fill-model calibration — is the model itself trustworthy?", calibSection()));
+  /* The horizon split gets its own panel and opens by default (user-directed,
+     Aug 13 2026): it is a first-class comparison rather than machinery behind
+     the headline, and a fold whose contents are the finding of the epoch is a
+     fold nobody opens. Its summary line carries the disagreement count, so the
+     panel states its own answer before it is opened or scrolled past. */
+  $("#paperShapeSub").textContent = shapeSubLine(paperShapeCells(closed, paperThin()));
+  setHTML("#paperShape", fold("Every cohort by scheduled gap and remaining duration — n, notional, net and concentration per cell",
+    paperShapeSection(), true));
   setHTML("#paperGate", fold("Per-gate outcomes — which gate benched what, and what happened next", paperGateSection()));
   setHTML("#paperCohort", fold("Per-cohort ledger — watchlist, scanner and discovery slice apart", paperCohortSection()));
 }

@@ -240,6 +240,22 @@ soften these in code or copy.
   fails the suite on an unglossed gate name.
 - **Every new probe assertion is proven by seeding the defect it is meant to catch** — see
   Verification. An assertion that has never failed is unproven.
+- **An assertion downstream of a clamp, cap or floor cannot see a defect the clamp
+  absorbs. Assert the TERM UNDER TEST, not the clamped output** (user ruling, Aug 13
+  2026 — graduated to BINDING on the second occurrence, which is the bar). When the
+  quantity you care about is one input to a `Math.min`, a cap, a floor or a ceiling, the
+  final value is frequently pinned by the *other* input, and then a seeded defect in your
+  term changes nothing observable. The report is green and reads exactly like a working
+  test.
+  Both instances, named because the pair is what proved the shape rather than the
+  incident: **`strataCount()`** — the per-stratum sampling counter sat behind a
+  near-miss filter, so a probe that computed the counts itself passed with the bug fully
+  intact; and **`shadowHorizonUnits()`** — paper sizing reverting from the fixed horizon
+  to the schedule changed no output at all, because `planCap`'s buy-limit clamp pinned
+  both readings to the same number. In both, the fix was the same: **extract the term
+  into a named function and point the assertion at that.** Never reproduce it in the
+  probe; the extraction is the fix, not a convenience.
+  Detector: integration-audit scan 10 below.
 
 ---
 
@@ -303,8 +319,10 @@ The ≤7 walk-up bound is BINDING and probe-asserted. The rest of this section i
 
 Four tabs — Home, Trade, Sleeve, Review. Trade carries six sub-views: **Plan & Watchlist**,
 **Scanner**, **Flip Log**, and the three pull surfaces added Aug 11 2026 — **Paper Book**
-(regime curves, divergence ledger, per-gate outcomes), **Prospecting** (per-stratum map,
-gap band, hours ledger, recipe basis) and **Gate Health** (two streams per gate, die-off
+(regime curves, divergence ledger, the overnight-vs-daytime comparison added Aug 13 2026,
+per-gate outcomes), **Prospecting** (per-stratum map,
+gap band, hours ledger — the recipe basis was withdrawn Aug 11 2026 and the copy that
+still advertised it was removed Aug 13 2026) and **Gate Health** (two streams per gate, die-off
 episodes, exception lane). The three present no rulings: they are read, not worked, so the
 walk-up attention budget is untouched. The weekly review keeps a one-line summary of each
 with a link through and no longer re-renders them — that consolidation is what paid for
@@ -431,6 +449,44 @@ Three companions found in the same review, each worth its own line:
   items, 100% by construction, and contradicted the funnel's own attribution.
   Count the population where the test runs, not where it passes.
 
+## Case law: routing is not coverage (user ruling, Aug 13 2026)
+
+**A finding is evidence for the change it is ABOUT. A held proposal is not un-held by a
+finding that answers a different question, however striking the finding or however
+adjacent the proposal.**
+
+The incident: the gap band printed **+399k on 3 overnight trips against −219k on 16
+daytime ones** — opposite signs on one population. The proposal on the desk was a T3
+scanner for the band: more coverage. The evidence argues about *when* the band's trips
+should be placed, not about how many of its items should be watched. Those are different
+changes with different costs and different failure modes, and reading one as the other's
+evidence would let a proposal be ratified by a finding that was never about it. **The
+scanner proposal stays held; the routing question is raised as its own question and
+clears the same bar any strategy change clears** — clean post-fix trips in the cell,
+which the band's overnight cell does not have.
+
+Three companions, each of which cost something here:
+
+- **The dimension nothing rendered.** This finding was not hidden in a hard number; it
+  was in no number at all. Nothing on screen split a cohort by horizon, so seeing it
+  required downloading the analysis export and grouping trips by hand — and the export's
+  own `byHorizonShape` tally pooled every cohort into two counts, which cannot show a
+  cohort whose halves disagree. **A pooled statistic is at least visible as a pooled
+  statistic; a dimension no surface splits by is invisible to the reader and to the
+  pooling scan alike.** The scan was extended for this, and the split now has its own
+  panel.
+- **n is not sample size when one trip carries the cell.** 3 trips netting +399k, of
+  which one 10.6m-notional trip is +412k, is one result and two that offset it. A trip
+  count cannot show that and a rate cannot either — only concentration can, which is why
+  the top-trip share renders per cell and why the routing bar treats a trip count as
+  necessary and not sufficient.
+- **A share of a negative net is not a proportion.** `top5/net` on a losing cell returns
+  a percentage that reads exactly like a concentration figure: the gap band's daytime
+  cell yields 13%, which would have been read as "well spread". Both concentration
+  figures now withhold, with the reason stated, wherever the net is not positive. This
+  is the metric-honesty rule catching an operator that was correct arithmetic on a
+  denominator whose sign changed its meaning.
+
 ## Integration audit (standing discipline — user ruling, Aug 10 2026)
 
 Run by the agent **after any week containing a build session; skip after pure-usage
@@ -483,12 +539,28 @@ widened in the scope audit have detectors rather than good intentions.
    produces it and check the copy claims exactly that — no more, no fewer caveats, the
    right population, the right denominator. Unprompted copy is in scope; this scan exists
    because the definitions protocol only ever fired when the user asked.
-8. **Pooling scan** (Aug 12 2026, for the widened never-pool rule): every rate, median,
-   count, verdict and score is checked for whether its population is one population. A
-   pooled figure rendering without its decomposition beside it is a finding, whatever
-   kind of statistic it is.
-9. **Output:** a findings report with proposed restructurings, ruled like everything
-   else. No findings is a valid result and says so.
+8. **Pooling scan** (Aug 12 2026, for the widened never-pool rule; extended to artefacts
+   Aug 13 2026): every rate, median, count, verdict and score is checked for whether its
+   population is one population. A pooled figure rendering without its decomposition
+   beside it is a finding, whatever kind of statistic it is. **The scan reads exports and
+   any other artefact handed to a reader, not only screens** — the escaping instance was
+   the paper export's `byHorizonShape`, a count pooling every cohort into two numbers
+   while the cohorts disagreed in sign; a screen-only scan had nothing to say about it.
+   **Also checked: the DIMENSIONS a population is not split by at all.** A statistic
+   pooled across a dimension no surface renders is invisible to a scan that only reads
+   what is on screen, which is how the horizon split went unnoticed until an export was
+   read by hand.
+10. **Clamp-absorption scan** (Aug 13 2026, the detector for the clamped-output rule
+    above): enumerate every clamp in the product — `planCap`, the participation haircut,
+    the one-third stack clamp, the buy-limit clamp, `Math.min`/`Math.max` guards on a
+    sized quantity — and for each, list the assertions whose subject is computed
+    downstream of it. Each is checked for whether the property under test could be
+    absorbed: if the clamp can pin the output while the term changes, the assertion is a
+    finding whatever its current colour, and the remedy is extraction rather than a
+    stronger regex. **The enumeration is the deliverable**, the same shape as the
+    restraint-lift scan: a clamp nobody listed is a clamp nobody checked.
+11. **Output:** a findings report with proposed restructurings, ruled like everything
+    else. No findings is a valid result and says so.
 
 ## Verification
 
@@ -628,6 +700,19 @@ Named instances, all shipped green:
   container that still contains the property. If the assertion would pass with the
   property deleted from its subject but present elsewhere, the container is too broad.**
 
+- **Presence of the right phrase is not absence of the wrong one** (Aug 13 2026) — the
+  eighth face, found while seeding `[R62.6]` and not by suspecting it. The assertion
+  checked that the export's touch-ledger note says the schedule is "unverified rather
+  than false" when no walk-ups are recorded. Seeding the defect — rewriting the note's
+  FIRST half to claim *"the configured schedule is being followed"* — left the asserted
+  phrase in the second half untouched, so **the suite stayed green while the file
+  asserted the exact opposite of the rule it was policing.** A green run there reads
+  identically to a weak assertion and to a dead seed, and it is neither: the assertion
+  ran, on real output, and permitted the contradiction. **An assertion about what copy
+  CLAIMS must forbid the contradicting claim as well as require the correct one** — the
+  absence half of the scoping ruling, applied to sentences instead of to surfaces. Fixed
+  by adding the negative match; the old form passes the seed and the new form fails it,
+  which is the discrimination the seventh face demands.
 - **A seed that fails a form the fix was meant to PRESERVE proves nothing** (user ruling,
   Aug 12 2026) — the seventh face, and the mirror image of the dead seed. When a fix
   replaces a weak assertion with a stronger one, the seed has to DISCRIMINATE: the old
@@ -705,6 +790,31 @@ Ruled requirements live in
 and the report's `===REQS===` section cross-references them — when adding a gated
 feature, add its requirement row and a tagged assertion together, never one without
 the other.
+
+### The pairing is checked in BOTH directions (user ruling, Aug 13 2026)
+
+**A cross-reference checked in one direction reports a coverage it has not verified.**
+`tools/probe/reqpair.sh` runs after every suite and fails it on either half:
+
+- **A tag with no requirement.** Six assertions carried `[R61.x]` tags for the
+  verdict-first work and no §61 rows were ever written, so the report printed
+  `REQ PASS R61.1` against nothing for a day. A requirement that does not exist cannot
+  fail, and the report said it passed.
+- **A requirement with no assertion.** §31's withdrawn rows went on claiming
+  `` probe `[R31.x]` `` after the assertions were deleted with the feature, and R35.4
+  cited one of them. **This is the seasoning-gate shape with the arrow reversed** — a
+  spec claiming an implementation that is not there, which is how the seasoning gate
+  vanished with nothing noticing. Rows verified by inspection, UI or documentation cite
+  no probe tag and are exempt by construction, which is what makes the check safe to
+  state globally rather than row by row.
+
+The check lives OUTSIDE the page because it must read `REQUIREMENTS.md` and the in-page
+suite cannot — which is exactly why the gap survived as long as it did. It appends a
+`===PAIRING===` section and **rewrites the report header**, so `head -1` never reads
+PROBE-PASS while a pairing failure stands. **The general property, which is the part
+worth carrying: a ledger that maps two artefacts to each other is only a ledger if BOTH
+maps are checked; the unchecked direction is where the drift accumulates, because
+nothing there ever goes red.**
 
 ## Repo hygiene
 

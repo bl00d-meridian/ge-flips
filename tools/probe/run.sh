@@ -57,7 +57,33 @@ kill $EDGEPID 2>/dev/null
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { \$_.CommandLine -match 'edge-profile' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1
 kill $LISTENPID 2>/dev/null
 
-# 6. Report.
+# 6. The requirements pairing check (user ruling, Aug 13 2026). Runs OUTSIDE
+#    the browser because it needs the filesystem: the in-page suite cannot read
+#    REQUIREMENTS.md, which is exactly why six [R61.x] tags reported PASS
+#    against rows that did not exist. Its findings are SUITE FAILURES — they
+#    are appended to the report and they rewrite the header, so `head -1` never
+#    says PASS while a pairing failure stands.
+if [ -s "$OUT/probe-report.txt" ]; then
+  PAIR="$(bash "$HERE/reqpair.sh" "$ROOT" "$OUT/probe-report.txt")"
+  PAIRRC=$?
+  # The beacon body ends without a trailing newline, so append one first or
+  # the pairing section lands glued to ===END=== and greps miss it.
+  [ -n "$(tail -c1 "$OUT/probe-report.txt")" ] && printf '\n' >> "$OUT/probe-report.txt"
+  printf '%s\n' "$PAIR" >> "$OUT/probe-report.txt"
+  if [ $PAIRRC -ne 0 ]; then
+    NP=$(printf '%s\n' "$PAIR" | grep -c '^PAIRING FAIL')
+    HDR=$(head -1 "$OUT/probe-report.txt")
+    case "$HDR" in
+      PROBE-PASS*) NEW="PROBE-FAIL $NP (pairing)";;
+      PROBE-FAIL*) NEW="$HDR + $NP pairing";;
+      *)           NEW="PROBE-FAIL $NP (pairing)";;
+    esac
+    { printf '%s\n' "$NEW"; tail -n +2 "$OUT/probe-report.txt"; } > "$OUT/probe-report.tmp"
+    mv "$OUT/probe-report.tmp" "$OUT/probe-report.txt"
+  fi
+fi
+
+# 7. Report.
 if [ -s "$OUT/probe-report.txt" ]; then
   cat "$OUT/probe-report.txt"
   head -1 "$OUT/probe-report.txt" | grep -q "^PROBE-PASS" && exit 0 || exit 2

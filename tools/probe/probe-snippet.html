@@ -2360,9 +2360,9 @@
     const shAud = paperGateSection();
     ok("[R18.3] per-gate paper table: would-have-filled / would-not with the observed-share caveat",
        /id="paperGateTable"/.test(shAud) && />ROI floor</.test(shAud)
-       && /data-drill="paper:gate:ROI floor · daytime:n"[^>]*>2</.test(shAud)
-       && /data-drill="paper:gate:ROI floor · daytime:fill"[^>]*>1</.test(shAud)
-       && /data-drill="paper:gate:ROI floor · daytime:miss"[^>]*>1</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · pre-stamp:n"[^>]*>2</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · pre-stamp:fill"[^>]*>1</.test(shAud)
+       && /data-drill="paper:gate:ROI floor · pre-stamp:miss"[^>]*>1</.test(shAud)
        && /unknown, not unfilled/.test(shAud),
        shAud.slice(0, 900));
     ok("[R18.3] regime curves labeled simulated, never comparable to realized",
@@ -2941,6 +2941,16 @@
         benchedBy: [gate], closedAt: t0 + 3600e3, net };
       return p;
     };
+
+    /* OBSERVED-DAY COVERAGE for a fixture simulating a multi-day history
+       (Aug 13 2026). The exception lane's span clause counts OBSERVED days, so
+       a fixture building trips across N days must also record that those days
+       were watched — otherwise it asserts against a bar the product correctly
+       fails, and the FIXTURE is what is wrong, not the product. Before the
+       clause was tightened these trips cleared a >=7-day bar on wall clock
+       alone while the ledger held only six observed days in the window.
+       Restored by the blocks that manage obsDays themselves. */
+    DB.obsDays = Array.from({ length: 15 }, (_, k) => new Date(Date.now() - k * 86400e3).toLocaleDateString("en-CA"));
     for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(9002, i, "filled", 8000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
     DB.shadowBook.push(mkShadow(9003, 10, "filled", 2000, now25 - 5 * 86400e3, "volume floor"));
     for (let i = 11; i < 15; i++) DB.shadowBook.push(mkShadow(9003, i, "unfilled", 0, now25 - (i - 9) * 86400e3, "volume floor"));
@@ -3076,6 +3086,16 @@
                 const dots = row ? Array.from(row.querySelectorAll(".tags .sdot, .tags .tdot")) : [];
                 return dots.length >= 1 && /sdot/.test(dots[0].className); })());
     DB.shadowBook = [];
+
+    /* OBSERVED-DAY COVERAGE for a fixture simulating a multi-day history
+       (Aug 13 2026). The exception lane's span clause counts OBSERVED days, so
+       a fixture building trips across N days must also record that those days
+       were watched — otherwise it asserts against a bar the product correctly
+       fails, and the FIXTURE is what is wrong, not the product. Before the
+       clause was tightened these trips cleared a >=7-day bar on wall clock
+       alone while the ledger held only six observed days in the window.
+       Restored by the blocks that manage obsDays themselves. */
+    DB.obsDays = Array.from({ length: 15 }, (_, k) => new Date(Date.now() - k * 86400e3).toLocaleDateString("en-CA"));
     for (let i = 0; i < 5; i++) DB.shadowBook.push(mkShadow(9002, i, "filled", 8000, now25 - (9 - i * 2) * 86400e3, "ROI floor"));
     DB.shadowBook.push(mkShadow(9003, 10, "filled", 2000, now25 - 5 * 86400e3, "volume floor"));
     for (let i = 11; i < 15; i++) DB.shadowBook.push(mkShadow(9003, i, "unfilled", 0, now25 - (i - 9) * 86400e3, "volume floor"));
@@ -3431,7 +3451,7 @@
     ok("[R18.5] the per-gate table reports both participation readings, in its own columns",
        /would have filled at 50% participation/.test(shGate27)
        && /would also have filled at 100% participation/.test(shGate27)
-       && /data-drill="paper:gate:ROI floor · daytime:full"/.test(shGate27), shGate27.slice(0, 1200));
+       && /data-drill="paper:gate:ROI floor · pre-stamp:full"/.test(shGate27), shGate27.slice(0, 1200));
     // R27.3 — regime divergence: probation slots, never "the regime is right"
     const dst27 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dst27(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
@@ -3752,12 +3772,12 @@
     // ── R35.1 the primitive: a number opens to its rows in ONE click ──
     const faceOf = k => Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === k);
     const clickFace = k => { const b = faceOf(k); if (!b) throw new Error("no drill face for key: " + k); b.click(); };
-    const bFill = faceOf("paper:gate:ROI floor · daytime:fill");
+    const bFill = faceOf("paper:gate:ROI floor · pre-stamp:fill");
     ok("[R35.1] every per-gate cell renders as an openable face, not a bare number",
-       !!bFill && bFill.textContent.indexOf("15") === 0 && !document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")),
+       !!bFill && bFill.textContent.indexOf("15") === 0 && !document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")),
        bFill ? bFill.outerHTML.slice(0, 160) : "no face for the would-fill cell");
     bFill.click();
-    const box35 = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"));
+    const box35 = document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill"));
     /* getElementsByTagName, not querySelectorAll("tbody tr"): the latter
        matches the OUTER table's tbody as the ancestor, so it would count the
        expansion's own header row and read 16 where the truth is 15. */
@@ -3775,19 +3795,19 @@
     // sort lives in the primitive
     const th35 = box35.querySelector('[data-dsortk="net"]');
     th35.click();
-    const netCol = () => bodyRows(document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")))
+    const netCol = () => bodyRows(document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")))
       .map(tr => tr.children[9].textContent);
     const desc35 = netCol();
-    document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).querySelector('[data-dsortk="net"]').click();
+    document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")).querySelector('[data-dsortk="net"]').click();
     const asc35 = netCol();
     ok("[R35.1] sort lives in the primitive — one click sorts, a second flips it",
        desc35[0] !== asc35[0] && desc35.join("|") === asc35.slice().reverse().join("|"),
        JSON.stringify({ desc: desc35.slice(0, 3), asc: asc35.slice(0, 3) }));
     // filter lives in the primitive
-    const q35 = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).querySelector("[data-drillq]");
+    const q35 = document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")).querySelector("[data-drillq]");
     q35.value = "Probe beta";
     q35.dispatchEvent(new Event("input", { bubbles: true }));
-    const boxF = document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"));
+    const boxF = document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill"));
     ok("[R35.1] filter lives in the primitive, and a filtered expansion says how much it is hiding",
        rowsIn(boxF) === 7 && /8 of 15 rows hidden by your filter/.test(boxF.innerHTML),
        JSON.stringify({ rows: rowsIn(boxF), sub: (boxF.innerHTML.match(/rows hidden by your filter/) || [])[0] }));
@@ -3795,26 +3815,26 @@
     // an expansion survives the 60s re-render — a poll must not close what you opened
     renderAll();
     ok("[R35.1] an open expansion survives a re-render — the poll never closes what you opened to read",
-       !!document.getElementById(drillId("paper:gate:ROI floor · daytime:fill"))
-       && document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")).offsetParent !== null,
+       !!document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill"))
+       && document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")).offsetParent !== null,
        "reopened after renderAll");
-    clickFace("paper:gate:ROI floor · daytime:fill");
+    clickFace("paper:gate:ROI floor · pre-stamp:fill");
     ok("[R35.1] a second click closes it",
-       !document.getElementById(drillId("paper:gate:ROI floor · daytime:fill")));
+       !document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:fill")));
 
     // ── R35.2 honest subset disclosure ──
-    clickFace("paper:gate:ROI floor · daytime:n");
-    const boxAll = document.getElementById(drillId("paper:gate:ROI floor · daytime:n"));
+    clickFace("paper:gate:ROI floor · pre-stamp:n");
+    const boxAll = document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:n"));
     ok("[R35.2] an expansion capped at the row limit SAYS it is showing a subset and offers the rest",
        rowsIn(boxAll) === DRILL_PAGE && /Showing the first 20 of 25 matching rows/.test(boxAll.innerHTML)
        && !!boxAll.querySelector("[data-drillall]"),
        JSON.stringify({ rows: rowsIn(boxAll) }));
     boxAll.querySelector("[data-drillall]").click();
     ok("[R35.2] show-all reveals every row and says so",
-       rowsIn(document.getElementById(drillId("paper:gate:ROI floor · daytime:n"))) === 25
-       && /Showing all 25 rows/.test(document.getElementById(drillId("paper:gate:ROI floor · daytime:n")).innerHTML),
-       String(rowsIn(document.getElementById(drillId("paper:gate:ROI floor · daytime:n")))));
-    clickFace("paper:gate:ROI floor · daytime:n");
+       rowsIn(document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:n"))) === 25
+       && /Showing all 25 rows/.test(document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:n")).innerHTML),
+       String(rowsIn(document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:n")))));
+    clickFace("paper:gate:ROI floor · pre-stamp:n");
     /* Structural subsets: the stratum ledger's counters are DURABLE and
        outlive the paper book's 30-day pruning, so its expansions can only
        show surviving rows. That must be stated, never silently truncated. */
@@ -4117,14 +4137,14 @@
        JSON.stringify({ n: g37.n, thin: g37.thin, filled: g37.filled, net: g37.net }));
     const gs37 = paperGateSection();
     ok("[R37.1] the per-gate table states the excluded count and opens it to the excluded trips",
-       /data-drill="paper:gate:ROI floor · daytime:thin"[^>]*>3</.test(gs37) && /Excluded<\/span><\/th>/.test(gs37),
+       /data-drill="paper:gate:ROI floor · pre-stamp:thin"[^>]*>3</.test(gs37) && /Excluded<\/span><\/th>/.test(gs37),
        gs37.slice(gs37.indexOf("<tbody"), gs37.indexOf("<tbody") + 400));
     setTab("trade", "paper"); renderAll();
     /* Guarded, not asserted through: a missing face must fail THIS assertion
        by name rather than throwing and taking the rest of the block with it. */
-    const bThin = Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === "paper:gate:ROI floor · daytime:thin");
+    const bThin = Array.from(document.querySelectorAll("[data-drill]")).find(b => b.dataset.drill === "paper:gate:ROI floor · pre-stamp:thin");
     if (bThin) bThin.click();
-    const boxThin = bThin ? document.getElementById(drillId("paper:gate:ROI floor · daytime:thin")) : null;
+    const boxThin = bThin ? document.getElementById(drillId("paper:gate:ROI floor · pre-stamp:thin")) : null;
     const tb37 = boxThin && boxThin.getElementsByTagName("tbody")[0];
     ok("[R37.2] excluded trips stay VISIBLE and openable — recorded, not discarded",
        !!boxThin && boxThin.offsetParent !== null && tb37 && tb37.rows.length === 3
@@ -4135,7 +4155,7 @@
        open to its rows like any other number rather than being a bare figure
        the operator has to take on trust. */
     ok("[R37.2] every excluded count opens to the trips behind it — on the gate tree, the cohort ledger and the hours table",
-       /data-drill="thin:gate:ROI floor · daytime"/.test(gateStreamsSection())
+       /data-drill="thin:gate:ROI floor · pre-stamp"/.test(gateStreamsSection())
        && (() => { DB.shadowBook = [mk37(9001, "filled", 100, 0.02, null, {})];
                    const c = paperCohortSection();
                    DB.shadowBook = [];
@@ -4566,34 +4586,66 @@
                 return !qualGapCleared(t0, justAfter) && qualGapCleared(t0, pastNext); })(),
        "one pass per touch");
     DB.shadowBook = []; S.drillOpen = new Set(); S.drillUI = new Map();
-    const mk40t = (hz, grade, net) => ({ id: 40000 + DB.shadowBook.length, fam: "f40:" + DB.shadowBook.length,
+    /* OPEN TIME IS THE AXIS NOW (Aug 13 2026). The grouping key is the
+       SCHEDULED GAP a placement opened in, so a fixture that varies only hzH
+       produces one bucket — and `Date.now() - 2 days` lands in whichever gap
+       the suite happens to run in, which is the intermittent-assertion hazard.
+       The open hour is INJECTED instead: 08:00 local is inside the 07:00→12:00
+       gap, 22:00 local is inside the 21:30→07:00 overnight sit, on any clock. */
+    const at40 = (hourLocal, daysAgo) => { const d = new Date(Date.now() - daysAgo * dayMs40);
+      const h = ((hourLocal % 24) + 24) % 24;
+      d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0); return d.getTime(); };
+    /* The open hour is derived from the SCHEDULE UNDER TEST, not hardcoded:
+       sched40() is clock-relative (windows at now+5/+10/+15/+20), so a fixed
+       "08:00" would land in a different gap depending on when the suite runs —
+       the intermittent-assertion hazard again. `gapMid(i)` returns an instant
+       comfortably inside gap i of the live schedule, so "two different gaps"
+       holds on every clock. */
+    const gapMid40 = i => { const g = touchGaps()[i]; return g.from + Math.min(1, g.h / 2); };
+    const gapFirst40 = () => gapMid40(0);
+    const gapWrap40 = () => { const gs = touchGaps(); const i = gs.findIndex(isOvernightGap);
+      return gapMid40(i >= 0 ? i : gs.length - 1); };
+    const mk40t = (hz, grade, net, openHour) => ({ id: 40000 + DB.shadowBook.length, fam: "f40:" + DB.shadowBook.length,
       itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001, ask: 4399,
-      t: Date.now() - 2 * dayMs40, hzH: hz, grade: grade,
+      t: at40(openHour == null ? gapFirst40() : openHour, 2), hzH: hz, grade: grade,
       buyQ: 10, sellQ: 10, buyQFull: 10, buyDone: 1, obsMs: hz * 3600e3 * 0.9, obsLive: grade === "live" ? 1 : 0,
       reconMs: grade === "live" ? 0 : 1, lastObs: Date.now(), state: "filled",
       closedAt: Date.now() - dayMs40, net: net, benchedBy: ["ROI floor"], regimes: [] });
-    DB.shadowBook.push(mk40t(5, "live", 1000), mk40t(5, "live", 1000),
-                       mk40t(9.5, "reconstructed", 50000), mk40t(9.5, "live", 50000));
+    /* GROUPED BY FILL MODEL (Aug 13 2026), not by clock. The split exists so
+       two different EXPERIMENTS never pool, and under a fixed horizon that is
+       exactly the v1/v2 partition — a trip graded against a schedule-derived
+       window and one graded against the fixed 6h window. Keying it on
+       time-of-day would also make every gate row depend on the hour the suite
+       happens to run, which is the intermittent-assertion hazard. */
+    const mv40 = (t, v) => { t.fillModelV = v; return t; };
+    DB.shadowBook.push(mv40(mk40t(5, "live", 1000), 1), mv40(mk40t(5, "live", 1000), 1),
+                       mv40(mk40t(6, "reconstructed", 50000), 2), mv40(mk40t(6, "live", 50000), 2));
     const split40 = shadowByGate(true);
-    ok("[R40.5] the per-gate map GROUPS by horizon shape — a 5h experiment is not a 9.5h one",
-       split40.size === 2 && [...split40.keys()].some(k => /daytime/.test(k))
-       && [...split40.keys()].some(k => /overnight/.test(k)),
+    ok("[R40.5] the per-gate map GROUPS by FILL MODEL — a schedule-derived window is not the fixed one",
+       split40.size === 2
+       && [...split40.keys()].some(k => /fill model v1/.test(k))
+       && [...split40.keys()].some(k => /fill model v2/.test(k)),
        JSON.stringify([...split40.keys()]));
+    ok("[R40.5] and the grouping key is STAMPED, not derived from the clock — the same trip groups the same at any hour",
+       (() => { const a = mv40(mk40t(6, "live", 5), 2), b = mv40(mk40t(1, "live", 5), 2);
+                return modelKeyOf(a) === modelKeyOf(b) && modelKeyOf(a) === "fill model v2"
+                    && modelKeyOf({ fillModelV: null }) === "pre-stamp"; })(),
+       "two trips of the same model group together whatever their horizon or open hour");
     ok("[R40.5] and the verdict machinery still reads the gate-keyed map, ungrouped",
        shadowByGate().size === 1 && !!shadowByGate().get("ROI floor"),
        JSON.stringify([...shadowByGate().keys()]));
     const pgs40 = paperGateSection();
-    ok("[R40.5] each row names its shape and stamps the evidence grade behind it",
-       /overnight<\/span>/.test(pgs40) && /daytime<\/span>/.test(pgs40)
+    ok("[R40.5] each row names its FILL MODEL and stamps the evidence grade behind it",
+       /fill model v1<\/span>/.test(pgs40) && /fill model v2<\/span>/.test(pgs40)
        && /1 live, 1 reconstructed|1 reconstructed, 1 live/.test(pgs40),
        pgs40.slice(pgs40.indexOf("<tbody"), pgs40.indexOf("<tbody") + 500));
     ok("[R40.5] a finding resting ONLY on reconstructed evidence says so",
        /exists only in reconstructed evidence/.test(evidenceNote([mk40t(9.5, "reconstructed", 1)])),
        evidenceNote([mk40t(9.5, "reconstructed", 1)]));
-    ok("[R40.5] every trip row carries its own horizon and grade",
-       (() => { const r = paperTripRows([mk40t(9.5, "reconstructed", 1)])[0];
-                return /overnight/.test(r.shape) && /reconstructed/.test(r.grade); })(),
-       JSON.stringify(paperTripRows([mk40t(9.5, "reconstructed", 1)])[0].shape));
+    ok("[R40.5] every trip row carries its own horizon, its clock bucket and its grade",
+       (() => { const r = paperTripRows([mk40t(9.5, "reconstructed", 1, 3)])[0];
+                return r.shape === "00–06 (9.5h)" && /reconstructed/.test(r.grade); })(),
+       JSON.stringify(paperTripRows([mk40t(9.5, "reconstructed", 1, 3)])[0].shape));
     ok("[R40.6] the observation floor measures against the TRIP's horizon, not a global",
        Math.abs(shadowObsShare({ obsMs: 3600e3, hzH: 4 }) - 0.25) < 1e-9
        && Math.abs(shadowObsShare({ obsMs: 3600e3, hzH: 9.5 }) - (1 / 9.5)) < 1e-9
@@ -5021,10 +5073,10 @@
        blend on the page would have satisfied — it would have passed with this
        gate's split deleted. Every match below is inside the one blend named. */
     const gs = paperGateSection();
-    const gFrag = blendFrag(gs, "paper:gate:ROI floor · daytime:rateblend");
+    const gFrag = blendFrag(gs, "paper:gate:ROI floor · pre-stamp:rateblend");
     ok("[R49.2] the per-gate fill rate renders its cohort split inline — the blend is never alone",
        !!gFrag && /watchlist 100% of 2/.test(gFrag) && /slice 0% of 2/.test(gFrag),
-       gFrag || "no blend at key paper:gate:ROI floor · daytime:rateblend");
+       gFrag || "no blend at key paper:gate:ROI floor · pre-stamp:rateblend");
     /* The fixture's own proof, kept: a whole-section match for this blend's
        split is satisfiable by the OTHER gate's blend, so the container the
        assertion above uses has to be the fragment, not the section. */
@@ -5094,7 +5146,7 @@
 
     const tAlpha = P.closedTrips.find(t => t.item === "Probe alpha" && t.outcome === "filled both legs");
     ok("[R42.2] a paper trip carries its provenance, not just its result",
-       !!tAlpha && tAlpha.itemId === 9001 && tAlpha.cohort && tAlpha.horizonShape
+       !!tAlpha && tAlpha.itemId === 9001 && tAlpha.cohort && tAlpha.scheduledGap && tAlpha.remainingDurationBand
        && tAlpha.evidenceGrade === "live" && tAlpha.observedPctOfHorizon === 100
        && tAlpha.entryBid === 4000 && tAlpha.exitPrice === 4400 && tAlpha.netSimGp === 5000
        && tAlpha.regimes.join() === "current" && tAlpha.benchedByGate === "ROI floor",
@@ -5428,13 +5480,15 @@
                 DB.shadowBook = [{ id: 73, fam: "a", state: "filled", closedAt: 1, t: 1, itemId: 9001, name: "x", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] },
                                  { id: 74, fam: "b", state: "filled", closedAt: 1, t: 1, itemId: 9002, name: "y", qty: 1, bid: 1, ask: 2, hzH: 4, obsMs: 1, regimes: [] }];
                 const c = paperCapacity(null);
-                /* 2 families, 4h horizon + 5h cooldown = 9h cycle → 2.67/family/day
-                   → 5.3/day by families; the 40-trip cap would allow 240/day. */
+                /* 2 families, the FIXED 6h horizon + 5h cooldown = 11h cycle → 2.18/family/day
+                   → 4.4/day by families; the 40-trip cap would allow 160/day.
+                   The 6h is PAPER_HORIZON_H and does NOT move with fillHorizonH,
+                   which this fixture sets to 4 precisely to prove it. */
                 /* 2 watchlist families, 4h horizon + 5h cooldown = 9h cycle →
                    2.67/family/day → 5.3/day for that cohort. The rotating
                    cohorts are draw-limited and reported apart. */
-                return c.watchFams === 2 && c.cycleH === 9 && c.perFamPerDay === 2.67
-                    && c.watchCeil === 5.3 && c.byCap === 240
+                return c.watchFams === 2 && c.cycleH === 11 && c.perFamPerDay === 2.18
+                    && c.watchCeil === 4.4 && c.byCap === 160
                     && c.sliceCeil === SLICE_SHADOW_CAP * (24 * 3600e3 / POLL_MS)
                     && c.scanCeil === SHADOW_SCAN_TOP * 2 * (24 * 3600e3 / SCOUT_EVERY); })(),
        JSON.stringify(paperCapacity(null)));
@@ -6378,6 +6432,247 @@
   } catch(e){
     out.push("FAIL calibration export :: " + (e && e.stack || e));
   }
+  // ─── §62: THE FIXED PAPER HORIZON, THE FILL CURVE AND THE CADENCE READ (user ruling, Aug 13 2026) ───
+  try {
+    const keep61 = DB.shadowBook, keepW61 = DB.touchWindows, keepTL61 = DB.touchLog, keepFH61 = DB.fillHorizonH;
+    const at61 = (h, m) => { const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.getTime(); };
+    /* THE SEPARATION. A paper trip's horizon AND its size must both stop moving
+       when the schedule moves — a fixed deadline with schedule-derived sizing
+       would be half-fixed and invisible, which is the catch that completed the
+       ruling. The live plan's own horizon must still move, since this ruling is
+       about the simulated book only. */
+    DB.touchWindows = [7, 12, 17, 21.5]; DB.fillHorizonH = 4;
+    const c61 = calc(9001);
+    const sizeA = shadowSizeFor(c61), capA = paperCapacity(null), liveA = planHorizonH();
+    DB.touchWindows = [2, 5, 9, 14, 19, 23];        // a completely different cadence
+    const sizeB = shadowSizeFor(c61), capB = paperCapacity(null), liveB = planHorizonH();
+    ok("[R62.1] the paper horizon is FIXED at 6h and does not move with the schedule",
+       PAPER_HORIZON_H === 6 && capA.cycleH === 11 && capB.cycleH === 11,
+       JSON.stringify({ h: PAPER_HORIZON_H, a: capA.cycleH, b: capB.cycleH }));
+    /* Asserted on the EXTRACTED horizon term, not on shadowSizeFor's output:
+       the buy-limit cap clamps both readings to the same number on this
+       fixture, so the output comparison passed with the defect fully seeded.
+       Found by seeding, which is the only reason this reads the way it does. */
+    ok("[R62.1] a paper trip's SIZE does not move with the schedule either — the half-fixed case",
+       shadowHorizonUnits(c61) === Math.max(1, Math.floor(volGateFor(c61).v * GATE.capture * PAPER_HORIZON_H))
+       && (() => { DB.touchWindows = [7, 12, 17, 21.5]; const a = shadowHorizonUnits(c61);
+                   DB.touchWindows = [2, 5, 9, 14, 19, 23]; const b = shadowHorizonUnits(c61);
+                   DB.touchWindows = [7, 12, 17, 21.5];
+                   return a === b && a > 0 && a !== Math.floor(volGateFor(c61).v * GATE.capture * planHorizonH()); })()
+       && sizeA === sizeB,
+       JSON.stringify({ units: shadowHorizonUnits(c61), sizeA: sizeA, sizeB: sizeB }));
+    /* THE STAMP, asserted THROUGH shadowScan (the R55.1 precedent): reading the
+       constant proves nothing about what the generator writes onto a trip, and
+       a seeded revert of the stamp passed green until this existed. */
+    ok("[R62.1] and the generator STAMPS the fixed horizon on every trip it opens, at any schedule",
+       (() => { const kb = DB.shadowBook;
+                const stamps = [];
+                for (const sched of [[7, 12, 17, 21.5], [2, 5, 9, 14, 19, 23]]){
+                  DB.touchWindows = sched; DB.shadowBook = []; S.famCoolLogged = 1;
+                  shadowScan(buildPlan());
+                  for (const p of DB.shadowBook) stamps.push(p.hzH);
+                }
+                DB.touchWindows = [7, 12, 17, 21.5]; DB.shadowBook = kb;
+                return stamps.length > 0 && stamps.every(h => h === PAPER_HORIZON_H); })(),
+       "every opened trip must carry PAPER_HORIZON_H whatever the schedule says");
+    ok("[R62.1] but the LIVE plan's horizon still does — the ruling is about the simulated book only",
+       liveA !== liveB, JSON.stringify({ liveA: liveA, liveB: liveB }));
+    DB.touchWindows = [7, 12, 17, 21.5];
+    ok("[R62.1] the model version partitions the two populations so they never pool",
+       FILL_MODEL_V === 2 && modelKeyOf({ fillModelV: 2 }) !== modelKeyOf({ fillModelV: 1 })
+       && modelKeyOf({}) === "pre-stamp",
+       String(FILL_MODEL_V));
+    /* THE 1-HOUR OUTPUT FLOOR IS GONE, and coalescing owns the promise. */
+    ok("[R62.2] the 1-hour output floor is deleted — a nominally imminent touch no longer inflates a horizon",
+       (() => { const d = new Date(); d.setHours(6, 50, 0, 0);      // 10 min before the 07:00 touch
+                return Math.abs(gapHoursAt(d.getTime()) - (10 / 60)) < 0.01; })(),
+       String(gapHoursAt((() => { const d = new Date(); d.setHours(6, 50, 0, 0); return d.getTime(); })())));
+    ok("[R62.2] sessions coalesce at 10 minutes — the input guard that replaced it",
+       (() => { DB.touchLog = [{ t: at61(8, 0) }, { t: at61(8, 6) }, { t: at61(8, 9) }, { t: at61(11, 0) }];
+                const s = walkUpSessions();
+                return SESSION_COALESCE_MIN === 10 && s.length === 2
+                    && Math.abs(sessionGaps()[0] - 3) < 0.01; })(),
+       JSON.stringify(walkUpSessions().length));
+    ok("[R62.2] session boundaries read the WALK-UP LOG, and say 'cannot tell' when there is no history",
+       (() => { DB.touchLog = [{ t: at61(8, 0) }];
+                const yes = sessionCrossed(at61(7, 0)), no = sessionCrossed(at61(9, 0));
+                DB.touchLog = [];
+                return yes === true && no === false && sessionCrossed(at61(7, 0)) === null; })(),
+       "no history must be null, not false — they are different answers");
+    /* THE FILL CURVE, with its censoring. */
+    DB.touchLog = [{ t: at61(6, 0) }, { t: at61(9, 0) }, { t: at61(14, 0) }, { t: at61(20, 0) }];
+    const mkC = (i, hzH, fillH, coh) => Object.assign({
+      id: 62000 + i, itemId: 9001, name: "Probe alpha", qty: 10, bid: 100, ask: 120,
+      t: at61(13, 0), closedAt: at61(13, 0) + hzH * 3600e3, hzH: hzH, obsMs: hzH * 3600e3,
+      state: fillH == null ? "unfilled" : "filled", net: fillH == null ? 0 : 100, regimes: [],
+      benchedBy: ["ROI floor"], fillModelV: 2,
+      buyDone: fillH == null ? 0 : at61(13, 0) + fillH * 3600e3 }, coh || {});
+    DB.shadowBook = [
+      mkC(1, 6, 0.5), mkC(2, 6, 2), mkC(3, 6, 5), mkC(4, 6, null),   // long window: speaks to every hour
+      mkC(5, 2, 1),   mkC(6, 2, null)                                 // short window: silent past 2h
+    ];
+    const cv = paperFillCurve(paperClosed());
+    const at = h => cv.find(c => c.h === h);
+    ok("[R62.3] a short trip is SILENT past its own window, never counted as a failure there",
+       at(1).atRisk === 6 && at(3).atRisk === 4 && at(6).atRisk === 4 && at(8).atRisk === 0,
+       JSON.stringify(cv.map(c => c.h + ":" + c.atRisk)));
+    ok("[R62.3] and one long uncensored trip contributes to EVERY hour below it — the case for one horizon",
+       at(1).filled === 2 && at(2).filled === 3 && at(3).filled === 2 && at(6).filled === 3,
+       JSON.stringify(cv.map(c => c.h + ":" + c.filled + "/" + c.atRisk)));
+    ok("[R62.3] the curve names where it STOPS being evidence rather than drawing into an empty population",
+       fillCurveEvidenceTo(cv) === null && FILL_CURVE_MIN_AT_RISK === 8,
+       String(fillCurveEvidenceTo(cv)));
+    const ch = paperFillCurveHTML();
+    ok("[R62.3] every cell renders its own population beside the percentage, and cohorts are never pooled",
+       /fill% \/ trips at risk/.test(ch) && /data-drill="paper:curve:watchlist:6"/.test(ch)
+       && /No hour yet has 8 trips at risk/.test(ch)
+       && /never pooled into one curve/.test(ch),
+       ch.slice(0, 260));
+    /* THE CADENCE READ — market curve × the operator's own gaps. */
+    const cad = paperCadenceRead(paperClosed());
+    ok("[R62.4] the cadence read composes the curve with the OPERATOR'S OWN gap distribution",
+       /Given how long you actually leave offers standing/.test(cad)
+       && /data-drill="paper:cadence:watchlist"/.test(cad)
+       && /observed gap/.test(cad),
+       cad.slice(0, 300));
+    /* The composition must average over EVERY gap, not over a statistic of
+       them. Seeding proved the earlier form of this assertion — which only
+       checked that no "median gap" text appeared — passed with the composition
+       collapsed to a single median value. It now reads the count the surface
+       states and holds it to the size of the distribution. */
+    ok("[R62.4] it composes over the WHOLE distribution, not a statistic of it — the spread is the point",
+       (() => { const g = sessionGaps();
+                return g.length === 3 && new RegExp("over your " + g.length + " observed gaps").test(cad)
+                    && (cad.match(/<tr>/g) || []).length === 0     // rows live in the drill, not inlined
+                    && !/median gap/.test(cad); })(),
+       JSON.stringify({ gaps: sessionGaps(), states: (cad.match(/over your \d+ observed gap/) || [])[0] }));
+    ok("[R62.4] it states which half is market and which is behaviour, and flags the independence assumption",
+       /<b>market<\/b> property and converges/.test(cad)
+       && /<b>behavioural<\/b> one and moves only when you change/.test(cad)
+       && /treats fill time as independent of the hour an offer was placed/.test(cad),
+       cad.slice(cad.length - 420));
+    ok("[R62.4] with too few gaps it says so rather than substituting a cadence nobody keeps",
+       (() => { DB.touchLog = [{ t: at61(8, 0) }];
+                const c = paperCadenceRead(paperClosed());
+                DB.touchLog = [{ t: at61(6, 0) }, { t: at61(9, 0) }, { t: at61(14, 0) }, { t: at61(20, 0) }];
+                return /has never been fed/.test(c) && /substituting a default cadence nobody keeps/.test(c); })(),
+       "an empty behavioural input must not default");
+    /* TIME-OF-DAY replaced gap labelling. */
+    ok("[R62.5] the analysis dimension is the clock bucket a trip opened in, not a scheduled gap",
+       shapeOf({ t: at61(3, 0) }) === "00–06" && shapeOf({ t: at61(13, 0) }) === "12–18"
+       && shapeOf({ t: at61(22, 0) }) === "18–24"
+       && (() => { DB.touchWindows = [1, 4, 8, 20];      // a different schedule must not move it
+                   const s = shapeOf({ t: at61(13, 0) }); DB.touchWindows = [7, 12, 17, 21.5];
+                   return s === "12–18"; })(),
+       JSON.stringify([shapeOf({ t: at61(3, 0) }), shapeOf({ t: at61(13, 0) })]));
+    /* THE TRADE, STATED. */
+    const hs = paperShapeSection();
+    ok("[R62.6] the panel states what the fixed horizon buys AND what it costs, in its own words",
+       /tests <b>whether an offer fills<\/b>, not whether it fills before you get back/.test(hs)
+       && /no longer models your cadence/.test(hs),
+       (hs.match(/Fixed[sS]{0,200}/) || ["NO MATCH; head: " + hs.slice(0, 200)])[0]);
+    DB.shadowBook = keep61; DB.touchWindows = keepW61; DB.touchLog = keepTL61; DB.fillHorizonH = keepFH61;
+    S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL fixed horizon / fill curve :: " + (e && e.stack || e));
+  }
+  try {
+    const keepB63 = DB.shadowBook, keepO63 = DB.obsDays, keepG63 = DB.gateLog,
+          keepW63 = DB.watch, keepX63 = DB.shadowExceptions, keepBl63 = DB.blacklist;
+    const d63 = k => new Date(Date.now() - k * 86400e3).toLocaleDateString("en-CA");
+    DB.gateLog = []; DB.shadowExceptions = []; DB.blacklist = [];
+    /* THE −1 IS THE PROPERTY. A set of calendar dates is inclusive; a span is a
+       duration. Without it the observed clause would be LOOSER than the
+       wall-clock one it replaced, which is the opposite of what was ruled. */
+    DB.obsDays = [d63(8), d63(7), d63(6), d63(5), d63(4), d63(3), d63(2), d63(1), d63(0)];
+    ok("[R63.1] at full coverage the observed span EQUALS the wall span — the -1 makes it a duration, not a date count",
+       observedDaysSpanned(Date.now() - 8 * 86400e3, Date.now()) === 8,
+       String(observedDaysSpanned(Date.now() - 8 * 86400e3, Date.now())));
+    DB.obsDays = [d63(8), d63(7), d63(0)];
+    ok("[R63.1] every unobserved day strictly reduces it — days nobody watched are not evidence either way",
+       observedDaysSpanned(Date.now() - 8 * 86400e3, Date.now()) === 2,
+       String(observedDaysSpanned(Date.now() - 8 * 86400e3, Date.now())));
+    /* The absence hole, as a whole-lane test: five trips straddling a closed
+       laptop. Wall clock says 9 days and the old clause passed them. */
+    const mk63 = (i, dayAgo, st, net) => ({ id: 63000 + i, fam: "f63:" + i, itemId: 9330,
+      name: "Probe span", qty: 10, bid: 4001, ask: 4399, t: Date.now() - dayAgo * 86400e3,
+      buyQ: st === "unfilled" ? 0 : 10, sellQ: st === "filled" ? 10 : 0,
+      buyDone: st === "unfilled" ? 0 : Date.now() - dayAgo * 86400e3,
+      obsMs: 3600e3, lastObs: Date.now() - dayAgo * 86400e3, state: st, regimes: [],
+      benchedBy: ["ROI floor"], closedAt: Date.now() - dayAgo * 86400e3 + 3600e3, net, hzH: 1 });
+    /* The item has to EXIST for the ranking to name it — the table renders
+       itemName(id), so an unregistered id would make the assertion match on a
+       placeholder and prove nothing about the row. */
+    if (!S.byId.has(9330)){
+      const it63 = { i: 9330, n: "Probe span", l: 25000, m: 0, v: 0, a: 0 };
+      S.items.push(it63); S.byId.set(9330, it63);
+      const s63now = Math.floor(Date.now() / 1000);
+      S.latest[9330] = { high: 4400, low: 4000, highTime: s63now - 60, lowTime: s63now - 120 };
+    }
+    DB.watch = [{ id: 9330, qty: null }];
+    DB.shadowBook = [mk63(1, 9, "filled", 6000), mk63(2, 9, "filled", 6000), mk63(3, 8, "filled", 6000),
+                     mk63(4, 1, "filled", 6000), mk63(5, 0, "filled", 6000)];
+    DB.obsDays = [d63(9), d63(8), d63(1), d63(0)];     // laptop closed days 7..2
+    const sp63 = shadowSlice(9330, true);
+    ok("[R63.1] five trips straddling a closed laptop: 9 wall days, 3 observed — the clause now fails them",
+       sp63.n === 5 && sp63.spanD > 8.9 && sp63.spanObsD === 3 && exceptionEvidence(9330) === null,
+       JSON.stringify({ wall: sp63.spanD, obs: sp63.spanObsD, ev: !!exceptionEvidence(9330) }));
+    ok("[R63.1] the copy renders the PAIR and names the unobserved remainder rather than leaving it to be subtracted",
+       /3 observed days across a 9-day span/.test(spanDaysTxt(sp63))
+       && /nobody watched — not evidence either way/.test(spanDaysTxt(sp63)),
+       spanDaysTxt(sp63));
+    /* Same trips, coverage restored: the clause passes. Proves the clause is
+       measuring COVERAGE and not something incidental to the fixture. */
+    DB.obsDays = Array.from({ length: 11 }, (_, k) => d63(k));
+    ok("[R63.1] with the same trips fully observed it clears — the clause measures coverage, not the calendar",
+       shadowSlice(9330, true).spanObsD === 9 && !!exceptionEvidence(9330),
+       JSON.stringify({ obs: shadowSlice(9330, true).spanObsD, ev: !!exceptionEvidence(9330) }));
+    ok("[R63.1] the retention ceiling is STATED where the span renders, not left to cap it silently",
+       (() => { const far = shadowSlice(9330, true);
+                far.spanD = 41; far.spanCapped = true;
+                return /retention ceiling/.test(spanDaysTxt(far)) && /a longer record cannot report itself/.test(spanDaysTxt(far)); })(),
+       "a 60-day record must not silently report 30");
+    /* ── the near-miss ranking ── */
+    DB.obsDays = [d63(9), d63(8), d63(1), d63(0)];      // back under the bar
+    const st63 = excStanding(9330);
+    ok("[R63.2] every clause is scored, including the two that were never in the constant list",
+       EXC_CLAUSES.length === 7 && !!st63.cl.gate && !!st63.cl.cap
+       && st63.cl.trips.ok && st63.cl.fill.ok && st63.cl.net.ok && !st63.cl.days.ok,
+       JSON.stringify(Object.entries(st63.cl).map(([k, v]) => k + ":" + (v.ok ? "ok" : "short"))));
+    ok("[R63.2] the BINDING clause is named — the surface reports what is short, not that something is",
+       st63.binding && st63.binding.k === "days" && st63.failing.length === 1,
+       JSON.stringify(st63.binding));
+    ok("[R63.2] an ETA renders only where the clause ACCRUES, and says what it accrues at",
+       /more observed day/.test(excEta(st63) || "")
+       && /only on days you open the tool/.test(excEta(st63) || "")
+       && (() => { DB.blacklist = [9330];
+                   const flagged = excStanding(9330);
+                   const noEta = excEta(flagged) === null && flagged.binding.k === "flags";
+                   DB.blacklist = []; return noEta; })(),
+       excEta(st63));
+    const hs63 = excStandingsHTML();
+    ok("[R63.2] the ranking replaces the bar-recitation line — the old copy is GONE, not sitting beside it",
+       /Standing against the bar/.test(hs63) && /Probe span/.test(hs63)
+       && !/No candidates clear the evidence bar right now/.test(gateExcSection()),
+       (gateExcSection().match(/No candidates clear[^<]*/) || ["(absent — correct)"])[0]);
+    ok("[R63.2] an item with trips but not on the watchlist is scored and MARKED, never silently included or hidden",
+       (() => { DB.watch = [];
+                const h = excStandingsHTML(); DB.watch = [{ id: 9330, qty: null }];
+                return /Probe span/.test(h) && /unwatched/.test(h) && /would hide it/.test(h); })(),
+       "slice and gap-band trips land on unwatched items");
+    ok("[R63.2] closest-first: an item one clause short outranks an item with no trips at all",
+       (() => { DB.watch = [{ id: 9330, qty: null }, { id: 9001, qty: null }];
+                const order = [...new Set([9330, 9001].map(excStanding).sort((a, b) => a.rank - b.rank).map(x => x.id))];
+                DB.watch = [{ id: 9330, qty: null }];
+                return order[0] === 9330; })(),
+       "an item with 5 good trips must rank above one with none");
+    DB.shadowBook = keepB63; DB.obsDays = keepO63; DB.gateLog = keepG63;
+    DB.watch = keepW63; DB.shadowExceptions = keepX63; DB.blacklist = keepBl63;
+    S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL exception lane observed span / ranking :: " + (e && e.stack || e));
+  }
+
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any
      tagged assertion failed. Lines are prefixed REQ so the fail counter

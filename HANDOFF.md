@@ -91,6 +91,39 @@ so "funded shape" has n=0 in the strict sense — watchlist is a proxy, and it i
 8 trips. **What would settle it:** the same decomposition on a post-reset epoch
 with clean passers in it.
 
+### 1f. Should the gap band be routed exclusively to the evening touch?
+
+**Raised Aug 13 2026, open, and deliberately not answered.** The band's two
+horizons disagree in sign: **+399k on 3 overnight trips against −219k on 16
+daytime ones.** Placed only at the evening touch, the band's trips get the
+~9.5h sit; placed in the daytime they get ~5h, and on this evidence that is
+where the losses are.
+
+**This is not the scanner question and must not be read as it.** The held T3
+scanner proposal asks whether the band deserves more coverage. Routing asks
+when its trips should be placed. Different change, different cost, different
+bar — see the routing-is-not-coverage case law in CLAUDE.md. **The scanner
+proposal stays held on its own bar** (5 clean post-fix closed trips; the line
+on Prospecting reports the standing count).
+
+**What would settle it.** Five clean post-fix closed trips in the *overnight
+cell*, with a concentration reading that is not one trip. Neither half is met:
+
+| | n | notional | net (sim) | top-trip share |
+|---|---|---|---|---|
+| gap band · overnight | 3 | ~10.9m | **+399k** | **103%** |
+| gap band · daytime | 16 | — | **−219k** | none — net is negative |
+
+The overnight cell is **one 10.6m-notional trip** plus two that offset it: 103%
+of the cell's net is the single top trip, so the effective sample size is one,
+and three trips would not have been enough regardless. Read the cell as an
+anecdote until it has trips that stand without that one.
+
+**Where to look.** Trade → Paper Book → **Overnight vs daytime**, which renders
+every cohort at both horizons with n, notional, net and concentration per cell,
+and opens each to its trips. The analysis export carries the same as
+`perCohortHorizonRollup`.
+
 ---
 
 ## 2. Pending on Mike
