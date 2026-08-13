@@ -19,3 +19,10 @@ analysis-*.json
 # the localStorage state backup from the Flip Log tab — same reasoning, and it
 # is a full dump rather than a curated read
 gef-backup*.json
+# the Downloads collector's landing zone (tools/inbox/sweep.sh). Same reasoning
+# as the analysis exports themselves: the repo carries the tool, never the data
+# it produced. Ignored in full, whatever lands here.
+# ANCHORED to the repo root: a bare `inbox/` matches a directory of that name at
+# ANY depth, and it silently swallowed tools/inbox/sweep.sh — the collector
+# itself — which would have shipped the rule without the thing it describes.
+/inbox/

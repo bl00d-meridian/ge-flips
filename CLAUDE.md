@@ -1041,6 +1041,47 @@ worth carrying: a ledger that maps two artefacts to each other is only a ledger 
 maps are checked; the unchecked direction is where the drift accumulates, because
 nothing there ever goes red.**
 
+## Downloads auto-collect (user ruling, Aug 13 2026)
+
+The browser cannot write to the repo, so every export the tool produces used to cost a
+manual hop — find it in Downloads, move it, delete the ` (1)` copies. The flags file had
+a collector; nothing else did, and the hop cost a step every session for a week.
+
+**`bash tools/inbox/sweep.sh` is the collector, and it runs at SESSION START, not only
+during a briefing.** For each export class it takes the newest by modified time, moves
+it, and deletes that class's older members from Downloads:
+
+| Class | Lands in |
+|---|---|
+| `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-all-*` | `inbox/` |
+| `ge-flips-*` (state backup) | `inbox/` |
+| `flags-pending*` | `briefings/` — **unchanged**, because the briefing procedure reads it there by name |
+
+Four properties, each of which is the rule rather than an implementation detail:
+
+- **Downloads is resolved from the known-folder API**, never a hardcoded path — the
+  machine may relocate it.
+- **Every class reports a line, including `none found`.** Absence of a file and absence
+  of a report are different things and the reader must not have to tell them apart.
+- **Age comes from the file's own `generatedAt`, never its mtime.** An export that sat in
+  Downloads for a day is a day old regardless of when it was collected. Over **6h** it is
+  marked STALE and must not be read as current state; a file with no `generatedAt` reports
+  *age unknown* rather than being assumed fresh. **If a question needs state the file
+  predates, say so instead of answering from it** — this is the observed-time rule applied
+  to an artefact.
+- **Everything collected is gitignored** (`inbox/`, plus the standing `analysis-*.json` /
+  `ge-flips-*.json` patterns). The repo carries the tool, never the data it produced.
+
+**The hook is local and the script is tracked.** `.claude/*` is gitignored by standing
+rule, so the `SessionStart` hook lives in `.claude/settings.json` on this machine only;
+the behaviour is inherited through this section and the script. A clone without the hook
+runs the script by hand at session start. Recreate the hook with:
+
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "bash tools/inbox/sweep.sh", "timeout": 60 } ] } ] } }
+```
+
 ## Repo hygiene
 
 - Commit only under the repo-configured anonymized identity (`git config user.name` /

@@ -391,6 +391,24 @@ Both open paths (`shadowScan`'s `add()` and `scannerShadowScan`) stamp `openSeq:
 2. **The records predate it** and are still inside the 30-day retention window. Ruled less likely, since the trips were opened today.
 3. **`reconReplay` is genuinely unguarded** — it has causality (`bt < p.t` skips) but no minimum-life rule. It cannot produce sub-second closes today, but it is the one path where the rule was never written, and if bucket timestamps were ever wrong it would be the path that failed first. Recorded as a latent gap, not as the cause.
 
+   > **⚠ CORRECTION, 2026-08-13 — the causality clause above was unsupported when
+   > written.** Scan 11's first run found that `if (bt < p.t) continue` **could never
+   > execute**: the caller clamps the replay window to at least `p.t`, so every bucket
+   > reaching that line already satisfied it. This paragraph rated `reconReplay` the least
+   > likely of three causes partly on the strength of a guard that was decoration. The
+   > ranking may still be right — the *other* reason given, that buckets are five minutes
+   > apart, is real and independent — but **the causality half of the argument was worth
+   > nothing and is withdrawn.** The guard is deleted and the promise now lives in
+   > `reconWindowStart()`, which production actually calls; see
+   > `audits/AUDIT-2026-08-13b-scans-10-11.md` S11-F1 and MISTAKES.md M137 / M138.
+   >
+   > A second finding came out of the same line: the assertion covering it, `[R43.2]`,
+   > called `reconReplay` **directly with a pre-open window** — manufacturing the only
+   > state in which the guard could run. It passed, on real production code, and reported
+   > a dead line as covered, which is why nobody noticed for a day. Corrected in place
+   > rather than noted elsewhere, because **a conclusion resting on unexecutable code has
+   > to be marked wherever it was recorded.**
+
 ### What was actually wrong: the file could not answer the question
 
 The export carried `openedAt`/`closedAt` as **ISO strings, which truncate to the second** — so "resolved in under a second" and "resolved within the same second" are indistinguishable in it. And the rule is stated in POLL CYCLES while the file carried no cycle at all.

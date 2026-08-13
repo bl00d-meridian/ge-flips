@@ -318,16 +318,24 @@ remains unexplained."
 
 ## Run procedure
 
-0. **Fetch the flags file from Downloads** (user ruling, Aug 11 2026 — the browser
-   cannot write to the repo, so the desk absorbs the hop). Resolve the user's
-   Downloads folder via the known-folder registry, never a hardcoded path (some
-   machines relocate it; must work on any box):
-   `powershell -NoProfile -Command "(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders').'{374DE290-123F-4565-9164-39C4925E467B}'"`
-   (expand any `%USERPROFILE%` in the result). Look for `flags-pending*.json` there —
-   including the browser's `flags-pending (2).json` accumulation. If any exist: take
-   the NEWEST by modified time, move it to `briefings/flags-pending.json`
-   (overwriting), and delete the older `flags-pending*.json` copies from Downloads —
-   the numbered-duplicate mess is part of what this step cleans. Log the outcome in
+0. **Fetch the flags file from Downloads** — now one class inside the general sweep
+   (generalised Aug 13 2026; the flags-only version had cost a manual hop every
+   session for a week, and the other export classes had no collector at all).
+   **Run `bash tools/inbox/sweep.sh`**, which resolves Downloads from the
+   known-folder API (never a hardcoded path — some machines relocate it), and for
+   every export class takes the NEWEST by modified time, moves it, and deletes that
+   class's older copies including the browser's ` (1)` / ` (2)` accumulation. Classes:
+   `analysis-paper` · `analysis-prospecting` · `analysis-gates` · `analysis-calibration`
+   · `analysis-all` · `ge-flips-*` (state backup) → `inbox/`; **`flags-pending*.json` →
+   `briefings/flags-pending.json`, its existing destination, because this procedure
+   reads it there by name.** The script reports one line per class *including
+   `none found`* — absence of a file and absence of a report are different things —
+   and stamps each file's own `generatedAt` with its age, flagging anything over 6h as
+   STALE. Everything it moves is gitignored.
+   The sweep also runs automatically at session start via the `SessionStart` hook (see
+   CLAUDE.md, *Downloads auto-collect*); running it again here is idempotent and is the
+   guarantee that a briefing never reads a docket the sweep missed.
+   Log the outcome in
    the brief's header, one line: `flags file: moved from Downloads, exported
    <exportedAt>` / `used existing briefings/ copy` / `none found — no active flags
    assumed? verify with the user`.

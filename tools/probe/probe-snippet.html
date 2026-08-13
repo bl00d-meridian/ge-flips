@@ -4741,12 +4741,26 @@
     ok("[R40.7] coverage stops when the trip closes — later buckets are not its life",
        covered40 === 10 * 60e3,
        "covered " + (covered40 / 60e3) + " min, closed on the second bucket (the earliest a round trip can close)");
-    ok("[R43.2] reconstruction obeys the same causality — a bucket before the trip opened credits nothing",
+    /* MOVED TO THE LAYER THAT OWNS THE PROMISE (user ruling, Aug 13 2026 —
+       S11-F1). This used to hand `reconReplay` a window starting at `base40`,
+       BEFORE the trip's own `t`, and assert the in-loop guard skipped those
+       buckets. The guard was real and the assertion passed — but production
+       can never produce that call: `shadowRecover` clamps the window to at
+       least `p.t`, so the probe was MANUFACTURING the only state in which the
+       guard could execute, and reporting a dead line as covered. That is why
+       the guard survived: it was green, and it was unreachable.
+       The guard is deleted and the promise now lives in `reconWindowStart()`,
+       which is what production actually calls. Asserted here on the input the
+       old guard pretended to defend against — a record whose `lastObs` sits
+       behind its `t` — so the property is tested where it can fail. */
+    ok("[R43.2] reconstruction obeys the same causality — the window can never start before the trip existed",
        (() => { const late = { id: 41002, itemId: 9001, qty: 10, bid: 4001, ask: 4399,
                   t: base40 + 12 * 5 * 60e3, hzH: 9.5, buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0,
-                  buyDone: 0, state: "open" };
-                /* Replay only the buckets that PREDATE it. */
-                reconReplay(late, pts40.slice(0, 12), base40, Date.now());
+                  buyDone: 0, state: "open", lastObs: base40 };
+                const from = reconWindowStart(late);
+                if (from < late.t) return false;
+                /* And on THAT window the pre-open buckets are not even offered. */
+                reconReplay(late, pts40.slice(0, 12), from, Date.now());
                 return late.buyQ === 0 && late.state === "open"; })(),
        "pre-open buckets credit nothing");
     const openTrip40 = { id: 41001, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 100,
@@ -6806,6 +6820,203 @@
     S.drillOpen = new Set(); S.drillUI = new Map();
   } catch(e){
     out.push("FAIL exception lane observed span / ranking :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §64 · scan 10 / scan 11 first-run findings ═══ */
+  try {
+    const keepSeen = DB.paperDefectsSeen, keepGen = DB.paperClrGen,
+          keepAt = DB.paperDefectsClearedAt, keepB64 = DB.shadowBook;
+
+    /* [R64.2] THE BOUNDARY NEVER DEFAULTS TO ZERO. The seeded defect this
+       catches is the original line, `DB.paperDefectsClearedAt || 0`: with the
+       register empty and no stamp written, that returns 0 and every trip in
+       the book matches `p.t >= 0`. Asserted as a VALUE, not as a filter
+       result, so a clamp downstream cannot absorb it. */
+    DB.paperDefectsClearedAt = 0; DB.paperClrGen = 0;
+    const openNow = paperDefectsOpen().length;
+    ok("[R64.2] with defects open the boundary is null, never a date",
+       paperCleanFrom() === null, JSON.stringify({ openNow, from: paperCleanFrom() }));
+    const realDefs = PAPER_DEFECTS.splice(0, PAPER_DEFECTS.length);   // empty the register
+    ok("[R64.2] register empty but clearance UNSTAMPED: still null — an unset boundary means NO trip is clean",
+       paperCleanFrom() === null, JSON.stringify({ from: paperCleanFrom(), at: DB.paperDefectsClearedAt }));
+    /* [R64.3] cleanliness is a population: an unstamped legacy trip is
+       contaminated even once a clearance exists and its timestamp qualifies. */
+    DB.paperDefectsClearedAt = 1000; DB.paperClrGen = 3;
+    ok("[R64.2] a written stamp does read through once the register is clear",
+       paperCleanFrom() === 1000, String(paperCleanFrom()));
+    ok("[R64.3] a trip whose date qualifies but whose generation does not is CONTAMINATED",
+       paperTripClean({ t: 5000, clrGen: 2 }) === false, "gen 2 vs current 3");
+    ok("[R64.3] an unstamped legacy trip is contaminated however late it opened",
+       paperTripClean({ t: 9e12 }) === false, "no clrGen");
+    ok("[R64.3] current generation AND after the stamp is the only clean case",
+       paperTripClean({ t: 5000, clrGen: 3 }) === true &&
+       paperTripClean({ t: 500, clrGen: 3 }) === false, "date floor still binds inside the generation");
+
+    /* [R64.1] the WRITER: a defect leaving the register stamps the clearance
+       and bumps the generation. Driven through paperDefectsSweep(), not
+       re-implemented — the extraction exists so this can call production. */
+    DB.paperDefectsSeen = ["instant-trips", "sell-credit"];
+    DB.paperClrGen = 0; DB.paperDefectsClearedAt = 0;
+    paperDefectsSweep();
+    ok("[R64.1] a defect leaving the register stamps the clearance and bumps the generation",
+       DB.paperDefectsClearedAt > 0 && DB.paperClrGen === 1 && (DB.paperDefectsSeen || []).length === 0,
+       JSON.stringify({ at: DB.paperDefectsClearedAt, gen: DB.paperClrGen, seen: DB.paperDefectsSeen }));
+    const at1 = DB.paperDefectsClearedAt;
+    paperDefectsSweep();
+    ok("[R64.1] a second load with nothing new struck does NOT re-stamp",
+       DB.paperDefectsClearedAt === at1 && DB.paperClrGen === 1,
+       JSON.stringify({ at: DB.paperDefectsClearedAt, gen: DB.paperClrGen }));
+
+    /* [R64.4] the hold cannot ride the clearing commit: every trip present at
+       the moment of clearance is one generation behind, so readiness is 0
+       however many trips exist and however good they look. */
+    DB.shadowBook = [];
+    for (let i = 0; i < 8; i++)
+      DB.shadowBook.push({ id: 90000 + i, itemId: 9001, t: at1 + 1000 + i, clrGen: 0,
+        state: "filled", net: 50000, cohort: "gapband" });
+    const vPre = gapBandVerdict({ trips: 8 }, DB.shadowBook.slice());
+    ok("[R64.4] eight qualifying trips opened before the clearance leave readiness FALSE",
+       vPre.ready === false && vPre.clean.n === 0 && vPre.contaminated.n === 8,
+       JSON.stringify({ clean: vPre.clean.n, contam: vPre.contaminated.n, ready: vPre.ready, gen: vPre.gen }));
+    for (const p of DB.shadowBook) p.clrGen = DB.paperClrGen;
+    const vPost = gapBandVerdict({ trips: 8 }, DB.shadowBook.slice());
+    ok("[R64.4] the same trips stamped with the current generation DO clear the bar",
+       vPost.ready === true && vPost.clean.n === 8,
+       JSON.stringify({ clean: vPost.clean.n, ready: vPost.ready }));
+
+    PAPER_DEFECTS.push.apply(PAPER_DEFECTS, realDefs);   // restore the real register
+    DB.paperDefectsSeen = keepSeen; DB.paperClrGen = keepGen;
+    DB.paperDefectsClearedAt = keepAt; DB.shadowBook = keepB64;
+  } catch(e){
+    out.push("FAIL contamination clearance :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R64.5] the causality promise, asserted at the layer that owns it. The
+       deleted guard could not fire; this can, and the adversarial input is the
+       one the old guard pretended to defend against — lastObs BEFORE t. */
+    ok("[R64.5] the replay window never starts before the trip existed, even with lastObs behind t",
+       reconWindowStart({ t: 5000, lastObs: 1000 }) === 5000
+       && reconWindowStart({ t: 5000, lastObs: 9000 }) === 9000
+       && reconWindowStart({ t: 5000 }) === 5000,
+       JSON.stringify({ behind: reconWindowStart({ t: 5000, lastObs: 1000 }),
+                        ahead: reconWindowStart({ t: 5000, lastObs: 9000 }),
+                        none: reconWindowStart({ t: 5000 }) }));
+    ok("[R64.5] the floor holds for every lastObs a record could carry",
+       [0, 1, 4999, 5000, 5001, 1e12].every(lo => reconWindowStart({ t: 5000, lastObs: lo }) >= 5000),
+       "swept lastObs values");
+  } catch(e){
+    out.push("FAIL recon window floor :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R64.6] the cap's reason reaches a surface. Scoped to #cohCapNote — the
+       narrowest container that holds the property — so a sentence appearing
+       anywhere else on the page cannot satisfy it. */
+    const keepNote = S.cohNote;
+    S.cohNote = "2 statistical candidates withheld by the 40% cap: Probe Alpha, Probe Beta";
+    setTab("sleeve"); renderClusters();
+    const el = document.querySelector("#cohCapNote");
+    const txt = el ? el.textContent : "";
+    ok("[R64.6] the 40% cap's withheld sentence renders where the proposals render",
+       !!el && /withheld by the 40% cap/.test(txt) && /Probe Alpha/.test(txt),
+       JSON.stringify({ found: !!el, txt: txt.slice(0, 160) }));
+    S.cohNote = ""; renderClusters();
+    ok("[R64.6] and it renders NOTHING when the cap withheld nothing",
+       (document.querySelector("#cohCapNote") || {}).textContent === "",
+       JSON.stringify({ txt: (document.querySelector("#cohCapNote") || {}).textContent }));
+    S.cohNote = keepNote;
+  } catch(e){
+    out.push("FAIL coherence cap note :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §65 · a difference renders both operands ═══ */
+  try {
+    const keepDiv = DB.shadowDivLog;
+    /* The real numbers from the incident: current −2,404,412, tight +236,129,
+       so the difference is +2,640,541 — the figure that had been rendering
+       alone, as though it were a level. */
+    /* Asserted at paperDivLead(), the extracted TERM. The tile that renders it
+       drives buildPlan()/renderDeploy() first, which re-stamps the divergence
+       ledger — so a fixture seeded into DB.shadowDivLog is overwritten by
+       production accrual before the copy is built, and an assertion against the
+       tile would be testing the accrual. Found by this assertion failing. */
+    const dvReal = { d: today(), cur: -2404412, loose: -2404412, tight: 236129 };
+    const leadTxt = paperDivLead(dvReal);
+    ok("[R65.1] the delta renders and is labelled as a difference, not a level",
+       /2\.64m better under the tight/.test(leadTxt), leadTxt);
+    ok("[R65.1] and the BASE operand renders in the same sentence — the number the drill shows",
+       /current itself is −2\.4m/.test(leadTxt), leadTxt);
+    /* The sign half: the same magnitude the other way round must not read the
+       same, and must still carry its base. */
+    const leadNeg = paperDivLead({ d: today(), cur: 236129, loose: 236129, tight: -2404412 });
+    ok("[R65.1] a negative difference reads WORSE and still carries its base",
+       /2\.64m worse under the tight/.test(leadNeg) && /current itself is \+236k/.test(leadNeg), leadNeg);
+    ok("[R65.1] deltaVs cannot emit a difference without its base",
+       /1m better under A than B; B itself is −2m/.test(deltaVs(-1000000, -2000000, "A", "B")),
+       deltaVs(-1000000, -2000000, "A", "B"));
+    /* And the wiring: the tile renders whatever the term produced for the log
+       it actually has, so the extraction cannot drift from its one caller. */
+    setTab("home"); renderHomeVitals();
+    const tileTxt = (document.querySelector("#homeVitals") || {}).textContent || "";
+    ok("[R65.1] the vitals tile renders the extracted term, not a second copy of it",
+       tileTxt.indexOf(paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null)) >= 0,
+       JSON.stringify({ term: paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null),
+                        tile: tileTxt.slice(0, 240) }));
+    DB.shadowDivLog = keepDiv;
+  } catch(e){
+    out.push("FAIL delta operands :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R65.2] what separates the regimes. The fixture is the real shape from
+       the incident: seven trips in current+loose and not in tight, one of them
+       carrying most of the gross movement. */
+    const keepB65 = DB.shadowBook;
+    const mk = (id, net, regs, coh) => ({ id, itemId: 9001, name: "Probe item " + id, qty: 10,
+      bid: 1000, ask: 1040, t: Date.now() - 3600e3, clrGen: 0, state: "filled", net, regimes: regs,
+      cohort: coh, obsMs: 9e6, hzH: 6, closedAt: Date.now() });
+    DB.shadowBook = [
+      mk(1, -1437762, ["current", "loose"], "gap band"),
+      mk(2, -777735, ["current", "loose"], "watchlist"),
+      mk(3, -411180, ["current", "loose"], "scanner"),
+      mk(4, 39412, ["current", "loose"], "gap band"),
+      mk(5, 200000, ["current", "loose", "tight"], "watchlist"),
+      mk(6, 100000, ["current", "loose", "tight"], "watchlist")
+    ];
+    const seps = regimeSeparators(paperClosed());
+    const cl = seps.find(s => s.a.key === "current" && s.b.key === "tight")
+            || seps.find(s => s.a.key === "loose" && s.b.key === "tight");
+    ok("[R65.2] current and loose report as IDENTICAL when no trip sits in the band between them",
+       !!seps.find(s => s.a.key === "current" && s.b.key === "loose" && s.only.length === 0),
+       JSON.stringify(seps.map(s => ({ a: s.a.key, b: s.b.key, only: s.only.length }))));
+    ok("[R65.2] the separating trips are exactly those in one regime and not the next",
+       !!cl && cl.only.length === 4 && cl.only.every(p => (p.regimes || []).indexOf("tight") < 0),
+       JSON.stringify({ n: cl && cl.only.length }));
+    ok("[R65.2] concentration is measured against GROSS movement, so a negative net cannot fake a proportion",
+       !!cl && cl.top1 > 0 && cl.top1 <= 1 && cl.top2 >= cl.top1 && cl.top2 <= 1,
+       JSON.stringify({ top1: cl && cl.top1, top2: cl && cl.top2, sepNet: cl && cl.sepNet }));
+    const sepHTML = regimeSeparatorSection(paperClosed());
+    ok("[R65.2] the section renders standing, names the identical pair as INERT, and calls out concentration",
+       /identical/.test(sepHTML) && /inert/.test(sepHTML)
+       && /fact about those trips, not about the floor/.test(sepHTML),
+       sepHTML.slice(0, 400));
+    ok("[R65.2] and it opens to the separating rows with ROI at open, cohort, outcome, notional and net",
+       /data-drill="paper:regsep:/.test(sepHTML)
+       && REGIME_SEP_COLS.map(c => c.k).join(",") === "item,cohort,roi,outcome,notional,net"
+       && regimeSepRows(cl.only).length === 4
+       && /%$/.test(regimeSepRows(cl.only)[0].roi),
+       JSON.stringify({ cols: REGIME_SEP_COLS.map(c => c.k), row0: regimeSepRows(cl.only)[0] }));
+    /* Ordered by ABSOLUTE net, asserted on the ordering itself rather than on
+       an item name — the fixture's ids resolve through itemName() to one real
+       synthetic item, so a name check would have been asserting the fixture. */
+    ok("[R65.2] rows are ordered by absolute net, so the trip carrying the difference is first",
+       (() => { const seq = cl.only.slice()
+                  .sort((x, y) => Math.abs(y.net || 0) - Math.abs(x.net || 0)).map(p => p.net);
+                return seq[0] === -1437762 && seq[seq.length - 1] === 39412
+                  && seq.every((v, i) => i === 0 || Math.abs(seq[i - 1]) >= Math.abs(v)); })(),
+       JSON.stringify(regimeSepRows(cl.only).map(r => r.net)));
+    DB.shadowBook = keepB65;
+    S.drillOpen = new Set(); S.drillUI = new Map();
+  } catch(e){
+    out.push("FAIL regime separators :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

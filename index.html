@@ -970,6 +970,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
         </span>
       </div>
       <div class="note" id="cluScanMsg" style="margin-bottom:8px"></div>
+      <div id="cohCapNote"></div>
       <div class="tw"><table>
         <thead><tr><th>Basket</th><th>Members</th>
           <th title="Capital committed to members right now (open positions + inventory lots at cost) against this basket's cap. Today's Plan draws the remainder down line by line.">Exposure / cap</th>
@@ -1293,6 +1294,13 @@ let DB = {
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
   lastAnomalyScanAt: 0,   // weekly accumulation-anomaly scan stamp
   calib: null,        // fill-model calibration (ruled Aug 12 2026): last replay of the model against REAL logged round trips {at,rows,skipped,strict,lenient} — the test of whether a low paper fill rate is a finding about the market or about the model; rolling, because the 5m tape retains ~36h
+  /* CONTAMINATION CLEARANCE (user ruling, Aug 13 2026 — S10-F1). `seen` is the
+     register this store last observed, which is what lets `paperDefectsSweep()`
+     notice a defect LEAVING; `clearedAt` is deliberately absent rather than 0,
+     because an unset boundary must mean no trip is clean; `clrGen` is stamped on
+     every trip so before/after are populations rather than a date filter. */
+  paperDefectsSeen: null,
+  paperClrGen: 0,
   volIndex: null,     // market volume index (ruled Aug 12 2026) {at,d,ratio,n,tried,rows:[{id,name,ratio,straddle}],straddle} — the anomaly scan's volume denominator; null = never measured
   sleeveExitLiqPct: 15,   // warn when an intended sleeve position exceeds this % of the item's daily gp volume
   intel: [],          // analyst intelligence records — imported from intelligence.json, pending until the user rules; ratified records activate per type, expired ones grade into the scorecard
@@ -1392,6 +1400,7 @@ function load(){
        them. Clearing them would destroy real coverage to fix a simulated
        number. */
     if (!DB.paperEpoch2) paperEpoch2Reset();
+    try { paperDefectsSweep(); } catch(e){}
     /* One-time: a long-standing Soulreaper axe sell occupies a slot (listed
        Aug 2026), so committed flip offers drop 7 → 6. When that sell fills,
        raise Offers back to 7 in the sizing row. */
@@ -5938,6 +5947,10 @@ function provNote(downstream){
 const FILL_MODEL_V = 2;   /* 2 = fixed 6h paper horizon (Aug 13 2026); 1 = schedule-derived, never pooled with it */
 function stampPrediction(rec, qty, c){
   rec.fillModelV = FILL_MODEL_V;
+  /* Clearance generation, stamped CENTRALLY for the same reason regimes are:
+     both open paths run through here, so no entry path can forget it. This is
+     what makes "clean" a population rather than a date filter. */
+  rec.clrGen = paperClrGen();
   const r = reachFlow(c.id, c.buy);
   const pred = estFillH(qty, c);
   rec.predH = pred == null ? null : (Number.isFinite(pred) ? Math.round(pred * 1000) / 1000 : "never");
@@ -6399,6 +6412,17 @@ function seriesPxAt(id, ts){
 /* Replay ONE trip across [from, to] using its own 5m buckets. Mutates the
    trip exactly as the live tick would, and returns the milliseconds of the
    span the series could actually account for. */
+/* THE LAYER THAT OWNS THE CAUSALITY PROMISE (user ruling, Aug 13 2026 —
+   S11-F1). The replay may not read a bucket that started before the trip
+   existed, and the WINDOW is where that is enforceable: `reconReplay` iterates
+   whatever it is handed, so a guard inside it can only ever restate a promise
+   the caller has already kept. Extracted and named so the assertion has
+   something to point at, and written as an explicit `p.t` floor rather than
+   relying on `lastObs >= t` happening to hold — a promise that depends on
+   another field's invariant is not a promise, it is a coincidence. */
+function reconWindowStart(p){
+  return Math.max(p.t || 0, p.lastObs || p.t || 0);
+}
 function reconReplay(p, pts, from, to){
   const H = legHorizonH(p) * 3600e3;
   let covered = 0;
@@ -6407,9 +6431,17 @@ function reconReplay(p, pts, from, to){
     covered += M5_MS;
     if (p.state !== "open") break;
     const bt = b.t;
-    /* Same causality rule as the live tick (Aug 12 2026): a bucket that
-       started before the trip did contains prints from before it existed. */
-    if (bt < p.t) continue;
+    /* THE CAUSALITY GUARD THAT USED TO LIVE HERE IS GONE (user ruling, Aug 13
+       2026 — S11-F1). It read `if (bt < p.t) continue;` and could never fire:
+       the caller clamps the window with `reconWindowFrom()`, which returns at
+       least `p.t`, so every bucket reaching this loop already satisfied it. A
+       guard its own upstream limits forbid is not protection, it is decoration
+       that reads as protection — and this one was worse than decoration,
+       because the Aug 12 instant-trip audit REASONED from it.
+       Per the dead-safeguard ruling the fix is to pick the layer that can
+       actually enforce the promise rather than to make the unreachable line
+       reachable: the caller owns the window, so the caller states the promise
+       and the assertion points there. */
     if (!p.buyDone){
       /* RECONSTRUCTION HAS NO TOUCH HISTORY (user ruling, Aug 12 2026). The
          ambiguous class needs a live instabuy observation inside the bucket,
@@ -6477,7 +6509,7 @@ async function shadowRecover(){
       if (!pts || !pts.length) continue;
       const oldest = pts[0].t;
       for (const p of stale.filter(x => x.itemId === id)){
-        const from = p.lastObs || p.t;
+        const from = reconWindowStart(p);
         gapMsAll.push(now - from);
         /* Beyond the series' retention there is nothing to replay: that span
            stays unobservable by construction, and the trip keeps whatever
@@ -7008,6 +7040,17 @@ function paperCohortOf(p){
   if (p.slice) return p.slicePass ? "slice·clean" : "slice";
   return "watchlist";
 }
+/* EXTRACTED Aug 13 2026 so the regime-separator table can label an outcome
+   without carrying a second copy of this mapping. Two renderers describing the
+   same state in two places is how the two drift; there is one now. */
+function paperOutcomeLabel(p){
+  return p.state === "filled" ? "filled both legs"
+    : p.state === "forced-exit" ? "forced exit of " + full(p.forced || 0) + " unsold"
+    : p.state === "partial" ? "partial buy of " + full(p.qty - (p.forced || 0)) + " of " + full(p.qty) + " — never completed inside its horizon"
+    : p.state === "unfilled" ? "never filled at the bid"
+    : p.state === "unobserved" ? "unobserved — a hole in the record, not a result"
+    : p.state === "open" ? "still open" : String(p.state);
+}
 const PAPER_TRIP_COLS = [
   { k: "item", lab: "Item" },
   { k: "opened", lab: "Opened", sortk: "_t", num: 1 },
@@ -7031,12 +7074,7 @@ function paperTripRows(trips){
     /* Per-trip, never the plan's current gap: a 9.5h overnight trip and a 5h
        daytime one are different denominators. */
     const obs = Math.round(shadowObsShare(p) * 100);
-    const outcome = p.state === "filled" ? "filled both legs"
-      : p.state === "forced-exit" ? "forced exit of " + full(p.forced || 0) + " unsold"
-      : p.state === "partial" ? "partial buy of " + full(p.qty - (p.forced || 0)) + " of " + full(p.qty) + " — never completed inside its horizon"
-      : p.state === "unfilled" ? "never filled at the bid"
-      : p.state === "unobserved" ? "unobserved — a hole in the record, not a result"
-      : p.state === "open" ? "still open" : String(p.state);
+    const outcome = paperOutcomeLabel(p);
     const exitPx = p.state === "forced-exit" ? (p.exitPx != null ? p.exitPx : null) : p.ask;
     const coh = paperCohortOf(p);
     const gate = (p.benchedBy && p.benchedBy[0])
@@ -7585,6 +7623,39 @@ function paperCaveat(){
    was excluded, kept openable so the exclusion is never silent. */
 const paperClosed = () => (DB.shadowBook || []).filter(shadowCounts);
 const paperThin = () => (DB.shadowBook || []).filter(shadowThin);
+/* A DIFFERENCE MUST NAME WHAT IT IS A DIFFERENCE FROM, IN THE SENTENCE (user
+   ruling, Aug 13 2026). The incident: the paper vitals line rendered
+   `tight − current` as "+2.64m vs current" — a DIFFERENCE presented as a
+   LEVEL. The drill-through underneath it read −2.4m, which is `current`
+   itself, so the headline and its own decomposition disagreed in sign and in
+   magnitude and both were arithmetically correct. Nothing was wrong with
+   either number; the sentence was wrong about which number it was.
+   `deltaVs()` is the sanctioned renderer, the `rateBlend()` shape applied to
+   differences: **it cannot emit the difference without both operands**, so a
+   caller physically cannot produce the ambiguous form. Never hand-roll
+   "X vs Y" — a tooltip naming the base is not enough, because the number is
+   read in the line and not in the hover. */
+function deltaVs(val, base, valLab, baseLab){
+  const d = Math.round(val - base), b = Math.round(base);
+  return (d >= 0 ? "+" : "−") + gp(Math.abs(d)) + (d >= 0 ? " better" : " worse")
+    + " under " + valLab + " than " + baseLab
+    + "; " + baseLab + " itself is " + (b >= 0 ? "+" : "−") + gp(Math.abs(b));
+}
+/* EXTRACTED so the assertion has a term to point at. The tile that renders
+   this drives `buildPlan()` and `renderDeploy()` first, which re-stamps the
+   divergence ledger — so a fixture seeded into `DB.shadowDivLog` is overwritten
+   by production accrual before the copy is built, and an assertion against the
+   rendered tile tests the accrual rather than the sentence. Same reasoning as
+   every other extraction here: assert the term, not the surface something
+   downstream can pin. */
+function paperDivLead(dv){
+  if (!dv) return "no divergence data";
+  const dl = Math.round((dv.loose || 0) - (dv.cur || 0)), dt = Math.round((dv.tight || 0) - (dv.cur || 0));
+  const pick = Math.abs(dl) >= Math.abs(dt) ? "loose" : "tight";
+  const rd = REGIME_DEFS().find(r => r.key === pick);
+  return deltaVs(pick === "loose" ? (dv.loose || 0) : (dv.tight || 0), dv.cur || 0,
+                 "the " + (rd ? rd.lab : pick) + " floor", "current");
+}
 const REGIME_DEFS = () => [
   { key: "current", col: "cur",   lab: "current (" + GATE.roi + "%)" },
   { key: "loose",   col: "loose", lab: "loose (" + (GATE.roi * SHADOW_LOOSE).toFixed(1) + "%)" },
@@ -9036,7 +9107,7 @@ function paperRoutingQuestion(groups){
   const lines = split.map(e => {
     const coh = e[0];
     const win = e[1].slice().sort((a, b) => b.econ.net - a.econ.net)[0];
-    const clean = from == null ? [] : win.trips.filter(p => (p.t || 0) >= from);
+    const clean = win.trips.filter(paperTripClean);
     const ec = win.econ;
     return '<div style="margin-top:3px">• <b>' + esc(coh) + '</b> — the proposal the evidence would support is '
       + '<b>place it only in the ' + esc(win.gap) + ' gap</b>. Standing against the bar: <b>' + clean.length + ' of ' + bar
@@ -9060,6 +9131,97 @@ function paperRoutingQuestion(groups){
     + '<div class="dim" style="margin-top:4px">Routing is a strategy change and clears the same bar as any other: ' + bar
     + ' clean post-fix closed trips in the cell, with the concentration reading beside the count. Nothing on this surface '
     + 'applies anything — there is no button here and nothing is queued.</div></div>';
+}
+/* THE TRIPS THAT SEPARATE TWO REGIMES ARE THE EXPLANATION (user ruling, Aug 13
+   2026). Three curves with three different sums invite exactly one question —
+   *which trips are in one and not the other* — and answering it used to mean
+   downloading the export and grouping by hand. It renders as a standing
+   section now, whenever two regimes actually diverge, because a difference the
+   operator has to ask about is a difference the surface failed to explain.
+
+   The reading it forces is CONCENTRATION before conclusion. A tighter floor
+   that "beats" a looser one by excluding seven trips has said nothing about
+   floors if two of the seven carry the whole gap — that is a fact about two
+   trips. So the panel leads with the top-one and top-two share and states
+   which reading applies, in the same shape the gap band's routing bar uses.
+   Identical regimes are reported too: it means no trip in the book sits in the
+   band between them, so the setting is INERT on this evidence rather than
+   vindicated, and that is a finding the curves alone cannot show. */
+function regimeSeparators(closed){
+  const regs = REGIME_DEFS(), out = [];
+  const inReg = (p, k) => (p.regimes || []).includes(k);
+  for (let i = 0; i < regs.length - 1; i++){
+    const a = regs[i], b = regs[i + 1];
+    const aTrips = closed.filter(p => inReg(p, a.key));
+    const bTrips = closed.filter(p => inReg(p, b.key));
+    const only = closed.filter(p => inReg(p, a.key) && !inReg(p, b.key));
+    const netOf = arr => arr.reduce((s, p) => s + (p.net || 0), 0);
+    const nets = only.map(p => p.net || 0).sort((x, y) => Math.abs(y) - Math.abs(x));
+    const gross = nets.reduce((s, v) => s + Math.abs(v), 0);
+    out.push({ a, b, only, aNet: netOf(aTrips), bNet: netOf(bTrips), sepNet: netOf(only),
+      nA: aTrips.length, nB: bTrips.length,
+      /* Shares of GROSS movement, never of a signed net — a share of a negative
+         net reads like a concentration figure and is not one. */
+      top1: gross > 0 ? Math.abs(nets[0] || 0) / gross : null,
+      top2: gross > 0 ? (Math.abs(nets[0] || 0) + Math.abs(nets[1] || 0)) / gross : null });
+  }
+  return out;
+}
+const REGIME_SEP_COLS = [
+  { k: "item", lab: "item" }, { k: "cohort", lab: "cohort" },
+  { k: "roi", lab: "ROI at open", num: 1 }, { k: "outcome", lab: "outcome" },
+  { k: "notional", lab: "notional", num: 1 }, { k: "net", lab: "net (sim)", num: 1 }
+];
+function regimeSepRows(trips){
+  return trips.slice().sort((x, y) => Math.abs(y.net || 0) - Math.abs(x.net || 0)).map(p => ({
+    item: itemName(p.itemId, p.name),
+    cohort: p.cohort === "scanner" ? "scanner·T" + (p.scanTier || "?") : (p.cohort || "—"),
+    /* ROI AT OPEN, from the price pair the trip was opened on — the number the
+       regime membership was decided by, not today's. */
+    roi: (p.bid > 0 && p.ask != null)
+      ? r2((p.ask - geTax(p.ask, p.itemId) - p.bid) / p.bid * 100) + "%" : "—",
+    outcome: paperOutcomeLabel(p),
+    notional: gp(Math.round((p.qty || 0) * (p.bid || 0))),
+    net: gp(Math.round(p.net || 0))
+  }));
+}
+function regimeSeparatorSection(closed){
+  /* EVERY adjacent pair reports, including the identical ones. An earlier
+     filter dropped pairs with no separating trips, which silently removed the
+     single most informative case — two regimes reading the same means nothing
+     in the book sits in the band between them, and that is a finding about the
+     setting being untested rather than an empty row worth hiding. */
+  const seps = regimeSeparators(closed);
+  if (!seps.length || !closed.length) return "";
+  return '<div class="note" style="margin-top:8px"><b>What separates the regimes</b> — the trips in one and not '
+    + 'the other, which is what the difference between the curves IS.'
+    + seps.map(s => {
+      if (!s.only.length)
+        return '<div style="margin-top:4px">• <b>' + esc(s.a.lab) + '</b> and <b>' + esc(s.b.lab) + '</b> are '
+          + '<b>identical</b> across ' + s.nA + ' counted trip' + (s.nA === 1 ? '' : 's') + '. No trip in the book sits in '
+          + 'the band between them, so on this evidence the tighter setting is <b>inert</b> — not vindicated, untested.</div>';
+      const face = '<span class="' + sign(s.sepNet) + '">' + gp(Math.round(s.sepNet)) + '</span>';
+      const conc = s.top1 == null
+        ? 'Concentration unavailable — the separating trips net to zero gross movement.'
+        : (s.top1 >= CONCENTRATION_CALLOUT
+            ? 'One trip is <b>' + Math.round(s.top1 * 100) + '% of the gross movement</b> here, and the top two are '
+              + Math.round(s.top2 * 100) + '%. <b>Read this as a fact about those trips, not about the floor</b> — a '
+              + 'setting that wins by excluding a handful of outcomes has not been shown to win in general.'
+            : 'Spread across the separating trips — top trip ' + Math.round(s.top1 * 100)
+              + '% of gross, top two ' + Math.round(s.top2 * 100) + '%. The difference is not carried by one outcome.');
+      return '<div style="margin-top:4px">• <b>' + esc(s.a.lab) + '</b> ' + gp(Math.round(s.aNet)) + ' over ' + s.nA
+        + ' → <b>' + esc(s.b.lab) + '</b> ' + gp(Math.round(s.bNet)) + ' over ' + s.nB + '. '
+        + '<b>' + s.only.length + ' trip' + (s.only.length === 1 ? '' : 's') + '</b> separate them, netting '
+        + drill("paper:regsep:" + s.a.key + ":" + s.b.key, face, {
+            head: s.only.length + " trips in " + s.a.lab + " and not in " + s.b.lab,
+            cols: REGIME_SEP_COLS, rows: regimeSepRows(s.only),
+            empty: "No separating trips.",
+            note: PAPER_NOTE() + ' ROI at open is the post-tax figure the regime membership was decided on. '
+              + 'Concentration is measured against GROSS movement, because a share of a negative net is not a proportion.'
+          })
+        + '. ' + conc + '</div>';
+    }).join("")
+    + '</div>';
 }
 function paperRegimeSection(){
   const log = (DB.shadowDivLog || []).slice(-31);
@@ -9100,6 +9262,7 @@ function paperRegimeSection(){
       + ' in the book · ' + log.length + ' daily reading' + (log.length === 1 ? '' : 's')
       + (thinReg ? ' · ' + thinReg + ' excluded (insufficient observation)' : '') + '</div></div>';
   }).join("") + '</div>');
+  bits.push(regimeSeparatorSection(closed));
   /* The divergence ledger itself — the persistence rule's raw evidence. */
   const ledRows = log.slice().reverse().map(x => {
     const best = [["current", x.cur], ["loose", x.loose], ["tight", x.tight]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0];
@@ -10832,6 +10995,20 @@ function renderClusters(){
     + (DB.lastCoScanAt ? " · scanned " + ago(DB.lastCoScanAt) : " · never scanned");
   /* The scan explains itself in standing copy, not only in a hover tooltip —
      "what does this button do" should never require a mouseover to answer. */
+  /* THE CAP STATES ITS REASON WHERE THE PROPOSALS RENDER (user ruling, Aug 13
+     2026 — S10-F2). The 40% statistical-member cap is an automated decision
+     that WITHHOLDS candidates, and every automated decision states its reason
+     inline where the user reads it. The sentence had been composed into
+     `S.cohNote` since the cap shipped and read by nothing, so the withheld
+     items were an absence with no explanation anywhere — which is exactly what
+     the rule exists to prevent. It renders here, above the queue it explains,
+     because a withheld candidate's whole visible effect is that it is missing
+     from that list. */
+  $("#cohCapNote").innerHTML = S.cohNote
+    ? '<div class="note" style="margin:4px 0">⬡ ' + esc(S.cohNote) + '.'
+      + ' <span class="dim">The cap bounds how much of a basket may be members the numbers found rather than the story — '
+      + 'these are not dismissed, they are not proposed. Confirm a thesis member to raise the cap\'s absolute room.</span></div>'
+    : "";
   $("#cluScanMsg").innerHTML = S.cluMsg ? esc(S.cluMsg)
     : (S.cluThin && S.cluThin.length
        ? 'Insufficient data — fewer than ' + Math.max(5, DB.clusterMinDays || 20)
@@ -12049,20 +12226,86 @@ function prospectingInline(){
    and the horizon split's routing bar needs the same line drawn. A name that
    claims a narrower scope than the code has is how the same computation gets
    written twice under two names. */
+/* THE BOUNDARY NEVER DEFAULTS TO ZERO (user ruling, Aug 13 2026 — S10-F1).
+   This returned `DB.paperDefectsClearedAt || 0` against a field NOTHING WROTE,
+   so the day the last entry left the register `from` became 0, `p.t >= 0`
+   matched every trip ever, and the whole book — including every trip that
+   closed while the defect was live — would have been reclassified as clean
+   evidence in one step with nothing said.
+   An unset clearance means NO trip is clean, not every trip: an unstamped
+   boundary is an absence of evidence about cleanliness, and absence of
+   evidence must never read as the permissive answer. The clearance is now
+   STAMPED by `paperDefectsSweep()` at the moment a defect leaves, and this
+   function reads only a stamp that was actually written. */
 function paperCleanFrom(){
-  /* Trips opened at or after the last defect was struck from the register are
-     clean. While anything is open, nothing is clean — stated, not implied. */
-  return paperDefectsOpen().length ? null : (DB.paperDefectsClearedAt || 0);
+  if (paperDefectsOpen().length) return null;
+  const at = DB.paperDefectsClearedAt;
+  return at ? at : null;
+}
+const paperClrGen = () => DB.paperClrGen || 0;
+/* THE FILL_MODEL_V PRECEDENT, applied to contamination (user ruling, Aug 13
+   2026). A timestamp comparison is a FILTER; a stamp on the record is a
+   POPULATION. Trips opened before a clearance and after it are different
+   experiments — one was generated by a model with a known defect in it — and
+   must never pool, so each trip carries the clearance generation it was opened
+   under and cleanliness is a property of the record rather than of a date
+   arithmetic that a future migration could shift underneath it.
+   A trip with no stamp predates the scheme and is contaminated, which is the
+   conservative direction and the one the epoch-1 lesson bought. */
+function paperTripClean(p){
+  const from = paperCleanFrom();
+  if (from == null) return false;
+  return (p.clrGen || 0) === paperClrGen() && (p.t || 0) >= from;
+}
+/* THE WRITER. The register is a build-time array and the clearance is
+   persisted runtime state; before this, nothing joined them. Runs once per
+   load (the `paperEpoch2Reset` / `shadowPurgeV1` precedent) and is EXTRACTED
+   rather than inline in `load()` so an assertion can reach it — inline, a
+   seeded defect on it changes nothing any test can see. */
+function paperDefectsSweep(){
+  const open = paperDefectsOpen().map(d => d.id).sort();
+  const seen = Array.isArray(DB.paperDefectsSeen) ? DB.paperDefectsSeen.slice().sort() : null;
+  const stamp = why => {
+    DB.paperDefectsClearedAt = Date.now();
+    DB.paperClrGen = paperClrGen() + 1;
+    logDecision("paper contamination cleared", why
+      + " Trips opened from now carry clearance generation " + DB.paperClrGen
+      + "; everything before it stays contaminated and is never pooled with them.");
+  };
+  if (seen == null){
+    /* First sight of this store. If the register is ALREADY empty this store
+       has been clean since its own first moment — that is a fact worth
+       stamping, and stamping it is what keeps the unset case meaning "no trip
+       is clean" rather than becoming a permanent nothing-is-ever-clean. */
+    if (!open.length && !DB.paperDefectsClearedAt)
+      stamp("This store's first load ran a build with an empty contamination register.");
+    DB.paperDefectsSeen = open;
+    save(); return;
+  }
+  const left = seen.filter(id => open.indexOf(id) < 0);
+  if (left.length)
+    stamp("Struck from the register since this store last looked: " + left.join(", ") + ".");
+  DB.paperDefectsSeen = open;
+  save();
 }
 function gapBandVerdict(g, trips){
   const from = paperCleanFrom();
-  const clean = from == null ? [] : trips.filter(p => (p.t || 0) >= from);
-  const contaminated = from == null ? trips.slice() : trips.filter(p => (p.t || 0) < from);
+  const clean = trips.filter(paperTripClean);
+  const contaminated = trips.filter(p => !paperTripClean(p));
   const netOf = a => a.reduce((s, p) => s + (p.net || 0), 0);
   const filledOf = a => a.filter(p => p.state === "filled" || p.state === "forced-exit").length;
   return { n: g ? (g.trips || 0) : 0, rows: trips.length,
     clean: { n: clean.length, filled: filledOf(clean), net: netOf(clean) },
     contaminated: { n: contaminated.length, filled: filledOf(contaminated), net: netOf(contaminated) },
+    /* THE HOLD CANNOT RIDE THE COMMIT THAT SUPPLIES ITS EVIDENCE (user ruling,
+       Aug 13 2026). Readiness counts trips STAMPED with the current clearance
+       generation, and at the instant a clearance is written no trip carries it
+       — they are all one generation behind. So the build that strikes the last
+       defect releases nothing: the bar can only be met by trips opened
+       afterwards, which is what "post-fix evidence" was always supposed to
+       mean. Under the old timestamp filter the same commit both lifted the
+       hold and retro-supplied the evidence it was waiting for. */
+    gen: paperClrGen(), from,
     bar: GAP_BAND_VERDICT_TRIPS, ready: clean.length >= GAP_BAND_VERDICT_TRIPS };
 }
 const GAP_BAND_VERDICT_TRIPS = 5;   // closed CLEAN trips before the band can be ruled on
@@ -12082,7 +12325,11 @@ function gapBandVerdictLine(g, trips, enough){
         ? '<b>Scanner proposal HELD</b> — the paper book has open defects (' + esc(paperDefectsOpen().map(x => x.label).join(", "))
           + '), so no trip closing now is clean evidence. The proposal is reconsidered only on post-fix trips clearing the same bar any funded item clears; '
           + 'until then this line reports rather than recommends.'
-        : '<b>Scanner proposal HELD</b> — ' + v.clean.n + ' of ' + v.bar + ' clean closed trips. Accruing.')
+        : '<b>Scanner proposal HELD</b> — ' + v.clean.n + ' of ' + v.bar + ' clean closed trips. Accruing.'
+          + (v.contaminated.n && !v.clean.n
+            ? ' The ' + v.contaminated.n + ' trip' + (v.contaminated.n === 1 ? '' : 's')
+              + ' already here were opened before the register was cleared, so they are a different population and do not count toward the bar.'
+            : ''))
     + (enough && !v.ready ? ' The old total-trip count would have called this ruleable; it pooled contaminated trips with clean ones, which is the same defect one level up.' : '')
     /* ROUTING IS NOT COVERAGE (user ruling, Aug 13 2026). The band's two
        horizons disagree in sign, and that argues about WHEN to place it, not
@@ -13083,7 +13330,12 @@ async function runAnomalyScan(force){
     DB.lastAnomalyScanAt = now;
     /* What the scan could and could not judge — read by the panel so an empty
        result names its own cause instead of reading as "nothing is happening". */
-    S.anomSuppressed = suppressed; S.anomRaw = rawMode; S.anomMkt = mkt;
+    /* `S.anomMkt` deleted Aug 13 2026 (S10-F4): it was written here and read
+       nowhere, and the index reading it duplicated is already persisted as
+       `DB.volIndex` and rendered with its control rows by `volIndexPanelHTML()`.
+       Wiring it would have created a second source for one number, which is the
+       redundancy finding rather than the fix. */
+    S.anomSuppressed = suppressed; S.anomRaw = rawMode;
     save();
   } finally {
     anomalyBusy = false;
@@ -16700,12 +16952,7 @@ function renderHomeVitals(){
   const sbOpen = sb.filter(p => p.state === "open").length;
   const sbClosed = sb.length - sbOpen;
   const dv = (DB.shadowDivLog || []).slice(-1)[0];
-  let lead = "no divergence data";
-  if (dv){
-    const dl = Math.round(dv.loose - dv.cur), dt = Math.round(dv.tight - dv.cur);
-    const pick = Math.abs(dl) >= Math.abs(dt) ? ["loose", dl] : ["tight", dt];
-    lead = pick[0] + " " + (pick[1] >= 0 ? "+" : "−") + gp(Math.abs(pick[1])) + " vs current";
-  }
+  const lead = paperDivLead(dv);
   const open = sleeveOpenPositions();
   let rung = "no price rungs";
   let bestR = null;

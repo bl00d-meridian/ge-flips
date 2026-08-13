@@ -13,10 +13,13 @@ the exact `intelligence.json` record schema, and the run procedure.
 
 Then execute its "Run procedure" section end to end:
 
-0. **Fetch the flags file** (BRIEFING.md step 0): resolve the Downloads folder via the
-   known-folder registry value (never a hardcoded path), move the newest
-   `flags-pending*.json` into `briefings/flags-pending.json`, delete older numbered
-   copies from Downloads, and log what happened in the brief header. If the newest
+0. **Fetch the flags file** (BRIEFING.md step 0): run `bash tools/inbox/sweep.sh`, the
+   general Downloads collector — it resolves the folder from the known-folder API
+   (never a hardcoded path), moves the newest of EVERY export class and deletes that
+   class's older numbered copies, and keeps `flags-pending*.json` landing in
+   `briefings/flags-pending.json` where this procedure reads it by name. It reports one
+   line per class including `none found`, with each file's own `generatedAt` and age,
+   and marks anything over 6h STALE. Log what happened in the brief header. If the newest
    export is older than 24h, proceed but label the docket stale in the header and the
    Flags Addressed section. A file whose `note` says "zero flags, confirmed" is a
    deliberate empty docket — report it as such, not as "no file".

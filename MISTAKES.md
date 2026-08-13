@@ -70,6 +70,98 @@ qualifies.**
 
 # 2026-08-13
 
+### M141 · Every export class but one had no collector, for a week
+2026-08-13 · found by: user, after paying the cost every session · pattern: `COMPOSITION`
+
+The browser cannot write to the repo, so every export the tool produces costs a hop:
+find it in Downloads, move it, delete the browser's ` (1)` copies. **A collector was
+built for exactly one class — `flags-pending` — because that was the class the briefing
+procedure happened to need**, and the five other classes the tool exports were left to
+be carried by hand. Root cause: the collector was specified as a step inside one
+workflow rather than as a property of the export mechanism, so it covered the caller
+that prompted it and nothing else. The Downloads folder had accumulated **19 stale
+copies across six classes**, of which the sweep deleted 18 on its first run.
+
+Substantiated from: BRIEFING.md run-procedure step 0 as it stood (flags only);
+`tools/inbox/sweep.sh` first run, which reported 7 older duplicates for
+`analysis-paper` alone; CLAUDE.md, *Downloads auto-collect*.
+
+### M140 · The assertion manufactured the only state in which the guard could run
+2026-08-13 · found by: the deletion failing an existing assertion · pattern: `TEST-SUITE`
+
+Deleting `reconReplay`'s unreachable causality guard (M137) turned `[R43.2]` red — so the
+dead line **was** asserted. The assertion called `reconReplay` **directly**, handing it a
+window starting before the trip's own `t`, which is a call production cannot make: the
+caller clamps the window first. So the probe was constructing the only input under which
+the guard could execute, and reporting a dead line as covered.
+
+**This is a new face, and it is the cousin of the reimplementation trap.** There, the probe
+re-derives the *answer*; here it manufactures the *state* — and both produce a green run on
+real production code that proves nothing about production. The tell is different too and
+worth carrying: **an assertion that reaches its subject by a call path the product does not
+have.** It is also why the dead guard survived a full day of scans: it was green, and green
+on a line that cannot run reads exactly like green on a line that works. Fixed by moving
+the assertion to `reconWindowStart()`, which production actually calls, and seeding it
+against the input the old guard pretended to defend against.
+
+Substantiated from: the `[R43.2]` failure on the deletion (probe report,
+2026-08-13); `tools/probe/probe-snippet.html`, the re-pointed assertion and its comment;
+`audits/AUDIT-2026-08-12-scope.md` §8, corrected in place.
+
+### M139 · A difference was rendered as a level, and disagreed with its own drill-through
+2026-08-13 · found by: user · pattern: `CLAIMS-VS-CODE`
+
+The paper vitals tile read **+2.64m vs current**; the drill underneath it read **−2.4m**.
+Both the sign and the magnitude differed, and **both numbers were arithmetically correct**:
+the headline was `tight − current` (a DIFFERENCE) presented as though it were a level, and
+the drill was `current` itself. Nothing was wrong with either figure; the sentence was
+wrong about which figure it was.
+
+Root cause: the line was hand-rolled as `label + gp(|d|) + " vs current"`, and "vs current"
+is not enough — it names the base without printing it, so the reader cannot reconcile the
+two numbers they are looking at. Fixed at the renderer, not the call site: `deltaVs()` is
+the sanctioned form and **cannot emit the difference without both operands**, the
+`rateBlend()` shape applied to differences.
+
+**The general rule, which is the durable part: a figure that is a difference states what it
+is a difference from, in the sentence, not in a tooltip** — the number is read in the line
+and not in the hover.
+
+**Proposed and NOT applied, per the user's instruction — a widening of the interrogability
+rule:** *a decomposable aggregate must reconcile to its decomposition, and the check is
+mechanical.* The existing rule guarantees a number can be opened; it has never required
+that what opens agrees with what was opened. This incident is not itself an instance of the
+widened rule (the two figures were different quantities, correctly computed, mislabelled),
+which is precisely why the widening should be ruled on its own evidence rather than
+adopted on the back of this.
+
+Substantiated from: user report, 2026-08-13; REQUIREMENTS.md R65.1; `deltaVs()` and
+`paperDivLead()` in `index.html`.
+
+### M138 · An audit's conclusion inherited a guard's authority without checking it could fire
+2026-08-13 · found by: graduation audit's scan 11 · pattern: `TEST-SUITE`
+
+`AUDIT-2026-08-12-scope.md` §8 traced every path that can close a paper trip and ranked
+`reconReplay` the least likely cause of the sub-second trips, reasoning in part that it
+"has causality (`bt < p.t` skips)". **That guard could never execute.** The audit read the
+line, credited it, and passed its authority into a conclusion — and the conclusion then
+sat in the record for a day as settled.
+
+The reasoning was not careless: reading a guard and believing it is the normal way to audit
+code. What was missing is the question the dead-safeguard rule already asks of *guards* and
+nobody was asking of *arguments* — **can this line run?** An audit that cites a guard is
+making a claim about behaviour, and a claim about behaviour has to clear the same
+reachability bar as the code it rests on.
+
+Consequence and the fix: the ranking may still be right, because the other reason given
+(buckets are five minutes apart) is real and independent — but the causality half is worth
+nothing and is **withdrawn in place**, in the audit where it was recorded, rather than
+noted only in the newer report. A correction that lands somewhere the reader will not look
+is not a correction.
+
+Substantiated from: `audits/AUDIT-2026-08-12-scope.md` §8, correction block;
+`audits/AUDIT-2026-08-13b-scans-10-11.md` S11-F1.
+
 ### M137 · `reconReplay`'s causality guard cannot fire
 2026-08-13 · found by: audit scan (11, information horizon — first run) · pattern: `TEST-SUITE`
 
