@@ -9,6 +9,10 @@ faster than 60s.
 
 > **When writing a ruling, name the property first; list the surface only as the example
 > that produced it. The incident is the example; the reasoning is the rule.**
+>
+> **And before writing a new rule, check whether the property already has a home. A
+> property with three entries has its instances split three ways and will never reach a
+> count limb.** (Widened Aug 13 2026.)
 
 This governs every rule below and every rule added after it. The constitutional scope
 audit that produced it found the recurring failure: most rules here named the SURFACE
@@ -18,6 +22,21 @@ The never-blend ruling is the worked example — written about a *rate*, it did 
 a pooled *median* three days later. Ten rules were widened on Aug 12 2026; each carries
 the escaping instance that motivated the widening, because the instance is what proves
 the old wording was too narrow.
+
+**The second clause is the Aug 13 widening, and it names the blind spot the first clause
+had.** Naming the property governs how a NEW rule is written and says nothing about
+merging rules already written about ONE property from different angles — so the same
+property acquired three homes and its instances never accumulated anywhere. The escaping
+instance: *a component reports nothing where it should report that it HAS nothing* lived
+as an entity-state rule, a never-fed-aggregate case-law section, and a stalled-generator
+finding in an audit report. Each read as its own lesson. No entry ever carried more than a
+handful of instances, and the pattern's real size — **16, the largest behind any single
+rule** — was invisible until every incident was tagged by root cause. **A split property
+is worse than a narrow one:** a narrow rule fails to reach the next instance, while a split
+one reaches it and then files it somewhere the count cannot see.
+Detector: **scan 12** below, which reports candidate merges and does not assert them —
+overlapping properties are a judgment about what one rule is, and merging two entries that
+turn out to be genuinely different would hide the distinction the second entry exists for.
 
 Two structural consequences of the same audit:
 
@@ -748,7 +767,17 @@ substance.
     the read is bounded by the modelled moment, each piece of evidence is consumed exactly
     once, and no interval statistic is being read as if it described the interval. A path
     that cannot state its own information horizon is a finding.
-12. **Output:** a findings report with proposed restructurings, ruled like everything
+12. **Overlapping-property scan** (Aug 13 2026, the detector for the prophylactic's second
+    clause): enumerate every BINDING entry's **stated property** — the sentence in bold,
+    stripped of its incident — and check each pair for overlap: does one entry's property
+    describe a case the other's already covers, and would an instance filed under one be
+    equally at home under the other? For each overlap found, report a **candidate merge**
+    with the instance counts each entry currently carries and what the merged count would
+    be. **Report, never assert** — merging entries that are genuinely different hides the
+    distinction the second one exists for, so the merge is the user's ruling. The
+    enumeration is the deliverable, as in scans 6, 9, 10 and 11: two entries nobody
+    compared are two entries nobody knows are one.
+13. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
 
 ## Verification

@@ -70,6 +70,75 @@ qualifies.**
 
 # 2026-08-13
 
+### M137 · `reconReplay`'s causality guard cannot fire
+2026-08-13 · found by: audit scan (11, information horizon — first run) · pattern: `TEST-SUITE`
+
+`if (bt < p.t) continue;` — the only line in the reconstruction path that states the
+causality rule, carrying the comment that asserts it. Its caller clamps first:
+`replayFrom = Math.max(p.lastObs || p.t, oldest)`, so every bucket reaching the guard
+already satisfies it. **Unreachable by its own upstream limits** — the dead-safeguard shape
+(M080), and worse than that instance because the **Aug 12 instant-trip audit reasoned from
+this guard**, rating `reconReplay` the least likely cause of sub-second trips on the
+strength of a line that cannot execute. Also untestable by construction: any assertion
+written against it would be a dead seed. Proposed both ways (delete and assert the upstream
+guarantee, or keep it and give it a direct-call fixture); not applied.
+
+Substantiated from: `audits/AUDIT-2026-08-13b-scans-10-11.md` S11-F1; `index.html:6412` and
+`:6480–6486`; `audits/AUDIT-2026-08-12-scope.md` §8.
+
+### M136 · Two runtime fields written and never read
+2026-08-13 · found by: audit scan (10, seam inventory — first run) · pattern: `ORPHAN`
+
+`S.reconLast` captures `shadowRecover()`'s return and discards it. `S.anomMkt` captures the
+market-index reading beside `S.anomSuppressed` and `S.anomRaw`, **both of which render**,
+while it does not — and the reading it holds is already persisted as `DB.volIndex` and
+rendered with its control rows. The correct fix for the second is **deletion, not wiring**:
+wiring it would create a second source for one number, which is the redundancy scan's own
+finding shape. Recorded because a write-only field is a claim that something is being
+tracked.
+
+Substantiated from: `audits/AUDIT-2026-08-13b-scans-10-11.md` S10-F3/S10-F4;
+`index.html:2173`, `:13086`.
+
+### M135 · The 40% cap's explanation is composed and never rendered
+2026-08-13 · found by: audit scan (10, seam inventory — first run) · pattern: `SILENT-STATE`
+
+`S.cohNote` builds the sentence *"N statistical candidates withheld by the 40% cap: …"* and
+nothing reads it. Its sibling `S.cluMsg`, twelve lines below, is read and rendered by
+`renderClusters()` — so the module's convention is exactly the one this was written to and
+then missed. **Not merely an orphan:** the cap is an automated decision that withholds
+candidates, and *every automated decision states its reason inline where the user reads it*
+is BINDING. The reason exists, fully composed, and reaches no surface. It is also the
+stranded caveat the surface-copy inventory named as that edit's risk — stranded at birth
+rather than by a move.
+
+Substantiated from: `audits/AUDIT-2026-08-13b-scans-10-11.md` S10-F2; `index.html:3729`.
+
+### M134 · The contamination register and the cleanliness clock have no writer between them
+2026-08-13 · found by: audit scan (10, seam inventory — first run) · pattern: `COMPOSITION`
+
+`paperCleanFrom()` returns `DB.paperDefectsClearedAt || 0` and **nothing in the product
+ever writes that field.** `PAPER_DEFECTS` is a hardcoded source array whose entries leave
+the register when a developer deletes one and ships; the timestamp is persisted runtime
+state. The two live in different worlds and the field joining them has a reader and no
+writer.
+
+Today the register is non-empty, so the function returns `null` and everything reads
+contaminated — the safe direction, which is why nothing has surfaced. **The defect fires
+the instant the last entry is struck:** `from` becomes 0, and every trip in the book,
+including every trip that closed while the defect was live, is reclassified as clean
+evidence in one step with nothing said. Deployment direction, flatters the book, triggered
+by a build change rather than a press. The commit that clears the register both releases
+the scanner proposal's hold and retroactively supplies the clean evidence the hold was
+waiting for.
+
+**The epoch-1 lesson inverted** (M097): a corrupt population that cannot be identified by a
+field must be discarded rather than partitioned, and the answer then was to stamp
+`FILL_MODEL_V`. Here the partition field exists in the reader and was never given a writer.
+
+Substantiated from: `audits/AUDIT-2026-08-13b-scans-10-11.md` S10-F1; `index.html:5872`,
+`:6043`, `:12052–12056`.
+
 ### M133 · A BINDING rule claimed recurrence it could not evidence
 2026-08-13 · found by: graduation audit · pattern: `CLAIMS-VS-CODE`
 
