@@ -102,6 +102,17 @@
     ok("other member NEXT UP with cluster reason", !!blockedNU && /^cluster cap: probe-cluster at limit/.test(blockedNU.why),
        blockedNU ? blockedNU.why : JSON.stringify(plan.nextUp.map(n => n.why)));
     const gamma = plan.picks.find(p => p.id === 9003);
+    /* THE SIZING TERM, asserted directly (clamp-absorption rule, Aug 13 2026).
+       Both size assertions here read CLAMPED outputs: 4000 is the cluster cap
+       and 5000 is the per-item cap — measured, the horizon term computes 30,000
+       for gamma, so neither figure can see a defect in the sizing that feeds
+       them. They still test the clamps, which is worth testing; this tests the
+       term the clamps hide. */
+    ok("the allocator's horizon term is asserted at the source, not through a cap that pins it",
+       planHorizonUnits(50000, 1e9) === Math.floor(50000 * GATE.capture * FILLH())
+       && planHorizonUnits(50000, 12) === 12
+       && planHorizonUnits(50000, 1e9) > 5000,
+       JSON.stringify({ term: planHorizonUnits(50000, 1e9), cappedPick: gamma && gamma.allocQty }));
     ok("uncapped item funded full", !!gamma && gamma.allocQty === 5000 && !(gamma.sizeNotes || []).some(s => /cluster/.test(s)),
        gamma ? JSON.stringify({q: gamma.allocQty, notes: gamma.sizeNotes}) : "gamma missing: " + JSON.stringify({fundedIds, bench: plan.bench.map(b => b.name + ": " + b.failed)}));
 
@@ -1665,6 +1676,21 @@
        !!pPump && pPump.caution && pPump.caution.key === "pump" && !pPump.cautionProven
        && (pPump.sizeNotes || []).some(s => /half-sized: SUSPECTED PUMP/.test(s)),
        JSON.stringify(pPump && { caution: pPump.caution, notes: pPump.sizeNotes, proven: pPump.cautionProven }));
+    /* THE SIZE ITSELF, not the note (Aug 13 2026). The assertion above tests
+       that the caution FIRED and said so; it never tested that anything
+       shrank, so the halving could stop working while the note still rendered.
+       This is a path that sizes real capital under a caution. The halving runs
+       AFTER the caps, so a binding clamp makes this fail loudly rather than
+       absorb it — the comparison is against the same plan with the caution
+       lifted. */
+    const qPumpOff = (() => { const keepI = DB.intel;
+      DB.intel = (DB.intel || []).filter(r => r.type !== "promotion-warning" && r.type !== "pump");
+      const p = buildPlan().picks.find(x => x.id === 9051);
+      DB.intel = keepI; return p ? p.allocQty : null; })();
+    ok("[R7.3] and the size actually halves — the caution shrinks capital, not just the copy",
+       !!pPump && qPumpOff != null && qPumpOff > 1
+       && pPump.allocQty === Math.max(1, Math.floor(qPumpOff / 2)),
+       JSON.stringify({ withCaution: pPump && pPump.allocQty, without: qPumpOff }));
     ok("[R7.3] recent wins never graduate a pump flag — the wins are the bait",
        !!pPump && itemWins(9051) >= 3 && !pPump.cautionProven, JSON.stringify({ wins: itemWins(9051) }));
     // sleeve refuses the pump candidate with the reason
@@ -3291,6 +3317,27 @@
        && DB.decisionLog.some(x => x.kind === "exception" && /grant probationary/.test(x.action)));
     const P26 = buildPlan();
     const pick26 = P26.picks.find(p => p.id === 9320);
+    /* THE SIZE, not the note (Aug 13 2026): same defect shape as [R7.3]. A
+       probation grant funds an item the gate benched, so the half-size term is
+       the only thing bounding real capital on a waived gate — asserting the
+       label alone left it unprotected. Compared against the same plan with the
+       grant revoked. */
+    /* Asserted on the EXTRACTED factor step at a known input, because there is
+       no external comparison to make: without the grant the item does not fund
+       at all, so "the same plan without it" is null and any guard against that
+       is tautological. Seeding proved exactly that — deleting the halving
+       changed nothing observable. The factor is the thing bounding real capital
+       on a waived gate, so the factor is what gets asserted. */
+    const T1P = { t: 1, proven: true };
+    ok("[R26.2] the probation grant HALVES the size — asserted on the factor, with no clamp in the way",
+       applySizeFactors(1000, { exception: { status: "active", gate: "g", trips: 0 }, tier: T1P }, false).cap === 500
+       && applySizeFactors(1000, { exception: { status: "waived", gate: "g" }, tier: T1P }, false).cap === 1000
+       && applySizeFactors(1, { exception: { status: "active", gate: "g", trips: 0 }, tier: T1P }, false).cap === 1,
+       JSON.stringify(applySizeFactors(1000, { exception: { status: "active", gate: "g", trips: 0 }, tier: T1P }, false)));
+    ok("[R26.2] a STANDING waiver does not halve — only active probation does, and the notes say which",
+       /standing per-item waiver/.test(applySizeFactors(1000, { exception: { status: "waived", gate: "g" }, tier: T1P }, false).notes.join(" "))
+       && /PROBATIONARY EXCEPTION/.test(applySizeFactors(1000, { exception: { status: "active", gate: "g", trips: 0 }, tier: T1P }, false).notes.join(" ")),
+       JSON.stringify(applySizeFactors(1000, { exception: { status: "waived", gate: "g" }, tier: T1P }, false).notes));
     ok("[R26.2] the excepted item funds despite the gate, at probation terms (half size, terms stated inline)",
        !!pick26 && pick26.sizeNotes.some(s => /PROBATIONARY EXCEPTION/.test(s)),
        pick26 ? JSON.stringify(pick26.sizeNotes) : JSON.stringify({ bench: P26.bench.filter(b => b.id === 9320).map(b => b.failed), nu: P26.nextUp.map(n => n.id) }));

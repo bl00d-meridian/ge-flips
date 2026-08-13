@@ -2743,6 +2743,38 @@ function renderBeyondNet(watched){
 }
 
 /* ═══════════ SIZING ═══════════ */
+/* EXTRACTED so an assertion can reach it (clamp-absorption rule, Aug 13 2026 —
+   third application after strataCount and shadowHorizonUnits). The allocator's
+   horizon term sat inline in candidateFor, downstream of the per-item cap, the
+   one-third clamp and the cluster cap. Measured on the probe's own fixture:
+   the term computes 30,000 units while the pick lands at 5,000 — so the size
+   the suite asserts is a CAP, and a defect in this term is invisible from
+   there. The term under test gets a name; the caps keep their own assertions. */
+const planHorizonUnits = (volGate, qty) => Math.min(qty, Math.floor(volGate * GATE.capture * FILLH()));
+/* THE SIZE-SHRINKING FACTORS, extracted (clamp-absorption rule, Aug 13 2026 —
+   fourth application). These four multipliers are the only thing bounding real
+   capital under a caution, a probation grant or an unproven tier, and they sat
+   inline in the middle of the sizing chain where every clamp downstream could
+   pin their result. Seeding proved it: deleting the probation halving entirely
+   changed no assertion, because the comparison available from outside — the
+   same plan without the grant — does not fund the item AT ALL, so there was
+   nothing to compare against. A factor that shrinks capital gets asserted on
+   its own arithmetic, at a known input, with no clamp in the way. */
+function applySizeFactors(cap, x, rawCaution){
+  const notes = [];
+  if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
+  if (x.exception && x.exception.status === "active"){
+    cap = Math.max(1, Math.floor(cap * 0.5));
+    notes.push("PROBATIONARY EXCEPTION (your ruling): " + x.exception.gate + " waived on paper screening — live half-size test, 2× tick floor, "
+      + x.exception.trips + "/" + EXC_ADJ_TRIPS + " adjudication trips logged (net P&L + adverse markout decide)");
+  } else if (x.exception){
+    notes.push("standing per-item waiver: " + x.exception.gate + " (ruled after " + EXC_ADJ_TRIPS
+      + " profitable probation trips — revocable in the row's expand view)");
+  }
+  if (x.tier.t === 1 && !x.tier.proven){ cap = Math.floor(cap * 0.5); notes.push("unproven T1 — half size until 2 net-positive round trips"); }
+  if (x.tier.t === 2 && !x.tier.proven){ cap = Math.max(0, Math.floor(cap / 3)); notes.push("T2 ramp — one-third size until 2 clean logged trips, then auto-graduates"); }
+  return { cap: cap, notes: notes };
+}
 function planCap(c){
   /* One-third rule runs on WORKING capital — the shadow reserve is a named
      purchase fund, not float, so it never inflates position sizing. */
@@ -4120,7 +4152,7 @@ function candidateFor(w){
        can actually fill inside it — not ROI alone. ROI-ranking is how a 2%
        item at 60gp beat a 1.5% item at 900gp that made 9× the gp per slot:
        fatter, fewer, faster positions over churn. */
-    const horizonUnits = Math.min(qty, Math.floor(volGate * GATE.capture * FILLH()));
+    const horizonUnits = planHorizonUnits(volGate, qty);
     /* Tier is classified on every candidate — benched or not — so badges and
        the allocator read the same verdict. Same gates for both tiers: no
        mercy on fill horizon or momentum at tier 2. */
@@ -4364,17 +4396,8 @@ function buildPlan(){
     if (byPart > 0 && byPart < Math.min(x.qty, byLiquidity))
       notes.push("participation-capped at " + (DB.partCapPct != null ? DB.partCapPct : 10) + "% of 1h volume (" + full(byPart) + ")");
     const rawCaution = x.caution && !x.cautionProven;
-    if (rawCaution){ cap = Math.floor(cap * GATE.seedSizeFactor); notes.push("half-sized: " + x.caution.why); }
-    if (x.exception && x.exception.status === "active"){
-      cap = Math.max(1, Math.floor(cap * 0.5));
-      notes.push("PROBATIONARY EXCEPTION (your ruling): " + x.exception.gate + " waived on paper screening — live half-size test, 2× tick floor, "
-        + x.exception.trips + "/" + EXC_ADJ_TRIPS + " adjudication trips logged (net P&L + adverse markout decide)");
-    } else if (x.exception){
-      notes.push("standing per-item waiver: " + x.exception.gate + " (ruled after " + EXC_ADJ_TRIPS
-        + " profitable probation trips — revocable in the row's expand view)");
-    }
-    if (x.tier.t === 1 && !x.tier.proven){ cap = Math.floor(cap * 0.5); notes.push("unproven T1 — half size until 2 net-positive round trips"); }
-    if (x.tier.t === 2 && !x.tier.proven){ cap = Math.max(0, Math.floor(cap / 3)); notes.push("T2 ramp — one-third size until 2 clean logged trips, then auto-graduates"); }
+    const shrunk = applySizeFactors(cap, x, rawCaution);
+    cap = shrunk.cap; for (const n of shrunk.notes) notes.push(n);
     return { cap, preRamp, byLiquidity, byPart, rawCaution, notes };
   };
 
