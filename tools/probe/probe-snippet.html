@@ -7151,6 +7151,40 @@
   } catch(e){
     out.push("FAIL live sell trace export :: " + (e && e.stack || e));
   }
+  try {
+    /* [R67.1] the proven/possible pair. The Snape grass seed shape: an item
+       with a 4.28% spread, one bucket 0.86% below the ask carrying 625 units,
+       one clearing it, one far outside. Proven must EXCLUDE the near bucket —
+       the credited figure does not move — and possible must include it. */
+    const tr = [ { hi: 1005, hv: 100 },     // clears the ask: proven
+                 { hi: 991,  hv: 625 },     // 0.9% below, inside a 4.28% spread: possible only
+                 { hi: 900,  hv: 400 } ];   // 10% below: neither
+    const b = sellReachBounds(tr, 1000, 4.28);
+    ok("[R67.1] proven counts only buckets whose average CLEARED the ask — the credited figure does not move",
+       b.provenVol === 100 && b.provenBuckets === 1, JSON.stringify(b));
+    ok("[R67.1] possible counts buckets within ONE SPREAD of the ask, and excludes those beyond it",
+       b.possibleVol === 725 && b.possibleBuckets === 2, JSON.stringify(b));
+    ok("[R67.1] the pair is never averaged into a point estimate — both bounds are carried",
+       b.provenVol < b.possibleVol && b.totalVol === 1125, JSON.stringify(b));
+    ok("[R67.2] with no spread known the two bounds COLLAPSE rather than guessing a width",
+       (() => { const z = sellReachBounds(tr, 1000, 0);
+                return z.provenVol === z.possibleVol && z.provenVol === 100; })(),
+       JSON.stringify(sellReachBounds(tr, 1000, 0)));
+    const agg = sellBoundsOver([{ trace: tr, ask: 1000, spreadPct: 4.28 }]);
+    const html = sellBoundsHTML(agg, "probe");
+    ok("[R67.3] the surface states plainly that the gap between the bounds IS Fault A, unmeasured",
+       /are Fault A, unmeasured/.test(html) && /reads a five-minute AVERAGE/.test(html), html.slice(0, 260));
+    ok("[R67.3] and it never claims the bound FIXES the fault",
+       !/fix(es|ed)? Fault A/i.test(html) && !/resolv(es|ed) the/i.test(html),
+       "negative match, per the eleventh face");
+    /* [R67.4] FILL_MODEL_V does not move: the credited figure is unchanged and
+       only a reported bound was added, so the book keeps accruing on one
+       model. Asserted as a value so a bump cannot pass unnoticed. */
+    ok("[R67.4] FILL_MODEL_V is unchanged — a reported bound is not a model change",
+       FILL_MODEL_V === 2, String(FILL_MODEL_V));
+  } catch(e){
+    out.push("FAIL sell reach bounds :: " + (e && e.stack || e));
+  }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

@@ -70,6 +70,71 @@ qualifies.**
 
 # 2026-08-13
 
+### M146 · The collector's silence was unfalsifiable, and it was reported as failure twice
+2026-08-13 · found by: user, twice · pattern: `SILENT-STATE`
+
+Reported as *"the collector did not fire"* on two separate occasions. **Both times it had
+fired and found nothing** — Downloads held no JSON either time. But in `--quiet` mode a run
+that moved nothing printed exactly what a run that never happened printed, so the claim was
+**unfalsifiable from the outside** and the only way to answer "did it fire?" was to reason
+about it.
+
+**This is absence rendered as data-of-absence, in a tool I wrote one turn after promoting
+that rule to BINDING** — and the user's own specification had said it in as many words:
+*absence of a file and absence of a report are different things and I should not have to
+tell them apart.* I honoured that in the verbose path and discarded it in the quiet one,
+because quiet was designed around the transcript rather than around the question the
+operator would actually ask.
+
+Fixed without making the hook noisy again: every run stamps `inbox/.last-sweep` whether or
+not it moved anything, `--status` reads it back without sweeping, and the verbose report
+leads with when the run happened. The transcript stays quiet — which is what makes a
+per-prompt hook viable — while the STATE became observable.
+
+Substantiated from: two user reports; `~/Downloads` empty of JSON at both;
+`tools/inbox/sweep.sh`, the stamp and `--status`.
+
+### M145 · A figure from a stale export survived into reasoning — the second time in a day
+2026-08-13 · found by: recomputing against the fresh export · pattern: `STALENESS`
+
+I reported the calibration sample as **92 buckets, 79 crediting everything, 13 crediting
+nothing, 21% of volume discarded**. Those figures came from the *previous* export; the
+current one carries **319 usable buckets** and the 21% figure should not be relied on.
+
+**Second occurrence in one day.** Earlier the same session I read a paper export that was
+three hours stale while a fresher one sat in Downloads. Root cause both times: I treated a
+file already in hand as current because it was the newest one *I* had, rather than checking
+it against what the tool had since produced. The collector now consolidates from every root
+and ranks by each file's own `generatedAt`, and the standing rule is to sweep **before**
+reading any export — but the discipline is the operative part: **a figure carries the
+timestamp of the file it came from, and quoting it later without that timestamp is how a
+stale number outlives its file.**
+
+Substantiated from: the 92-bucket figure as reported, against 319 in
+`analysis-calibration-2026-08-13.json` (generatedAt 17:29:26Z); MISTAKES.md M141.
+
+### M144 · An extraction ran past its block and the population doubled
+2026-08-13 · found by: a stored cap contradicting the data · pattern: `COMPOSITION`
+
+Computing the sell-credit proposal, my extraction range for the `liveBook` section ran past
+it into the calibration section, so 99 calibration trace buckets were attributed to the last
+live item. I reported **319 usable buckets and 70,267 volume** against the true **232 and
+33,234** — the population inflated by roughly 2×.
+
+**The tell was a cap, not the numbers:** Mithril boots showed **123 trace buckets against a
+stored `SELL_TRACE_CAP` of 48**. A per-item count that exceeds its own storage cap is
+impossible, and that impossibility is what located the bug — the aggregate itself looked
+entirely plausible. **A constant that bounds a quantity is a free consistency check on any
+figure derived from it, and it is worth applying before trusting an extraction.**
+
+What saved the conclusion: the *net* was identical (−23%) under both the contaminated and
+the correct population, which is what said the effect was structural rather than an
+artifact of what I had counted. The user had computed it independently and their figure was
+right — the disagreement is what triggered the check.
+
+Substantiated from: the two computations side by side; `SELL_TRACE_CAP = 48` in
+`index.html`; both reproduce −23% net.
+
 ### M143 · A stale assertion kept passing for an incidental reason after its rule was superseded
 2026-08-13 · found by: noticing the suite stayed green through a ratification · pattern: `TEST-SUITE`
 

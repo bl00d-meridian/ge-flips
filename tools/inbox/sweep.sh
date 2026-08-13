@@ -30,8 +30,8 @@
 #     a collected file always announces itself.
 
 set -u
-QUIET=0
-for a in "$@"; do case "$a" in -q|--quiet) QUIET=1 ;; esac; done
+QUIET=0; STATUS=0
+for a in "$@"; do case "$a" in -q|--quiet) QUIET=1 ;; --status) STATUS=1 ;; esac; done
 STALE_H="${STALE_H:-6}"                       # hours after which a file is stale
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INBOX="$REPO/inbox"
@@ -48,6 +48,16 @@ fi
 [ -d "$DL" ] || { echo "INBOX-SWEEP: no Downloads folder resolved — nothing done."; exit 0; }
 
 mkdir -p "$INBOX" "$BRIEFINGS"
+
+# --status answers "did it fire?" from the record rather than from silence.
+if [ "$STATUS" -eq 1 ]; then
+  if [ -f "$INBOX/.last-sweep" ]; then
+    echo "INBOX-SWEEP last ran: $(cat "$INBOX/.last-sweep")"
+  else
+    echo "INBOX-SWEEP has never run in this clone — no stamp at $INBOX/.last-sweep"
+  fi
+  exit 0
+fi
 
 # generatedAt, read from the file's own header. Absent is a real answer.
 gen_at(){ grep -o '"generatedAt"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" 2>/dev/null \
@@ -163,7 +173,23 @@ sweep_class "flags-pending"        "flags-pending*.json"         "$BRIEFINGS"
 # on the ones that matter. Verbose mode always prints the full table, including
 # every "none found", because a reader who asked for the sweep is owed the
 # per-class result rather than a blank.
+# THE RUN LEAVES A RECORD EVEN WHEN IT IS SILENT (corrected Aug 13 2026, second
+# report of "the collector did not fire"). Both times it HAD fired and found
+# nothing — but in --quiet mode "ran and moved nothing" printed exactly what
+# "never ran" printed, so silence was unfalsifiable and the only way to answer
+# "did it fire?" was to reason about it. That is absence rendered as
+# data-of-absence, the rule this repo holds BINDING, violated by its own tool.
+# The transcript stays quiet, which is what makes a per-prompt hook viable; the
+# STATE becomes observable. `--status` reads it back without sweeping.
+STAMP="$INBOX/.last-sweep"
+mkdir -p "$INBOX"
+printf '%s\tmoved=%d\tclasses=%d\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$MOVED" \
+  "$(printf '%s' "$LINES" | grep -vc 'none found' || true)" > "$STAMP" 2>/dev/null || true
+
 if [ "$QUIET" -eq 1 ] && [ "$MOVED" -eq 0 ]; then exit 0; fi
-echo "INBOX-SWEEP  Downloads: $DL  ·  stale after ${STALE_H}h"
+if [ -f "$STAMP" ]; then
+  prev="$(cat "$STAMP" 2>/dev/null | cut -f1)"
+fi
+echo "INBOX-SWEEP  Downloads: $DL  ·  stale after ${STALE_H}h  ·  this run ${prev:-just now}"
 printf '%s' "$LINES"
 exit 0

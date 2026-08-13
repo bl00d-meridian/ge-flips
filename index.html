@@ -8267,6 +8267,66 @@ function paperSellCases(){
    dead-guard shape (MISTAKES.md M080 — the 60-bucket trim behind a stored cap
    of 24) reproduced knowingly. The storage cap owns the bound; the export
    states it and carries the whole trace. */
+/* THE PROVEN/POSSIBLE PAIR ON THE SELL LEG (user ruling, Aug 13 2026).
+   NO CONSTANT. The alternative on the table was a share function,
+   `clamp(intercept + gap/divisor)`, and it was rejected because both of its
+   constants stand in for an intra-bucket distribution a 5-minute aggregate
+   cannot show — and measured, the INTERCEPT moved the result about four times
+   as much as the divisor did (85 points across intercepts 0.5→1.0 against 13
+   across divisors), so the ruling would have been on the constant nobody was
+   discussing. A bound needs no such assumption.
+
+   PROVEN   — buckets whose average cleared the ask. This is exactly what the
+              model credits today; the credited figure does not move.
+   POSSIBLE — buckets whose average sits within ONE SPREAD of the ask, i.e.
+              inside the range where prints at or above it are plausible.
+
+   THIS DOES NOT FIX FAULT A. It makes the uncertainty visible instead of
+   resolving it, and the surface says so: the gap between the bounds IS Fault A,
+   unmeasured. Snape grass seed is the worked example — buckets 0.86% below the
+   ask carrying 625 units of volume, on an item whose own spread is 4.28%, are
+   still credited ZERO under the proven bound. */
+function sellReachBounds(trace, ask, spreadPct){
+  const t = (trace || []).filter(b => b && b.hi != null && (b.hv || 0) > 0);
+  const out = { n: t.length, totalVol: 0, provenVol: 0, possibleVol: 0,
+                provenBuckets: 0, possibleBuckets: 0, spreadPct: spreadPct || null };
+  if (!(ask > 0) || !t.length) return out;
+  const floor = spreadPct > 0 ? ask * (1 - spreadPct / 100) : ask;
+  for (const b of t){
+    out.totalVol += b.hv;
+    if (b.hi >= ask){ out.provenVol += b.hv; out.provenBuckets++; }
+    if (b.hi >= floor){ out.possibleVol += b.hv; out.possibleBuckets++; }
+  }
+  return out;
+}
+/* Sum the pair across a population. The two bounds are reported together and
+   never averaged into a point estimate — a midpoint would be the share
+   function wearing a different hat. */
+function sellBoundsOver(cases){
+  const agg = { n: 0, cases: 0, totalVol: 0, provenVol: 0, possibleVol: 0,
+                provenBuckets: 0, possibleBuckets: 0 };
+  for (const c of (cases || [])){
+    const b = sellReachBounds(c.trace, c.ask, c.spreadPct);
+    if (!b.n) continue;
+    agg.cases++; agg.n += b.n; agg.totalVol += b.totalVol;
+    agg.provenVol += b.provenVol; agg.possibleVol += b.possibleVol;
+    agg.provenBuckets += b.provenBuckets; agg.possibleBuckets += b.possibleBuckets;
+  }
+  return agg;
+}
+function sellBoundsHTML(agg, label){
+  if (!agg || !agg.cases) return "";
+  const pct = v => agg.totalVol > 0 ? Math.round(v / agg.totalVol * 100) : 0;
+  const unmeasured = agg.possibleVol - agg.provenVol;
+  return '<div style="margin-top:4px">• <b>' + esc(label) + '</b> — ' + agg.cases + ' leg'
+    + (agg.cases === 1 ? '' : 's') + ', ' + agg.n + ' buckets carrying ' + full(agg.totalVol)
+    + ' units of high-side tape. <b>Proven reach ' + full(agg.provenVol) + '</b> (' + pct(agg.provenVol)
+    + '%, ' + agg.provenBuckets + ' buckets) · <b>possible reach ' + full(agg.possibleVol) + '</b> ('
+    + pct(agg.possibleVol) + '%, ' + agg.possibleBuckets + ' buckets). '
+    + '<b>The ' + full(unmeasured) + ' units between them are Fault A, unmeasured</b> — tape that printed inside '
+    + 'one spread of the ask, which the credit rule scores as zero because it reads a five-minute AVERAGE as if it '
+    + 'described the interval.</div>';
+}
 function liveSellTraceRows(c){
   const t = (c && c.trace) || [];
   return t.map(x => ({
@@ -8617,6 +8677,20 @@ function sellDiscriminatorHTML(c){
     + sellSplitHTML("Live book — simulated sells that never completed", live, "sell:cls:live",
         "zero or partial sell credit on a resolved trip") + ' ' + provTag(true)
     + sellAbsShadowHTML(cal.concat(live))
+    + (() => {
+        const lb = sellBoundsOver(live), cb = sellBoundsOver(cal);
+        if (!lb.cases && !cb.cases) return "";
+        return '<div class="note" style="margin-top:6px"><b>Reach bounds on the sell leg</b> '
+          + '<span class="dim">— what the tape proves, and what it permits. The model credits the PROVEN bound; the '
+          + 'possible bound is reported beside it and gates nothing.</span>'
+          + sellBoundsHTML(lb, "Live book")
+          + sellBoundsHTML(cb, "Calibration — replayed real flips")
+          + '<div class="dim" style="white-space:normal;margin-top:3px"><b>No constant was ruled here, deliberately.</b> '
+          + 'A share function would need an intercept and a divisor, both standing in for an intra-bucket distribution '
+          + 'a 5-minute aggregate cannot show — and the intercept moved the answer roughly four times as much as the '
+          + 'divisor, so the ruling would have landed on the constant nobody was weighing. A bound assumes nothing. '
+          + '<b>This does not fix Fault A</b>; it stops the fill model claiming a precision it has not got.</div></div>';
+      })()
     /* AMENDMENT (b): is a global percentage the right shape at all? Reported
        once the sample permits; nothing changes on it without a ruling. */
     + (() => {
@@ -18160,6 +18234,10 @@ function analysisCalibration(){
                    guarded, so nothing here can truncate silently. */
                 sellTraceComplete: c.trace ? true : null,
                 sellTraceBuckets: c.trace ? c.trace.length : null,
+                /* The pair, per case. Reported, never credited: `provenVolume`
+                   is what the model actually took, `possibleVolume` is what the
+                   tape permits, and the difference is Fault A unmeasured. */
+                reachBounds: c.trace ? sellReachBounds(c.trace, c.ask, c.spreadPct) : null,
                 sellTrace: c.trace ? liveSellTraceRows(c) : null })) };
           };
           return {

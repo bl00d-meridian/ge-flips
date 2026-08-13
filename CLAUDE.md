@@ -661,6 +661,37 @@ Three companions, each of which cost something here:
   is the metric-honesty rule catching an operator that was correct arithmetic on a
   denominator whose sign changed its meaning.
 
+## Case law: n is not sample size (user ruling, Aug 13 2026)
+
+> **Before ruling any constant from an aggregate, identify the unit that actually VARIES
+> and count THAT. State it beside every n.**
+
+The incident: a proposed change to the sell credit rule was evaluated over **232 buckets
+carrying 33,234 units of tape across 17 trips**, and came out at −23%. That reads as a
+sample. It was not. Of the gross loss, **84% was one item** (Adamant cannonball, −3,221 of
+−3,851); of the gross gain, **97% was one item** (Snape grass seed, +940 of +965). The other
+fifteen moved by 630 combined. **The −23% was one trip halved and one trip rescued**, and
+removing just those two flipped the sign of the result under a different intercept.
+
+The general shape: an aggregate's n counts the rows you happened to compute over, not the
+independent draws the conclusion rests on. Buckets are not independent of their trip; trips
+are not independent of their item; items are not independent of their basket. **The unit
+that varies is the one at which the *decision* would be wrong**, and it is almost always
+coarser than the row.
+
+This is the same lesson as the gap band's overnight cell — 3 trips netting +399k of which
+one carried 103% of the net — arriving on a different population and at a different layer,
+which is why it graduates from a companion note to case law in its own right.
+
+Two operational consequences:
+
+- **State the effective unit beside every n**, not the row count alone. "232 buckets" and
+  "232 buckets across 17 trips, 84% of the effect in one" are different claims and only the
+  second is rulable.
+- **Concentration is a precondition for ruling a constant, not a caveat on it.** A figure
+  whose top contributor exceeds the callout share has not measured the population; it has
+  measured that contributor, and the constant it would justify is fitted to one trip.
+
 ## Case law: the residue that was a threshold artifact (user ruling, Aug 13 2026)
 
 **A large "neither fits" pile is evidence about the THRESHOLDS before it is evidence about
