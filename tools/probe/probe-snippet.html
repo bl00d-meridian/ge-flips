@@ -5730,6 +5730,45 @@
     ok("[R44.1] the readings are ordered lenient >= operative >= strict, always",
        [below, atBid].every(c => c.lenient >= c.oper && c.oper >= c.strict),
        "bracket ordering");
+    /* ── THE OVER-CREDIT REGIME (user ruling, Aug 13 2026) ──────────────────
+       `shadowCredit` stores `Math.min(qty, …)`, so once the capture-capped term
+       exceeds the trip's own size the qty clamp absorbs it completely. Every
+       existing assertion read the stored value: [R18.2] checks `buyQ === 10`
+       where qty IS 10, which can see UNDER-crediting and is structurally blind
+       to over-crediting — the direction that would flatter every fill rate in
+       the book and the one the model's whole conservatism claim rests on.
+       These assert the term at a volume where the clamp would hide it, and
+       assert separately that the clamp is doing real work. */
+    const VBIG = 100000, QSMALL = 10;
+    const bigTerm = Math.floor(VBIG * GATE.capture);          // 15,000 against a qty of 10
+    const bigCr = reachCredit(3900, 4000, VBIG, "buy");
+    ok("[R18.2] the capture-capped term is asserted BEFORE the qty clamp — over-crediting is invisible after it",
+       bigTerm > QSMALL * 100 && bigCr.strict === bigTerm && bigCr.oper === bigTerm && bigCr.lenient === bigTerm,
+       JSON.stringify({ term: bigTerm, cr: bigCr, capture: GATE.capture }));
+    ok("[R18.2] the ambiguous reading is haircut from that same term, not from the clamped size",
+       (() => { const a = reachCredit(4000, 4000, VBIG, "buy");
+                return a.oper === Math.max(1, Math.floor(bigTerm * shadowPart()))
+                    && a.oper < bigTerm && a.lenient === bigTerm && a.strict === 0; })(),
+       JSON.stringify(reachCredit(4000, 4000, VBIG, "buy")));
+    ok("[R18.2] and the qty clamp holds it at the trip's own size — the clamp is asserted as doing real work",
+       (() => { const p = { qty: QSMALL };
+                shadowCredit(p, "buy", bigCr);
+                return p.buyQ === QSMALL && p.buyQStrict === QSMALL && p.buyQFull === QSMALL; })(),
+       "a term 1500x the trip size must still store exactly qty");
+    /* A SCALING PROPERTY, not a recomputation. The equality above re-derives
+       the term probe-side, which is the reimplementation tell — it holds
+       production to my arithmetic rather than to a behaviour. Credit is linear
+       in tape volume and that is a property no parallel implementation
+       encodes: double the bucket, double the credit, at any scale. */
+    ok("[R18.2] credit is LINEAR in tape volume — asserted as a property, not re-derived",
+       reachCredit(3900, 4000, 2 * VBIG, "buy").strict === 2 * reachCredit(3900, 4000, VBIG, "buy").strict
+       && reachCredit(3900, 4000, 4 * VBIG, "buy").strict === 4 * reachCredit(3900, 4000, VBIG, "buy").strict,
+       JSON.stringify([reachCredit(3900, 4000, VBIG, "buy").strict, reachCredit(3900, 4000, 2 * VBIG, "buy").strict]));
+    ok("[R18.2] the bracket ordering survives at a scale where the clamp is binding",
+       (() => { const p = { qty: QSMALL };
+                shadowCredit(p, "buy", reachCredit(4000, 4000, VBIG, "buy"));
+                return p.buyQFull >= p.buyQ && p.buyQ >= p.buyQStrict; })(),
+       "lenient >= operative >= strict, post-clamp");
 
     // ---- R44.2 partial is a real outcome, not a silent resize ----
     const keep44 = DB.shadowBook, keepAt44 = S.min5At, keepSeq44 = S.pollSeq;
