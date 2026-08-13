@@ -30,6 +30,35 @@ Two structural consequences of the same audit:
   rule is widened, the audit scan that checks it is extended in the same commit, or the
   rule moves to DOCTRINE.
 
+## The two layers, and the bar between them (user ruling, Aug 13 2026)
+
+[MISTAKES.md](MISTAKES.md) is the **evidence layer**: every incident on record, newest
+first — what happened, root cause, consequence, the rule that would prevent a repeat.
+This file is the **law layer**. The bar between them:
+
+> **An entry in MISTAKES.md is eligible for BINDING when it has recurred THREE times, or
+> ONCE with a mechanical detector. Everything else stays evidence.**
+
+The two limbs answer different questions and neither substitutes for the other. **Three
+occurrences** is evidence that the SHAPE is real rather than that one incident was
+memorable — the thing that makes a rule worth its slot is recurrence, and a defect that
+has happened once is a story. **One occurrence plus a detector** is enough on the other
+path because a rule something can mechanically catch costs nothing to keep, cannot rot
+into a preference, and its violations are findings rather than opinions; the detector is
+what the BINDING section is actually for.
+
+**Eligibility is not promotion.** Entries move on the user's ruling, never automatically:
+promoting a rule widens what the constitution enforces, and a rule that widens its own
+scope is the machinery arming itself. The agent reports eligibility against the counts;
+the user rules.
+
+**Every entry standing in BINDING today predates this rule** and was promoted informally
+— at whatever point the defect seemed important enough at the time. The backfill audit of
+Aug 13 2026 (`MISTAKES.md`, and the report accompanying it) checks the standing list
+against this bar in **both** directions — entries resting on a single instance with no
+detector, and patterns with three or more instances that never became a rule — and
+reports the mismatches without reclassifying anything.
+
 ---
 
 # BINDING
