@@ -8248,9 +8248,43 @@ function paperSellCases(){
     { item: p.name || itemName(p.itemId), itemId: p.itemId,
       verdict: p.state, creditedPct: Math.round(100 * (p.sellQ || 0) / Math.max(1, p.qty)),
       buyPct: Math.round(100 * (p.buyQ || 0) / Math.max(1, p.qty)), obsPct: shadowObsPct(p),
-      spreadPct: (p.ask > 0 && p.bid > 0) ? Math.round((p.ask / p.bid - 1) * 10000) / 100 : null },
+      spreadPct: (p.ask > 0 && p.bid > 0) ? Math.round((p.ask / p.bid - 1) * 10000) / 100 : null,
+      /* The per-bucket evidence travels WITH its classification (Aug 13 2026).
+         R59.3 built this trace precisely so the live book could be classified,
+         and the export shipped the classification without it — so the per-case
+         medians were all a reader had, and a median cannot recover a per-bucket
+         distribution. Third time a rollup shipped without its rows and forced a
+         derivation by hand; the interrogability rule binds exports. */
+      ask: p.ask, windowStart: p.buyDone || p.t, trace: p.sellTrace || [] },
     classifySellFailure(p.sellTrace || [], p.ask,
       (p.ask > 0 && p.bid > 0) ? (p.ask / p.bid - 1) * 100 : 0)));
+}
+/* The live sell trace in the calibration trace's own idiom — same field names,
+   same reason vocabulary — so the two populations can be read with one set of
+   eyes and compared without a translation step.
+   NO TRIM BRANCH, deliberately: `SELL_TRACE_CAP` is 48 and the export limit is
+   60, so a head/tail trim here could never fire. Writing one would be the
+   dead-guard shape (MISTAKES.md M080 — the 60-bucket trim behind a stored cap
+   of 24) reproduced knowingly. The storage cap owns the bound; the export
+   states it and carries the whole trace. */
+function liveSellTraceRows(c){
+  const t = (c && c.trace) || [];
+  return t.map(x => ({
+    /* `!= null`, not truthiness — a window start of 0 is a valid timestamp and
+       a falsy check silently nulls every minute on the trace. Caught by the
+       assertion's own fixture using 0. */
+    minutesFromWindowStart: c.windowStart != null ? Math.round((x.t - c.windowStart) / 60000) : null,
+    bucketAvgHighVsSellPct: (x.hi != null && c.ask > 0)
+      ? Math.round((x.hi - c.ask) / c.ask * 10000) / 100 : null,
+    highSideVolume: x.hv == null ? null : x.hv,
+    creditedUnits: x.credited || 0,
+    reason: x.hi == null ? "no high print in this bucket"
+      : !(x.hv > 0) ? "no high-side volume in this bucket"
+      : x.hi > c.ask ? "average high sat ABOVE the sell price — proven reach"
+      : x.hi === c.ask ? "average high sat EXACTLY at the sell price — self-comparison"
+      : "average high sat BELOW the sell price by "
+        + Math.abs(Math.round((x.hi - c.ask) / c.ask * 10000) / 100) + "% — never reached"
+  }));
 }
 /* One replayed flip, both legs. Extracted so an assertion can test the WIRING
    — that the sell is graded regardless of what the buy did — rather than only
@@ -18119,7 +18153,14 @@ function analysisCalibration(){
                   ? (sellRelClassOf(c) !== c.cls) : null,
                 classUnderSpreadRelative: (c.spreadPct > 0 && c.medGapPct != null)
                   ? sellRelClassOf(c) : null,
-                why: c.why })) };
+                why: c.why,
+                /* Live cases only — the calibration side carries its own trace
+                   under `sellLeg`. Complete by construction: the stored cap
+                   (48) sits below the export limit (60), stated rather than
+                   guarded, so nothing here can truncate silently. */
+                sellTraceComplete: c.trace ? true : null,
+                sellTraceBuckets: c.trace ? c.trace.length : null,
+                sellTrace: c.trace ? liveSellTraceRows(c) : null })) };
           };
           return {
             thresholdsProposedNotRuled: {

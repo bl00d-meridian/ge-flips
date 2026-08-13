@@ -7125,6 +7125,32 @@
   } catch(e){
     out.push("FAIL sell falsification copy :: " + (e && e.stack || e));
   }
+  try {
+    /* [R66.7] the live sell trace ships WITH its classification, in the
+       calibration trace's own idiom. Driven through the real serialiser. */
+    const c67 = { ask: 1000, windowStart: 0,
+      trace: [ { t: 0,      hi: 1010, hv: 400, credited: 60 },
+               { t: 300000, hi: 990,  hv: 200, credited: 0 },
+               { t: 600000, hi: null, hv: 0,   credited: 0 },
+               { t: 900000, hi: 1000, hv: 50,  credited: 7 } ] };
+    const rows = liveSellTraceRows(c67);
+    ok("[R66.7] every bucket ships its price, volume, credit and minute — including the ones crediting NOTHING",
+       rows.length === 4 && rows[1].creditedUnits === 0 && rows[1].highSideVolume === 200
+       && rows[2].reason === "no high print in this bucket" && rows[3].minutesFromWindowStart === 15,
+       JSON.stringify(rows));
+    ok("[R66.7] the reason vocabulary matches the calibration trace, so the two populations read alike",
+       /proven reach/.test(rows[0].reason) && /never reached/.test(rows[1].reason)
+       && /EXACTLY at the sell price/.test(rows[3].reason),
+       JSON.stringify(rows.map(r => r.reason)));
+    ok("[R66.7] the gap is signed against the ask, so a reader can recompute any share from the rows alone",
+       rows[0].bucketAvgHighVsSellPct === 1 && rows[1].bucketAvgHighVsSellPct === -1,
+       JSON.stringify(rows.map(r => r.bucketAvgHighVsSellPct)));
+    ok("[R66.7] the trace is complete by construction — the stored cap sits below the export limit",
+       SELL_TRACE_CAP < CALIB_EXPORT_TRACE,
+       JSON.stringify({ stored: SELL_TRACE_CAP, exportLimit: CALIB_EXPORT_TRACE }));
+  } catch(e){
+    out.push("FAIL live sell trace export :: " + (e && e.stack || e));
+  }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
      Derived from [R#] tags in assertion names; a requirement is FAIL if any

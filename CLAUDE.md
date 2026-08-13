@@ -1033,6 +1033,30 @@ missing here, it graduated.
   pattern: `reconWindowStart()` was extracted, the promise stated there, and the assertion
   re-pointed at it. Detector: **scan 13** below.
 
+### A ratification that breaks no test is not evidence (user ruling, Aug 13 2026)
+
+> **A ratification that changes behaviour and breaks no test has either NO coverage or
+> STALE coverage, and green does not distinguish them.**
+
+The instance: the sell dilution band was ratified from a flat 1.0% to a third of the item's
+own spread — a live behaviour change, three cases reclassifying — and **the suite stayed
+green**. `[R66.4]` asserted *"the live classifier is still the absolute one"* and kept
+passing because it called the classifier **without a spread**, so the fallback band answered
+and the superseded expectation still held. The assertion was testing a rule that no longer
+existed, and passing for a reason unrelated to the claim in its own name.
+
+This is the **twelfth face at one remove**: not manufacturing an impossible state, but
+continuing to exercise a now-vestigial code path and reading its answer as the product's.
+The tell is the same — the assertion reaches its subject by an argument shape the product no
+longer uses at that call site.
+
+**Standing practice: after any ratification that changes behaviour, check that something
+went red. If nothing did, find out why BEFORE treating the suite as evidence.** There are
+only three answers and two of them are defects: the change was genuinely uncovered; an
+assertion is stale and is still passing on the old path; or the change did not actually take
+effect. A green suite across a behaviour change tells you which of the three you are in
+exactly as well as a coin does.
+
 ### The seeding precondition (global rule — user ruling, Aug 12 2026)
 
 > **Confirm the seed applied, changed something observable, and that the change is the
