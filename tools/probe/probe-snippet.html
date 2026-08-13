@@ -6901,6 +6901,19 @@
        JSON.stringify({ behind: reconWindowStart({ t: 5000, lastObs: 1000 }),
                         ahead: reconWindowStart({ t: 5000, lastObs: 9000 }),
                         none: reconWindowStart({ t: 5000 }) }));
+    /* SCAN 13 NOTE — this assertion DELIBERATELY exercises a state production
+       cannot reach, and the note is here so the reachable-fixture scan does not
+       re-raise it. Both open paths stamp `lastObs: now` at `t` and only ever
+       advance it, so `lastObs < t` is not producible today. That is the point:
+       the guard this replaced died precisely because the invariant
+       `lastObs >= t` was RELIED ON rather than stated, so the floor is asserted
+       against its violation to keep it a promise rather than a coincidence. If
+       a future caller can produce `lastObs < t`, this assertion is already
+       correct; if none ever can, it still documents which layer owes the floor.
+       Distinguish from the twelfth face: there the probe manufactured an
+       impossible state BY ACCIDENT and reported dead code as covered — here the
+       code under test is live on every real call, and only the adversarial
+       input is synthetic. */
     ok("[R64.5] the floor holds for every lastObs a record could carry",
        [0, 1, 4999, 5000, 5001, 1e12].every(lo => reconWindowStart({ t: 5000, lastObs: lo }) >= 5000),
        "swept lastObs values");

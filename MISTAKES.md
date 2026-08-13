@@ -95,14 +95,22 @@ window starting before the trip's own `t`, which is a call production cannot mak
 caller clamps the window first. So the probe was constructing the only input under which
 the guard could execute, and reporting a dead line as covered.
 
-**This is a new face, and it is the cousin of the reimplementation trap.** There, the probe
-re-derives the *answer*; here it manufactures the *state* — and both produce a green run on
-real production code that proves nothing about production. The tell is different too and
-worth carrying: **an assertion that reaches its subject by a call path the product does not
-have.** It is also why the dead guard survived a full day of scans: it was green, and green
-on a line that cannot run reads exactly like green on a line that works. Fixed by moving
-the assertion to `reconWindowStart()`, which production actually calls, and seeding it
-against the input the old guard pretended to defend against.
+**GRADUATED to the test-suite family as its TWELFTH FACE** (user ruling, Aug 13 2026),
+with **scan 13** as its detector. It is the cousin of the reimplementation trap: there the
+probe re-derives the *answer*, here it manufactures the *state* — and both produce a green
+run on real production code that proves nothing about production. The tell is its own:
+**an assertion that reaches its subject by a call path the product does not have.** It is
+also why the dead guard survived a full day of scans: it was green, and green on a line
+that cannot run reads exactly like green on a line that works.
+
+**It changed how the dead-guard rule is applied, which is the load-bearing consequence:
+before deleting an unreachable guard, check whether an assertion is holding it alive.** A
+dead guard with a green assertion pointed at it is the normal case rather than the
+surprising one, the deletion will turn that assertion red, and **the red is information —
+it names the artificial call path** rather than reporting a regression. Move the assertion
+to the layer production uses before the guard goes. Fixed here by extracting
+`reconWindowStart()`, stating the promise there, and seeding it against the input the old
+guard pretended to defend against.
 
 Substantiated from: the `[R43.2]` failure on the deletion (probe report,
 2026-08-13); `tools/probe/probe-snippet.html`, the re-pointed assertion and its comment;
@@ -127,13 +135,19 @@ the sanctioned form and **cannot emit the difference without both operands**, th
 is a difference from, in the sentence, not in a tooltip** — the number is read in the line
 and not in the hover.
 
-**Proposed and NOT applied, per the user's instruction — a widening of the interrogability
-rule:** *a decomposable aggregate must reconcile to its decomposition, and the check is
-mechanical.* The existing rule guarantees a number can be opened; it has never required
-that what opens agrees with what was opened. This incident is not itself an instance of the
-widened rule (the two figures were different quantities, correctly computed, mislabelled),
-which is precisely why the widening should be ruled on its own evidence rather than
-adopted on the back of this.
+**A widening was proposed and is HELD** (user ruling, Aug 13 2026): *a decomposable
+aggregate must reconcile to its decomposition, and the check is mechanical.* The existing
+interrogability rule guarantees a number can be **opened**; it has never required that what
+opens **agrees** with what was opened.
+
+**Held because this incident is not an instance of it, and that is the right reason to
+hold a rule.** The two figures were different quantities, each correctly computed, one
+mislabelled — a reconciliation check comparing `tight − current` against rows summing to
+`current` would have **fired on a correct pair** and reported a defect that was not there.
+A rule adopted on the back of an incident it would have mis-handled is a rule with no
+evidence under it, which is the defect the promotion bar exists to catch. **It graduates
+when something actually fails to reconcile.** This entry stays as the evidence that the
+question was asked and answered, not as the instance.
 
 Substantiated from: user report, 2026-08-13; REQUIREMENTS.md R65.1; `deltaVs()` and
 `paperDivLead()` in `index.html`.

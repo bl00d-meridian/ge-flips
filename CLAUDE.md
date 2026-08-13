@@ -777,7 +777,21 @@ substance.
     distinction the second one exists for, so the merge is the user's ruling. The
     enumeration is the deliverable, as in scans 6, 9, 10 and 11: two entries nobody
     compared are two entries nobody knows are one.
-13. **Output:** a findings report with proposed restructurings, ruled like everything
+13. **Reachable-fixture scan** (Aug 13 2026, the detector for the twelfth face):
+    enumerate every probe assertion that calls a production function **directly with
+    arguments the probe constructs**, and for each, name a production call site that
+    could produce arguments of that shape. An assertion with no such call site is
+    exercising a state the product cannot reach — it is testing the function's behaviour
+    on impossible input, and any guard it covers is unprotected in practice however green
+    the line is. Two remedies, and the choice is the dead-safeguard choice: move the
+    assertion to the layer production actually calls, or — if the constructed state is
+    genuinely reachable by some caller — name that caller in the assertion's comment so
+    the next scan does not re-raise it. **The enumeration is the deliverable**, the same
+    shape as scans 6, 9, 10 and 11: an assertion nobody traced to a caller is an
+    assertion nobody knows is testing the product.
+    Run it **before** deleting any guard found unreachable by scan 11 or scan 9, because
+    a green assertion over dead code is the signal this scan exists to explain.
+14. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
 
 ## Verification
@@ -811,13 +825,13 @@ wording covered only the first half, and the R49.2 instance below is the second 
 assertion that ran, on real production output, and would have passed with the property
 gone. Every named instance is a face of that one root.
 
-**Eleven named faces, all shipped green, numbered in the order they appear below**
+**Twelve named faces, all shipped green, numbered in the order they appear below**
 (renumbered Aug 13 2026: the list had grown to eleven shapes while its ordinals reached
 only "eighth", two of them ran out of file order, and one was unnumbered — a count that
 does not match its own list cannot support a graduation argument, which is the whole use
-the count is put to). **A twelfth shape, clamp absorption, left this list on Aug 13 2026**
-and is a BINDING rule in its own right with scan 9 as its detector; it is not missing here,
-it graduated.
+the count is put to). **A thirteenth shape, clamp absorption, left this list on Aug 13
+2026** and is a BINDING rule in its own right with scan 9 as its detector; it is not
+missing here, it graduated.
 
 - **The `|| true` assertion** — **first face** (Aug 11 2026): a probe line ending `… || true`, written
   to check the poll calls the accrual step. It passed unconditionally and asserted
@@ -903,6 +917,14 @@ it graduated.
   BEFORE concluding the assertion is weak.** A seed is only proof once you have seen it
   bite.
 
+  **And before deleting an unreachable guard, check whether an assertion is holding it
+  alive** (added Aug 13 2026 with the twelfth face). A dead guard with a green assertion
+  pointed at it is the normal case, not the surprising one: the assertion is reaching it
+  by a call path production does not have. Deleting the guard will turn that assertion
+  red, and the red is information rather than a regression — it names the artificial call
+  path. Move the assertion to the layer production actually uses **before** the guard
+  goes, or the deletion looks like it broke a working test.
+
   **And two defects can hide each other.** Seeding the ambiguous-reachability widening
   and the reconstruction touch-history rule together (commit `f8a0a73`) left the
   reconstruction assertion passing: with the widening removed, passing a touch into a
@@ -951,6 +973,25 @@ it graduated.
   absence half of the scoping ruling, applied to sentences instead of to surfaces. Fixed
   by adding the negative match; the old form passes the seed and the new form fails it,
   which is the discrimination the tenth face demands.
+- **The assertion that manufactures the only state in which the code can run** —
+  **twelfth face** (user ruling, Aug 13 2026), the cousin of the seventh. Where the
+  seventh re-derives the ANSWER in the probe, this one constructs the STATE: it calls
+  production code by a path production does not have, so the code executes, the assertion
+  is real, and the result says nothing about the product. **The tell: an assertion that
+  reaches its subject by a call path no production caller can produce.**
+  The instance, and it was found by accident rather than by suspicion: `reconReplay`'s
+  causality guard `if (bt < p.t) continue` was unreachable — the caller clamps the replay
+  window to at least `p.t` — and deleting it turned `[R43.2]` **red**, which is how the
+  assertion was discovered to be holding it alive. That probe called `reconReplay`
+  directly with a window starting before the trip existed. Green, on real production code,
+  over a line that could never run in the product.
+  **The consequence for the dead-guard rule, which is the load-bearing part: before
+  deleting an unreachable guard, check whether an assertion is holding it alive.** A guard
+  that looks dead and has a green assertion pointed at it is not evidence that the guard
+  runs; it is evidence that something is calling it artificially, and the assertion has to
+  move to the layer production actually uses before the guard goes. The repair here is the
+  pattern: `reconWindowStart()` was extracted, the promise stated there, and the assertion
+  re-pointed at it. Detector: **scan 13** below.
 
 ### The seeding precondition (global rule — user ruling, Aug 12 2026)
 

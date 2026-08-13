@@ -2179,7 +2179,13 @@ async function doRefresh(opts = {}){
        caught up across the gap before "now" is applied to it, or the tick
        would price an expired horizon at today's tape — the defect that
        caused the epoch reset. Awaited, and self-throttled inside. */
-    try { S.reconLast = await shadowRecover(); } catch(e){}
+    /* The return value is deliberately DISCARDED (S10-F3, ruled Aug 13 2026).
+       It used to land in `S.reconLast`, which nothing read — and the recovery
+       result already has a renderer of its own via the recovery log and its
+       WHAT CHANGED event, so capturing it here was a second source for a number
+       that has one. Deleted rather than wired, for the same reason `S.anomMkt`
+       was: wiring a duplicate is the redundancy finding, not the fix. */
+    try { await shadowRecover(); } catch(e){}
     shadowTick();   // paper book observes every refresh — fills only accrue while watching
     accrueBackground();   // plan-driven ledgers ride the POLL, not a render path — tab-independent by construction
     /* Staleness rides the poll and self-throttles to the hour. Not awaited —
