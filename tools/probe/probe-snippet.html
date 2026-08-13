@@ -2358,6 +2358,27 @@
     roll(bkt18(t18 + 900e3));             // next bucket arrives → the fill bucket is credited
     ok("[R18.2] a print at-or-below the bid fills volume-weighted (capture-capped)",
        sb2.buyQ === 10 && sb2.buyDone > 0 && sb2.state === "open", JSON.stringify(sb2));
+    /* THE TRACE, ASSERTED THROUGH THE TICK (Aug 13 2026). Seeding proved the
+       buyAbsorption assertions could not see this: they read a hand-built
+       trace, so a defect in how the tick WRITES one was invisible — the
+       consumer was tested and the producer was not. This fixture is already
+       the over-credit case: 4,000 low-side volume gives a 600-unit term
+       against a trip of 10, so the stored credit is clamped 60× and the trace
+       is the only place the real number survives. */
+    ok("[R59.7] the tick writes the PRE-CLAMP term into the trace — 60x what the trip could take",
+       Array.isArray(sb2.buyTrace) && sb2.buyTrace.some(b => b.credited === Math.floor(4000 * GATE.capture))
+       && sb2.buyTrace.every(b => b.credited <= Math.floor(4000 * GATE.capture))
+       && sb2.buyQ === 10,
+       JSON.stringify({ trace: sb2.buyTrace, stored: sb2.buyQ, qty: 10 }));
+    ok("[R59.7] and it writes the buckets that credited NOTHING — the offer stood, the tape did not come",
+       Array.isArray(sb2.buyTrace) && sb2.buyTrace.some(b => b.credited === 0)
+       && sb2.buyTrace.length > sb2.buyTrace.filter(b => b.credited > 0).length,
+       JSON.stringify((sb2.buyTrace || []).map(b => b.credited)));
+    ok("[R59.7] absorption computed from that live trace shows what the clamp discarded",
+       (() => { const a = buyAbsorption(sb2);
+                return a && a.qty === 10 && a.offered >= Math.floor(4000 * GATE.capture)
+                    && a.absorbed === a.offered - 10 && a.ratio > 50; })(),
+       JSON.stringify(buyAbsorption(sb2)));
     S.latest[9002] = { high: 4399, low: 4000, highTime: nowS, lowTime: nowS };   // lifts the ask
     ok("[R43.2] the bucket that completed the buy cannot also fill the sell — no instant round trip",
        sb2.state === "open" && sb2.sellQ === 0,
@@ -5764,6 +5785,34 @@
        reachCredit(3900, 4000, 2 * VBIG, "buy").strict === 2 * reachCredit(3900, 4000, VBIG, "buy").strict
        && reachCredit(3900, 4000, 4 * VBIG, "buy").strict === 4 * reachCredit(3900, 4000, VBIG, "buy").strict,
        JSON.stringify([reachCredit(3900, 4000, VBIG, "buy").strict, reachCredit(3900, 4000, 2 * VBIG, "buy").strict]));
+    /* ── THE BUY-LEG TRACE (user ruling, Aug 13 2026) ──────────────────────
+       R59.3's shape on the other leg. It exists so the over-credit case above
+       is observable from the RECORD and not merely bounded by fill times. */
+    ok("[R59.7] the trace cap is derived from the horizon, so it cannot silently truncate the window",
+       BUY_TRACE_CAP === Math.ceil(PAPER_HORIZON_H * 12) + 2 && BUY_TRACE_CAP > PAPER_HORIZON_H * 12,
+       JSON.stringify({ cap: BUY_TRACE_CAP, bucketsInWindow: PAPER_HORIZON_H * 12 }));
+    ok("[R59.7] absorption is computed from the PRE-CLAMP terms — the figure every stored credit hides",
+       (() => { const p = { qty: 10, buyTrace: [ { t: 1, lo: 3900, lv: 1e5, credited: 15000, full: 15000 },
+                                                 { t: 2, lo: 4100, lv: 1e5, credited: 0, full: 0 } ] };
+                const a = buyAbsorption(p);
+                return a.offered === 15000 && a.qty === 10 && a.absorbed === 14990
+                    && a.buckets === 2 && a.bucketsCrediting === 1 && Math.round(a.ratio) === 1500; })(),
+       JSON.stringify(buyAbsorption({ qty: 10, buyTrace: [{ credited: 15000 }, { credited: 0 }] })));
+    ok("[R59.7] buckets that credit NOTHING are retained — they are what says the offer stood and the tape did not come",
+       buyAbsorption({ qty: 10, buyTrace: [{ credited: 0 }, { credited: 0 }] }).buckets === 2
+       && buyAbsorption({ qty: 10, buyTrace: [{ credited: 0 }, { credited: 0 }] }).bucketsCrediting === 0,
+       "zero-credit buckets must count toward buckets observed");
+    ok("[R59.7] a trip with no trace reads UNKNOWN, never as zero absorption",
+       buyAbsorption({ qty: 10 }) === null && buyAbsorption({ qty: 10, buyTrace: [] }) === null,
+       "absence of evidence must not read as evidence of restraint");
+    ok("[R59.7] the surface says so too — untraced trips are unanswerable, not favourable",
+       (() => { const kb = DB.shadowBook;
+                DB.shadowBook = [{ id: 597, itemId: 9001, name: "x", qty: 10, bid: 1, ask: 2, t: Date.now() - 3600e3,
+                  closedAt: Date.now(), hzH: 6, obsMs: 6 * 3600e3, state: "filled", net: 1, regimes: [], benchedBy: ["ROI floor"] }];
+                const h = paperCreditAbsorptionLine(paperClosed());
+                DB.shadowBook = kb;
+                return /has never been fed/.test(h) && /UNANSWERABLE from the file, not answered favourably/.test(h); })(),
+       "a book with no traces must not report conservatism");
     ok("[R18.2] the bracket ordering survives at a scale where the clamp is binding",
        (() => { const p = { qty: QSMALL };
                 shadowCredit(p, "buy", reachCredit(4000, 4000, VBIG, "buy"));

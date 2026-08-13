@@ -6620,6 +6620,23 @@ function shadowTick(){
         const q = p.pend;
         if (!p.buyDone && p.buyBkt !== q.bkt){
           const cr = reachCredit(q.lo, p.bid, q.lv, "buy", q.touchBuy);
+          /* BUY-LEG TRACE (user ruling, Aug 13 2026) — R59.3's shape applied to
+             the other leg, and for a sharper reason. `shadowCredit` stores
+             `Math.min(qty, …)`, so a term LARGER than the trip's own size is
+             clipped and leaves no trace anywhere: over-crediting — the one
+             direction that would flatter every fill rate in the book — was
+             structurally unobservable from the record. Asked whether the book
+             had ever over-credited, the honest answer was "cannot be
+             reconstructed; bounded away from catastrophe only by the fact that
+             no trip ever filled inside a single bucket".
+             `credited` is the term BEFORE the clamp, which is the whole point.
+             Buckets that credit NOTHING are recorded too — they are what says
+             the offer stood and the tape did not come. Instrumentation only:
+             no credit changes, no verdict changes, FILL_MODEL_V does not move. */
+          if (!p.buyTrace) p.buyTrace = [];
+          if (p.buyTrace.length < BUY_TRACE_CAP)
+            p.buyTrace.push({ t: q.bkt, lo: q.lo, lv: q.lv, tch: q.touchBuy ? 1 : 0,
+              credited: cr.oper || 0, full: cr.lenient || 0 });
           if (cr.any){ p.buyBkt = q.bkt; shadowCredit(p, "buy", cr); changed = true; }
         } else if (p.buyDone && q.bkt >= p.buyDone && q.bkt !== p.buyDoneBkt && p.sellBkt !== q.bkt){
           const cr = reachCredit(q.hi, p.ask, q.hv, "sell", q.touchSell);
@@ -7960,6 +7977,30 @@ const SELL_MISLOC_GAP_PCT = 5.0;
 const SELL_MISLOC_SUSTAIN = 0.7;
 const SELL_CLASSIFY_MIN_N = 8;
 const SELL_TRACE_CAP = 48;          // 4h of 5m buckets per live trip
+/* DERIVED FROM THE HORIZON, not a hand-picked number: 12 buckets an hour plus
+   two for the deferred-credit lag. A fixed cap below the window would truncate
+   silently the moment the horizon grew, and a fixed cap above it would be a
+   guard its own upstream limit forbids — the dead-guard case law. Sizing it
+   from PAPER_HORIZON_H means the relationship cannot drift, and an assertion
+   holds it to covering the window. */
+const BUY_TRACE_CAP = Math.ceil(PAPER_HORIZON_H * 12) + 2;
+/* WHAT THE CLAMP ABSORBED. `offered` is the sum of the per-bucket terms before
+   `Math.min(qty, …)`; `absorbed` is what the clamp threw away. A trip whose
+   buckets offered far more than its size filled on tape the model considered
+   abundant — and if that is systematic, the conservatism claim is wrong in the
+   direction nothing else can see. Returns null where no trace exists, so a
+   pre-Aug-13 trip reads as unknown rather than as zero absorption. */
+function buyAbsorption(p){
+  if (!p || !Array.isArray(p.buyTrace) || !p.buyTrace.length) return null;
+  const offered = p.buyTrace.reduce((a, b) => a + (b.credited || 0), 0);
+  const qty = p.qty || 0;
+  return { buckets: p.buyTrace.length,
+    bucketsCrediting: p.buyTrace.filter(b => (b.credited || 0) > 0).length,
+    offered: offered, qty: qty,
+    absorbed: Math.max(0, offered - qty),
+    ratio: qty > 0 ? offered / qty : null,
+    truncated: p.buyTrace.length >= BUY_TRACE_CAP };
+}
 /* One failed sell → one computed classification, with the figures that
    produced it. Buckets are {hi, hv} inside the sell window; `ask` is the
    price the leg was asking. */
@@ -8642,8 +8683,53 @@ function paperFillCurveHTML(){
   bits.push('<div class="dim" style="margin-top:4px">Each cell reads <b>fill% / trips at risk</b>. Cohorts are never '
     + 'pooled into one curve — they answer different questions — and a dash means no trip in that cohort ran long enough '
     + 'to speak to that hour.</div>');
+  bits.push(paperCreditAbsorptionLine(closed));
   bits.push(paperCadenceRead(closed));
   return bits.join("");
+}
+/* IS THE CONSERVATISM CLAIM TRUE? (user ruling, Aug 13 2026.) The fill model's
+   whole standing rests on crediting less than the tape allows, and until the
+   buy-leg trace existed that claim could not be checked from the record: the
+   qty clamp clipped every over-credit before it was stored. This reports the
+   ratio of credit OFFERED to trip size — near 1 means the model credited about
+   what the trip needed; a large ratio means the tape was abundant and the
+   clamp absorbed the excess. Trips predating the trace say so rather than
+   counting as evidence of restraint. */
+function paperCreditAbsorptionLine(closed){
+  const traced = (closed || []).map(p => ({ p: p, a: buyAbsorption(p) })).filter(x => x.a);
+  const head = '<div class="nexthead" style="margin-top:8px"><b>Was the fill model actually conservative?</b></div>';
+  const stale = (closed || []).length - traced.length;
+  if (!traced.length)
+    return head + neverFedNote("The credit-absorption check",
+      (closed || []).length + " counted trips exist and none carries a buy-leg trace. Credit is stored as "
+      + "min(qty, term), so a term larger than the trip was clipped and left no record — for these trips the question "
+      + "is UNANSWERABLE from the file, not answered favourably. The trace accrues from the first scan after it shipped.");
+  const ratios = traced.map(x => x.a.ratio).filter(r => r != null).sort((a, b) => a - b);
+  const med = medianOf(ratios);
+  const over = traced.filter(x => x.a.absorbed > 0);
+  return head + '<div data-drillrow="1">'
+    + drill("paper:absorb", traced.length + ' traced trip' + (traced.length === 1 ? '' : 's'), {
+        head: "credit offered before the qty clamp, against the size each trip actually needed",
+        cols: [{ k: "item", lab: "Item" }, { k: "qty", lab: "Trip size", num: 1, sortk: "_q" },
+               { k: "offered", lab: "Credit offered (pre-clamp)", num: 1, sortk: "_o" },
+               { k: "ratio", lab: "Offered ÷ size", num: 1, sortk: "_r" },
+               { k: "bk", lab: "Buckets (crediting)" }],
+        rows: traced.map(x => ({ item: x.p.name || itemName(x.p.itemId),
+          qty: full(x.a.qty), _q: x.a.qty, offered: full(x.a.offered), _o: x.a.offered,
+          ratio: x.a.ratio != null ? x.a.ratio.toFixed(2) + "×" : "—", _r: x.a.ratio || 0,
+          bk: x.a.buckets + " (" + x.a.bucketsCrediting + ")",
+          _txt: x.p.name || "" })).sort((a, b) => b._r - a._r),
+        empty: "No traced trips.",
+        note: 'Offered is the sum of the per-bucket capture-capped terms BEFORE min(qty, …). Buckets that credited '
+            + 'nothing are counted in the first number and excluded from the second — they are the evidence that the '
+            + 'offer stood and the tape did not come. ' + PAPER_NOTE() })
+    + ': median <b>' + (med != null ? med.toFixed(2) + '×' : '—') + '</b> the trip size offered, '
+    + '<b>' + over.length + '</b> of ' + traced.length + ' offered more than they could take.'
+    + '<div class="dim">A ratio near 1× means the model credited about what the trip needed. A large one means the tape '
+    + 'was abundant and the qty clamp discarded the excess — which every other credit figure hides, because they are all '
+    + 'stored clamped. This is the check the conservatism claim was resting on before it existed.'
+    + (stale ? ' ' + stale + ' older counted trip' + (stale === 1 ? '' : 's') + ' predate the trace: unanswerable, not favourable.' : '')
+    + '</div></div>';
 }
 /* ═══ THE CADENCE READ (user ruling, Aug 13 2026) ═══════════════════════════
    Two independent measurements, multiplied — and the separation is the point.
@@ -17123,6 +17209,27 @@ function analysisTrip(p){
       : p.state === "unfilled" ? "never filled at the bid" : String(p.state),
     forcedUnsoldQty: p.state === "forced-exit" ? (p.forced || 0) : null,
     participationPct: shadowPartPct(),
+    /* THE BUY LEG'S OWN EVIDENCE (Aug 13 2026). Every credit figure below is
+       stored as Math.min(qty, …), so none of them can show a term that
+       exceeded the trip's size. This carries the pre-clamp terms and the
+       buckets that credited nothing, which is what makes over-crediting
+       answerable from the file instead of inferred from fill times. */
+    buyLeg: (() => {
+      const a = buyAbsorption(p);
+      if (!a) return { available: false,
+        why: "opened before the buy-leg trace shipped (Aug 13 2026) — the per-bucket inputs are discarded at credit time "
+           + "and cannot be reconstructed, so whether this trip's credit was clamped is unknowable rather than zero" };
+      return { available: true,
+        bucketsObserved: a.buckets, bucketsCrediting: a.bucketsCrediting,
+        creditOfferedBeforeClamp: a.offered, tripQty: a.qty,
+        absorbedByQtyClamp: a.absorbed, offeredOverSizeRatio: r2(a.ratio),
+        meaning: "creditOfferedBeforeClamp is the sum of the per-bucket capture-capped terms BEFORE Math.min(qty, …). "
+               + "A ratio near 1 means the model credited about what the trip needed; a large ratio means the tape was "
+               + "abundant and the clamp threw the excess away — which is invisible in every other figure here.",
+        traceTruncated: a.truncated,
+        trace: p.buyTrace.map(b => ({ at: iso(b.t), bucketAvgLow: b.lo, lowSideVolume: b.lv,
+          liveTouchSeen: !!b.tch, creditedBeforeClamp: b.credited, creditedAtFullParticipation: b.full })) };
+    })(),
     buyCreditOperative: p.buyQ != null ? p.buyQ : null,
     buyCreditProvenReachable: p.buyQStrict != null ? p.buyQStrict : null,
     buyCreditPossiblyReachable: p.buyQFull != null ? p.buyQFull : null,
