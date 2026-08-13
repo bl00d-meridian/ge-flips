@@ -54,10 +54,13 @@ the user rules.
 
 **Every entry standing in BINDING today predates this rule** and was promoted informally
 — at whatever point the defect seemed important enough at the time. The backfill audit of
-Aug 13 2026 (`MISTAKES.md`, and the report accompanying it) checks the standing list
-against this bar in **both** directions — entries resting on a single instance with no
-detector, and patterns with three or more instances that never became a rule — and
-reports the mismatches without reclassifying anything.
+Aug 13 2026 (`audits/AUDIT-2026-08-13-graduation.md`) checked the standing list against
+this bar in **both** directions — entries resting on a single instance with no detector,
+and patterns with three or more instances that never became a rule. It reported the
+mismatches without reclassifying anything; **the user then ruled on them**, and that
+ruling is what moved eight entries into *Commitments without detectors* below and promoted
+five patterns into BINDING with detectors. Read that report before arguing any entry's
+placement — the counts it rests on are in `MISTAKES.md` and are re-derivable.
 
 ---
 
@@ -69,20 +72,6 @@ soften these in code or copy.
 
 - **The tool proposes and prefills; it never acts.** No flip is logged, no offer placed,
   no watchlist commitment made without an explicit user button press.
-- **House convention (strategy layer):** strategy parameters — ceilings, floors, budgets,
-  gates, tier bands, cluster caps — may be *proposed* in review copy but change only on
-  the user's explicit instruction. Never self-apply.
-- **Advisory layers stay advisory — except where a ruling has explicitly superseded it.**
-  Scout, cluster discovery, audits, and verdicts queue candidates and recommendations;
-  nothing caps or spends capital until the user ratifies. **Superseded in exactly one
-  place (user ruling, Aug 11 2026):** coherence membership ADDS and the seed/sibling
-  audits' KEEP / RETIRE / PRUNE recommendations self-apply at their existing evidence
-  thresholds — see *Membership bookkeeping applies itself* below for the reasoning, the
-  decision-log requirement, and the carve-out that coherence DROPS still queue. The
-  advisory default holds everywhere the supersession does not name; the two rules are
-  read together, and neither is to be quoted alone.
-- **The blacklist is the user's alone.** No automated path may admit, fund, quote, or
-  clear an entry — not even a margin test.
 - **Every automated decision states its reason inline where the user reads it** (widened
   Aug 12 2026 — the previous wording enumerated "every bench, clamp, and cap", and the
   enumeration was read as the scope). Escaping instances: auto-applied coherence
@@ -138,18 +127,101 @@ soften these in code or copy.
   copy states the unobserved remainder explicitly. Where coverage puts the bar out of
   reach, the surface says so rather than reporting "no persistence" — a never-fed
   aggregate, not a reading of zero.
-- **Every entity the user can see states where it stands, and why** (widened Aug 12 2026;
-  previously "every *allocator-touched* entity", which excused everything the allocator
-  does not touch). An unexplained state reads as a broken feature even when the machinery
-  underneath is correct — the F18 incident: held items passed all gates, appeared in no
-  bucket, and made working auto-promote machinery feel press-gated. Funded, next-up,
-  qualifying, benched, held, owned-elsewhere, hidden, skipped: each says so, with its
-  reason, on the surface where it renders. The converse binds too: an element that cannot
-  explain its presence on the screen does not render.
-  Escaping instance: a paper trip in the unobserved state renders as a hole with no
-  explanation — the paper book is not allocator-touched, so the old wording let it through.
-- Known repeated bug class: gates that re-punish what sizing already priced in
-  (double-counting). Bench only on information the sizing/margin logic doesn't use.
+- **A component reports nothing where it should report that it HAS nothing** (consolidated
+  Aug 13 2026 from three entries that were the same root written three times: the
+  entity-state rule here, the never-fed-aggregate case law, and the stalled-generator
+  finding. **16 recorded instances** — MISTAKES.md M003, M008, M015, M016, M023, M032,
+  M053, M055, M056, M062, M071, M072, M076, M093, M096, M097 — which is the largest count
+  behind any single rule and was invisible while it was three entries).
+  **The property: absence and data-of-absence are different readings, and a surface that
+  renders them identically has reported the wrong one.** The five shapes it has taken,
+  each named because each escaped a rule written about the others:
+  - **An entity with no state.** Funded, next-up, qualifying, benched, held,
+    owned-elsewhere, hidden, skipped, unobserved: each says so, with its reason, on the
+    surface where it renders. An unexplained state reads as a broken feature even when the
+    machinery underneath is correct (F18: held items passed all gates, appeared in no
+    bucket, and made working auto-promote machinery feel press-gated). The converse binds:
+    an element that cannot explain its presence on the screen does not render.
+  - **An aggregate nothing has fed.** A stat rendering 0 because nothing FEEDS it is
+    indistinguishable from one rendering 0 because nothing QUALIFIED, and the two mean
+    opposite things. An aggregate whose input population is empty says so in its own words.
+    Membership in a race must be a property of the CANDIDATE, evaluated once centrally,
+    never a label individual entry paths remember to attach.
+  - **A threshold out of reach.** Unreachable is not absent. Where coverage or sample size
+    puts a bar arithmetically beyond reach, the surface says which.
+  - **A generator that stopped.** A stalled generator and a quiet market are identical in
+    every number on the page. A generator renders its own state — computed from the same
+    values it gates on, so the two cannot disagree — **whether or not anything is wrong.**
+  - **A failure that says nothing.** A match that silently missed, an eviction on a cold
+    cache, a rate with no counterexample count: each asserts its own precondition and
+    surfaces when it does not hold.
+  Detector: **scan 2** below, which carries all five as named checks. The
+  never-fed-aggregate and F18 case-law sections stay as the incident record and defer to
+  this entry; they are no longer a second and third home for the rule.
+- **Correct parts do not compose into a correct product** (BINDING Aug 13 2026 — promoted
+  on **26 recorded instances**, the largest pattern in MISTAKES.md and the one that had no
+  rule at all; the integration audit existed and nothing stated what it was checking for).
+  **The property: a defect can live entirely in the seam between two subsystems that are
+  each correct and each fully tested, and neither side's tests can see it.** Every path
+  where two subsystems meet is checked by a walk that CROSSES it: a value one writes and
+  another reads, a state one owns and another displays, a guard one applies and another
+  bypasses, a ledger whose accrual depends on another's render, a constant one sizes with
+  and another ages against.
+  The founding instance is the meta-finding of Aug 10 2026: **252 green assertions could
+  not see two money-path defects** — the self-cross guard built one-directional against a
+  universal spec, and the plan and quote cycle both owning inventory-mode items while
+  `committed()` could not see quote legs. *Parts-level verification and composition-level
+  audit are different detectors; a green suite is not a clean bill.*
+  Two sub-classes have repeated often enough to name: **state coupled to a render path**
+  (four instances — a checklist rolling only when its tab renders, ledgers riding
+  `renderDeploy` because the boot tab happened to be Watchlist, a sensor computed as a
+  render side-effect and read from another tab) and **a constant tuned for one regime read
+  by another** (`limitWindows` at a fixed 2, a hardcoded 15:00 day split, a cooldown scaled
+  to a horizon it had no exposure argument for).
+  Detectors: **scan 10** below, the seam inventory, whose enumeration is the deliverable in
+  the same shape as the restraint-lift and clamp scans; and mechanically for the
+  render-coupling sub-class, `[R34.1]`, which drives accrual with every tab and sub-view
+  active and with no render at all.
+- **A long-lived client detects and reports its own staleness** (BINDING Aug 13 2026 —
+  four recorded instances, MISTAKES.md M004, M005, M057, M061). **The property: a freshness
+  claim states the age of the thing it names, not of the fetch that carried it, and a
+  client whose host never reloads must be able to notice that its inputs, its derived
+  values or its own build have gone stale.** Two clocks are never presented as one. A
+  check that could not run renders as *could-not-check*, never as up-to-date — a stamp
+  trusted by its absence is not a stamp. Derived data records which build produced it,
+  because a corrupt population that cannot be identified by a field must be discarded
+  rather than partitioned.
+  Detectors: the per-stream freshness panel split by nature (scheduled streams flagged
+  against their own cadence, event-driven ones never, because silence there is data); the
+  build stamp's three distinct states; the `/timeseries` circuit breaker; and **scan 7
+  extended Aug 13 2026 to freshness claims**, which is the check that would have caught
+  "prices 12s ago" standing over an item that trades 27 times an hour.
+- **A simulation may use only information that existed when it claims to have acted**
+  (BINDING Aug 13 2026 — four recorded instances, MISTAKES.md M063, M073, M081, M099;
+  previously a companion bullet inside case law, which is neither BINDING nor DOCTRINE and
+  so had no enforceable home). **The property: a modelled result is evidence only if every
+  input to it was available at the modelled moment, each piece of evidence is consumed
+  once, and the comparison is anchored to the event it claims to measure.** A leg is filled
+  only by tape that printed after it was placed. A bucket credits once. A trip that
+  resolves in its opening cycle is a bug rather than a fill. A forced exit prices at the
+  value AT the horizon, not at the moment we noticed — which is correct on a perfect host
+  too, and is why the rule is about information rather than about absence.
+  **An average is not the interval it summarises**, and a gate that reads one as if it were
+  invents evidence in both directions: the buy leg's pessimistic bias and the sell leg's
+  all-or-nothing bucket credit are the same fault twice.
+  Detector: **scan 11** below, the information-horizon scan, plus the shipped stamps that
+  make a violation visible after the fact — `openSeq`/`openPollSeq`, `bt ≥ p.t`,
+  once-per-bucket credit, and `FILL_MODEL_V` partitioning populations by the model that
+  produced them.
+- **Data nothing reads, and surfaces nothing feeds, are defects** (stated Aug 13 2026 —
+  four recorded instances, MISTAKES.md M018, M027, M036, M095; scan 2 had been checking
+  this since Aug 10 with no rule stating the property). **A field written and never
+  consulted is a claim that something is being tracked**; a surface that renders without a
+  reader for what it shows is a claim that something is being decided. Every persisted key,
+  panel, queue, record type and setting answers: who writes it, who reads it, what decision
+  changes because it exists. Removal is a valid answer and so is wiring it up; silence is
+  not.
+  Detector: **scan 2** below.
 - **Restraint may auto-arm; deployment never — and REMOVING a restraint counts as
   deployment, whether by action, by expiry, or by a rule change. Anything that widens what
   the allocator may fund is the user's press** (widened Aug 12 2026). Defensive intel may
@@ -175,8 +247,7 @@ soften these in code or copy.
   Import: the handshake pattern already makes the carry a deliberate act, and requiring
   the same ruling twice would make the desk a place where decisions go to be re-entered.
   **But it is their press only for actions that DROP an advisory, never for actions that
-  arm one — and a channel may carry no strategy-parameter change at all; those move only
-  on an explicit in-tool ruling** (final clause added Aug 12 2026). The reasoning is the
+  arm one.** The reasoning is the
   restraint/deployment line applied to indirect consent: a dismissal removes a caution the
   user already read and judged, and its blast radius is bounded by what it stops doing,
   whereas a ratification arms a record that then tags items, can carry a sizing haircut,
@@ -186,40 +257,14 @@ soften these in code or copy.
   no stated reason is ignored too, because a dismissal without a why is not a record. Every
   applied disposition is decision-logged with an `auto` stamp, the reason, and the date the
   user ruled.
-  Escaping instance for the final clause: a settings or config block changing the ROI floor
-  neither drops an advisory nor arms one, so the two-direction wording did not classify it
-  at all — and a parameter that arrives in a file has been ruled on by nobody.
   **New consent channels inherit this shape**: whenever user intent reaches the tool by any
-  route other than a press on the surface itself, that route may drop advisories, may not
-  arm them, and may never move a strategy parameter.
+  route other than a press on the surface itself, that route may drop advisories and may
+  not arm them.
 - **A manipulation defense never relaxes on the manipulator's chosen evidence** (user
   ruling, Aug 10 2026). Recent wins during a pump are the bait, so wins never graduate a
   flagged pump caution; the only lift path is the user dismissing the warning record —
-  nothing else.
-- **Disclosure-in-summary is not ratification** (user ruling, Aug 10 2026). Judgment
-  thresholds and verdict boundaries discovered mid-build are strategy parameters: propose
-  them and leave them unapplied until the user rules. Applying one and mentioning it in
-  the summary is a near miss, not compliance (the incident: entry-watch DISCOUNTED set to
-  ≤ −2% in-flight; ratified after the fact).
-- **Shipping a correction means shipping the path by which it lands, for any artefact the
-  user has already read** (widened Aug 12 2026; previously scoped to intelligence records,
-  where the defect was found). Withdrawing contaminated numbers from a brief exposed the
-  original: re-importing an already-ratified record was silently absorbed, so eleven
-  corrected records would have left the wrong numbers on screen while the brief claimed
-  they were fixed.
-  Escaping instances: a corrected glossary entry and a revised requirement row have no
-  landing path at all — the user read them once and nothing tells them the words changed.
-  **⚠ FLAGGED: this entry is weaker than its BINDING placement implies** (user ruling,
-  Aug 12 2026). The Aug 12 detector review found no mechanical check for the general
-  case; per-instance probes exist and nothing enforces the rule itself. It stays BINDING
-  with this flag attached and **the next integration audit gets exactly one attempt** to
-  make it mechanical. The candidate detector, to be tried: *every artefact type the user
-  has read — glossary entry, requirement row, intel record, brief — has a defined update
-  path, enumerated*, the same enumerate-then-check shape that made the restraint-lift
-  scan work. **If that audit cannot produce a check, this moves to DOCTRINE without
-  further argument** — a rule that keeps failing to acquire a detector is the thing the
-  BINDING/DOCTRINE split exists to expose, and arguing for it a second time would be the
-  defect defending itself.
+  nothing else. *One recorded instance (MISTAKES.md M090); eligible on the detector limb,
+  scan 6 below.*
 - **Metric honesty.** Every metric reports **realized quantities only** — actual logged
   round trips, tax netted; no counterfactual fills, no price drift counted as missed
   profit — **and every metric's rendered copy claims exactly what it computes, asked or
@@ -232,14 +277,12 @@ soften these in code or copy.
   unbenching" (re-admission latency only — the gate eventually agreeing with itself is not
   the user being right against it). The response half of the protocol stands: see
   *Definitions protocol* below.
-- **Feedback edges tune ATTENTION, never AUTHORITY** (closed-loop constitution — user
-  ruling, Aug 10 2026). Learning loops (story-resolution signatures, lag profiles,
-  scorecard priors, rulings digests, ramping triggers) may change what gets watched,
-  flagged, and prioritized; gates, sizing, and deployment still move only by ruling.
 - **Membership bookkeeping applies itself** (user ruling, Aug 11 2026 — **supersedes
   "membership never recomposes silently"**, R4.2b, which stood from Aug 10 2026; and see
-  the advisory-layers entry above, which names this supersession explicitly rather than
-  contradicting it). Coherence membership ADDS and the seed/sibling audits' KEEP / RETIRE
+  *Advisory layers stay advisory* under **Commitments without detectors** in DOCTRINE,
+  which names this supersession explicitly rather than contradicting it — the two are read
+  together and neither is to be quoted alone). Coherence membership ADDS and the
+  seed/sibling audits' KEEP / RETIRE
   / PRUNE recommendations apply automatically at their existing evidence thresholds —
   persistence-gated, statistical-cap-respecting, blacklist-excluded. **The reason for the
   supersession:** membership is mechanical bookkeeping about correlation, not a capital
@@ -271,7 +314,11 @@ soften these in code or copy.
   Verification. An assertion that has never failed is unproven.
 - **An assertion downstream of a clamp, cap or floor cannot see a defect the clamp
   absorbs. Assert the TERM UNDER TEST, not the clamped output** (user ruling, Aug 13
-  2026 — graduated to BINDING on the second occurrence, which is the bar). When the
+  2026. ~~*graduated to BINDING on the second occurrence, which is the bar*~~ — **struck
+  Aug 13 2026**: two occurrences is not the bar under the promotion rule recorded above,
+  and the sentence misstated the standard. This entry qualifies on the **detector limb**,
+  scan 9 below, and now stands on **six** recorded instances — MISTAKES.md M074, M118,
+  M119, M120, M122, M124 — which clears the count limb as well). When the
   quantity you care about is one input to a `Math.min`, a cap, a floor or a ceiling, the
   final value is frequently pinned by the *other* input, and then a seeded defect in your
   term changes nothing observable. The report is green and reads exactly like a working
@@ -284,16 +331,89 @@ soften these in code or copy.
   both readings to the same number. In both, the fix was the same: **extract the term
   into a named function and point the assertion at that.** Never reproduce it in the
   probe; the extraction is the fix, not a convenience.
-  Detector: integration-audit scan 10 below.
+  Detector: integration-audit scan 9 below.
 
 ---
 
 # DOCTRINE
 
-**Nothing in this section is enforceable and nothing here is audited.** These are
-practices and principles the work aims at, kept because they explain *why* the binding
-rules are shaped as they are. No test exists for any of them; do not cite one as a
-finding, and do not let one masquerade as a rule.
+**Nothing in this section is enforceable and nothing here is audited.** No test exists for
+anything here; do not cite one as a finding, and do not let one masquerade as a rule.
+
+The section holds two different kinds of thing, and the distinction matters when reading
+one: **commitments** (below) are promises about what the tool may do, binding on conduct
+and unenforceable only in the sense that nothing can catch a breach; **practices** (after
+them) are things the work aims at. Both are undetectable. They are not equally serious,
+and a reader who takes the first group as aspiration has misread it.
+
+## Commitments without detectors (demoted from BINDING, user ruling, Aug 13 2026)
+
+Every entry here was in BINDING on **zero or one recorded instance with no mechanical
+detector** — promoted informally, at whatever point it seemed important. They are real
+commitments and they still govern conduct. They are moved because a rule that looks
+mechanically checkable and is not occupies the slot where a real rule would have gone and
+reports the property as covered. **Any of them returns to BINDING the moment it acquires a
+detector, or on a third recorded instance.**
+
+- ~~**Known repeated bug class: gates that re-punish what sizing already priced in**~~
+  **(double-counting). — CLAIM STRUCK, Aug 13 2026, not merely demoted.** The graduation
+  audit searched the whole repo and found **zero** substantiated instances: every
+  `double-count` in the tree is a different defect (bank-plus-realized, the funnel's
+  negative residual, the attention denominator). An entry asserting *"known repeated"* with
+  no recurrence on record makes a false claim about the project's own history, which is
+  worse than an unenforceable rule — it is unearned authority. **The underlying guidance
+  survives as guidance, with its claim removed:** where a gate and the sizing logic read the
+  same information, prefer to price it once; bench on what sizing does not use. If it ever
+  happens, it gets a MISTAKES.md entry and starts its count at one.
+- **House convention (strategy layer):** strategy parameters — ceilings, floors, budgets,
+  gates, tier bands, cluster caps — may be *proposed* in review copy but change only on the
+  user's explicit instruction. Never self-apply. *One instance (M028), shared with the
+  entry below.*
+- **Disclosure-in-summary is not ratification** (user ruling, Aug 10 2026). Judgment
+  thresholds and verdict boundaries discovered mid-build are strategy parameters: propose
+  them and leave them unapplied until the user rules. Applying one and mentioning it in the
+  summary is a near miss, not compliance. *One instance (M028): entry-watch DISCOUNTED set
+  to ≤ −2% in-flight, ratified after the fact.*
+- **A consent channel may carry no strategy-parameter change at all; those move only on an
+  explicit in-tool ruling** (the file-as-press final clause, added Aug 12 2026, demoted Aug
+  13 2026). Its stated escaping instance — a settings block changing the ROI floor, which
+  neither drops an advisory nor arms one — is a **gap, not an incident**: it has never
+  happened, and the Aug 12 audit recorded in `AUDIT-2026-08-12-scope.md` §5 that nothing
+  asserts it. The two-direction half of the file-as-press rule keeps its detector and stays
+  BINDING; only this clause moves.
+- **Advisory layers stay advisory — except where a ruling has explicitly superseded it.**
+  Scout, cluster discovery, audits, and verdicts queue candidates and recommendations;
+  nothing caps or spends capital until the user ratifies. **Superseded in exactly one place
+  (user ruling, Aug 11 2026):** coherence membership ADDS and the seed/sibling audits'
+  KEEP / RETIRE / PRUNE recommendations self-apply at their existing evidence thresholds —
+  see *Membership bookkeeping applies itself* in BINDING for the reasoning, the
+  decision-log requirement, and the carve-out that coherence DROPS still queue. The
+  advisory default holds everywhere the supersession does not name; the two rules are read
+  together, and neither is to be quoted alone. *Zero instances as an incident — it is the
+  posture the specific BINDING rules implement, rather than a rule that has been breached.*
+- **The blacklist is the user's alone.** No automated path may admit, fund, quote, or clear
+  an entry — not even a margin test. *Zero instances.*
+- **Feedback edges tune ATTENTION, never AUTHORITY** (closed-loop constitution — user
+  ruling, Aug 10 2026). Learning loops — story-resolution signatures, lag profiles,
+  scorecard priors, rulings digests, ramping triggers — may change what gets watched,
+  flagged and prioritized; gates, sizing and deployment still move only by ruling. *Zero
+  instances.*
+- **Shipping a correction means shipping the path by which it lands, for any artefact the
+  user has already read** (widened Aug 12 2026, demoted Aug 13 2026). Withdrawing
+  contaminated numbers from a brief exposed the original defect: re-importing an
+  already-ratified record was silently absorbed, so eleven corrected records would have
+  left the wrong numbers on screen while the brief claimed they were fixed (M070). Its
+  escaping instances — a corrected glossary entry, a revised requirement row — have no
+  landing path at all. **This entry was already flagged in BINDING as weaker than its
+  placement implied, with one attempt at a detector owed.** The demotion settles it without
+  spending that attempt: the candidate check (*every artefact type the user has read has a
+  defined update path, enumerated*) remains the way back to BINDING, and building it is now
+  optional rather than a debt.
+
+## Practices and principles
+
+These are things the work aims at, kept because they explain *why* the binding rules are
+shaped as they are.
 
 **Division of labor.** The machine verifies parts, traces requirements, audits
 composition, grades its own accuracy, proposes its own restructurings, and surfaces
@@ -438,6 +558,12 @@ Three corollaries, each of which cost something here:
 
 ## Case law: the never-fed aggregate (user ruling, Aug 12 2026)
 
+> **This section is the incident record, not the rule.** The rule is *a component reports
+> nothing where it should report that it HAS nothing*, in BINDING, which consolidated this
+> section, the entity-state entry and the stalled-generator finding on Aug 13 2026 — one
+> root that had been written three times, so its sixteen instances never accumulated
+> against anything. Cite the rule; read this for what it cost.
+
 **A stat that renders 0 because nothing FEEDS it is indistinguishable, on screen,
 from a stat that renders 0 because nothing QUALIFIED — and the two mean opposite
 things.** The regime race, the machinery that exists to answer whether the 1.2%
@@ -523,18 +649,29 @@ weeks** (integration debt accrues at build speed — cadence tied to activity, n
 calendar; user ruling, Aug 10 2026), and on the user's demand. Distinct from probes
 (parts work) and friction review (reported pain): this hunts **unreported composition
 defects**. Scans 1–5 predate Aug 12 2026; scans 6–8 were added that day so the rules
-widened in the scope audit have detectors rather than good intentions.
+widened in the scope audit have detectors rather than good intentions; scans 9–11 were
+added Aug 13 2026 for the rules promoted out of the graduation audit. **Renumbered Aug 13
+2026** — the list ran 1–8, 10, 11 with no scan 9, so a rule citing "scan 10" was citing a
+position rather than a check; scan 9 is now the clamp-absorption scan it always was in
+substance.
 
 1. **Workflow walks:** trace each real workflow end-to-end through the actual code
    paths — walk-up, briefing cycle, sleeve entry-to-exit, weekly review — and for every
    surface touched answer: what feeds it, what does it feed, when in the workflow does
    it earn its render. Any missing answer is a finding.
-2. **Orphan scan:** every panel, queue, record type, and setting gets a connectivity
-   check — who writes it, who reads it, what decision changes because it exists.
-   Write-only data and read-never surfaces are findings. **Extended Aug 12 2026 to entity
-   state:** every entity the user can see — not only allocator-touched ones — must state
-   where it stands and why; an entity rendering as a hole, a blank, or a dash with no
-   stated reason is a finding.
+2. **Orphan and silent-state scan:** the detector for two BINDING rules — *data nothing
+   reads is a defect*, and *a component reports nothing where it should report that it HAS
+   nothing*. **(a) Connectivity:** every panel, queue, record type, persisted key and
+   setting answers who writes it, who reads it, and what decision changes because it
+   exists; write-only data and read-never surfaces are findings. **(b) Silent state**, the
+   five shapes named in the rule, each checked separately because each escaped a check
+   written for the others — an entity rendering as a hole, blank or dash with no stated
+   reason; an aggregate whose input population can be empty and does not say so; a
+   threshold that can be arithmetically out of reach and reports as absent; a generator
+   that can stop and does not render its own state; and a failure path that can miss
+   silently (a name match, an eviction on a cold cache, a rate with no counterexample
+   count). *(a) has run since Aug 10 2026, (b) was extended to entity state Aug 12 2026 and
+   to all five shapes Aug 13 2026 on the consolidation of sixteen instances.*
 3. **Redundancy scan:** concepts implemented twice under different names (cluster
    baskets vs catalyst item-links was exactly this) — propose merges.
 4. **Glossary-coverage scan** (user ruling, Aug 11 2026): every term, badge, tag,
@@ -567,7 +704,13 @@ widened in the scope audit have detectors rather than good intentions.
    for every metric the tool renders, read the rendered copy against the code that
    produces it and check the copy claims exactly that — no more, no fewer caveats, the
    right population, the right denominator. Unprompted copy is in scope; this scan exists
-   because the definitions protocol only ever fired when the user asked.
+   because the definitions protocol only ever fired when the user asked. **Extended Aug 13
+   2026 to freshness claims**, as the detector for *a long-lived client detects and reports
+   its own staleness*: every rendered age is checked against the thing it names rather than
+   the fetch that carried it, and every "as of" is checked for whether the clock it reads
+   is the clock the reader will assume. The escaping instance was "prices 12s ago" standing
+   over an item that trades 27 times an hour — true of the fetch, false of the number
+   underneath it.
 8. **Pooling scan** (Aug 12 2026, for the widened never-pool rule; extended to artefacts
    Aug 13 2026): every rate, median, count, verdict and score is checked for whether its
    population is one population. A pooled figure rendering without its decomposition
@@ -579,7 +722,7 @@ widened in the scope audit have detectors rather than good intentions.
    pooled across a dimension no surface renders is invisible to a scan that only reads
    what is on screen, which is how the horizon split went unnoticed until an export was
    read by hand.
-10. **Clamp-absorption scan** (Aug 13 2026, the detector for the clamped-output rule
+9. **Clamp-absorption scan** (Aug 13 2026, the detector for the clamped-output rule
     above): enumerate every clamp in the product — `planCap`, the participation haircut,
     the one-third stack clamp, the buy-limit clamp, `Math.min`/`Math.max` guards on a
     sized quantity — and for each, list the assertions whose subject is computed
@@ -588,7 +731,24 @@ widened in the scope audit have detectors rather than good intentions.
     finding whatever its current colour, and the remedy is extraction rather than a
     stronger regex. **The enumeration is the deliverable**, the same shape as the
     restraint-lift scan: a clamp nobody listed is a clamp nobody checked.
-11. **Output:** a findings report with proposed restructurings, ruled like everything
+10. **Seam inventory scan** (Aug 13 2026, the detector for *correct parts do not compose
+    into a correct product*): enumerate every place two subsystems meet — every persisted
+    key and `S.*` field with its writer and its readers named; every ledger whose accrual
+    depends on a render path; every guard that reads one store and is consulted from
+    another; every constant read by two mechanisms that assume different regimes — and for
+    each, name the walk that CROSSES it. A seam covered only by tests that live on one
+    side of it is a finding whatever colour those tests are. **The enumeration is the
+    deliverable**, the same shape as scans 6 and 9: a seam nobody listed is a seam nobody
+    checked. This subsumes and replaces nothing — scans 1 and 2 walk workflows and
+    connectivity; this one walks the joins.
+11. **Information-horizon scan** (Aug 13 2026, the detector for *a simulation may use only
+    information that existed when it claims to have acted*): enumerate every point where a
+    simulated or replayed result reads evidence — each fill-credit path, each replay
+    window, each forced exit, each comparison anchor — and check three things per point:
+    the read is bounded by the modelled moment, each piece of evidence is consumed exactly
+    once, and no interval statistic is being read as if it described the interval. A path
+    that cannot state its own information horizon is a finding.
+12. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
 
 ## Verification
@@ -622,22 +782,28 @@ wording covered only the first half, and the R49.2 instance below is the second 
 assertion that ran, on real production output, and would have passed with the property
 gone. Every named instance is a face of that one root.
 
-Named instances, all shipped green:
+**Eleven named faces, all shipped green, numbered in the order they appear below**
+(renumbered Aug 13 2026: the list had grown to eleven shapes while its ordinals reached
+only "eighth", two of them ran out of file order, and one was unnumbered — a count that
+does not match its own list cannot support a graduation argument, which is the whole use
+the count is put to). **A twelfth shape, clamp absorption, left this list on Aug 13 2026**
+and is a BINDING rule in its own right with scan 9 as its detector; it is not missing here,
+it graduated.
 
-- **The `|| true` assertion** (Aug 11 2026): a probe line ending `… || true`, written
+- **The `|| true` assertion** — **first face** (Aug 11 2026): a probe line ending `… || true`, written
   to check the poll calls the accrual step. It passed unconditionally and asserted
   nothing whatever.
-- **The R29.4 durability detector** (Aug 11 2026): it seeded a closed record, rolled it,
+- **The R29.4 durability detector** — **second face** (Aug 11 2026): it seeded a closed record, rolled it,
   *then* aged it past the retention window — so it passed whether the roll happened
   before or after the prune, which was the entire property under test. Rewritten to
   start from a record already past the window; only then could it fail.
-- **The R22.2 scoping assertions**: `querySelector` existence checks pass on hidden
+- **The R22.2 scoping assertions** — **third face**: `querySelector` existence checks pass on hidden
   elements, so a CSS specificity bug rendered Home's blocks on every tab for a full day
   behind a green suite. Fixed by asserting computed visibility where it must be absent.
-- **The R24.2 landing assertions**: "target top in viewport" passed with the title
+- **The R24.2 landing assertions** — **fourth face**: "target top in viewport" passed with the title
   hidden under the sticky header — which is precisely how the offset bug shipped green.
   Fixed by asserting the first VISIBLE title sits below the chrome's bottom edge.
-- **The intermittent assertion is the same liability** (user ruling, Aug 11 2026). A test
+- **The intermittent assertion is the same liability** — **fifth face** (user ruling, Aug 11 2026). A test
   that fails at random teaches the operator to ignore failures, which is the same damage
   as a test that cannot fail. The incident: `[R18.1]` compared the whole paper book's
   length across a rescan, folding the dedup rule it claimed to test together with the
@@ -652,7 +818,7 @@ Named instances, all shipped green:
   holds under every stratum ("no family is open twice"), while rotation is tested on its
   own with the cycle injected. Instrumentation that makes a failure name its own cause
   stays even once the flake is gone.
-- **The simultaneity assertion** (Aug 12 2026), a second instance of the same class,
+- **The simultaneity assertion** — **sixth face** (Aug 12 2026), a second instance of the same class,
   found by accident while seeding an unrelated defect. `[R40.1]` compared
   `planHorizonH()` against `gapHoursAt(Date.now())` with a tolerance of `1e-9` hours —
   3.6 microseconds. `planHorizonH()` reads the clock internally, so the assertion was
@@ -664,7 +830,7 @@ Named instances, all shipped green:
   what "two reads moments apart" actually claims. A tolerance tight enough to assert
   clock-simultaneity is testing the clock, not the behaviour.
 
-- **The assertion that re-implements what it tests** (user ruling, Aug 12 2026). A probe
+- **The assertion that re-implements what it tests** — **seventh face** (user ruling, Aug 12 2026). A probe
   asserted that the per-stratum sampling counters summed correctly — but it computed the
   counts itself, in the probe, rather than calling the production path. It passed with
   the bug fully intact in `index.html`, because the bug was in code the assertion never
@@ -681,7 +847,7 @@ Named instances, all shipped green:
   means the tell is worth checking on every new assertion, not just when something feels
   off: **if a probe line constructs an input the product would have constructed, the
   product's constructor is untested.**
-- **Dead safeguards and dead seeds** (user ruling, Aug 12 2026). Three instances, one
+- **Dead safeguards and dead seeds** — **eighth face** (user ruling, Aug 12 2026). Three instances, one
   root — the same root the whole section now carries: **a green result can mean the test
   never ran.**
 
@@ -716,8 +882,9 @@ Named instances, all shipped green:
   and when a batch is unavoidable, re-run any assertion that did not fail in isolation
   before counting it as proven.**
 
-- **The broad-container assertion** (user ruling, Aug 12 2026) — the face of the root that
-  is *ran, but passed for the wrong reason*. **The tell: an assertion matching against a
+- **The broad-container assertion** — **ninth face** (user ruling, Aug 12 2026), and the
+  one that carries the *ran, but passed for the wrong reason* half of the root. **The tell:
+  an assertion matching against a
   container broader than the thing under test.** `[R49.2]` asserted that a specific
   per-gate fill rate carries its cohort split by testing `/watchlist 100% of 2/` against
   the whole page's HTML — which any other blend anywhere on that page would have
@@ -729,21 +896,8 @@ Named instances, all shipped green:
   container that still contains the property. If the assertion would pass with the
   property deleted from its subject but present elsewhere, the container is too broad.**
 
-- **Presence of the right phrase is not absence of the wrong one** (Aug 13 2026) — the
-  eighth face, found while seeding `[R62.6]` and not by suspecting it. The assertion
-  checked that the export's touch-ledger note says the schedule is "unverified rather
-  than false" when no walk-ups are recorded. Seeding the defect — rewriting the note's
-  FIRST half to claim *"the configured schedule is being followed"* — left the asserted
-  phrase in the second half untouched, so **the suite stayed green while the file
-  asserted the exact opposite of the rule it was policing.** A green run there reads
-  identically to a weak assertion and to a dead seed, and it is neither: the assertion
-  ran, on real output, and permitted the contradiction. **An assertion about what copy
-  CLAIMS must forbid the contradicting claim as well as require the correct one** — the
-  absence half of the scoping ruling, applied to sentences instead of to surfaces. Fixed
-  by adding the negative match; the old form passes the seed and the new form fails it,
-  which is the discrimination the seventh face demands.
-- **A seed that fails a form the fix was meant to PRESERVE proves nothing** (user ruling,
-  Aug 12 2026) — the seventh face, and the mirror image of the dead seed. When a fix
+- **A seed that fails a form the fix was meant to PRESERVE proves nothing** — **tenth
+  face** (user ruling, Aug 12 2026), the mirror image of the dead seed. When a fix
   replaces a weak assertion with a stronger one, the seed has to DISCRIMINATE: the old
   form passes, the new form fails. A seed that fails **both** has not demonstrated the
   fix; it has demonstrated that **the fixture cannot distinguish the two forms**, and the
@@ -755,6 +909,19 @@ Named instances, all shipped green:
   carrying that second blend, so the scoping test cannot quietly become untestable again.
   Where the dead seed changes nothing, this one changes too much; both report as proof.
   **The tell: a seed whose failure list includes assertions you expected to stay green.**
+- **Presence of the right phrase is not absence of the wrong one** — **eleventh face**
+  (Aug 13 2026), found while seeding `[R62.6]` and not by suspecting it. The assertion
+  checked that the export's touch-ledger note says the schedule is "unverified rather
+  than false" when no walk-ups are recorded. Seeding the defect — rewriting the note's
+  FIRST half to claim *"the configured schedule is being followed"* — left the asserted
+  phrase in the second half untouched, so **the suite stayed green while the file
+  asserted the exact opposite of the rule it was policing.** A green run there reads
+  identically to a weak assertion and to a dead seed, and it is neither: the assertion
+  ran, on real output, and permitted the contradiction. **An assertion about what copy
+  CLAIMS must forbid the contradicting claim as well as require the correct one** — the
+  absence half of the scoping ruling, applied to sentences instead of to surfaces. Fixed
+  by adding the negative match; the old form passes the seed and the new form fails it,
+  which is the discrimination the tenth face demands.
 
 ### The seeding precondition (global rule — user ruling, Aug 12 2026)
 

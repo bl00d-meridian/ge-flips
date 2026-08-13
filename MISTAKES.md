@@ -49,9 +49,85 @@ newest-first, so a new incident takes the next unused number and goes at the top
 | `REMOVAL-SWEEP` | A deleted feature's mentions survived it |
 | `STALENESS` | A long-lived client judged fresh data against stale inputs, or could not see its own age |
 
+## Which patterns are now law
+
+Counted by tag on 2026-08-13 and ruled the same day. `TEST-SUITE` (34 across eleven named
+faces), `CLAMP` (6), `POOLING` (10), `SILENT-STATE` (16), `COMPOSITION` (26),
+`UNOBSERVED` (5), `INTERROGABILITY` (4), `STALENESS` (4), `CAUSALITY` (4), `ORPHAN` (4),
+`LEDGER-ONE-WAY` (3) and `CLAIMS-VS-CODE` (12) are BINDING rules in CLAUDE.md with
+detectors. `RESTRAINT-LIFT` (2) is BINDING on the detector limb (scan 6). `REIMPL` (4) is a
+face of `TEST-SUITE`, not a separate law, and `CLAMP` is both a face and a law in its own
+right — counted once, in `TEST-SUITE`'s 34, and reported separately.
+
+Still evidence, and why: `SCOPE-NAMING` (2) is the prophylactic at the top of CLAUDE.md,
+which governs how rules are written rather than what any rule says, so it sits above the
+split rather than inside it. `EVIDENCE-ROUTING` (1) and `CONSENT` (1) are one instance from
+the count limb and have no detector. `REMOVAL-SWEEP` (1 tagged, 2 in substance — M110 is
+the same root filed under `LEDGER-ONE-WAY`) is the closest to promotion: **one more and it
+qualifies.**
+
 ---
 
 # 2026-08-13
+
+### M133 · A BINDING rule claimed recurrence it could not evidence
+2026-08-13 · found by: graduation audit · pattern: `CLAIMS-VS-CODE`
+
+*"Known repeated bug class: gates that re-punish what sizing already priced in."* The
+backfill searched the whole repo and found **zero** substantiated instances — every
+`double-count` in the tree is a different defect (bank-plus-realized sizing, the funnel's
+negative residual, the attention denominator). Root cause: the entry was written from
+recollection at a moment when there was no evidence layer to check it against, and a
+constitution with no ledger under it cannot tell a remembered defect from an observed one.
+Consequence: unearned authority — the phrase *known repeated* is the strongest claim the
+constitution makes about its own history, and it was resting on nothing. The claim was
+**struck** rather than merely demoted; the underlying guidance survives without it.
+
+Substantiated from: `audits/AUDIT-2026-08-13-graduation.md` §2b; `grep -rin "double-count"`
+over the repo returns four hits, none of them this defect.
+
+### M132 · One root was written in three places, so its sixteen instances never accumulated
+2026-08-13 · found by: graduation audit · pattern: `SCOPE-NAMING`
+
+*A component reports nothing where it should report that it HAS nothing* lived as a BINDING
+entity-state rule, a never-fed-aggregate case-law section, and a stalled-generator finding
+in an audit report. Each read as a separate lesson, so no entry ever carried more than a
+handful of instances and the pattern's real size — **16, the largest behind any single
+rule** — was invisible until the incidents were tagged by root cause. Root cause: the
+prophylactic ("name the property, not the surface") governs how a *new* rule is written and
+says nothing about **merging rules already written about the same property from different
+angles.** Consolidated into one BINDING entry carrying all five shapes and all sixteen
+instances.
+
+Substantiated from: `audits/AUDIT-2026-08-13-graduation.md` §2c; CLAUDE.md BINDING (the
+consolidated entry) and the two case-law sections that now defer to it.
+
+### M131 · The test-suite face list had eleven shapes and ordinals reaching eight
+2026-08-13 · found by: graduation audit · pattern: `LEDGER-ONE-WAY`
+
+Two ordinals ("seventh", "eighth") appeared out of file order, one face was unnumbered, and
+the highest ordinal was three short of the list's own length. **The count is the whole use
+the list is put to** — a graduation argument rests on how many times a shape has recurred —
+so a numbering that does not match its own list cannot support the argument it exists for.
+Same defect class as the requirements pairing (M110/M111): a ledger nobody checked in one
+direction. Renumbered against file order, with the two out-of-order bullets physically
+swapped so the ordinals and the list agree.
+
+Substantiated from: `audits/AUDIT-2026-08-13-graduation.md` §2c; CLAUDE.md Verification,
+the renumbering note.
+
+### M130 · The integration-audit scan list had no scan 9
+2026-08-13 · found by: graduation audit · pattern: `LEDGER-ONE-WAY`
+
+The list ran 1–8, then 10, then 11. A BINDING rule cited "integration-audit scan 10 below"
+as its detector, so **the citation named a position rather than a check** — and a position
+in a list with a hole in it is not a stable reference. Nothing was missing operationally;
+the clamp scan existed and ran. But a detector cited by number, in a list whose numbers
+skip, is one renumbering away from pointing at the wrong scan. Renumbered contiguously and
+every citation re-pointed.
+
+Substantiated from: `audits/AUDIT-2026-08-13-graduation.md` §3; CLAUDE.md integration-audit
+preamble.
 
 ### M129 · Analysis exports carrying the trading record sat loose in the repo tree
 2026-08-13 · found by: inspection · pattern: `COMPOSITION`
