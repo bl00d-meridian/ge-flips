@@ -569,8 +569,14 @@
     ok("[R9.1] multi-touch walk-back says so in the quote text",
        /buffer fills over ~\d+ touches at current flow/.test(invQuoteText(q9)), invQuoteText(q9));
     // placed state: standing record, elapsed, fill counters
-    const qp9 = placeQuote(9001);
-    ok("[R9.2] placed persists a timestamped standing record",
+    /* PLACEMENT IS BENCHED (mm ruling, Aug 14 2026 — its refusal is R79.1's
+       assertion). The standing-record MACHINERY is what the bench keeps, so
+       this fixture constructs the record production persists — the same
+       shape placeQuote wrote — and everything below tests the kept half. */
+    const qp9 = { t: Date.now(), hzH: Math.round(planHorizonH() * 100) / 100, bid: q9.bid, ask: q9.ask,
+                  sellQty: q9.sellQty, buyQty: q9.buyQty, sellFilled: 0, buyFilled: 0 };
+    w9.quotePlaced = qp9;
+    ok("[R9.2] the standing record persists timestamped with per-leg counters",
        !!qp9 && !!w9.quotePlaced && w9.quotePlaced.t > 0 && w9.quotePlaced.buyQty === q9.buyQty
        && w9.quotePlaced.sellQty === q9.sellQty && w9.quotePlaced.buyFilled === 0 && w9.quotePlaced.sellFilled === 0,
        JSON.stringify(w9.quotePlaced));
@@ -605,8 +611,10 @@
        invCostGp(9001) === 10 * 4100 + 10 * 4050 + (q9.buyQty - 10) * 4000,
        JSON.stringify({cost: invCostGp(9001), lots: DB.invLots}));
     // aging rules apply to placed quote legs on the position clocks
-    placeQuote(9001);
-    w9.quotePlaced.t = Date.now() - (2 * FILLH() + 0.5) * 3600e3;
+    // (constructed directly — placement is benched; the ageing machinery is kept)
+    w9.quotePlaced = { t: Date.now() - (2 * FILLH() + 0.5) * 3600e3,
+      hzH: Math.round(planHorizonH() * 100) / 100, bid: q9.bid, ask: q9.ask,
+      sellQty: q9.sellQty, buyQty: q9.buyQty, sellFilled: 0, buyFilled: 0 };
     DB.positions = []; S.pendingFill = null;
     const nm9 = nextMove();
     ok("[R9.2] stale placed quote legs surface in the NOW bar",
@@ -2403,8 +2411,13 @@
     DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
     const planF6 = buildPlan();
     const benchF6 = planF6.bench.find(b => b.id === 9001);
-    ok("[R16.1] inventory-mode item benches from the plan — one item, one mandate",
-       !planF6.picks.some(p => p.id === 9001) && !!benchF6 && /inventory mode owns this item/.test(benchF6.failed),
+    /* Under the mm bench (Aug 14 2026) the one-item-one-mandate property
+       holds exactly where a mandate still EXISTS — this fixture has a
+       standing quote leg in flight, so the item stays benched with the
+       unwind named; the nothing-in-flight reversion is R79.1's assertion. */
+    ok("[R16.1] an inventory-mode item with in-flight legs benches from the plan — one item, one mandate, the unwind named",
+       !planF6.picks.some(p => p.id === 9001) && !!benchF6
+       && /mm benched, unwind in flight/.test(benchF6.failed),
        JSON.stringify({ picks: planF6.picks.map(p => p.id), bench: benchF6 && benchF6.failed }));
     // migration announces itself only when it moves a number
     DB.decisionLog = DB.decisionLog.filter(x => x.subject !== "committed-capital accounting");
@@ -8915,6 +8928,269 @@
     S.lastPlanPicks = keep78.planPicks; S.lastPlanAt = keep78.planAt;
   } catch(e){
     out.push("FAIL fill sim on the frontier :: " + (e && e.stack || e));
+  }
+
+  /* ═══ R24.3 — the log-flip press LANDS on the form (fix, Aug 14 2026) ════
+     Structural, not pixel: the form is the landing target (it carries the
+     landing flash, applied by navLand — the one implementation), the qty
+     input holds focus, and the panel BELOW the form is NOT the target. A
+     layout-box assertion here would test the renderer, per the R62 precedent;
+     the real-press artifact on the real build measures the viewport. */
+  try {
+    const keep24 = { tab: S.tab, sub: S.sub, latest: S.latest[9001], hour: S.hour[9001],
+      byId: S.byId.get(9001), latestAt: S.latestAt, pend: S.pendingFill };
+    const addedWatch24 = !DB.watch.some(w => w.id === 9001);
+    const now24 = Math.floor(Date.now() / 1000);
+    S.byId.set(9001, { i: 9001, n: "Probe alpha", l: 100, m: 0, v: 0, a: 0 });
+    S.latest[9001] = { high: 4400, low: 4000, highTime: now24 - 60, lowTime: now24 - 120 };
+    S.hour[9001] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 500, lowPriceVolume: 500 };
+    S.latestAt = Date.now();
+    if (addedWatch24) DB.watch.push({ id: 9001, qty: null });
+    window.scrollTo(0, 400);
+    logFromWatch(9001, 5);
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    ok("[R24.3] the log-flip press lands ON the form — the form is the landing target and holds focus; the panel below it is not the target",
+       document.activeElement === $("#lQty")
+       && $("#logForm").classList.contains("landed")
+       && !$("#eqPanel").classList.contains("landed")
+       && S.tab === "trade" && S.sub === "log",
+       JSON.stringify({ active: document.activeElement && document.activeElement.id,
+         formLanded: $("#logForm").classList.contains("landed"),
+         eqLanded: $("#eqPanel").classList.contains("landed") }));
+    if (addedWatch24) DB.watch = DB.watch.filter(w => w.id !== 9001);
+    if (keep24.latest) S.latest[9001] = keep24.latest;
+    if (keep24.hour) S.hour[9001] = keep24.hour;
+    if (keep24.byId) S.byId.set(9001, keep24.byId);
+    S.latestAt = keep24.latestAt; S.pendingFill = keep24.pend;
+    S.tab = keep24.tab; S.sub = keep24.sub;
+  } catch(e){
+    out.push("FAIL log-flip landing :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §79 MM MODE BENCHED (user ruling, Aug 14 2026) — disabled, not
+     deleted; the un-bench is pinned so it cannot land silently. ═══ */
+  try {
+    const keep79 = { watch: DB.watch, lots: DB.invLots, latest: S.latest[9001], hour: S.hour[9001],
+      byId: S.byId.get(9001), latestAt: S.latestAt, log: DB.decisionLog, logged: S.mmBenchLogged,
+      pos: DB.positions, tab: S.tab, sub: S.sub };
+    const now79 = Math.floor(Date.now() / 1000);
+    S.byId.set(9001, { i: 9001, n: "Probe alpha", l: 100, m: 0, v: 0, a: 0 });
+    S.latest[9001] = { high: 4400, low: 4000, highTime: now79 - 60, lowTime: now79 - 120 };
+    S.hour[9001] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    S.latestAt = Date.now();
+    DB.positions = [];
+    DB.watch = [{ id: 9001, qty: null, invTarget: 50 }];
+    DB.invLots = [];
+    const pl79a = buildPlan();
+    ok("[R79.1] the mm bench is pinned and no new cycle can start — placeQuote refuses, and an enrolled item with nothing in flight competes in the plan without the ownership bench",
+       MM_BENCHED === true
+       && placeQuote(9001) === null && !DB.watch[0].quotePlaced
+       && !pl79a.bench.some(b => b.id === 9001 && /inventory mode owns|mm benched/.test(b.failed || "")),
+       JSON.stringify({ bench: pl79a.bench.filter(b => b.id === 9001).map(b => b.failed) }));
+    DB.invLots = [{ itemId: 9001, qty: 40, cost: 4000, t: Date.now() }];
+    const pl79b = buildPlan();
+    ok("[R79.1] an enrolled item with an unwind in flight stays benched from the plan, the unwind named inline",
+       pl79b.bench.some(b => b.id === 9001 && /mm benched, unwind in flight/.test(b.failed || "")
+         && /40 units held/.test(b.failed || "")),
+       JSON.stringify(pl79b.bench.filter(b => b.id === 9001).map(b => b.failed)));
+    /* Nothing strands: a standing quote still renders with its resolve
+       controls; with the quote resolved, held lots render the UNWIND line
+       with the bench reason and a sell-down control; and no placement
+       control renders anywhere under the bench. */
+    DB.watch[0].quotePlaced = { t: Date.now() - 3600e3, hzH: 4, bid: 4001, ask: 4399,
+      sellQty: 40, buyQty: 10, sellFilled: 0, buyFilled: 0 };
+    S.tab = "trade"; S.sub = "watch"; renderWatch();
+    const h79a = document.querySelector("#planList").innerHTML;
+    renderInv();
+    const inv79 = document.querySelector("#invSub").textContent;
+    delete DB.watch[0].quotePlaced;
+    renderWatch();
+    const h79b = document.querySelector("#planList").innerHTML;
+    ok("[R79.2] nothing strands under the bench — the standing quote keeps its resolve controls, held lots render the UNWIND line with the reason inline, the panel states the bench, and no placement control renders",
+       /standing/.test(h79a) && new RegExp('data-invsell="9001"').test(h79a)
+       && new RegExp('data-qclear="9001"').test(h79a)
+       && /BENCHED \(your ruling, Aug 14 2026\)/.test(inv79)
+       && /MM UNWIND/.test(h79b) && /mm mode is benched/.test(h79b)
+       && new RegExp('data-invsell="9001"').test(h79b)
+       && !/data-qplace=/.test(h79a) && !/data-qplace=/.test(h79b),
+       JSON.stringify({ standing: /standing/.test(h79a), unwind: /MM UNWIND/.test(h79b), inv: inv79.slice(0, 80) }));
+    S.mmBenchLogged = 0; DB.decisionLog = [];
+    mmBenchLog();
+    const e79 = DB.decisionLog.find(x => x.subject === MM_BENCH_KEY);
+    S.mmBenchLogged = 0; mmBenchLog();   // the store guard, not the session flag, is what makes it once
+    ok("[R79.3] the bench is decision-logged ONCE with its true basis — attention cost, attribution impossible — and the in-flight snapshot for the cutover ruling; written by the tool, decided by the user",
+       !!e79 && e79.auto === 1 && e79.by === "user"
+       && /attention cost/.test(e79.reason) && /CANNOT be attributed/.test(e79.reason)
+       && /Probe alpha/.test(e79.reason) && /held 40/.test(e79.reason)
+       && DB.decisionLog.filter(x => x.subject === MM_BENCH_KEY).length === 1,
+       JSON.stringify(e79).slice(0, 400));
+    DB.watch = keep79.watch; DB.invLots = keep79.lots; DB.positions = keep79.pos;
+    if (keep79.latest) S.latest[9001] = keep79.latest;
+    if (keep79.hour) S.hour[9001] = keep79.hour;
+    if (keep79.byId) S.byId.set(9001, keep79.byId);
+    S.latestAt = keep79.latestAt; DB.decisionLog = keep79.log; S.mmBenchLogged = keep79.logged;
+    S.tab = keep79.tab; S.sub = keep79.sub;
+  } catch(e){
+    out.push("FAIL mm bench :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §80 THE SCORER SURFACE (stage 1e, ruled Aug 14 2026) ════════════════
+     Verdict-first, horizon-grouped, readiness in the ruled words, every
+     number opening to rows through the shared drill primitive (asserted at
+     the DRILLS spec — structural, not pixel). The IDB-backed figures come
+     from a held S.scorerSurf fixture so every expected number is exact. */
+  try {
+    for (let i = 0; i < 100 && !t1Loaded; i++) await new Promise(r => setTimeout(r, 50));
+    S.t1Pending = null;
+    const keep80 = { t2: DB.scorerT2, trips: S.scorerTrips, surf: S.scorerSurf, busy: S.scorerSurfBusy,
+      tab: S.tab, sub: S.sub, fT1vol: DB.filtersT1.vol, tick: DB.tickFloor,
+      scored: S.scoredBucket, t1l: S.t1LastBucket, t0l: S.t0LastBucket };
+    DB.filtersT1.vol = 1000; DB.tickFloor = 15;
+    const ctl80 = cfgHash(liveMarketConfig());
+    DB.scorerT2 = {};
+    const c80 = scorerCell(ctl80, liveMarketConfig());
+    c80.cycles = 10; c80.fundedItemCycles = 30; c80.fundedNoChart = 30;
+    c80.cyclesByHour[10] = 4; c80.fundedByHour[10] = 4;    // trough: 1/cycle
+    c80.cyclesByHour[22] = 6; c80.fundedByHour[22] = 26;   // peak: 4.3/cycle
+    c80.ids = [9761, 9762]; c80.distinct = 2;
+    c80.blFunded = 2; c80.blIds = [9763];
+    c80.firstAt = Date.now() - 3 * 86400e3;
+    const mk80econ = (net, gross, top) => ({ n: 3, filled: 1, partial: 1, forced: 1, unfilled: 0, unobs: 1, insuf: 2,
+      vbl: 0, net, netS: net - 50, netL: net + 50, gross, top, pumpN: 1, pumpNet: 40, ncN: 3 });
+    c80.econ = {};
+    for (const cap of SCORER_CAPTURES){
+      c80.econ[scorerEconKey(6, 0.5, cap, SCORER_FILL_V)] = mk80econ(900, 2000, 600);    // 30% of gross
+      c80.econ[scorerEconKey(9.5, 0.5, cap, SCORER_FILL_V)] = mk80econ(1700, 4000, 800);
+    }
+    const cellB80 = scorerConfigs().find(c => !c.control);
+    const cB80 = scorerCell(cellB80.hash, cellB80.cfg);
+    cB80.econ = {};
+    for (const cap of SCORER_CAPTURES)
+      cB80.econ[scorerEconKey(6, 0.5, cap, SCORER_FILL_V)] = { n: 0, filled: 0, partial: 0, forced: 0,
+        unfilled: 0, unobs: 1, insuf: 2, vbl: 0, net: 0, netS: 0, netL: 0, gross: 0, top: 0, pumpN: 0, pumpNet: 0, ncN: 0 };
+    S.scorerTrips = new Map();
+    const surfFix = { at: Date.now(),
+      m5: { observed: 100, expected: 864 }, h1: { observed: 48, expected: 168 },
+      rdiffN: 42, rdiffFirst: Date.now() - 3 * 86400e3 + 3600e3,
+      t1Total: 7, t1Rows: [
+        { id: 9761, part: 0.5, hzH: 6, fv: 1, t: Date.now() - 3600e3, hour: 22, qty: 100, pump: 1,
+          cells: [ctl80], vars: SCORER_CAPTURES.map(c => ({ cap: c, state: "filled", buyQ: 100, sellQ: 100 })) },
+        { id: 9762, part: 0.5, hzH: 6, fv: 1, t: Date.now() - 7200e3, hour: 22, qty: 50, pump: 0,
+          cells: [ctl80], vars: SCORER_CAPTURES.map(c => ({ cap: c, state: "unfilled", buyQ: 0, sellQ: 0 })) } ] };
+    S.scorerSurf = surfFix; S.scorerSurfBusy = true;   // hold the loader — the fixture is what renders
+    S.scoredBucket = Date.now() - 120e3; S.t1LastBucket = Date.now() - 120e3; S.t0LastBucket = Date.now() - 60e3;
+    setTab("trade", "scorer"); renderScorerView();
+    ok("[R80.1] the Scorer sub-view renders only on its own sub — visible there, absent elsewhere (computed visibility, per the scoping standard)",
+       (() => { const el = document.getElementById("tab-scorer");
+                const onScorer = el.offsetParent !== null;
+                setTab("trade", "watch"); const onWatch = el.offsetParent !== null;
+                setTab("trade", "scorer"); renderScorerView();
+                return onScorer && !onWatch && !!document.querySelector('[data-sub="scorer"]'); })(),
+       "visible on scorer, hidden on watch");
+    const v80 = document.getElementById("scorerVerdict");
+    ok("[R80.2] the first screen leads with the verdict — the question, one answer sentence, then the four waiting-on lines with their real numbers",
+       (() => { const first = v80.firstElementChild;
+                return !!first && first.classList.contains("vhead")
+                  && /Can this instrument tell me anything yet\?/.test(first.querySelector(".vq").textContent)
+                  && /measuring, not yet ranking/i.test(v80.textContent)
+                  && /accruing/.test(v80.textContent) && /10 scoring cycles/.test(v80.textContent)
+                  && /100 of 864 five-minute buckets/.test(v80.textContent)
+                  && /2 of 7 OBSERVED days/.test(v80.textContent)
+                  && /cannot rank yet/.test(v80.textContent) && /frontier-class/.test(v80.textContent)
+                  && /day 3 — 42 rows/.test(v80.textContent)
+                  && /observes only while the app is open/.test(v80.textContent); })(),
+       v80.textContent.slice(0, 300));
+    const errTxt = (() => { S.scorerSurf = { at: Date.now(), err: "boom" }; renderScorerView();
+      return document.getElementById("scorerVerdict").textContent; })();
+    const loadTxt = (() => { S.scorerSurf = null; renderScorerView();
+      return document.getElementById("scorerVerdict").textContent; })();
+    S.scorerSurf = surfFix; renderScorerView();
+    ok("[R80.2b] a failed archive read renders could-not-check — treat as unread, never as current — and a pending one says it is reading",
+       /could not check/.test(errTxt) && /boom/.test(errTxt) && /treat as unread/.test(errTxt)
+       && !/100 of 864/.test(errTxt)
+       && /reading the archive…/.test(loadTxt),
+       errTxt.slice(0, 200));
+    const e80 = document.getElementById("scorerEcon");
+    ok("[R80.3] wherever a ranking would render the verdict renders instead, in the ruled words — and no ordering of cells renders anywhere on the surface",
+       /Cannot rank yet/.test(e80.textContent) && /calibration flips inside the tape window/.test(e80.textContent)
+       && !/leaderboard|ranked #|\brank 1\b/i.test(document.getElementById("tab-scorer").textContent)
+       && !e80.querySelector("ol"),
+       e80.textContent.slice(0, 200));
+    const h6box = e80.querySelector('[data-hz="6"][data-part="50"]');
+    const h95box = e80.querySelector('[data-hz="9.5"][data-part="50"]');
+    ok("[R80.4] horizons render as separate stamped groups — the same cell's h6 and h9.5 figures sit apart with different values, and no combined figure renders",
+       !!h6box && !!h95box
+       && /850/.test(h6box.textContent) && !/1,650|1650/.test(h6box.textContent)
+       && /1,650|1650/.test(h95box.textContent)
+       && !/across (both )?horizons|combined horizon/i.test(e80.textContent),
+       "h6 and h9.5 grouped apart");
+    const hoursSpec = DRILLS.get("scorer:hours:" + ctl80);
+    const blSpec = DRILLS.get("scorer:bl:" + ctl80);
+    const g80 = document.getElementById("scorerGrid");
+    ok("[R80.5] the grid's pooled per-cycle average renders WITH its hour extremes inline and opens to all 24 bands; flow and stock both render; the canary opens to its rows and reads a real zero elsewhere",
+       /peak 22:00Z 4\.3/.test(g80.textContent) && /trough 10:00Z 1/.test(g80.textContent)
+       && !!hoursSpec && hoursSpec.rows.length === 24
+       && hoursSpec.rows.filter(r => r.avg === "unobserved").length === 22
+       && /UNOBSERVED hour/i.test(hoursSpec.note || "")
+       && !!blSpec && blSpec.rows.length === 1
+       && /a real reading, not an unfed counter/.test(g80.innerHTML),
+       JSON.stringify({ bands: hoursSpec && hoursSpec.rows.length, note: (hoursSpec || {}).note }));
+    ok("[R80.6] a cell's econ state renders under its own name — counted figures with concentration on GROSS, only-exclusions with their split, and an unfed key says nothing has fed it",
+       /30% of gross|30%\s?of gross/.test(h6box.textContent.replace(/\s+/g, " "))
+       && /only exclusions — 2 under the observation floor/.test(h6box.textContent)
+       && (() => { const p25 = e80.querySelector('[data-hz="6"][data-part="25"]');
+             return !!p25 && /No cell carries econ at this key yet/.test(p25.textContent); })(),
+       h6box.textContent.slice(0, 250));
+    const tripsSpec = DRILLS.get("scorer:trips:" + ctl80 + ":6:0.5:0.15");
+    ok("[R80.7] a bucket's trips open with the truncation declared — the loaded window, the cap, carried-of-total, and the beyond-window re-derivation path",
+       !!tripsSpec && tripsSpec.rows.length === 2
+       && /capped at 500/.test(tripsSpec.note) && /2 carried of 7 rows total/.test(tripsSpec.note)
+       && /re-derive from T0 replay/.test(tripsSpec.note)
+       && tripsSpec.rows.some(r => r.pump === "pump-stamped"),
+       JSON.stringify({ rows: tripsSpec && tripsSpec.rows.length, note: (tripsSpec || {}).note }));
+    const X80 = analysisScorer();
+    const ctlCell80 = X80.cells.find(c => c.control);
+    ok("[R80.8] the export's header states what was in force and what was truncated — the ruled constants, the cannot-rank words, coverage, and rows riding with every rollup",
+       X80.header.captureGraded === false && /cannot rank yet/.test(X80.header.ranking)
+       && X80.header.concentrationCeilingOnGross === 0.5
+       && X80.header.horizonsH.join() === "6,9.5"
+       && /2 carried of 7 total/.test(X80.header.truncations.closedTrips)
+       && ctlCell80.cyclesByHour.length === 24
+       && ctlCell80.econ[scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V)].net === 900
+       && ctlCell80.blacklistCanary.wouldFundItemCycles === 2
+       && Array.isArray(X80.closedTrips) && X80.closedTrips.length === 2
+       && X80.openTrips.length === 0,
+       JSON.stringify(X80.header.truncations));
+    const X80b = (() => { S.scorerSurf = null; const x = analysisScorer(); S.scorerSurf = surfFix; renderScorerView(); return x; })();
+    ok("[R80.8b] with the ledger unread this session the export SAYS so — not-loaded, never a stale guess",
+       /not loaded this session/.test(X80b.header.archiveCoverage72h)
+       && /NOT carried/.test(X80b.header.truncations.closedTrips)
+       && typeof X80b.closedTrips === "string" && /not loaded/.test(X80b.closedTrips),
+       JSON.stringify(X80b.header.archiveCoverage72h));
+    const stateWith = document.getElementById("scorerVerdict").textContent;
+    S.scoredBucket = 0; S.t1LastBucket = 0; S.t0LastBucket = 0;
+    renderScorerView();
+    const stateFresh = document.getElementById("scorerVerdict").textContent;
+    ok("[R80.9] the generator renders its own state whether or not anything is wrong — ages when stamped, not-yet-this-session after a reload, and it says why it always renders",
+       /Scorer state:/.test(stateWith) && /no failure streaks/.test(stateWith)
+       && /not yet this session/.test(stateFresh)
+       && /renders whether or not anything is wrong/.test(stateFresh),
+       stateFresh.slice(Math.max(0, stateFresh.indexOf("Scorer state:")), Math.max(0, stateFresh.indexOf("Scorer state:")) + 160));
+    ok("[R80.10] every scorer term ships its three-field glossary entry in this same commit, and the surface marks the vocabulary",
+       ["sc-frontier", "sc-flowstock", "sc-lifecycle", "sc-cannotrank", "sc-gross", "sc-hourband", "sc-canary", "sc-sixgate", "sc-rdiff"]
+         .every(id => GLOSSARY.some(g => (g.entries || []).some(en => en.id === id && en.what && en.from && en.do)))
+       && /data-glt="sc-frontier"/.test(document.getElementById("scorerVerdict").innerHTML)
+       && /data-glt="sc-gross"/.test(document.getElementById("scorerEcon").innerHTML),
+       "glossary coverage + inline marks");
+    ok("[R80.11] the weekly review keeps a one-line scorer summary that links through — the pull-surface consolidation rule",
+       CHECKLISTS.weekly.steps.some(s => s[2] === "scorer#scorerVerdictPanel" && s[3] === "scorerline"),
+       JSON.stringify(CHECKLISTS.weekly.steps.map(s => s[3] || "")));
+    DB.scorerT2 = keep80.t2; S.scorerTrips = keep80.trips; S.scorerSurf = keep80.surf; S.scorerSurfBusy = keep80.busy;
+    S.scoredBucket = keep80.scored; S.t1LastBucket = keep80.t1l; S.t0LastBucket = keep80.t0l;
+    DB.filtersT1.vol = keep80.fT1vol; DB.tickFloor = keep80.tick;
+    setTab(keep80.tab, keep80.sub);
+  } catch(e){
+    out.push("FAIL scorer surface :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

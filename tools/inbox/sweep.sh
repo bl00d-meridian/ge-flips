@@ -162,6 +162,7 @@ sweep_class "analysis-paper"       "analysis-paper-*.json"       "$INBOX"
 sweep_class "analysis-prospecting" "analysis-prospecting-*.json" "$INBOX"
 sweep_class "analysis-gates"       "analysis-gates-*.json"       "$INBOX"
 sweep_class "analysis-calibration" "analysis-calibration-*.json" "$INBOX"
+sweep_class "analysis-scorer"      "analysis-scorer-*.json"      "$INBOX"
 sweep_class "analysis-all"         "analysis-all-*.json"         "$INBOX"
 sweep_class "state-backup"         "ge-flips-*.json"             "$INBOX"
 # flags-pending keeps its existing home: the briefing procedure reads it there

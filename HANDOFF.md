@@ -1,12 +1,47 @@
-# QUEUE — session close, 2026-08-14 (second session: stage 1d + the §6 rulings)
+# QUEUE — session close, 2026-08-14 (third session: stage 1e + two directives)
 
-**Read this before starting anything.** Nothing here is committed; the working tree
-carries both Aug-14 sessions' changes. Suite state at close: **PROBE-PASS — 1,055
-assertions, 357 requirement ids asserted, pairing clean both directions, seeding log
-complete with no unknown-status entries** (31 seeds A–AJ plus one live catch, stage
-report §5/§9). Deployment (post-rulings): **DEPLOY-OK — 804 trips (134 frontier items ×
-3 participation × 2 ruled horizons, h6/h9.5 split exactly 402/402) opened on the first
-real bucket, 1 second after a real boot.**
+**Read this before starting anything.** Stage 1d is committed and pushed (`c3fc572`);
+the working tree carries stage 1e plus the log-flip landing fix and the mm bench,
+uncommitted. Suite state at close: **PROBE-PASS — 1,073 assertions, BOTH viewports
+(1200×900 and 390×844), pairing clean both directions; 17 further seeds this session
+(12 §80, 4 §79, 1 R24.3), all bit, one at a time.** Deployment: **DEPLOY-OK at 1.0s on
+a phone-viewport real boot — 744 trips (124 frontier × 3 × 2, h6/h9.5 split 372/372) —
+with the Scorer's first screen captured as the walk-up-test artifact** (stage report
+§3; it reads as the dictated sentence-plus-four-lines, and it caught two live copy
+defects that were fixed and re-greened).
+
+## STAGE 1e IS DONE — `audits/STAGE1E-2026-08-14-scorer-surface.md` is the record
+
+Trade → Scorer (seventh sub-view, pull-surface class): verdict-first first screen
+(question → one sentence → accruing / chart-gates-N-of-7-observed / cannot-rank-yet in
+the ruled words / rdiff-day-N), the always-rendering state line, the grid (pooled
+average WITH extremes inline + all 24 bands opening, flow + stock, six-gate share, the
+canary), econ per (horizon × participation) in structural `[data-hz]` containers with
+per-capture-lifecycle figures, concentration on GROSS, the three econ states named,
+trips drills with declared truncation; the `analysis-scorer` export (collector class
+registered, CLAUDE.md table updated); nine glossary entries same-commit, marked
+inline; the weekly review one-liner. **Staged stores:** econ + t1 rows consumed (off
+scan 2's re-report list); **rdiff still staged for the cutover gate** (map §2b — the
+verdict line's day-count read is informational). Era-fact tripwire still armed (chart
+wiring not landed; six-gate 100% renders and stamps).
+
+## ALSO IN THIS TREE (mid-turn directives, both done)
+
+- **Log-flip landing fixed** (report §7): the press performed no landing at all —
+  bare focus-scroll, keyboard/geometry-dependent, never chrome-offset. Now lands on
+  the form through the one landing implementation (`navLand`, extracted from navGoto
+  unchanged), both focuses preventScroll. `[R24.3]` seeded; real-press artifact on the
+  phone viewport shows the form title landing 10px below the chrome. Same-class site
+  LISTED, not fixed: the sleeve form's unpadded `scrollIntoView` (#slvFormPanel).
+  FRICTION.md had no entry to close.
+- **MM mode benched** (report §8): disabled until the scorer stands, not deleted.
+  Measurement honest: **cannot attribute** (no mm stamp on flips, no invTarget
+  history) — the bench rests on attention cost and the decision log records exactly
+  that plus the in-flight snapshot, computed in the user's browser at the benched
+  build's first poll. Nothing strands: standing legs resolve, lots sell down (MM
+  UNWIND lines), panel states the bench; plan reverts per item as its unwind
+  completes. `MM_BENCHED` pinned — the un-bench flips only by ruling (`[R79.1]`, seed
+  S1 turned five assertions red). Per-item state persists for the cutover re-key.
 
 ## STAGE 1d IS DONE — `audits/STAGE1D-2026-08-14-fill-sim.md` is the record
 
@@ -47,19 +82,21 @@ scoped repair, fixed inline).
    reason, so 1e renders per-lifecycle figures without re-deriving it.
    The rulings are decision-logged in the tool (`auto: 1, by: "user"`, asserted).
 
-## NEXT SESSION OPENS WITH 1e — surfaces + exports, drill-decomposable
+## WHAT 1e'S CLOSE UNLOCKS, AND WHAT STILL WAITS
 
-Named obligations carried into 1e's gate (stage report §3/§4/§9): cells open → econ
-buckets → t1 trip rows with the 30d truncation declared and the hour split available
-(the one deliberate within-key pooling); **surfaces group by horizon {6, 9.5} and
-render per-capture-lifecycle figures, never pooled** (the ratified set and the
-three-lifecycle rationale, design doc §9); **wherever a ranking would render, the
-readiness verdict renders "cannot rank yet" in the ruled words until capture is
-graded**; excluded counts open to their trips (4447); a 100% rate renders its
-zero-counterexample claim (5908); the scorer's state line; the staged stores (`t1`
-rows, econ) come off the scan-2 re-report list only when 1e's readers consume them;
-glossary entries for the first scorer-facing terms land with the surfaces; b=100
-deferred. **Chart wiring still pending** ("here or later" — later): the
+- **The retirements HELD "until the scorer's first readable output" are now
+  unlockable** — 1e IS the first readable output. The regime race and the discovery
+  slice's sampling role can now be RULED retired (a ruling, never automatic; the
+  17 EXPIRE-AT-RETIREMENT triage findings die with their surfaces when it lands, and
+  the removal-sweep discipline applies to every surface and copy mention).
+- **1e residual obligations, small:** the 4447/5908 SPLIT halves were restated for 1e
+  and remain open — excluded counts opening to their trips on the SCORER surface
+  (partially covered by the econ exclusions rendering; the drill-through for excluded
+  trips specifically is not built), and the 100%-rate zero-counterexample claim
+  belongs to whatever surface first renders a fill RATE (none does yet — econ renders
+  censuses, not rates). Carry both into the next surface work.
+- **b=100 deferred** until capture calibration (ruled; restated in the export).
+- **Chart wiring** still pending; the era tripwire forces its stanza when it lands. **Chart wiring still pending** ("here or later" — later): the
 pinned era fact `marketStatsFor().tr === null` in `[R76.9]` stays armed; when the wiring
 lands, `fundedNoChart` (cells) and `ncN` (econ) decompose the transition and the stanza
 accounts for it.
@@ -91,7 +128,7 @@ the six rulings recorded there and below. Stage status:
 | **row 23 + flag 3** (consolidated rulings) | **DONE, seeded, deployed** | The canary pair `blFunded`/`blIds` (`[R76.10]`/`[R76.10b]` — discriminating seeds both directions, B proven on the crashed run's own 09:06 report); the reconciliation diff in IDB `rdiff` (DB v2, 90d, `[R77.1–3]`); the boot race found by the deployment check and fixed (`[R76.11]`, **M154**); **DEPLOY-OK — first bucket archived, scored and diffed 2s after boot on the real API** |
 | **fill-tier triage** (mid-session order) | **DONE** | `audits/TRIAGE-2026-08-14-fill-tier.md`: the census's 45 fill-tier findings (the surviving superset of the 32-CONFIRMED roster, which died with the syntheses — M149): **23 TRANSFER** (fold into 1d), **17 EXPIRE-AT-RETIREMENT** (reason per finding; unfixed by design until the retirement ruling), **5 SPLIT** (property re-lands in 1d/1e, assertion dies with its surface) |
 | 1d — fill sim on the frontier + capture probe | **DONE** | `audits/STAGE1D-2026-08-14-fill-sim.md` — §78 (R78.1–R78.15), 26 discriminating seeds + 1 live catch (M155); trip layer + pure shared core + IDB v3 (`t1`/`t1open`) + four-stamp econ keys + verdict terms; 23 TRANSFERs dispositioned; scan 11 clean (20 points); DEPLOY-OK at 1s (804 trips on the first real bucket post-rulings); **the §6 rulings ruled and applied same day** (report §9: horizon set {6, 9.5}, gross-movement ceiling 0.5, cannot-rank-yet readiness pinned, three-lifecycle rationale recorded) |
-| 1e — surfaces + exports, drill-decomposable | NOT STARTED — **opens next session** | zero walk-up cost by construction; b=100 deferred until capture calibration; the scorer's state line belongs here (freshness streams carry it meanwhile); named 1e obligations listed at the top of this file |
+| 1e — surfaces + exports, drill-decomposable | **DONE** | `audits/STAGE1E-2026-08-14-scorer-surface.md` — §80 (R80.1–R80.11), 12 discriminating seeds; Trade → Scorer with the verdict-first first screen (the walk-up test's artifact captured on a phone-viewport real boot), the state line, horizon-grouped per-lifecycle econ on gross concentration, drills with declared truncation, the `analysis-scorer` export + collector class, nine same-commit glossary entries, the weekly one-liner; econ + t1 consumed off the staged list, **rdiff still staged for cutover**; the R38.6 scan and the deployment artifact each caught a live copy defect, both fixed and re-greened |
 
 **The clock's fine print:** T0 accrues only while the app is open. The 7-day chart-gate
 cold start counts OBSERVED coverage, not wall days — `t0Coverage` reports the pair, and a

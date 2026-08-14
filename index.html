@@ -458,6 +458,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <button data-sub="paper" title="The paper book: three ROI-regime curves, the divergence ledger, the overnight-vs-daytime comparison per cohort, and per-gate simulated outcomes — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
       <button data-sub="prospect" title="Where the edge lives: the per-stratum map, the gap band's verdict, the hours ledger's two streams — every number opens to its rows.">Prospecting</button>
       <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
+      <button data-sub="scorer" title="The universe scorer: every mapped item against the 16-cell config grid each 5m bucket, fills simulated on the funded frontier at three capture points and two horizons. A measurement instrument — it admits, funds and caps nothing.">Scorer</button>
     </nav>
 
   <!-- ── paper book sub-view (ruled Aug 11 2026: a working surface, not a
@@ -512,6 +513,27 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="panel" id="gateExcPanel">
       <div class="ph"><h2>Exception lane</h2><span class="sub" id="gateExcSub"></span></div>
       <div id="gateExc"></div>
+    </div>
+  </div>
+
+  <!-- ── universe scorer sub-view (stage 1e, ruled Aug 14 2026): the pull
+       surface for the instrument built in stages 0–1d. Verdict first — the
+       first screen answers "can this instrument tell me anything yet, and if
+       not what is it waiting on" — then the grid, then the fill economics.
+       It presents no rulings; the walk-up attention budget is untouched. ── -->
+  <div class="tsub" id="tab-scorer">
+    <div class="panel" id="scorerVerdictPanel">
+      <div class="ph"><h2>Universe scorer</h2><span class="sub" id="scorerVerdictSub"></span>
+        <span style="margin-left:auto"><button class="sm" data-analysis="scorer" title="Downloads analysis-scorer-&lt;date&gt;.json: the header with every constant and coverage figure in force, all 16 cells + control with their hour bands, econ buckets and the canary, plus the open and recently-closed trip rows behind them — truncations declared. A curated READ file, not the state backup.">⭳ export for analysis</button></span></div>
+      <div id="scorerVerdict"></div>
+    </div>
+    <div class="panel" id="scorerGridPanel">
+      <div class="ph"><h2>The grid — who funds what</h2><span class="sub" id="scorerGridSub"></span></div>
+      <div id="scorerGrid"></div>
+    </div>
+    <div class="panel" id="scorerEconPanel">
+      <div class="ph"><h2>Fill economics — per horizon, per participation, per capture lifecycle</h2><span class="sub" id="scorerEconSub"></span></div>
+      <div id="scorerEcon"></div>
     </div>
   </div>
 
@@ -2630,6 +2652,7 @@ async function doRefresh(opts = {}){
        never double-count. */
     scorerCycleSafe();
     scorerTripTickSafe();   // fill sim observes every refresh — fills only accrue while watching (the paper book's own discipline, on the instrument's trips)
+    try { mmBenchLog(); } catch(e){}   // the mm bench's one-time decision-log entry with its in-flight snapshot
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
@@ -5059,10 +5082,23 @@ function buildPlan(){
   /* One item, one mandate — inside flipping too (audit F6a, ratified Aug 10
      2026): an inventory-mode item is owned by the quote cycle, which sizes
      both legs itself. A parallel plan line would double-commit the same
-     item's capital and attention. */
+     item's capital and attention.
+     UNDER THE MM BENCH (Aug 14 2026): the quote cycle no longer runs, so an
+     mm item with NO in-flight state reverts to normal plan handling; one
+     that still holds lots or a standing quote stays benched with the unwind
+     named, because funding it in parallel would double-commit against its
+     own in-flight legs. */
   pass = pass.filter(x => {
     const w = DB.watch.find(v => v.id === x.id);
     if (!(w && w.invTarget > 0)) return true;
+    if (MM_BENCHED){
+      const held = invHeld(x.id), qp = w.quotePlaced;
+      if (!(held > 0) && !qp) return true;   // reverted to normal handling — the bench freed it
+      bench.push({ ...x, failed: "mm benched, unwind in flight — " + (held > 0 ? full(held) + " units held in lots" : "")
+        + (held > 0 && qp ? " and " : "") + (qp ? "a standing quote" : "")
+        + "; sell down / resolve them (buttons on the mm panel and the plan's standing-quote line), then this item competes in the plan normally" });
+      return false;
+    }
     bench.push({ ...x, failed: "inventory mode owns this item — the quote cycle handles both legs; one item, one mandate. Clear the mm buffer to return it to the plan" });
     return false;
   });
@@ -5624,6 +5660,32 @@ function staleBuyBadge(p){
 }
 
 /* ═══════════ INVENTORY MODE — two-sided quoting on proven items ═══════════ */
+/* ═══ MM MODE IS BENCHED (user ruling, Aug 14 2026) — DISABLED, NOT DELETED ═
+   Benched until the universe scorer stands; the un-bench at cutover is a
+   ruling with this bench's own snapshot as its evidence base. The flag flips
+   ONLY by ruling and is pinned by an assertion, so the un-bench cannot arrive
+   silently (the staging practice's fourth rule, third use).
+
+   THE BASIS, recorded honestly: attention cost. A realized-P&L case could NOT
+   be made either way — flip records carry no mm stamp and `invTarget` keeps
+   no history, so which flips were mm flips is unrecoverable (cannot
+   attribute). The decision log records exactly that rather than an
+   unverifiable P&L claim.
+
+   WHAT THE BENCH DOES: no new enrollment, no new quote proposals, no new
+   placements; MM-READY candidate lines stop. WHAT IT KEEPS (nothing strands,
+   nothing vanishes — the M152 lesson): per-item `invTarget` state persists
+   frozen (it re-keys as pinned-item state at cutover, or retires by ruling);
+   STANDING quote legs remain rendered, ageing, fillable, repriceable and
+   clearable until resolved — they are real offers in-game; HELD lots remain
+   tracked and sellable through the FIFO flow, and the unwind is the
+   operator's to execute — the tool proposes sell-down and keeps the true-cost
+   prefill. An item with in-flight state stays benched from the plan with the
+   unwind named; an item with none reverts to normal plan handling. */
+const MM_BENCHED = true;
+const MM_BENCH_WHY = "mm mode is benched (your ruling, Aug 14 2026) until the universe scorer stands — "
+  + "basis: walk-up attention cost; a P&L case could not be measured either way, because flip records carry "
+  + "no mm stamp (cannot attribute). State is kept, not deleted.";
 const invLotsFor = id => DB.invLots.filter(l => l.itemId === id);
 const invHeld    = id => invLotsFor(id).reduce((a, l) => a + l.qty, 0);
 const invCostGp  = id => invLotsFor(id).reduce((a, l) => a + l.qty * l.cost, 0);
@@ -5752,6 +5814,7 @@ function quoteLegAge(qp){
            sellRung: (qp.sellQty > qp.sellFilled) ? (ageH >= 2 * hz ? 2 : ageH >= hz ? 1 : 0) : 0 };
 }
 function placeQuote(id){
+  if (MM_BENCHED) return null;   // no NEW placements under the bench — standing legs resolve, fresh cycles do not start
   const w = DB.watch.find(x => x.id === id);
   if (!w || !(w.invTarget > 0)) return null;
   const q = invQuote(w);
@@ -5766,6 +5829,40 @@ function clearQuote(id){
   if (!w || !w.quotePlaced) return;
   delete w.quotePlaced;
   save();
+}
+/* ═══ THE BENCH, DECISION-LOGGED WITH ITS TRUE BASIS AND THE IN-FLIGHT
+   SNAPSHOT (once per store; written by the tool, decided by the user).
+   The snapshot is computed IN THIS BROWSER at activation, so the un-bench
+   ruling at cutover has an evidence base: what was enrolled, held and
+   standing on the day the bench landed. The basis is recorded honestly as
+   attention cost — flip records carry no mm stamp and `invTarget` keeps no
+   history, so a realized-P&L comparison mm-vs-regular CANNOT be computed,
+   and the log says so instead of claiming one. */
+const MM_BENCH_KEY = "mm mode benched (2026-08-14)";
+function mmBenchLog(){
+  if (!MM_BENCHED || S.mmBenchLogged) return;
+  S.mmBenchLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === MM_BENCH_KEY)) return;
+  const enrolled = invItems().map(w => {
+    const held = invHeld(w.id), qp = w.quotePlaced;
+    return itemName(w.id) + " (target " + full(w.invTarget)
+      + (held > 0 ? ", held " + full(held) + " at cost " + gp(Math.round(invCostGp(w.id))) : ", nothing held")
+      + (qp ? ", standing quote SELL " + full(Math.max(0, qp.sellQty - qp.sellFilled)) + "/BUY " + full(Math.max(0, qp.buyQty - qp.buyFilled)) : "")
+      + ")";
+  });
+  const lotOnly = [...new Set(DB.invLots.map(l => l.itemId))].filter(id => !invItems().some(w => w.id === id))
+    .map(id => itemName(id) + " (mode off, " + full(invHeld(id)) + " held at cost " + gp(Math.round(invCostGp(id))) + ")");
+  logDecision("settings", MM_BENCH_KEY, "mm mode disabled until the universe scorer stands — state kept, not deleted",
+    "RATIFIED. Basis: walk-up attention cost. A realized-P&L case could not be measured either way — flip records "
+    + "carry no mm stamp and invTarget keeps no history, so mm flips CANNOT be attributed; this entry records that "
+    + "rather than an unverifiable P&L claim. In-flight at bench time: "
+    + (enrolled.length ? enrolled.join("; ") : "no items enrolled")
+    + (lotOnly.length ? "; lots without mode: " + lotOnly.join("; ") : "")
+    + " · total held cost " + gp(Math.round(invTotalCost()))
+    + ". Standing quote legs stay rendered, ageing, fillable and clearable until resolved; held lots stay sellable "
+    + "through the FIFO flow (the unwind is yours to execute); items with nothing in flight revert to normal plan "
+    + "handling. Per-item state persists frozen and re-keys as pinned-item state at cutover, or retires by ruling. "
+    + "The un-bench flips MM_BENCHED only by your ruling; an assertion pins it so the change cannot land silently.", 1, "user");
 }
 /* Credit a recorded fill against the standing leg; when both legs are done
    the cycle closes (bookkeeping of fills the user just recorded — not an
@@ -6047,6 +6144,17 @@ function renderPlan(P0){
         + '<button class="sm ghost" data-qclear="' + q0.id + '" title="Offers canceled or otherwise done in-game — clears the standing record; nothing is logged">cleared</button>'
         + '</span></li>';
     }
+    /* UNDER THE MM BENCH: no fresh proposal. An item with held lots renders
+       its unwind line (reason inline, sell-down recordable); one with nothing
+       in flight renders nothing here — it is back in the normal plan. */
+    if (MM_BENCHED){
+      const held0 = invHeld(q0.id);
+      if (!(held0 > 0)) return '';
+      return '<li><div class="body"><b>MM UNWIND</b> <span title="' + nameTitle(itemName(q0.id)) + '">' + esc(itemName(q0.id)) + '</span>'
+        + ' — <span class="num">' + full(held0) + '</span> units held at true cost <span class="num">' + full(Math.round(invCostGp(q0.id) / Math.max(1, held0))) + '</span> each'
+        + '<div class="why">' + esc(MM_BENCH_WHY) + ' Sell the buffer down — the sold… press FIFO-consumes lots and prefills the log with true cost.</div></div>'
+        + '<span class="plan-actions"><button class="sm" data-invsell="' + q0.id + '">sold…</button></span></li>';
+    }
     const q = invQuote(q0);
     if (q.err) return '<li><div class="body"><b>QUOTE</b> ' + esc(q.name) + ' <span class="dim">— ' + esc(q.err) + '</span></div></li>';
     return '<li><div class="body"><b class="sell">QUOTE</b> <span title="'+nameTitle(q.name)+'">' + esc(q.name) + '</span>'
@@ -6076,7 +6184,7 @@ function renderPlan(P0){
   /* Log-qualified mm candidates, surfaced where the day starts. The verdict
      is computed from the flip log (mmVerdict) — this line only proposes;
      nothing quotes until the buffer is set by hand. */
-  const mmCandHTML = DB.watch.filter(w => !(w.invTarget > 0))
+  const mmCandHTML = (MM_BENCHED ? [] : DB.watch.filter(w => !(w.invTarget > 0)))
     .map(w => ({ w, v: mmVerdict(w.id) })).filter(x => x.v.ready)
     .map(x => '<li class="next"><div class="body"><b>MM-READY</b> '
       + '<span title="'+nameTitle(itemName(x.w.id))+'">' + esc(itemName(x.w.id)) + '</span>'
@@ -8143,6 +8251,255 @@ function scorer1dRulingsLog(){
     + "losing cells); a rank-disqualifier only, never a data exclusion. Capture stays ungraded until real flips exist "
     + "on frontier-class items, and every ranking renders 'cannot rank yet' in those words until then — the dependency "
     + "is the operator's calibration flips inside the tape window.", 1, "user");
+}
+
+/* ═══ STAGE 1e — THE SCORER SURFACE (ruled Aug 14 2026) ════════════════════
+   A pull surface in the Paper Book / Prospecting / Gate Health class: read,
+   not worked; zero rulings; the walk-up budget untouched. VERDICT FIRST —
+   the first screen answers "can this instrument tell me anything yet, and if
+   not what is it waiting on" in one sentence plus four waiting-on lines,
+   before any machinery renders. Every aggregate opens to its rows; horizon
+   and capture-lifecycle groupings are structural (the ruled populations);
+   the readiness verdict renders in the ruled words wherever a ranking would.
+   The IDB-backed figures (archive coverage, chart-gate days, the diff's
+   length, the trip ledger) load asynchronously into S.scorerSurf — a figure
+   not yet loaded says it is reading, and a failed read says could-not-check,
+   never up-to-date. */
+const SCORER_SURF_TRIPS = 500;   // closed-trip rows carried for drills/export: the last 7 days, capped — declared wherever they render
+function scorerSurfLoad(){
+  if (S.scorerSurfBusy) return;
+  S.scorerSurfBusy = true;
+  (async () => {
+    const now = Date.now();
+    try {
+      const m5 = await t0Coverage("m5", now - 72 * 3600e3, 300e3, now);
+      const h1 = await t0Coverage("h1", now - 7 * 86400e3, 3600e3, now);
+      const rk = await t0Keys("rdiff", null, null);
+      const d = await t0Open();
+      const t1k = await t0Req(d.transaction("t1", "readonly").objectStore("t1").getAllKeys());
+      const t1r = await t0Req(d.transaction("t1", "readonly").objectStore("t1")
+        .getAll(IDBKeyRange.lowerBound((now - 7 * 86400e3) * 1000), SCORER_SURF_TRIPS));
+      S.scorerSurf = { at: now, m5, h1, rdiffN: rk.length, rdiffFirst: rk.length ? rk[0] : 0,
+        t1Total: t1k.length, t1Rows: t1r };
+    } catch(e){
+      S.scorerSurf = { at: now, err: String(e && e.message || e) };
+    }
+    S.scorerSurfBusy = false;
+    if (S.tab === "trade" && S.sub === "scorer") renderScorerView();
+  })();
+}
+const scorerOpenItemsN = () => new Set([...(S.scorerTrips || new Map()).values()].map(p => p.id)).size;
+/* The generator renders its own state, whether or not anything is wrong —
+   computed from the same values it gates on, so the two cannot disagree. */
+function scorerStateLine(){
+  const trips = S.scorerTrips ? S.scorerTrips.size : 0;
+  return '<div class="dim" style="white-space:normal;margin-top:6px">Scorer state: bucket last scored '
+    + (S.scoredBucket ? esc(ago(S.scoredBucket)) : "not yet this session")
+    + ' · fill sim last opened ' + (S.t1LastBucket ? esc(ago(S.t1LastBucket)) : "not yet this session")
+    + ' · archive last wrote ' + (S.t0LastBucket ? esc(ago(S.t0LastBucket)) : "not yet this session")
+    + ' · ' + trips + ' open trip' + (trips === 1 ? '' : 's') + ' across ' + scorerOpenItemsN() + ' item'
+    + (scorerOpenItemsN() === 1 ? '' : 's')
+    + (scorerFails || t1Fails || rdiffFails
+        ? ' · <span class="neg">consecutive failures — scorer ' + scorerFails + ', fill sim ' + t1Fails + ', diff ' + rdiffFails + '</span>'
+        : ' · no failure streaks')
+    + ' — this line renders whether or not anything is wrong.</div>';
+}
+/* THE FIRST SCREEN (the walk-up test, ruled with 1e): one sentence, then the
+   four waiting-on lines, each a real number or an honest could-not-check. */
+function scorerVerdictInline(){
+  const ss = S.scorerSurf;
+  const cells = scorerConfigs();
+  const ctl = DB.scorerT2[(cells.find(c => c.control) || {}).hash];
+  const cycles = ctl ? ctl.cycles : 0;
+  const firstAt = ctl ? ctl.firstAt : 0;
+  const ready = scorerRankReadiness();
+  const idb = f => ss ? (ss.err != null
+      ? '<span class="neg">could not check — the archive read failed (' + esc(String(ss.err).slice(0, 80)) + '); treat as unread, never as current</span>'
+      : f(ss))
+    : '<span class="dim">reading the archive…</span>';
+  const line = (lab, html) => '<div style="margin:2px 0">· <b>' + lab + '</b> — ' + html + '</div>';
+  const answer = cycles
+    ? '<b>It is measuring, not yet ranking.</b> Every mapped item is scored against the '
+      + cells.length + '-cell grid each 5m bucket, and fills are simulated on the '
+      + glTerm("sc-frontier", "funded frontier") + ' at three capture points and two horizons. It '
+      + '<b>cannot rank cells yet</b>, and says so where a ranking would render, rather than ranking anyway.'
+    : '<b>Nothing measured yet this profile</b> — the first 5m bucket after boot starts everything at once; if this persists past one poll, the state line below is the place to look.';
+  return verdictHead("Can this instrument tell me anything yet?", answer
+      + '<div style="margin-top:6px">'
+      + line("accruing", cycles
+          ? cycles + ' scoring cycle' + (cycles === 1 ? '' : 's') + ' since ' + (firstAt ? new Date(firstAt).toLocaleDateString("en-CA") : "—")
+            + ' · archive coverage ' + idb(s => s.m5.observed + ' of ' + s.m5.expected
+            + ' five-minute buckets in the last 72h (it observes only while the app is open — the gap is unobserved time, not quiet market)')
+          : 'no cycles observed yet this profile')
+      + line("chart gates", idb(s => {
+          const days = Math.round(s.h1.observed / 24 * 10) / 10;
+          return days + ' of 7 OBSERVED days accrued — trend, volume trend and momentum stay unknowable until 7 '
+            + '(observed days, not wall days); every verdict so far is six-gate and stamped so';
+        }))
+      + line("ranking", '<b>cannot rank yet</b> — ' + esc((ready.why || "").replace(/^cannot rank yet — /, "")))
+      + line("reconciliation diff", idb(s => s.rdiffN
+          ? 'day ' + Math.max(1, Math.ceil((Date.now() - s.rdiffFirst) / 86400e3)) + ' — ' + s.rdiffN
+            + ' rows of control-vs-plan history (the cutover\'s plumb line; its reader is the cutover gate)'
+          : 'no rows yet — recording starts with the first scored bucket'))
+      + '</div>',
+    "A measurement instrument: it admits, funds and caps nothing. Every figure below opens to its rows.");
+}
+const scorerCellLabel = c => (c.control ? "CONTROL · " : "") + "m" + c.cfg.taxMult + " · roi" + c.cfg.roi + " · b" + c.cfg.volBase;
+/* ═══ THE GRID — flow, stock, hour bands, canary ═══════════════════════════
+   The funded-per-cycle average pools 24 hour-band populations, so it renders
+   WITH its extremes inline and ALL 24 bands in its opening (the never-pool
+   rule's compact form for a 24-way split; the bands are the schema's own). */
+function scorerGridSection(){
+  const cells = scorerConfigs();
+  let blTot = 0;
+  const rows = cells.map(c => {
+    const r = DB.scorerT2[c.hash];
+    if (!r) return '<tr><td style="text-align:left">' + esc(scorerCellLabel(c))
+      + '</td><td colspan="5" class="dim">never fed — no scoring cycle has reached this cell yet</td></tr>';
+    blTot += r.blFunded || 0;
+    const avg = r.cycles ? Math.round(r.fundedItemCycles / r.cycles * 10) / 10 : 0;
+    const bands = r.cyclesByHour.map((n, h) => ({ h, cycles: n, funded: r.fundedByHour[h],
+      avg: n > 0 ? Math.round(r.fundedByHour[h] / n * 10) / 10 : null }));
+    const fed = bands.filter(b => b.avg != null);
+    let peak = null, trough = null;
+    for (const b of fed){ if (!peak || b.avg > peak.avg) peak = b; if (!trough || b.avg < trough.avg) trough = b; }
+    const hh = h => String(h).padStart(2, "0") + ":00Z";
+    const flowFace = avg + "/cycle";
+    const flowCell = drill("scorer:hours:" + c.hash, flowFace, {
+        head: scorerCellLabel(c) + " — all 24 UTC hour bands (funded per cycle, by the BUCKET's hour)",
+        cols: [{ k: "hour", lab: "Band" }, { k: "cycles", lab: "Cycles", num: 1 },
+               { k: "funded", lab: "Funded item-cycles", num: 1 }, { k: "avg", lab: "Avg/cycle", num: 1 }],
+        rows: bands.map(b => ({ hour: hh(b.h), cycles: b.cycles, funded: b.funded,
+          avg: b.avg != null ? b.avg : "unobserved", _txt: hh(b.h) })),
+        empty: "No bands fed yet.",
+        note: "A band with no cycles is an UNOBSERVED hour, not a quiet one — the app was closed when it passed. Pooling across bands pools populations that answer different questions, which is why they are in the schema from birth."
+      })
+      + (fed.length > 1 && peak && trough && peak.h !== trough.h
+          ? ' <span class="dim">(peak ' + hh(peak.h) + ' ' + peak.avg + ' · trough ' + hh(trough.h) + ' ' + trough.avg + ')</span>'
+          : fed.length === 1 ? ' <span class="dim">(one band observed)</span>' : '');
+    const bl = r.blFunded > 0
+      ? drill("scorer:bl:" + c.hash, '<span class="neg">' + r.blFunded + '</span>', {
+          head: "would-fund blacklisted item-cycles — evidence AGAINST this config, never funded, never simulated",
+          cols: [{ k: "name", lab: "Item" }],
+          rows: (r.blIds || []).map(id => ({ name: itemName(id), _txt: itemName(id) })),
+          empty: "None.",
+          note: "A loose config that would fund a known-bad item is evidence against the config. Counted at the cycle it would have funded; trips and nets never exist for these (row 23c)." })
+      : '<span class="dim" title="Counted from birth — zero means no cycle would have funded a blacklisted item, a real reading, not an unfed counter">none</span>';
+    return '<tr><td style="text-align:left">' + esc(scorerCellLabel(c)) + '</td>'
+      + '<td class="num">' + flowCell + '</td>'
+      + '<td class="num">' + full(r.fundedItemCycles) + ' <span class="dim">/ ' + full(r.cycles) + '</span></td>'
+      + '<td class="num">' + full(r.distinct) + (r.capped ? ' <span class="neg" title="The distinct-ever stock hit SCORER_ID_CAP and is truncated — declared, never silent">capped</span>' : '') + '</td>'
+      + '<td class="num dim">' + (r.fundedItemCycles > 0 ? Math.round((r.fundedNoChart || 0) / r.fundedItemCycles * 100) + '%' : '—') + '</td>'
+      + '<td class="num">' + bl + '</td></tr>';
+  }).join("");
+  return '<div class="note">' + glTerm("sc-flowstock", "Flow vs stock") + ': funded item-cycles over cycles is the FLOW; '
+    + 'distinct-ever is the STOCK. A cell where they agree is a stable list; one where they diverge is a churning frontier — '
+    + 'the stage-0 finding, in the schema. The ' + glTerm("sc-canary", "canary") + ' column is the would-fund-blacklisted count. '
+    + 'Six-gate % is the ' + glTerm("sc-sixgate", "chart-coverage split") + ' — 100% until the 7-day hourly archive matures.</div>'
+    + '<div class="tw"><table><thead><tr><th>Cell</th>'
+    + '<th title="Funded item-cycles per scoring cycle — a pooled average over the hour bands, so its extremes render beside it and all 24 bands open from it">Funded/cycle</th>'
+    + '<th title="Total funded item-cycles / total cycles observed — the flow, robust to churn">Flow</th>'
+    + '<th title="Distinct items EVER funded — the stock; truncation declared when capped">Stock</th>'
+    + '<th title="Share of funded item-cycles scored WITHOUT chart inputs (six-gate era)">Six-gate</th>'
+    + '<th>Canary</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+/* ═══ FILL ECONOMICS — per horizon, per participation, per lifecycle ═══════
+   The readiness verdict leads in the RULED WORDS; no ordering of cells
+   renders while capture is ungraded. Groups are structural: one [data-hz]
+   [data-part] container per ruled population, never pooled. */
+function scorerEconTripRows(hash, hz, part){
+  const ss = S.scorerSurf || {};
+  return (ss.t1Rows || []).filter(p => p.hzH === hz && p.part === part && (p.cells || []).includes(hash))
+    .map(p => ({ item: itemName(p.id), opened: new Date(p.t).toLocaleString(), band: String(p.hour).padStart(2, "0") + ":00Z",
+      qty: full(p.qty), states: p.vars.map(v => v.cap + " " + v.state).join(" · "),
+      pump: p.pump ? "pump-stamped" : "", _txt: itemName(p.id) }));
+}
+function scorerEconSection(){
+  const ss = S.scorerSurf;
+  const ready = scorerRankReadiness();
+  const cells = scorerConfigs();
+  let html = '<div class="plan-note"><b>Cannot rank yet</b> — '
+    + esc((ready.why || "").replace(/^cannot rank yet — /, ""))
+    + ' No ordering of cells renders below. When ranking exists it will require all disqualifiers clear: beating the '
+    + 'control at the PROVEN bound at every capture point, the top mover inside the ruled 50% ceiling on '
+    + glTerm("sc-gross", "gross movement") + ', and capture-stability across the probe.</div>';
+  let any = false;
+  for (const hz of SCORER_HORIZONS){
+    for (const part of SCORER_PARTS){
+      const key = cap => scorerEconKey(hz, part, cap, SCORER_FILL_V);
+      const fedCells = cells.filter(c => { const r = DB.scorerT2[c.hash];
+        return r && r.econ && SCORER_CAPTURES.some(cap => r.econ[key(cap)]); });
+      const cv = scorerCaptureVerdict(hz, part, SCORER_FILL_V);
+      let body;
+      if (!fedCells.length){
+        body = '<div class="dim">No cell carries econ at this key yet — an aggregate nothing has fed, not a reading of zero. '
+          + 'Trips roll in as their ' + hz + 'h horizons resolve.</div>';
+      } else {
+        any = true;
+        body = '<div class="dim">Capture probe: ' + esc(cv.verdict) + (cv.why ? ' — ' + esc(cv.why) : '') + '</div>'
+          + fedCells.map(c => {
+            const r = DB.scorerT2[c.hash];
+            const caps = SCORER_CAPTURES.map(cap => {
+              const e = r.econ[key(cap)];
+              const st = scorerCellEconState(e);
+              if (st.state === "never-fed") return '<td class="dim" colspan="2">never fed</td>';
+              if (st.state === "only-excluded")
+                return '<td colspan="2" class="dim" title="' + esc(st.why) + '">only exclusions — '
+                  + e.insuf + ' under the observation floor · ' + e.unobs + ' holes · ' + e.vbl + ' voided</td>';
+              const conc = e.gross > 0
+                ? Math.round(e.top / e.gross * 100) + '% <span class="dim">of gross</span>'
+                : '<span class="dim">no movement</span>';
+              const census = e.filled + 'f · ' + e.partial + 'p · ' + e.forced + 'x · ' + e.unfilled + 'u';
+              return '<td class="num">'
+                + drill("scorer:trips:" + c.hash + ":" + hz + ":" + part + ":" + cap,
+                    String(e.n), {
+                    head: scorerCellLabel(c) + " — trips behind this bucket (h" + hz + " · p" + Math.round(part * 100) + " · capture " + cap + ")",
+                    cols: [{ k: "item", lab: "Item" }, { k: "opened", lab: "Opened" }, { k: "band", lab: "Band" },
+                           { k: "qty", lab: "Qty", num: 1 }, { k: "states", lab: "Lifecycles" }, { k: "pump", lab: "" }],
+                    rows: scorerEconTripRows(c.hash, hz, part),
+                    empty: ss && ss.t1Rows ? "No loaded rows match — see the truncation note." : "Trip rows not loaded yet — reading the ledger…",
+                    note: "Loaded from the last 7 days of the 30-day t1 ledger, capped at " + SCORER_SURF_TRIPS
+                        + (ss && ss.t1Rows ? " (" + ss.t1Rows.length + " carried" + (ss.t1Total != null ? " of " + ss.t1Total + " rows total" : "") + ")" : "")
+                        + ". The econ bucket counts every rolled trip; rows beyond the window re-derive from T0 replay. Exclusions are counted beside n, never inside it."
+                  })
+                + ' <span class="dim">' + census + '</span></td>'
+                + '<td class="num">' + gp(Math.round(e.netS)) + ' <span class="dim">proven</span> · ' + gp(Math.round(e.net))
+                + ' <span class="dim">op</span> · ' + gp(Math.round(e.netL)) + ' <span class="dim">poss</span> · ' + conc
+                + (e.pumpN ? ' · <span class="neg">' + e.pumpN + ' pump-stamped (' + gp(Math.round(e.pumpNet)) + ')</span>' : '')
+                + '</td>';
+            }).join("");
+            return '<div class="tw"><table><thead><tr><th style="min-width:120px">' + esc(scorerCellLabel(c)) + '</th>'
+              + SCORER_CAPTURES.map(cap => '<th colspan="2">capture ' + cap + (cap === SCORER_CAPTURE_REF ? ' (ref)' : '') + '</th>').join("")
+              + '</tr></thead><tbody><tr><td class="dim">n · outcomes / nets at stated bounds</td>' + caps + '</tr></tbody></table></div>';
+          }).join("");
+      }
+      html += '<div data-hz="' + hz + '" data-part="' + Math.round(part * 100) + '" style="margin-top:8px">'
+        + '<b>' + hz + 'h horizon · ' + Math.round(part * 100) + '% participation</b> '
+        + '<span class="dim">— ' + glTerm("sc-lifecycle", "three capture lifecycles") + ' per trip, a stamped population; never pooled with any other group</span>'
+        + body + '</div>';
+    }
+  }
+  if (!any)
+    html += '<div class="vwait" style="margin-top:8px"><b>Not yet</b> — no trip has rolled into any econ bucket. '
+      + 'The fill sim opened its first trips at the first bucket after boot; 6h-horizon outcomes mature ~6h after their open '
+      + '(9.5h after theirs), and unfilled horizons and unobserved holes count too, each under its own name.</div>';
+  return html;
+}
+function renderScorerView(){
+  const ss = S.scorerSurf;
+  if (!ss || (!S.scorerSurfBusy && Date.now() - ss.at > 60e3)) scorerSurfLoad();
+  const cells = scorerConfigs();
+  const ctl = DB.scorerT2[(cells.find(c => c.control) || {}).hash];
+  const trips = S.scorerTrips ? S.scorerTrips.size : 0;
+  $("#scorerVerdictSub").textContent = (ctl ? ctl.cycles : 0) + " cycles observed · " + trips
+    + " open trips · measurement only";
+  setHTML("#scorerVerdict", scorerVerdictInline() + scorerStateLine());
+  $("#scorerGridSub").textContent = cells.length + " cells (grid + control, deduped by hash) · flow and stock both first-class";
+  setHTML("#scorerGrid", fold("Per-cell funded flow, stock, hour bands and the blacklist canary — every figure opens to its rows",
+    scorerGridSection(), true));
+  $("#scorerEconSub").textContent = SCORER_HORIZONS.length + " horizons × " + SCORER_PARTS.length
+    + " participation levels × " + SCORER_CAPTURES.length + " capture lifecycles — stamped populations, never pooled";
+  setHTML("#scorerEcon", scorerEconSection());
 }
 
 /* Persistent regime divergence → a change-proposal with the numbers, through
@@ -12442,7 +12799,11 @@ function renderInv(){
   $("#invFoot").innerHTML = '<tr><td colspan="3">Total inventory</td><td class="num">' + gp(totCost) + '</td>'
     + '<td class="num">' + gp(totMkt) + '</td><td class="num ' + sign(totMkt - totCost) + '">' + gp(totMkt - totCost) + '</td>'
     + '<td class="num">' + (totPct != null ? totPct.toFixed(1) + '%' : '—') + '</td><td colspan="3" class="dim">of stack at cost</td></tr>';
-  $("#invSub").textContent = ids.length + " item" + (ids.length === 1 ? "" : "s") + " · " + gp(totCost) + " at cost";
+  /* The bench states itself where the machinery renders — reason inline,
+     with what remains to unwind (nothing strands, nothing vanishes). */
+  $("#invSub").textContent = (MM_BENCHED
+    ? "BENCHED (your ruling, Aug 14 2026) until the scorer stands — state kept; sell held lots down, resolve standing quotes; no new cycles · "
+    : "") + ids.length + " item" + (ids.length === 1 ? "" : "s") + " · " + gp(totCost) + " at cost";
 }
 
 /* ═══════════ ROW SCHEME — four fixed indicator slots (user-directed,
@@ -17505,13 +17866,95 @@ const GLOSSARY = [
     do: "These are the only benches you can clear directly: change the tier on the row, clear the mm buffer, or lift the "
         + "blacklist entry. Note that <b>no automated path</b> touches the blacklist — not the scout, not the paper book, "
         + "not a margin test — so if an item is blacklisted, only you can change that.",
-    caveat: "\"Ignored by you\" resets with tomorrow's plan; blacklist it if you mean permanence." },
+    caveat: "\"Ignored by you\" resets with tomorrow's plan; blacklist it if you mean permanence. **MM mode is BENCHED "
+        + "(your ruling, Aug 14 2026) until the universe scorer stands** — while the bench holds, \"inventory mode owns "
+        + "this item\" fires only where an unwind is in flight (held lots or a standing quote), with the unwind named; "
+        + "items with nothing in flight compete in the plan normally, enrollment is frozen, and per-item mm state "
+        + "persists for the cutover ruling." },
   { id: "gate-data", term: "Data-availability gates", names: ["no live price", "plan gate"],
     what: "<b>No live price</b> means the item has no two-sided quote this cycle. <b>Plan gate</b> is the catch-all label "
         + "for a bench the name-mapper does not recognise — if you ever see it, the reason text beside it is authoritative.",
     from: "The /latest bulk feed.",
     do: "Nothing directly — it is context for reading the funnel. A pile of these means a data problem, not a market one; "
         + "check Trade → Prospecting's freshness read before trusting any other number on the screen." }
+]},
+{ g: "scorer", title: "Universe scorer — the measurement instrument (Trade → Scorer)",
+  note: "Stages 0–1e, ruled Aug 14 2026. It scores every mapped item against a 16-cell config grid each 5m bucket and "
+      + "simulates fills on the funded frontier. It is a MEASUREMENT instrument: it admits, funds and caps nothing, and "
+      + "nothing it produces moves a constant without your ruling.",
+  entries: [
+  { id: "sc-frontier", term: "Funded frontier",
+    what: "The set of items at least one grid cell funds this cycle — the population the fill sim opens trips on. "
+        + "Measured live at ~110–135 items and CHURNING (two boots hours apart shared barely a quarter of it), which is "
+        + "why flow and stock are separate figures.",
+    from: "The scoring pass: every item that clears every gate in at least one cell, blacklisted items excluded (they "
+        + "count into the canary instead).",
+    do: "Nothing directly — it is the simulation workload and the context for every econ figure. A frontier that "
+        + "suddenly doubles is a market event or a feed event; check the volume index before reading it as either." },
+  { id: "sc-flowstock", term: "Flow vs stock",
+    what: "FLOW is funded item-cycles over cycles observed — how much a rule set funds, robust to churn. STOCK is "
+        + "distinct items EVER funded — how wide it has ranged, truncation declared when capped. A cell where they "
+        + "agree is a stable list; one where they diverge is a churning frontier, and the divergence is the finding.",
+    from: "The scorer's per-cell counters, accrued one pass per 5m bucket, hour-banded to the bucket's UTC hour.",
+    do: "Read a cell's funded-per-cycle average only WITH its hour extremes (rendered beside it) — the average pools "
+        + "24 bands that answer different questions, and today's config funds ~3× more at the evening peak than the "
+        + "morning trough." },
+  { id: "sc-lifecycle", term: "Capture lifecycles",
+    what: "Each trip runs THREE independent lifecycles, one per capture point {0.05, 0.15, 0.30} — not three readings "
+        + "of one trip. Capture moves how fast the buy completes, buy completion anchors the sell window, and the sell "
+        + "window decides the outcome, so each point earns its own legs against the same tape.",
+    from: "The fill sim (stage 1d), ratified as an improvement over the ruled minimum for exactly that causal reason "
+        + "(design doc §9).",
+    do: "Compare a cell's figures ACROSS the three lifecycles before believing any one of them: if the outcome ordering "
+        + "moves with the capture point, the instrument itself says it cannot rank." },
+  { id: "sc-cannotrank", term: "Cannot rank yet",
+    what: "The instrument's standing verdict wherever a ranking would render: capture is ungraded until real flips "
+        + "exist on frontier-class items, so no ordering of cells exists — stated in these words as the verdict, never "
+        + "as a caveat under a ranking.",
+    from: "scorerRankReadiness(), pinned false until your ruling flips it; the rank gate emits it as the first "
+        + "disqualifier.",
+    do: "The dependency is yours and stays named: calibration flips inside the 5m tape window on frontier-class items. "
+        + "Until then, read econ figures as bounded comparisons against the control, never as a leaderboard." },
+  { id: "sc-gross", term: "Gross movement",
+    what: "The concentration denominator, ruled Aug 14 2026: the sum of |net| across a bucket's counted trips, with "
+        + "the top single mover's share disqualifying rank above 50%. Gross keeps the reading on LOSING cells — a "
+        + "share of a negative net is not a proportion, and withholding it would blind the metric exactly where one "
+        + "trip carries a losing result.",
+    from: "Rolled per econ bucket at trip close (`gross`, `top`).",
+    do: "A cell over the ceiling has measured one trip, not a population — treat its nets as an anecdote whatever "
+        + "their size. Rank-disqualifier only; no data is ever excluded by it." },
+  { id: "sc-hourband", term: "Hour bands",
+    what: "Every scoring figure accrues under the UTC hour of the BUCKET that produced it — 24 populations that answer "
+        + "different questions, in the schema from birth. A band with no cycles is an UNOBSERVED hour (the app was "
+        + "closed), never a quiet one.",
+    from: "scorerCycle, keyed to the bucket's hour rather than the wall clock's (a delayed cycle files under the "
+        + "data's hour).",
+    do: "Before reading any pooled per-cycle average, open its bands — the evening/morning asymmetry (13 vs 5 funded "
+        + "on the control config at stage 0) is the standing example of what pooling hides." },
+  { id: "sc-canary", term: "Blacklist canary",
+    what: "The per-cell count of item-cycles where a config WOULD have funded a blacklisted item. Counted as evidence "
+        + "against the config; the items are never funded, never simulated, never netted — the veto's surviving core.",
+    from: "The scoring pass, membership evaluated at each cycle (un-blacklisting moves an item into the main figures "
+        + "from that cycle forward).",
+    do: "A loose cell with a rising canary count is admitting known pump vehicles — weigh that against anything its "
+        + "nets appear to say. Zero is a real reading (counted from birth), not an unfed counter." },
+  { id: "sc-sixgate", term: "Six-gate verdict",
+    what: "A verdict computed without chart inputs (trend, volume trend, momentum) — every verdict so far, because the "
+        + "self-accrued 7-day hourly archive has not matured. Stamped per funded item-cycle (`fundedNoChart`) and per "
+        + "trip (`noChart`), so the transition decomposes when chart wiring lands instead of pooling two eras.",
+    from: "The chart-coverage stamp (conformance flag 1) and the pinned era fact (marketStatsFor carries no chart "
+        + "inputs yet).",
+    do: "Nothing until the wiring lands — unknown is not failing. When the six-gate share starts falling, the two eras "
+        + "must be read apart, and the stamps are what make that possible." },
+  { id: "sc-rdiff", term: "Reconciliation diff",
+    what: "One row per scored bucket: items the control config passes that the watchlist does not hold, and plan-funded "
+        + "items the control fails, each with full fail sets. The plumb line for the eventual pool cutover — its value "
+        + "is its length.",
+    from: "scorerCycle, written to IndexedDB (90-day retention); the plan side is three-state (a plan never built this "
+        + "session records null with the reason, never an empty comparison).",
+    do: "Nothing directly — it is context for the CUTOVER ruling: the pool switch is gated on this ledger being the "
+        + "longest-observed number in the instrument, so its day count (reported on the verdict line) is what tells "
+        + "you how close that gate is to arming." }
 ]},
 
 { g: "paper", title: "The paper book — screening evidence, never a verdict",
@@ -18468,6 +18911,7 @@ const CHECKLISTS = {
     ["Read the paper book", "One line here; the surface itself is Trade → Paper Book, where every number opens to its trips:", "paper#paperRegimePanel", "shadowbook"],
     ["Check data freshness", "Every background stream reports when it last accrued. Nothing collects while the tab is closed, and a stalled stream looks exactly like a quiet one on a chart — so this says which is which before you read any of the numbers below:", null, "freshness"],
     ["Read the hours ledger", "One line here; the surface is Trade → Prospecting, where each hour opens to the items and trips behind it:", "prospect#prospectHoursPanel", "hours"],
+    ["Read the universe scorer", "One line here; the surface is Trade → Scorer — its first screen answers whether the instrument can say anything yet, and what it is waiting on:", "scorer#scorerVerdictPanel", "scorerline"],
     ["Read the friction notes", "Everything that annoyed you since last review, one place — copy as markdown for the next tooling session.", null, "friction"],
     ["Re-stamp the bank value", "Enter what's actually in your bank and press Mark as current.", "shadow"],
     ["Export the log", "It only exists in this browser.", "log"]
@@ -18585,10 +19029,29 @@ function renderRoutine(){
         ? '<div class="inline">' + slvL + lines.map((x,j) => '<div>' + esc(sellLineText(x,j)) + '</div>').join("") + '</div>'
         : '<div class="inline"><div class="dim">No open positions.</div></div>';
     } else if (s[3] === "quotes"){
-      const qs = invItems().map(w2 => invQuoteText(invQuote(w2)));
-      inline = '<div class="inline">' + (qs.length
-        ? qs.map(x => '<div>' + esc(x) + '</div>').join("")
-        : '<div class="dim">No inventory-mode items — watchlist rows earn an mm-ready badge when your log qualifies them; click it to set a buffer.</div>') + '</div>';
+      /* UNDER THE MM BENCH: no fresh quote text — only what is still in
+         flight (standing legs to resolve, lots to sell down), with the bench
+         reason stated where the step renders. */
+      const qs = MM_BENCHED
+        ? invItems().filter(w2 => w2.quotePlaced || invHeld(w2.id) > 0)
+            .map(w2 => itemName(w2.id) + " — " + (w2.quotePlaced ? "standing quote to resolve" : "")
+              + (w2.quotePlaced && invHeld(w2.id) > 0 ? "; " : "")
+              + (invHeld(w2.id) > 0 ? full(invHeld(w2.id)) + " held units to sell down" : ""))
+        : invItems().map(w2 => invQuoteText(invQuote(w2)));
+      inline = '<div class="inline">' + (MM_BENCHED
+        ? '<div class="dim">' + esc(MM_BENCH_WHY) + '</div>' + qs.map(x => '<div>' + esc(x) + '</div>').join("")
+        : (qs.length
+          ? qs.map(x => '<div>' + esc(x) + '</div>').join("")
+          : '<div class="dim">No inventory-mode items — watchlist rows earn an mm-ready badge when your log qualifies them; click it to set a buffer.</div>')) + '</div>';
+    } else if (s[3] === "scorerline"){
+      /* One line, sync data only — the surface itself loads the IDB-backed
+         coverage figures; this line does not pretend to have them. */
+      const cellsSL = scorerConfigs();
+      const ctlSL = DB.scorerT2[(cellsSL.find(c => c.control) || {}).hash];
+      const tripsSL = S.scorerTrips ? S.scorerTrips.size : 0;
+      inline = '<div class="inline"><div>' + (ctlSL && ctlSL.cycles
+          ? ctlSL.cycles + " cycles observed · " + tripsSL + " open trips on the frontier · cannot rank yet (capture ungraded) — coverage figures load on the surface itself"
+          : "no cycles observed yet this profile — the first 5m bucket after boot starts everything at once") + '</div></div>';
     } else if (s[3] === "ladder"){
       const rungs = DB.positions.map(p => ({ p, sa: sellAgeInfo(p) })).filter(x => x.sa);
       inline = '<div class="inline">' + (rungs.length
@@ -20135,7 +20598,64 @@ function analysisCalibration(){
   };
 }
 
-const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting,
+/* ═══ THE SCORER EXPORT (stage 1e) — a curated READ file: header states what
+   was in force and what was truncated; every rollup ships with its rows
+   (cells with their bands, econ with the trip rows carried, truncations
+   declared). IDB-backed figures come from S.scorerSurf; when the surface has
+   not loaded them this session the header SAYS so rather than exporting a
+   stale guess. ═══ */
+function analysisScorer(){
+  const ss = S.scorerSurf;
+  const idb = f => ss ? (ss.err != null ? "could not read the archive (" + String(ss.err).slice(0, 80) + ") — treat as unread" : f(ss))
+    : "not loaded this session — open Trade → Scorer once (or press export there) to load";
+  const cells = scorerConfigs().map(c => {
+    const r = DB.scorerT2[c.hash];
+    return { configHash: c.hash, control: !!c.control, cfg: c.cfg,
+      cycles: r ? r.cycles : 0, fundedItemCycles: r ? r.fundedItemCycles : 0,
+      fundedNoChartSixGate: r ? (r.fundedNoChart || 0) : 0,
+      cyclesByHour: r ? r.cyclesByHour : [], fundedByHour: r ? r.fundedByHour : [],
+      distinctEver: r ? r.distinct : 0, stockCapped: !!(r && r.capped),
+      blacklistCanary: { wouldFundItemCycles: r ? (r.blFunded || 0) : 0,
+        ids: r ? (r.blIds || []).map(id => ({ id, name: itemName(id) })) : [],
+        note: "counted, never funded, never simulated — evidence against the config, not a population (row 23)" },
+      econ: r && r.econ ? r.econ : {},
+      neverFed: !r };
+  });
+  const openTrips = [...(S.scorerTrips || new Map()).values()];
+  return { view: "universe-scorer", generatedAt: new Date().toISOString(), generatedOn: today(),
+    header: {
+      scorerV: SCORER_V, tripFillModelV: SCORER_FILL_V,
+      horizonsH: SCORER_HORIZONS, participation: SCORER_PARTS, capturePoints: SCORER_CAPTURES,
+      captureReference: SCORER_CAPTURE_REF, concentrationCeilingOnGross: SCORER_CONC_CEIL,
+      captureGraded: SCORER_CAPTURE_GRADED,
+      ranking: scorerRankReadiness().ready ? "graded" : scorerRankReadiness().why,
+      econKeyShape: "h<horizon>|p<participation>|c<capture>|fv<fill-model> — four stamps, populations never pool",
+      econExclusions: "insuf (under the " + Math.round(SHADOW_MIN_OBS * 100) + "% observed-share floor), unobs (horizon expired unwatched — a hole), vbl (voided by mid-trip blacklisting) — counted beside n, never inside it",
+      archiveCoverage72h: idb(s => s.m5),
+      chartGateObservedDays: idb(s => Math.round(s.h1.observed / 24 * 10) / 10 + " of 7 (observed days, not wall days)"),
+      reconciliationDiff: idb(s => ({ rows: s.rdiffN, firstAt: s.rdiffFirst || null,
+        note: "the cutover's plumb line; its reader is the cutover gate" })),
+      truncations: {
+        closedTrips: ss && ss.t1Rows
+          ? "rows from the last 7 days of the 30-day t1 ledger, capped at " + SCORER_SURF_TRIPS + " — "
+            + ss.t1Rows.length + " carried" + (ss.t1Total != null ? " of " + ss.t1Total + " total" : "")
+            + "; econ buckets count every rolled trip, and beyond-window rows re-derive from T0 replay"
+          : "trip rows NOT carried — the trip ledger was not loaded this session; econ buckets still carry their counts",
+        idsStock: "distinct-ever ids capped at " + SCORER_ID_CAP + " per cell, capped flag per cell"
+      },
+      standingCaveats: [
+        "simulated throughout — no projected profit exists anywhere in this file; nets are sums at stated bounds (proven/operative/possible) for comparison against the control only",
+        "capture is ungraded: rankings do not exist; rank-stability across the capture probe is reported when econ exists",
+        "the archive observes only while the app is open — coverage figures state observed windows, never wall time"
+      ] },
+    cells,
+    openTrips: openTrips.map(p => ({ id: p.id, name: itemName(p.id), part: p.part, hzH: p.hzH, fv: p.fv,
+      openedAt: p.t, openBucket: p.openBkt, hourBand: p.hour, cells: p.cells, qty: p.qty, bid: p.bid, ask: p.ask,
+      pumpStamped: !!p.pump, sixGate: !!p.noChart, grade: p.grade,
+      lifecycles: p.vars.map(v => ({ capture: v.cap, state: v.state, buyQ: v.buyQ, sellQ: v.sellQ })) })),
+    closedTrips: ss && ss.t1Rows ? ss.t1Rows : "not loaded — see header.truncations.closedTrips" };
+}
+const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting, scorer: analysisScorer,
   calibration: analysisCalibration };
 function analysisPayload(view){
   const build = ANALYSIS_BUILDERS[view];
@@ -20290,6 +20810,7 @@ function renderAll(){
     else if (S.sub === "paper")    renderPaperView();
     else if (S.sub === "prospect") renderProspectView();
     else if (S.sub === "gates")    renderGateView();
+    else if (S.sub === "scorer")   renderScorerView();
     else                           renderWatch();
   }
   if (S.tab === "sleeve"){ renderSleeve(); renderClusters(); }   // baskets live on the Sleeve tab (clusters merge, Aug 2026)
@@ -20328,7 +20849,7 @@ function renderReview(){
 function setTab(t, sub){
   let target = t;
   if (t === "watch" || t === "scan" || t === "log"
-   || t === "paper" || t === "prospect" || t === "gates"){ target = "trade"; sub = t; }
+   || t === "paper" || t === "prospect" || t === "gates" || t === "scorer"){ target = "trade"; sub = t; }
   else if (t === "shadow") target = "review";
   else if (t === "routine") target = S.mode === "weekly" ? "review" : "home";
   S.tab = target;
@@ -20621,6 +21142,7 @@ document.addEventListener("click", e => {
   }
   const inv = t.closest("[data-inv]");
   if (inv){
+    if (MM_BENCHED){ toast(MM_BENCH_WHY + " Enrollment and per-item toggles are frozen; held lots stay sellable and standing quotes resolvable."); return; }
     const id = +inv.dataset.inv, w = DB.watch.find(x => x.id === id);
     if (!w){ toast("Add the item to the watchlist first — inventory mode lives on a watch row."); return; }
     /* The log's verdict rides along in the prompt — advice, never a lock. */
@@ -20767,10 +21289,10 @@ document.addEventListener("click", e => {
    unmistakable. Landing at the top of a consolidated tab reads as the link
    doing nothing — the reorg made every pre-reorg anchor suspect, so the
    probe measures where the viewport actually ends up (R24.2). */
-function navGoto(dest){
-  const [tab, anchor] = String(dest || "").split("#");
-  setTab(tab);
-  if (!anchor) return;
+/* The landing itself, extracted (log-flip fix, Aug 14 2026) so any press that
+   moves the user somewhere routes through ONE implementation — navGoto's
+   behaviour is unchanged; it delegates here. */
+function navLand(anchor){
   requestAnimationFrame(() => {
     const el = document.getElementById(anchor);
     if (!el) return;
@@ -20792,6 +21314,11 @@ function navGoto(dest){
     el.classList.add("landed");
     setTimeout(() => el.classList.remove("landed"), 1600);
   });
+}
+function navGoto(dest){
+  const [tab, anchor] = String(dest || "").split("#");
+  setTab(tab);
+  if (anchor) navLand(anchor);
 }
 
 function removeWatch(id){
@@ -20892,13 +21419,22 @@ function logFromWatch(id, qtyOverride, buyOverride, sellOverride){
   prefilledFor = null;
   $("#lQty").value = qtyOverride != null ? qtyOverride : (w ? planQty(w, c).qty || 1 : 1);
   $("#lDate").value = $("#lDate").value || today();
-  const q = $("#lQty"); q.focus(); q.select();
+  /* THE LANDING IS THE FORM'S, NOT THE BROWSER'S (log-flip fix, Aug 14 2026).
+     This press used to perform no landing at all: it bare-focused the qty
+     input and let focus-scroll — geometry- and soft-keyboard-dependent, never
+     offset for sticky chrome — decide where the viewport ended up, which on a
+     phone parked it on the panel BELOW the form. The viewport now lands on
+     the form through the same measured-chrome idiom every deep link uses
+     (navLand), and both focuses carry preventScroll so neither the immediate
+     focus nor the async prefill's re-focus can fight the landing. */
+  const q = $("#lQty"); q.focus({ preventScroll: true }); q.select();
+  navLand("logForm");
   prefillFresh(true).then(() => {
     if (buyOverride != null){ $("#lBuy").value = buyOverride; setMark("buy", null); }
     /* your standing ask is a better estimate than live — but still yours to correct */
     if (sellOverride != null){ $("#lSell").value = sellOverride; setMark("sell", "est"); }
     logPreview();
-    q.focus(); q.select();
+    q.focus({ preventScroll: true }); q.select();
   });
 }
 

@@ -77,6 +77,15 @@ rule and scan text):**
 | **trip `cells` membership** (on each t1 row — stage 1d) | the funding cells at the OPEN cycle | `cells` (config hashes at birth) | a cell that starts funding an item mid-trip joins at the next reopen (its own simulated placement could only exist from its funding cycle — the information-horizon rule applied to membership); a cell replaced by an import rolls nothing, and the trip row remains as the closed population's evidence |
 | **trip `pump` / `noChart` stamps** (stage 1d) | pump-flag state / chart-input coverage at the OPEN cycle | `pump`, `noChart` per trip, decomposed per econ bucket (`pumpN`/`pumpNet`, `ncN`) | membership evaluated at birth, never retroactively — a flag raised mid-trip does not restamp (the bl mid-trip case is different and VOIDS, because the veto is constitutional, not evidentiary); when 1d-or-later chart wiring lands, `noChart` decomposes the transition exactly as `fundedNoChart` does at the cell layer |
 
+## §2b Staged-store status at stage 1e (scan 2's re-report list, updated Aug 14 2026)
+
+| Store | Status at 1e |
+|---|---|
+| `scorerT2` cells + econ | **CONSUMED** — read by the Scorer surface (grid, econ panels, drills) and the `analysis-scorer` export; off the re-report list |
+| `t1` closed-trip rows | **CONSUMED** — read by the surface's trip drills and the export (bounded window, truncation declared); off the re-report list |
+| `t1open` carry | consumed since 1d (boot resume) |
+| `rdiff` rows | **STILL STAGED for the cutover gate** (its ruled reader). The 1e verdict line reads its day count and row total — an informational read that does not discharge the staging; scan 2 keeps re-reporting it until the cutover gate consumes it at verdict level |
+
 ## §3 The four flags — corrected per the consolidated ruling
 
 **The user's flags 1–2 matched the reconstruction below; 3–4 did not.** The real flag 3

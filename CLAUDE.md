@@ -604,20 +604,24 @@ The ≤7 walk-up bound is BINDING and probe-asserted. The rest of this section i
 
 ---
 
-## Surface map (Aug 11 2026)
+## Surface map (Aug 11 2026; Scorer added Aug 14 2026)
 
-Four tabs — Home, Trade, Sleeve, Review. Trade carries six sub-views: **Plan & Watchlist**,
-**Scanner**, **Flip Log**, and the three pull surfaces added Aug 11 2026 — **Paper Book**
+Four tabs — Home, Trade, Sleeve, Review. Trade carries seven sub-views: **Plan & Watchlist**,
+**Scanner**, **Flip Log**, and the pull surfaces — **Paper Book**
 (regime curves, divergence ledger, the overnight-vs-daytime comparison added Aug 13 2026,
 per-gate outcomes), **Prospecting** (per-stratum map,
 gap band, hours ledger — the recipe basis was withdrawn Aug 11 2026 and the copy that
-still advertised it was removed Aug 13 2026) and **Gate Health** (two streams per gate, die-off
-episodes, exception lane). The three present no rulings: they are read, not worked, so the
+still advertised it was removed Aug 13 2026), **Gate Health** (two streams per gate, die-off
+episodes, exception lane), and **Scorer** (stage 1e, Aug 14 2026 — the universe scorer's
+read surface: verdict-first first screen, the grid with hour bands and the blacklist
+canary, fill economics per horizon × participation × capture lifecycle, the "cannot rank
+yet" readiness verdict wherever a ranking would render). The pull surfaces present no
+rulings: they are read, not worked, so the
 walk-up attention budget is untouched. The weekly review keeps a one-line summary of each
 with a link through and no longer re-renders them — that consolidation is what paid for
 them under the zero-based complexity budget.
 
-**Each of the three carries an `⭳ export for analysis` button** (user-directed, Aug 12
+**Each pull surface carries an `⭳ export for analysis` button** (user-directed, Aug 12
 2026), with a combined `export all three` in the weekly review — a curated JSON file
 written to be READ by an analyst in chat, carrying evidence with its provenance rather
 than the aggregates it rolls up to. It is **not** the state backup on the Flip Log tab:
@@ -1404,7 +1408,7 @@ it, and deletes that class's older members from Downloads:
 
 | Class | Lands in |
 |---|---|
-| `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-all-*` | `inbox/` |
+| `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-scorer-*` · `analysis-all-*` | `inbox/` |
 | `ge-flips-*` (state backup) | `inbox/` |
 | `flags-pending*` | `briefings/` — **unchanged**, because the briefing procedure reads it there by name |
 
