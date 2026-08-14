@@ -5,6 +5,20 @@ dependencies, all client-side, localStorage persistence. Opening the file in a b
 *is* the app. Data comes from the RuneLite / OSRS Wiki real-time prices API, polled no
 faster than 60s.
 
+**One named exception to "localStorage persistence" (user ruling, Aug 14 2026):** the
+universe scorer's **T0/T1 market archive** lives in IndexedDB (`geflips-t0`) — the bulk
+`/5m` and hourly `/1h` readings, ~21–31MB/day against localStorage's 5MB quota. Same
+client-side no-build model; a storage API, not an architecture change. **Scoped to the
+archive, its trip ledger, and the reconciliation-diff ledger (`rdiff`, flag 3 — one row
+per scored bucket, 90-day retention, a ledger whose value is its length); nothing else
+may move.** The flip log's boundary (never leaves the browser, nothing in this repo
+contains trading data) is untouched — these stores hold market data and gate verdicts
+only. Design: `audits/DESIGN-2026-08-14-universe-scoring.md` §2; build stages:
+`HANDOFF.md`. *The `rdiff` store shipped one bookkeeping pass ahead of this sentence —
+that ordering defect is MISTAKES **M153**, and the rule it produced is recorded in the
+conformance gate below: constitutional scope statements ride the same commit as the
+store they govern.*
+
 ## How a ruling is written (prophylactic — user ruling, Aug 12 2026)
 
 > **When writing a ruling, name the property first; list the surface only as the example
@@ -91,6 +105,20 @@ soften these in code or copy.
 
 - **The tool proposes and prefills; it never acts.** No flip is logged, no offer placed,
   no watchlist commitment made without an explicit user button press.
+- **A flag in a record means ONE thing, everywhere; a second concern gets a second field**
+  (BINDING Aug 13 2026, user ruling). The decision log's `auto` was stamped on
+  machine-applied bookkeeping so the review could show it as a reviewable block, and two
+  closure entries written in code to record the *user's own* rulings made both readings of
+  the flag apply at once. **A flag that means one thing in some rows and another in others
+  is unusable to a reader weeks out, who cannot tell which sense a given row is in** — and
+  in this case the review's own block filters on it. So `auto` means **written by the
+  tool**, uniformly, and provenance moved to `by` (`"user"` when the tool writes down a
+  decision the user made, `"tool"` when the tool made the call, absent on a hand press
+  where the press *is* the provenance). The two are independent and the closures are the
+  case that proves it: written by the tool, decided by the user. **A record predating a
+  new field reads as unrecorded, never as a default to either side** — the third state
+  again. Detector: `[R73.11]`, which asserts all three states at the writer.
+
 - **Every automated decision states its reason inline where the user reads it** (widened
   Aug 12 2026 — the previous wording enumerated "every bench, clamp, and cap", and the
   enumeration was read as the scope). Escaping instances: auto-applied coherence
@@ -232,6 +260,44 @@ soften these in code or copy.
   make a violation visible after the fact — `openSeq`/`openPollSeq`, `bt ≥ p.t`,
   once-per-bucket credit, and `FILL_MODEL_V` partitioning populations by the model that
   produced them.
+- **An ordered rule chain that reports "the reason" is reporting POSITION IN THE
+  ORDERING** (BINDING Aug 13 2026, user ruling). **Per-rule attribution may not be read as
+  causal without an interaction surface: for each rule, the region of the input space where
+  it can be the ONLY failure. A rule whose region is empty is structurally inert, and its
+  counts measure the rule ahead of it.**
+  **Companion:** an attribution ledger may store only the first match — read its writer and
+  establish whether it records all matches or only the first, before computing anything
+  from it.
+  The founding instance, measured over 4,497 live items: `GATE.roi` is 1.2% and the margin
+  gate's tax limb is a sustained-ROI floor in disguise at `taxMult·τ/(1 − τ − taxMult·τ)` =
+  **6.52%**, so **2,358 items fail the ROI floor and 2,358 of 2,358 also fail the margin
+  floor** — the ROI floor cannot be a single-gate failure for any taxed item at any price.
+  Nobody wrote that rule; it is the ratio between two constants set independently. On the
+  same measurement the volume floor, second to last in the chain, is the sole binding gate
+  on **every one** of the 280 it heads. A gate's ledger presence measures where it sits in
+  the array. Two conclusions had already been drawn off the artifact and were struck: *"sole
+  blocker in 14 of 19, 74%"* (0% by construction) and *"the volume floor is never the sole
+  blocker, so loosening it would free nothing"* (it is the most common sole blocker there
+  is). Full measurement: `audits/SURFACE-2026-08-13-gate-interaction.md`.
+  **Where the causal number is cheaply available, it LEADS and the positional one is
+  demoted and labelled** (user ruling, Aug 13 2026). The deployment funnel now opens with
+  leave-one-out — *relax this rule alone and this many candidates clear the chain* — which
+  needed no new machinery: independent per-gate evaluation means the counterfactual is
+  already in the fail sets, and the panel had been rendering the positional number three
+  lines above the causal one since Aug 12. A first-fail partition is kept **only** where a
+  cumulative count needs each candidate attributed exactly once, and says so where it
+  renders. **Marking is the fallback, not the goal**, and a mark that appears on every
+  surface distinguishes none of them.
+  Detectors: `effRoiFloorPct()` and `bandUnreachable()` are the derived terms, asserted at
+  the source by `[R73.1]`–`[R73.3]`; `[R73.5]`/`[R73.6]` assert the label is present on
+  every positional surface **and absent from every binding one**; `[R73.10]` asserts the
+  causal number leads by DOCUMENT POSITION and that a rule binding nothing renders its
+  zero; and **scan 16** below is the enumeration.
+  **The methodological half, which is DOCTRINE and not a rule** — see *Arithmetic on the
+  constants* under **Practices and principles**: no scan in this file could have found
+  this, because every detector here reads code or copy against a STATED rule, and this was
+  a relationship between two constants that no rule ever stated.
+
 - **Data nothing reads, and surfaces nothing feeds, are defects** (stated Aug 13 2026 —
   four recorded instances, MISTAKES.md M018, M027, M036, M095; scan 2 had been checking
   this since Aug 10 with no rule stating the property). **A field written and never
@@ -240,6 +306,14 @@ soften these in code or copy.
   panel, queue, record type and setting answers: who writes it, who reads it, what decision
   changes because it exists. Removal is a valid answer and so is wiring it up; silence is
   not.
+  **Widened and ratified Aug 14 2026 (conformance-map row 12): a store whose reader is a
+  RULED FUTURE STAGE, named on record in the schema register, is not an orphan — scan 2
+  reports it as STAGED, not orphaned; a staged store whose named stage ships without
+  reading it becomes an ordinary orphan finding at that stage's boundary; and scan 2
+  RE-REPORTS every staged store on every audit until it is consumed, so a stalled stage
+  cannot leave a store staged indefinitely and invisibly.** The escaping instance: the
+  universe scorer's T0 archive and T2 rollups accrue ahead of their 1d/1e readers by
+  explicit staging ruling, which the unwidened rule would have flagged as write-only.
   Detector: **scan 2** below.
 - **Restraint may auto-arm; deployment never — and REMOVING a restraint counts as
   deployment, whether by action, by expiry, or by a rule change. Anything that widens what
@@ -342,6 +416,21 @@ soften these in code or copy.
   final value is frequently pinned by the *other* input, and then a seeded defect in your
   term changes nothing observable. The report is green and reads exactly like a working
   test.
+  **QUALIFIED Aug 13 2026 (user ruling), because a careful reader declined to apply the
+  rule as written.** In the adversarial pass over the money tier, the verifier examining
+  `probe:111` refused to adopt this entry's own paraphrase — the assertion passes
+  `qty = 1e9`, so the `Math.min` selects the horizon term and the cap does **not** pin the
+  output. Under the rule as stated it read as a clamp finding; on the code it is a
+  re-implementation finding, and the distinction changes the fix. The qualification:
+  **a clamp absorbs a defect only where it BINDS for the fixture in question, and an
+  assertion downstream of one must state WHICH INPUT PINS ITS OUTPUT.** A clamp that is
+  present but not binding absorbs nothing; a clamp that binds absorbs everything upstream
+  of it. Naming the pinning input is what makes the difference checkable instead of
+  assumed — and it is the same discipline as stating the effective unit beside an `n`.
+  Where the assertion cannot say which input pins it, that is itself the finding.
+  A rule imprecise enough that its own detector's operator sets it aside is a rule that
+  reports coverage it does not have, which is the defect this section exists to name.
+
   Both instances, named because the pair is what proved the shape rather than the
   incident: **`strataCount()`** — the per-stratum sampling counter sat behind a
   near-miss filter, so a probe that computed the counts itself passed with the bug fully
@@ -461,6 +550,38 @@ is not enforceable, and two of them read as though they were:
   presence of detectors; this is an aim.
 - **"The constitution accretes case law."** Near-misses become named, dated precedents;
   write incidents down, don't just resolve them. A practice, not a check.
+- **Staging practice** (user ruling, Aug 14 2026, ratified as standing practice). Three
+  rules for ordering a multi-stage build: **accrual ships ahead of its consumers when its
+  clock gates the schedule** — a component needing N days of accumulated data puts its
+  accrual layer on the critical path however uninteresting the code, and the clock's fine
+  print is stated (an archive that accrues only while the app is open counts observed
+  coverage, not wall days); **sizing numbers are measured under the rules that will
+  actually run** — a budget derived under conditions the plan itself changes is a
+  plausible number with an unknown error, and the re-measurement is its own stage, before
+  any code (the stage-0 re-measure found the 6× churn understatement the original number
+  hid); **superseded machinery stands until the replacement's first real output** —
+  retirement is a separate ruling gated on output, never a side effect of building the
+  successor. **A fourth rule ratified Aug 14 2026, the companion to partition-at-birth:
+  when a store's writing regime is scheduled to change, pin the current era's
+  distinguishing fact in a test** — `marketStatsFor().tr === null` inside `[R76.9]` is
+  the instance — **so the new regime's arrival forces the accounting rather than
+  permitting it**: the wiring that starts the second era cannot land without turning
+  something red, and the stanza that clears the red is where the partition gets checked.
+  No detector exists for the first three; the fourth is the practice of *writing*
+  detectors, and each pinned fact is itself mechanical.
+- **Arithmetic on the constants, not a pattern match on the code** (user ruling, Aug 13
+  2026). **Every detector in this file reads code or copy against a STATED rule. A
+  relationship between two constants that no rule ever stated is invisible to all of
+  them** — no scan found the margin/ROI entanglement and no scan could have. It was found
+  by trying to verify a claim that could not be supported and following the arithmetic.
+  So when a per-rule count, a ranking, or a "this is the binding constraint" conclusion is
+  on the table, take the constants that meet in one comparison and compute their ratio.
+  Expect more of this class. **This is DOCTRINE because it names a gap rather than a
+  rule**, and it is deliberately not dressed as enforceable: a candidate detector exists
+  and is cheap to state — enumerate every pair of constants that meet in one comparison
+  and compute the ratio — but whether it is worth building is its own ruling and has not
+  been made. Scan 16 covers the ordered-chain case only, which is one instance of this
+  shape rather than the shape itself.
 - **"'Done' requires the integration exercise."** Verification milestones are not design
   milestones; "show me the audit" is answered with an audit, not a claim. The audit is a
   scheduled discipline (below), but "done" is a judgment.
@@ -762,6 +883,12 @@ substance.
    silently (a name match, an eviction on a cold cache, a rate with no counterexample
    count). *(a) has run since Aug 10 2026, (b) was extended to entity state Aug 12 2026 and
    to all five shapes Aug 13 2026 on the consolidation of sixteen instances.*
+   **(a) amended Aug 14 2026 (ratified with the conformance map):** a write-only store
+   whose reader is a ruled future stage named in the schema register reports as
+   **STAGED**, not orphaned — and is **re-reported on every audit until consumed**, with
+   its named stage, so a stalled stage cannot leave a store staged indefinitely and
+   invisibly. A staged store whose named stage has shipped without reading it reports as
+   an ordinary orphan finding at that boundary.
 3. **Redundancy scan:** concepts implemented twice under different names (cluster
    baskets vs catalyst item-links was exactly this) — propose merges.
 4. **Glossary-coverage scan** (user ruling, Aug 11 2026): every term, badge, tag,
@@ -862,8 +989,96 @@ substance.
     assertion nobody knows is testing the product.
     Run it **before** deleting any guard found unreachable by scan 11 or scan 9, because
     a green assertion over dead code is the signal this scan exists to explain.
-14. **Output:** a findings report with proposed restructurings, ruled like everything
+14. **Label-claim scan** (Aug 13 2026, user ruling — the detector for a class nothing
+    was looking at): **an assertion label is copy, and copy claims exactly what it
+    computes.** Every existing scan reads what CODE does; none reads what a TEST says
+    about itself, so a label claiming more than its subject exercises is invisible to
+    all of them. This is the metric-honesty rule pointed at assertion names.
+    The founding instance: `probe:116`, labelled **"uncapped item funded full"**, asserts
+    `allocQty === 5000` — where 5000 *is* the per-item cap and the unclamped size is
+    30000. The test is sound as a clamp test; the label makes a false claim about which
+    test it is. The census found it only because the CLAMP face happened to route
+    through it — nothing was looking for the label itself.
+    **The cheap mechanical half:** grep every assertion label for STRONG-CLAIM words and
+    list the hits for reading. Four classes, each naming something the label claims not
+    to depend on, or claims to hold universally — which are exactly the claims a narrow
+    fixture or a clamped subject silently fails to keep:
+    - *negated mechanism* — `uncapped`, `unclamped`, `not through`, `rather than`,
+      `instead of`, `without`
+    - *source claim* — `at the source`, `directly`, `itself`, `the term`
+    - *universal* — `never`, `always`, `only`, `every`, `any`, `cannot`, `must not`
+    - *sufficiency* — `exactly`, `alone`, `regardless`
+    Findings are: a universal exercised against one instance (`[R4.3]`, *"intel cannot
+    touch blacklist / reserve / gate constants"*, tested against the single record type
+    with no write path at all); a negated-mechanism label whose subject is computed
+    downstream of that very mechanism (`probe:116`); a source claim whose subject is
+    still behind the clamp (`probe:111`, *"asserted at the source, not through a cap
+    that pins it"* — and the assertion copies production's expression, so the cap pins
+    it anyway).
+    **The grep produces CANDIDATES; the read is the work, and it is not mechanical.**
+    Same shape as scans 6, 9, 10, 11 and 13: **the enumeration is the deliverable** — a
+    label nobody read against its subject is a claim nobody checked. On the current
+    suite the four classes flag on the order of 100–200 of 958 labels, which is a
+    bounded first pass and shrinks as they are cleared.
+16. **Interaction-surface scan** (Aug 13 2026, the detector for *an ordered rule chain
+    reports position in the ordering*): for every ordered chain that reports "the reason"
+    — the gate chain, the funnel, `GATE_CHAIN_ORDER`, any first-match classifier added
+    later — enumerate each rule and state **the region of the input space where it can be
+    the ONLY failure**, in the variables that define it. A rule whose region is empty is
+    structurally inert and every count attributed to it belongs to the rule ahead of it;
+    a rule whose region is empty *for the population that actually reaches it* is the same
+    finding one step weaker. For each dominated rule, name the dominating rule and the
+    **ratio between the constants that produces the domination**, and say whether that
+    domination was designed or is incidental to two constants set independently.
+    **The enumeration is the deliverable**, the same shape as scans 6, 9, 10, 11 and 13: a
+    rule nobody bounded is a rule nobody knows is inert. Second half, and it is a separate
+    read: for every surface, export field and prior conclusion that consumes the chain's
+    attribution, state whether it reads the FIRST match or the FULL match set — the two
+    are different populations and must never be joined on rule name.
+17. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
+
+## The scorer conformance gate (standing requirement — user ruling, Aug 14 2026)
+
+Applies to **every universe-scorer stage from 1d on**, and **identically to the sleeve
+addendum stages when they start** — the conviction-boundary detector ships with the first
+planner surface, not after. The one-time BINDING mapping lives in
+`audits/CONFORMANCE-2026-08-14-scorer-map.md`; it was reported for ratification once, and
+every stage thereafter checks its **deltas** against that table rather than re-arguing
+the whole constitution.
+
+**Every stage report carries a conformance stanza — structured, not prose:**
+
+- **BINDING rules touched**, each with the mechanical check that verifies it: a scan run
+  with its enumeration count, or an assertion id with its seed result.
+- **Detectors shipped in the same commit as the surfaces they watch.** The
+  ships-with-detector doctrine enforced at commit grain: a surface landing without its
+  detector is an **incomplete stage, not a fast one**. **Read as covering constitutional
+  scope statements too (user ruling, Aug 14 2026 — M153):** a store lands in the same
+  commit as the scope sentence that sanctions it, because a constitution contradicting
+  the code it governs is the same defect as a surface without its detector — the
+  authority that would catch the next violation is the thing that is stale.
+- **Seeds:** every new assertion proven to bite; discriminating where states are
+  distinguished; **cascades recorded as propagation, not proof**.
+- **The applicable scans run at the stage boundary:** pooling (8); never-fed /
+  silent-state (2); claims-vs-computation (7); interrogability (5) over any new aggregate
+  or export; scan 14 over new assertion labels; scan 16 semantics — full fail sets — on
+  anything chain-shaped.
+- **DOCTRINE items satisfied by inspection, listed as inspection** — never dressed as
+  checks.
+
+**Schema decisions get the partition question at birth, in writing.** For every new store
+or row type: what regime writes it, what field records that, and what happens when the
+regime changes. `fillModelV` and `configHash` are the precedents; the 1c coverage-stamp
+gap (six-gate cycles that would have pooled with full-chain cycles when the h1 archive
+matured) is the live instance that earned the rule. **No store accrues past a session
+without its partition answer on record** — the register lives in the conformance map file.
+
+**The cutover stage gets the heaviest gate, distinct from the rest:** reconciliation
+history at the verdict level (already ruled); an integration-audit walk of the new
+surfaces; AND an adversarial pass over the cutover-critical assertions. The plan's pool
+switch is the one deployment-class change in the migration, and it gets the `[R7.3]`
+standard: **prove the guard red before trusting it green.**
 
 ## Verification
 

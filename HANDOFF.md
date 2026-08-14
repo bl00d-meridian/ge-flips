@@ -1,3 +1,140 @@
+# QUEUE — session close, 2026-08-14
+
+**Read this before starting anything.** Nothing here is committed; the working tree
+carries the session's changes. Suite state at close: **PROBE-PASS — 338 requirement ids
+asserted by the run against 353 rows, pairing clean both directions, seeding log complete
+with no unknown-status entries** (conformance map §4b).
+
+## NEXT SESSION OPENS WITH 1d — full scope as ruled, nothing else jumps ahead
+
+1. **Fill simulation on the frontier** — trips per (item, participation-level {25, 50,
+   100%}), shared across cells; forward accrual primary under the causality rules;
+   reconstruction from T0 as graded backstop; **no trips ever on blacklisted items**
+   (row 23c — the veto's surviving core; seed the no-trip guarantee when trips exist).
+2. **The BINDING capture probe** — fills at capture {0.05, 0.15, 0.30}; if cell rankings
+   flip across them, the instrument's verdict IS "insufficient calibration to rank",
+   rendered as the verdict, not a caveat.
+3. **Pump stamps per row 15's pre-ruling** — stamp at trip birth, never exclude; cell
+   aggregates decompose by the stamp; proposals citing materially pump-exposed cells
+   carry the caveat inline (calibration-tripwire pattern, third instance).
+4. **The horizon-set proposal, for one ruling alongside participation** — 6h default;
+   the 9.5h overnight variant as its own question (stage 0: evening funds 13, morning 5;
+   hour bands are already in the schema).
+5. **Scan 11 (information horizon) at the stage boundary**, per the ratified map; stanza
+   in the report, checked against the map's deltas.
+6. **The 23 TRANSFER findings folded in** — `audits/TRIAGE-2026-08-14-fill-tier.md`:
+   census fixes on the shared fill core (obs-accrual cap extraction, at-bid brackets,
+   once-per-bucket, sell-window anchor, R59.x discriminator set, bounds pair, provenance
+   stamps), re-verified at fix time under the seeding discipline.
+7. **Chart wiring lands here or later — and trips the pinned era fact** when it does:
+   `marketStatsFor().tr === null` inside `[R76.9]` goes red, and clearing it means
+   accounting for the `fundedNoChart` transition in the stanza.
+8. **First thing on next app-open (user-profile deployment self-check):** the three
+   freshness streams — market archive, universe scorer, reconciliation diff — should all
+   show a first bucket within one poll. The desk's headless check already proved the
+   schedule end-to-end (DEPLOY-OK at 2s, map §4b); this confirms the USER's own profile.
+
+**Then:** 1e (surfaces + exports, drill-decomposable; the scorer's state line; b=100
+stays deferred until capture calibration); **the cutover gate behind reconciliation
+history** (the `rdiff` ledger should be the longest-observed number in the instrument by
+cutover day — heaviest gate: verdict-level reconciliation, integration-audit walk,
+adversarial pass on cutover-critical assertions, `[R7.3]` standard); **retirements HELD**
+(regime race, slice's sampling role — until the scorer's first readable output);
+**sleeve addendum stages after capture calibration**, conformance gate applying
+identically, conviction-boundary detector with the first planner surface.
+
+## THE UNIVERSE SCORER — build ruled Aug 14 2026, staged
+
+Design ratified as plan of record: `audits/DESIGN-2026-08-14-universe-scoring.md`, with
+the six rulings recorded there and below. Stage status:
+
+| stage | status | where |
+|---|---|---|
+| 0 — frontier re-measured under the instrument's own gates | **DONE** | `audits/STAGE0-2026-08-14-frontier.md` — the frontier CHURNS (109/89 at two times of day, intersection 27, union 171); concurrent sim load ~90–110/participation level; sizing gate added zero; thinness confirmed (median 43/h) |
+| 1a — pure gate core `(stats, config) → fails` | **DONE** | `marketGateFails` / `marginNeedCfg` / `volFloorCfg` / `liveMarketConfig` / `marketStatsFor` in `index.html`; the live chain routes through the core; §74 (R74.1–R74.5b), six discriminating seeds; operator leaks excluded one by one |
+| 1b — T0 archive accrual | **DONE, and the 7-day clock is RUNNING once the app is next opened** | `t0*` in `index.html`, riding `loadHour`; IndexedDB `geflips-t0` (m5 72h / h1 8d retention); coverage = keys-present as a pair; failure surfaced on `warn()`; §75 (R75.1–R75.5b), six seeds incl. the wiring; **CLAUDE.md carries the named localStorage exception in the same tree** |
+| 1c — scoring + T2 rollups | **DONE** | §76 (R76.1–R76.7), seven discriminating seeds. The core emits **config-free keys** (`MARKET_GATE_KEYS`; display names are persisted ledger keys in `MARKET_GATE_LABEL` and do not move — the "3×" stands only in the live chain's own label, whose taxMult IS 3; the copy sweep derived every other rendered instance from `GATE.taxMult`/`effRoiFloorPct()`). 16-cell grid + live control deduped by hash; **one pass per 5m bucket**; per-cell flow (`cycles`/`fundedItemCycles`) and stock (`ids`/`distinct`, capped at `SCORER_ID_CAP=3000` sized from the union flow) first-class; 24 UTC hour-bands keyed to the BUCKET's hour; `DB.scorerT2` with an explicit `validateImport` carry that **re-derives the hash from the sanitized config**; failure surfaced via `scorerFailNote` |
+| **conformance gate** — standing, every stage from 1d | **IN FORCE, mapping RATIFIED** | `audits/CONFORMANCE-2026-08-14-scorer-map.md`: 23 rows — row 12's widening ratified WITH the scan-2 re-report addition; row 15 pre-ruled (stamp, don't exclude); **row 23 added** (the blacklist canary, amended form); partition register ratified including the deliberate non-answer on ids stock; pinned-era-fact ratified as standing practice. Stages check deltas; stanza per report |
+| **row 23 + flag 3** (consolidated rulings) | **DONE, seeded, deployed** | The canary pair `blFunded`/`blIds` (`[R76.10]`/`[R76.10b]` — discriminating seeds both directions, B proven on the crashed run's own 09:06 report); the reconciliation diff in IDB `rdiff` (DB v2, 90d, `[R77.1–3]`); the boot race found by the deployment check and fixed (`[R76.11]`, **M154**); **DEPLOY-OK — first bucket archived, scored and diffed 2s after boot on the real API** |
+| **fill-tier triage** (mid-session order) | **DONE** | `audits/TRIAGE-2026-08-14-fill-tier.md`: the census's 45 fill-tier findings (the surviving superset of the 32-CONFIRMED roster, which died with the syntheses — M149): **23 TRANSFER** (fold into 1d), **17 EXPIRE-AT-RETIREMENT** (reason per finding; unfixed by design until the retirement ruling), **5 SPLIT** (property re-lands in 1d/1e, assertion dies with its surface) |
+| 1d — fill sim on the frontier + capture probe | NOT STARTED — **opens next session, scope at the top of this file** | — |
+| 1e — surfaces + exports, drill-decomposable | NOT STARTED | zero walk-up cost by construction; b=100 deferred until capture calibration; the scorer's state line belongs here (freshness streams carry it meanwhile) |
+
+**The clock's fine print:** T0 accrues only while the app is open. The 7-day chart-gate
+cold start counts OBSERVED coverage, not wall days — `t0Coverage` reports the pair, and a
+closed browser is an unobserved gap from the moment it starts (warn fires only on accrual
+*failures*, not on absence — absence is the observed-time rule's territory).
+
+**Standing sub-rulings:** first-fail never enters the instrument's schema (full fail sets
+from birth); retirements (regime race, discovery slice's sampling role) HELD until the
+scorer's first readable output; minExpect at read time, never a dimension.
+
+## Ruled and NOT yet done (pre-scorer queue — nothing here jumps ahead)
+
+| # | Item | Why it waits |
+|---|---|---|
+| 1 | **The fill-tier findings — TRIAGED 2026-08-14**, dispositions in `audits/TRIAGE-2026-08-14-fill-tier.md`. The two-agent 32-CONFIRMED roster is not re-derivable (died with the syntheses, M149); the triage covers the census's 45-finding superset: 23 TRANSFER → folded into 1d's scope, 17 EXPIRE-AT-RETIREMENT with reasons recorded, 5 SPLIT (property re-lands, assertion expires with its surface) | dispositions applied; transfers ride 1d |
+| 2 | **The 82 gates/other findings** — SINGLE-AGENT, no adversarial pass ever ran (11 verifiers died at a session limit). **Ruled: no fixes off them, counted separately in every report, never folded in with verified findings** | needs its own adversarial pass first |
+| 3 | **Scan 14's first run** (label-claim scan, written into CLAUDE.md) — never executed | new |
+| 4 | **The production-anchor schema change** — every future census carries a `codeQuote` for production citations, not just probe ones | applies to the next census, not retroactively |
+| 5–8 | **CLOSED 2026-08-13** — see the section below. Numbers retained, never reused | — |
+| 9 | **THE 12 REMAINING AFFECTED SURFACES ARE MARKED, NOT REPAIRED** (user ruling, Aug 13 2026). Each declares itself *headline gate, not binding gate*; the surfaces reading the full fail set deliberately carry no mark, and `[R73.6]` asserts that absence because a mark on everything distinguishes nothing. **The 13th — the deployment funnel — was repaired on 2026-08-13** and is done: leave-one-out leads, first-fail is demoted and labelled, the ⚑ flag is gone (`[R73.10]`). The repair-or-retire decision for the other twelve is **still open**; the appendix to `audits/SURFACE-2026-08-13-gate-interaction.md` costs the options | open, deliberately |
+| 10 | **FULL-FAIL-SET LEDGER RECORDING — HELD** (user ruling, Aug 13 2026). `DB.gateLog` would write one row per failing gate instead of `fails[0]`: ~4 lines at `index.html`'s writer, **~3.5× the rows** (648 → ~2,300 over four observed days, order of 20k at 30-day retention), and a **migration partition** — pre-change rows are headline-only and must be reported as their own population until they age out, never merged. **Held because the causal number turned out to be available without it:** the funnel's leave-one-out ranking ships today from `failProfile()`, so this buys *historical* attribution rather than *current*, and a migration is not worth that alone. **What would revive it:** a question that needs per-gate history — most likely the persistence bar, which still promotes proposals on headline day-counts, or a retrospective asking what was binding last month rather than now | held, logged |
+
+## Rows 5–8 — CLOSED 2026-08-13 by user ruling
+
+Rows 5 and 6 are **dead, not benched**; rows 7 and 8 are **measured and acted on**. Kept
+here as a record of what was closed and why, so neither is re-proposed without meeting the
+arithmetic that killed it. Both closures are written to the in-tool decision log
+(`ROI_EXP_CLOSED_KEY`, `PAPER_POP_CLOSED_KEY`, once per store, not stamped `auto`).
+
+- **Row 5 — the ROI-floor loosening experiment: DEAD.** Loosening `GATE.roi` 1.2% → 1.0%
+  admits **0 of the 41 live band items**, because the margin gate's tax limb enforces an
+  effective 6.52% floor. **The gate choice it rested on is struck**: the "74% of all sole
+  blocks" figure is 0% by construction. Neither constant moved.
+- **Row 6 — the paper-book population fix: DEAD, same reason.** The `loose \ current` band
+  cannot be fed while the entry condition is `pass || nearMiss` and every band item carries
+  two failures. **The reserved-scanner-slot carve-out stays recorded as sound but moot** —
+  the right protection for a change no longer worth making.
+- **Row 7 — the margin/ROI entanglement: MEASURED.** `audits/SURFACE-2026-08-13-gate-interaction.md`.
+  The queue's arithmetic was right and understated: the domination is not "above ~250gp",
+  it is total, because below 250 the tick limb takes over from the tax limb with no gap.
+- **Row 8 — the gate ledger records `fails[0]` only: CONFIRMED and now law.** BINDING in
+  CLAUDE.md, detector scan 16, incidents M150–M151.
+
+## For the NEXT session
+
+**Nothing is queued from the gate-surface work except row 9's open decision.** The
+measurement is complete, the rulings are applied, the suite is green at 306 requirement
+ids, and §9 of the surface audit lists three adjacent findings that were deliberately not
+pursued (the `strataCount` residual-bucket label, the marginal-gate attribution's three
+buckets not summing to their population, and the tax-cap regime above a 250m sale price).
+
+## Done this session, so it does NOT belong in the queue
+
+The gate-ledger `v` field and its three round-trip states; the regime-race pairing fix
+(named bands, `loose \ current` computed at last) and `shadowRegimeEvidence`'s tie-vs-
+never-fed split; the paper-trip carry (21 dropped fields restored, `pend` deliberately
+dropped); the `fillModelV` pooling note; the falsy-zero fixes (`f.bh` skip reason, both
+`spreadPct` erasures, the band selector); the pump-guard extraction `[R70.x]`; the intel
+sacred-set coverage `[R71.x]`; the horizon-term split `[R72.x]`; `probe:116`'s rename;
+scan 14 written; the clamp rule's binding-vs-present qualification; MISTAKES M147–M149.
+
+## Standing facts worth not rediscovering
+
+- **`planCap` has zero direct probe coverage** (M147) and is the clamp scan 9 names first.
+  It defeated `shadowHorizonUnits`, `probe:111`'s seed and `probe:116`'s label.
+- **The first 622 probe lines run on `DB.touchWindows = []`**, a constant 4h fallback, so
+  allocator sizing, quote participation caps and die-off voiding are never asserted against
+  the product's default four-window schedule (M148).
+- **A cached workflow replay is not free** — resuming a 51-agent run cost 13 agents and
+  killed both syntheses (M149).
+- **Freeze the tree during any background analysis**, and prove it by content hash at both
+  ends of every agent's work. The method is recorded and it worked: 9 agents, one
+  fingerprint at start and one at end.
+
+---
+
 # HANDOFF — 2026-08-12
 
 State that lives only in a conversation and would be lost with it. Everything

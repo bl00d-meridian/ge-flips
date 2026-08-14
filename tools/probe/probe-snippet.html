@@ -26,6 +26,19 @@
     if (!btn) return "";
     return btn.outerHTML + (btn.nextElementSibling ? btn.nextElementSibling.outerHTML : "");
   };
+  /* ONE BAND'S BULLET, not the whole regime section (the same tell, one
+     surface along). regimeSeparatorSection renders every band into one string,
+     so a bare /inert/ over the section is satisfied by ANY band — which is how
+     the old [R65.2] assertion sat green through a live eligibility change that
+     moved its own band into a different state. Defined here beside blendFrag,
+     at IIFE scope, because three separate try-blocks need it: a helper block-
+     scoped to the first one is invisible to the others and fails at run time,
+     not at parse time. */
+  const sepFrag = (html, key) => {
+    const lab = (REGIME_DEFS().find(r => r.key === key) || {}).lab || key;
+    return String(html).split('<div style="margin-top:4px">• ')
+      .filter(p => p.indexOf("<b>" + lab + "</b>") === 0)[0] || "";
+  };
   /* The early stub traps app-script parse errors, but its beacon is overwritten
      by this report — so surface them HERE, first. Without this a syntax error
      in index.html reads as a cascade of "x is not defined" with no cause. */
@@ -108,12 +121,67 @@
        for gamma, so neither figure can see a defect in the sizing that feeds
        them. They still test the clamps, which is worth testing; this tests the
        term the clamps hide. */
-    ok("the allocator's horizon term is asserted at the source, not through a cap that pins it",
-       planHorizonUnits(50000, 1e9) === Math.floor(50000 * GATE.capture * FILLH())
-       && planHorizonUnits(50000, 12) === 12
-       && planHorizonUnits(50000, 1e9) > 5000,
-       JSON.stringify({ term: planHorizonUnits(50000, 1e9), cappedPick: gamma && gamma.allocQty }));
-    ok("uncapped item funded full", !!gamma && gamma.allocQty === 5000 && !(gamma.sizeNotes || []).some(s => /cluster/.test(s)),
+    /* ═══ THE HORIZON TERM, BY SCALING AND UNDER A REAL SCHEDULE ═══
+       (adversarial pass, Aug 13 2026 — CONFIRMED after seven refutation attempts)
+       This used to assert `planHorizonUnits(50000, 1e9) === Math.floor(50000 *
+       GATE.capture * FILLH())` — the production body restated character for
+       character, so the two sides moved together and the only defect it could
+       catch was an edit the probe author forgot to mirror. In particular the
+       M118 recurrence was invisible: swapping FILLH() for DB.fillHorizonH at
+       the production line changes NOTHING here, because probe:65 sets
+       `DB.touchWindows = []` and the two are the same 4 under an empty schedule.
+       Three assertions replace it, none of which restates the formula:
+       R72.1 scales — doubling the volume gate doubles the term, and doubling
+       the HORIZON doubles it too, which is the dependence the copy could not
+       see. R72.2 pins the clamp as wiring, separately. R72.3 does the same
+       under a REAL four-window schedule, where FILLH() and DB.fillHorizonH are
+       different numbers and the substitution is therefore observable. */
+    ok("[R72.1] the horizon term SCALES with its inputs — asserted by proportion, never by restating the formula",
+       (() => { const a = horizonUnitsFor(50000), b = horizonUnitsFor(100000);
+                const keepFH = DB.fillHorizonH; DB.fillHorizonH = keepFH * 2;
+                const c = horizonUnitsFor(50000); DB.fillHorizonH = keepFH;
+                return a > 0 && Math.abs(b - 2 * a) <= 1 && Math.abs(c - 2 * a) <= 1; })(),
+       JSON.stringify({ v: horizonUnitsFor(50000), v2: horizonUnitsFor(100000) }));
+    ok("[R72.2] the call site CLAMPS the term to qty — asserted as wiring, apart from the term itself",
+       planHorizonUnits(50000, 12) === 12 && planHorizonUnits(50000, 1e9) === horizonUnitsFor(50000),
+       JSON.stringify({ clamped: planHorizonUnits(50000, 12), unclamped: planHorizonUnits(50000, 1e9) }));
+    /* THE ONE THAT CATCHES M118. Under a real schedule FILLH() is the gap to
+       the next touch and DB.fillHorizonH is the dormant fallback; they differ,
+       so reading the wrong one changes the answer. Under the empty schedule
+       this block otherwise runs on, they are identical and the defect hides. */
+    ok("[R72.3] under a REAL schedule the term follows the SCHEDULE, not the dormant fallback constant",
+       /* THE FALLBACK IS DERIVED FROM THE LIVE GAP, NOT PINNED AT 4 (fifth face,
+          caught on this assertion's own first run). The gap to the next touch is
+          a function of the wall clock and sweeps 0->9.5h, so it passes through 4
+          several times a day: a fixed fallback of 4 made this pass or fail by the
+          hour, and it failed its first run at gap = 3.97. Deriving the fallback
+          from the gap makes the two distinguishable at EVERY instant, which is
+          the ruling's "inject the varying input" rather than pinning the clock. */
+       (() => { const kw = DB.touchWindows, kf = DB.fillHorizonH;
+                DB.touchWindows = [7, 12, 17, 21.5];
+                const gap = FILLH();
+                DB.fillHorizonH = gap + 5;
+                const viaSchedule = horizonUnitsFor(50000);
+                const viaFallback = Math.floor(50000 * GATE.capture * DB.fillHorizonH);
+                DB.touchWindows = kw; DB.fillHorizonH = kf;
+                return gap > 0 && viaSchedule !== viaFallback; })(),
+       JSON.stringify((() => { const kw = DB.touchWindows, kf = DB.fillHorizonH;
+                DB.touchWindows = [7, 12, 17, 21.5];
+                const gap = FILLH(); DB.fillHorizonH = gap + 5;
+                const o = { scheduleGapH: Math.round(gap * 100) / 100, viaSchedule: horizonUnitsFor(50000),
+                            fallbackH: Math.round((gap + 5) * 100) / 100,
+                            viaFallback: Math.floor(50000 * GATE.capture * DB.fillHorizonH) };
+                DB.touchWindows = kw; DB.fillHorizonH = kf; return o; })()));
+    /* RENAMED Aug 13 2026 (label-claim scan, scan 14). This read "uncapped item
+       funded full" — a false claim about its own subject. 5000 IS the per-item
+       cap, and the horizon term for gamma computes 30000, so the item is
+       neither uncapped nor funded full: the assertion is a CLAMP test, and a
+       defect anywhere in the sizing term that feeds the cap leaves 5000
+       unchanged. That is exactly why the term itself is asserted separately.
+       No behaviour change — the test was always worth having, under its real
+       name. An assertion label is copy, and copy claims what it computes. */
+    ok("item outside the cluster cap lands at the PER-ITEM cap (a clamp test; the sizing term is asserted separately)",
+       !!gamma && gamma.allocQty === 5000 && !(gamma.sizeNotes || []).some(s => /cluster/.test(s)),
        gamma ? JSON.stringify({q: gamma.allocQty, notes: gamma.sizeNotes}) : "gamma missing: " + JSON.stringify({fundedIds, bench: plan.bench.map(b => b.name + ": " + b.failed)}));
 
     // ---- exposure counts committed positions ----
@@ -615,10 +683,17 @@
        && /Probe \w+ \(6 of 6\)/.test(dep84b)
        && !/of the last 7 days/.test(dep84b),
        dep84b.slice(dep84b.indexOf("ledger persistence") - 40, dep84b.indexOf("ledger persistence") + 320));
+    /* THE COPY MOVED, THE PROPERTY DID NOT (Aug 13 2026). The per-item count
+       used to render as a bench row on the panel; it now renders in the
+       "binds" drill, where the same benchDaysTxt() output is a cell. Asserted
+       through production's OWN drill renderer rather than by matching the
+       panel dump, which is both narrower and closer to what the reader sees. */
+    const bindsBox51 = drillBoxHTML("dep:binds:volume floor").replace(/<[^>]+>/g, " ");
     ok("[R51.1] and the window's unobserved remainder is named, not left to arithmetic",
        /1 day not observed — no claim is made about it/.test(dep84b)
-       && /benched by this gate on 6 of 6 observed days \(7-day window; 1 day not observed/.test(dep84b),
-       dep84b.slice(dep84b.indexOf("observed day") - 90, dep84b.indexOf("observed day") + 200));
+       && /6 of 6 observed days \(7-day window; 1 day not observed — no claim is made about it\)/.test(bindsBox51)
+       && !/of the last 7 days/.test(bindsBox51),
+       bindsBox51.slice(0, 400));
     /* The pair, from production: the numerator was always observed-only (a
        ledger row exists only on a day a plan built); the defect was the
        denominator. Assert both halves come back together. */
@@ -836,7 +911,21 @@
     ok("funnel renders enter → kills → funded", /candidates enter/.test(dep) && /funded/.test(dep)
        && /ROI floor/.test(dep) && /seasoning \(qualifying\)/.test(dep), dep.slice(0, 600));
     // ROI floor kills 4 first-fail (the 3 near-misses + the wreck's first failure)
-    ok("funnel kills 4 at the ROI floor and flags it a top killer", /⚑ ROI floor/.test(dep) && /−4 · 2 remain/.test(dep),
+    /* REWRITTEN Aug 13 2026. This asserted `/⚑ ROI floor/` — the flag that is
+       now struck, and whose whole claim was that a large first-fail count
+       identifies what to relax. THE FIXTURE ITSELF IS THE COUNTEREXAMPLE and
+       always was: the ROI floor HEADS 4 candidates here and BINDS 3, because
+       the wreck (9002) fails several gates and relaxing the ROI floor would not
+       move it. Note line ~885 — the near-misses had to be made TAX-EXEMPT for
+       the ROI floor to be a single-gate failure at all, with the reason spelled
+       out in a comment. The entanglement was discovered here, worked around,
+       and never carried out of the fixture. It now has a rule.
+       The funnel's own arithmetic (−4 · 2 remain) is unchanged and still
+       asserted: first-fail still partitions the candidates, which is why the
+       funnel keeps it. */
+    ok("[R73.10] the ROI floor HEADS four candidates and BINDS three, and both numbers render",
+       /−4 · 2 remain/.test(dep) && /binds/i.test(dep)
+       && />3<\/b>[\s\S]{0,80}bind/.test(dep) && /heads 4/.test(dep) && dep.indexOf("⚑") < 0,
        dep.slice(0, 800));
     ok("near-miss split shows the one number short", /3 near-misses/.test(dep)
        && /sustained ROI 1\.15% vs 1\.2% floor/.test(dep), dep);
@@ -985,6 +1074,101 @@
        && v.db.gateLog.length === DB.gateLog.length && Object.keys(v.db.audRuled).length > 0
        && v.db.nudgeSnooze.export === "2026-08-09",
        JSON.stringify({dl: v.db.decisionLog.length, gl: v.db.gateLog.length, ns: v.db.nudgeSnooze}));
+    /* THE THREE v STATES SURVIVE THE ROUND TRIP (user ruling, Aug 13 2026).
+       The assertion directly above compares gateLog LENGTH, and a length check
+       cannot see a field: the sanitizer could drop `v` outright, or map its
+       null to 0 through num() — which returns 0 for null, because `+null` is 0
+       and 0 is finite — and the row count would still match. That gap was
+       found by noticing this was the assertion I would have leaned on.
+
+       The fixture carries all three states on purpose and each is asserted
+       SEPARATELY, so a failure names its own cause rather than reporting "the
+       round trip broke". Each has its own DISCRIMINATING seed — one that fails
+       its target and leaves the other two green, which is the demonstration
+       the tenth face demands:
+         R68.3 — `r.v = e.v || null`            → 0 becomes null: 3 fails, 4 and 5 pass
+         R68.4 — `r.v = num(e.v)`               → null becomes 0: 4 fails, 3 and 5 pass
+         R68.5 — drop the hasOwnProperty guard  → absent becomes null: 5 fails, 3 and 4 pass
+       Deleting the `v` handling outright is NOT a proof of any one of them: it
+       fails 3 and 4 together and leaves 5 green, which demonstrates only that
+       the field is read, not that each state is distinguished. */
+    const glV = validateImport(JSON.parse(JSON.stringify({ gateLog: [
+      { d: "2026-08-01", id: 9001, g: "ROI floor", v: 0 },
+      { d: "2026-08-01", id: 9002, g: "ROI floor", v: 1.07 },
+      { d: "2026-08-01", id: 9003, g: "funded",    v: null },
+      { d: "2026-08-01", id: 9004, g: "ROI floor" } ] }))).db.gateLog;
+    ok("[R68.3] a recorded gate value of ZERO round-trips as 0, not as absent and not as null",
+       glV.length === 4 && glV[0].v === 0 && Math.abs((glV[1].v || 0) - 1.07) < 1e-9,
+       JSON.stringify(glV));
+    ok("[R68.4] a null gate value round-trips as null, never as 0 — num() would have made it 0",
+       glV.length === 4 && glV[2].v === null,
+       JSON.stringify(glV.map(r => ({ g: r.g, v: r.v, t: typeof r.v }))));
+    ok("[R68.5] a row that predates the field round-trips with NO v key — absent is not null",
+       glV.length === 4 && !Object.prototype.hasOwnProperty.call(glV[3], "v"),
+       JSON.stringify(glV.map(r => Object.prototype.hasOwnProperty.call(r, "v") ? r.v : "«absent»")));
+
+    /* ═══ R68.9–13 THE PAPER-TRIP CARRY (user ruling, Aug 13 2026) ═══
+       The shadowBook sanitizer enumerated fields explicitly and stopped short:
+       TWENTY-ONE were dropped on every restore. Asserted PER SEMANTIC GROUP,
+       never by row count — the length-only check that let this stand is the
+       shape being avoided, and a single all-fields assertion would fail as one
+       blob without naming which group vanished.
+       Seeds discriminate by group: drop the Tier-1 puts → 9 fails alone; drop
+       the `typeof p.anchored === "boolean"` test → 10 alone; drop the Tier-2
+       puts → 11 alone; drop the trace block → 12 alone; carry `pend` → 13. */
+    const ptIn = { id: 4242, fam: "probe:carry", itemId: 9001, name: "Probe carry", qty: 10,
+      bid: 1000, ask: 1040, t: 1786600000000, state: "filled",
+      regimes: ["current", "loose"], cohort: "scanner", scanTier: 2,
+      hzH: 6, fillModelV: 2, openSeq: 0, obsLive: 0, reconMs: 90e3,
+      grade: "mixed", anchored: false,
+      buyBkt: 1786600300000, buyDoneBkt: 0, sellBkt: 1786600600000,
+      exitPx: 0, exitApprox: 1, reachLimited: 1, gap: 1,
+      predH: 1.25, predOldH: 0.5, predCapture: 0.3, predFlow: 0, predShare: 0,
+      predReached: 0, predReadings: 4, predBasis: "no-reach",
+      buyTrace: [{ t: 1786600300000, lo: 999, lv: 40, tch: 1, credited: 0, full: 12 }],
+      sellTrace: [{ t: 1786600600000, hi: null, hv: 0, credited: 0 }],
+      pend: { bkt: 1786600900000, lo: 1, lv: 2, hi: 3, hv: 4, touchBuy: 1, touchSell: 1 } };
+    const ptOut = validateImport(JSON.parse(JSON.stringify({ shadowBook: [ptIn] }))).db.shadowBook[0];
+    ok("[R68.9] provenance and partition fields survive the carry — hzH, fillModelV, openSeq, obsLive, reconMs, grade",
+       !!ptOut && ptOut.hzH === 6 && ptOut.fillModelV === 2 && ptOut.openSeq === 0
+       && ptOut.obsLive === 0 && ptOut.reconMs === 90e3 && ptOut.grade === "mixed",
+       JSON.stringify(ptOut && { hzH: ptOut.hzH, fillModelV: ptOut.fillModelV, openSeq: ptOut.openSeq,
+                                 obsLive: ptOut.obsLive, reconMs: ptOut.reconMs, grade: ptOut.grade }));
+    /* THE IRRECOVERABLE ONE, asserted at FALSE on purpose. Every other field
+       records something still knowable; `anchored` is an open-time fact about
+       operator presence that no later pass can reconstruct, and its legitimate
+       value is falsy — a truthiness carry would drop exactly the false ones
+       and silently move them into "predates the stamp". */
+    ok("[R68.10] anchored survives as FALSE — the one irrecoverable field, and its legitimate value is falsy",
+       !!ptOut && ptOut.anchored === false && typeof ptOut.anchored === "boolean",
+       JSON.stringify({ anchored: ptOut && ptOut.anchored, type: ptOut && typeof ptOut.anchored }));
+    ok("[R68.11] causality and pricing stamps survive, including the zero-valued ones",
+       !!ptOut && ptOut.buyBkt === 1786600300000 && ptOut.buyDoneBkt === 0
+       && ptOut.sellBkt === 1786600600000 && ptOut.exitPx === 0
+       && ptOut.exitApprox === 1 && ptOut.reachLimited === 1 && ptOut.gap === 1,
+       JSON.stringify(ptOut && { buyBkt: ptOut.buyBkt, buyDoneBkt: ptOut.buyDoneBkt,
+                                 sellBkt: ptOut.sellBkt, exitPx: ptOut.exitPx }));
+    /* A trace bucket carries THREE distinct readings in adjacent cells:
+       hi null = no high print, hv 0 = printed but nothing on that side,
+       credited 0 = nothing credited. Merging any two is a real misreading. */
+    ok("[R68.12] traces carry in full, and null / 0 stay distinct inside a bucket",
+       !!ptOut && Array.isArray(ptOut.sellTrace) && ptOut.sellTrace.length === 1
+       && ptOut.sellTrace[0].hi === null && ptOut.sellTrace[0].hv === 0
+       && ptOut.sellTrace[0].credited === 0
+       && Array.isArray(ptOut.buyTrace) && ptOut.buyTrace[0].credited === 0
+       && ptOut.buyTrace[0].lo === 999
+       && ptOut.predBasis === "no-reach" && ptOut.predShare === 0 && ptOut.predReadings === 4,
+       JSON.stringify(ptOut && { sell: ptOut.sellTrace, buy: ptOut.buyTrace, basis: ptOut.predBasis }));
+    ok("[R68.13] pend is dropped — mid-flight accrual belongs to a session the carry ends",
+       !!ptOut && ptOut.pend === undefined,
+       JSON.stringify({ pend: ptOut && ptOut.pend }));
+    /* THE MODEL PARTITION. Renders nothing on one model, warns on two. */
+    ok("[R68.14] a single-model population says nothing; a pooled one names the models and their counts",
+       paperModelNote([{ fillModelV: 2 }, { fillModelV: 2 }]) === ""
+       && /pools 2 fill models/.test(paperModelNote([{ fillModelV: 1 }, { fillModelV: 2 }]))
+       && /fill model v1 \(1\)/.test(paperModelNote([{ fillModelV: 1 }, { fillModelV: 2 }]))
+       && /pre-stamp/.test(paperModelNote([{ fillModelV: 2 }, {}])),
+       paperModelNote([{ fillModelV: 1 }, { fillModelV: 2 }]));
     // ═════════════════════════════════════════════════════════════════
     // THESIS SLEEVE + ANALYST INTELLIGENCE (Aug 10 2026 build)
     // Assertion names carry [R#] tags cross-referencing REQUIREMENTS.md;
@@ -1227,13 +1411,66 @@
 
     // ─── R4.3: boundaries — ratification touches nothing sacred; history wins ───
     DB.flips = [{ id: Date.now(), itemId: 9001, name: "Probe alpha", qty: 10, buy: 4400, sell: 4000, date: today(), note: "" }];
-    const sacred = JSON.stringify({ blk: DB.blacklist, res: DB.reserve, shadow: DB.shadowReserve,
+    /* ═══ THE SACRED SET IS CHECKED ON EVERY ACTIVATION, NOT ONE ═══
+       (adversarial pass, Aug 13 2026 — six refutation attempts, all failed)
+       This block used to snapshot the sacred set around exactly ONE
+       activateIntel call, and that call carried DB.intel[0] — the r-1 record,
+       whose type comes from mkRec's default `demand-context`. That is the one
+       branch of activateIntel with NO write path at all: it matches nothing and
+       falls to a bare `return "advisory …"`. So a universal claim — "intel
+       cannot touch blacklist / reserve / gate constants" — was exercised
+       against the single record type that structurally cannot touch anything,
+       while the branches that DO write (catalyst, catalyst-update,
+       cluster-membership, long-catalyst) were activated later with no snapshot
+       around them at all.
+       What was unprotected: a write to DB.blacklist from the catalyst or
+       cluster-membership branch, which is the DOCTRINE commitment "the
+       blacklist is the user's alone"; and a write to GATE.roi, DB.tickFloor,
+       DB.reserve or DB.shadowReserve from any branch, which is the
+       strategy-parameter rule and the deployment half of the restraint line.
+       The rule is universal over record types, so the check is too: every
+       activation in this suite goes through activateChecked, and a record type
+       added to activateIntel inherits the check instead of needing someone to
+       remember a new assertion. */
+    const sacredNow = () => JSON.stringify({ blk: DB.blacklist, res: DB.reserve, shadow: DB.shadowReserve,
       roi: GATE.roi, tick: DB.tickFloor, gates: GATE_CHAIN_ORDER });
+    const sacredBreaches = [], sacredTypes = [];
+    const activateChecked = rec => {
+      const before = sacredNow();
+      const out = activateIntel(rec);
+      sacredTypes.push(rec && rec.type);
+      if (sacredNow() !== before) sacredBreaches.push((rec && rec.type) + " mutated the sacred set");
+      return out;
+    };
+    const sacred = sacredNow();
     DB.intel[0].status = "ratified"; DB.intel[0].ruledAt = Date.now();
-    activateIntel(DB.intel[0]);
+    activateChecked(DB.intel[0]);
     ok("[R4.3] intel cannot touch blacklist / reserve / gate constants",
-       sacred === JSON.stringify({ blk: DB.blacklist, res: DB.reserve, shadow: DB.shadowReserve,
-         roi: GATE.roi, tick: DB.tickFloor, gates: GATE_CHAIN_ORDER }));
+       sacred === sacredNow());
+    /* THE IMPORT PATH, which the activation wrapper does not reach. Activation
+       is the second half of the journey; importIntelligence is the first, and
+       it is also the file-as-press channel — a `disposition` block arriving in
+       the file is the user's own press, so the import path can DROP advisories
+       without a button. That makes it exactly the surface where a sacred-set
+       write would be least visible. Every record type goes through in one
+       batch, valid and invalid alike, because a rejected record still executes
+       the import path; plus a disposition block, because that is the branch
+       with real authority. */
+    const sacredPreImport = sacredNow();
+    importIntelligence({ records: [
+        mkRec({ id: "r-sacred-dc" }),
+        mkRec({ id: "r-sacred-cat", type: "catalyst", catalyst: { name: "S", windowStart: inDays(3), windowEnd: inDays(9) } }),
+        mkRec({ id: "r-sacred-upd", type: "catalyst-update", updatesCatalyst: "S" }),
+        mkRec({ id: "r-sacred-mem", type: "cluster-membership", cluster: { name: "C", addMembers: [9001], story: "s" } }),
+        mkRec({ id: "r-sacred-lc",  type: "long-catalyst", catalyst: { name: "L", windowStart: inDays(40), windowEnd: inDays(80) } }),
+        mkRec({ id: "r-sacred-pw",  type: "promotion-warning", items: [{ id: 9001 }] }),
+        mkRec({ id: "r-sacred-wn",  type: "watch-note", items: [{ id: 9001 }] }),
+        mkRec({ id: "r-sacred-df",  type: "deflation-flag", direction: "down", items: [{ id: 9001 }] }),
+        mkRec({ id: "r-sacred-bad", type: "bogus" }) ],
+      disposition: [{ id: "r-sacred-dc", action: "dismiss", reason: "probe sacred-set check", ruledOn: today() }] });
+    ok("[R4.3] the IMPORT path cannot touch the sacred set either — every record type, plus a disposition block",
+       sacredPreImport === sacredNow(),
+       JSON.stringify({ before: sacredPreImport, after: sacredNow() }));
     ok("[R4.3] bullish intel vs negative realized history says history wins",
        intelTagText(9001).some(t => /history wins/.test(t) && /update-sensitive|demand context/.test(t)),
        JSON.stringify(intelTagText(9001)));
@@ -1247,7 +1484,7 @@
     const impC = importIntelligence({ records: [catRec] });
     const rCat = DB.intel.find(x => x.id === "r-cat");
     rCat.status = "ratified";
-    activateIntel(rCat);
+    activateChecked(rCat);
     ok("[R4.2a] ratified catalyst record lands on the calendar",
        DB.catalysts.length === 1 && DB.catalysts[0].name === "Probe Event X" && DB.catalysts[0].src === "intel"
        && DB.catalysts[0].items.includes(9002), JSON.stringify(DB.catalysts));
@@ -1257,7 +1494,7 @@
     importIntelligence({ records: [updRec] });
     const rUpd = DB.intel.find(x => x.id === "r-cat-upd");
     rUpd.status = "ratified";
-    activateIntel(rUpd);
+    activateChecked(rUpd);
     ok("[R4.2a] catalyst-update edits the entry in place — never duplicates",
        DB.catalysts.length === 1 && DB.catalysts[0].windowStart === inDays(12)
        && DB.catalysts[0].items.includes(9003) && /updated from briefing/.test(DB.catalysts[0].notes),
@@ -1271,7 +1508,7 @@
     const rMem = DB.intel.find(x => x.id === "r-mem");
     const clustersJSON = JSON.stringify(DB.clusters);
     rMem.status = "ratified";
-    activateIntel(rMem);
+    activateChecked(rMem);
     ok("[R4.2b] membership proposal queues for cluster ratification, clusters untouched",
        DB.clusterCands.length === 1 && DB.clusterCands[0].src === "intel" && DB.clusterCands[0].status === "suspected"
        && /analyst-sourced/.test(DB.clusterCands[0].story) && JSON.stringify(DB.clusters) === clustersJSON,
@@ -1691,6 +1928,71 @@
        !!pPump && qPumpOff != null && qPumpOff > 1
        && pPump.allocQty === Math.max(1, Math.floor(qPumpOff / 2)),
        JSON.stringify({ withCaution: pPump && pPump.allocQty, without: qPumpOff }));
+    /* ═══ THE PUMP GUARD, ASSERTED AT THE TERM (Aug 13 2026) ═══
+       The assertion below used to read `!!pPump && itemWins(9051) >= 3 &&
+       !pPump.cautionProven` against item 9051 "Probe sleeve second" — a name
+       matching NONE of the four CAUTION_CATS patterns. So `cautionCat()`
+       returned null, `!!cat` was false, and the conjunction was already pinned
+       regardless of the pump term. Deleting `!pump &&` from production left
+       the whole suite green, this assertion included: the BINDING rule "a
+       manipulation defense never relaxes on the manipulator's chosen
+       evidence" had no working test.
+       Both halves are needed and both are here. [R70.1] asserts the extracted
+       TERM directly, where the pump limb is the only thing that can move the
+       answer. [R70.2] keeps the end-to-end path but points it at an item that
+       genuinely carries a caution category, so `!!cat` is true and `!pump` is
+       what decides. Seed by deleting `!pump &&` from cautionProvenFor: both go
+       red, and the old form went green. */
+    /* 9070 is a SEED by name (/\bseeds?$/i), so cautionCat() returns a real
+       category and `!!cat` cannot pin the conjunction. Pump-flagged the same
+       way 9051 is — a promotion-warning naming it, plus thin books — and given
+       the same 3 recent wins, so every premise of the label is present and the
+       pump limb is the only thing left that can decide the answer. */
+    mkItem(9070, "Probe ranarr seed");
+    S.volumes[9070] = 100;                       // thin: 100 × 4400 = 440k/day, under the 10m floor
+    /* Through importIntelligence, exactly as r-promo is: a record pushed
+       straight onto DB.intel keeps `items` as objects, and
+       promotionWarningsFor tests `(r.items || []).includes(id)` against
+       numbers — so a direct push produces a record that exists and never
+       matches, which is how the first attempt at this fixture reported
+       `pump: false` with the warning apparently in place. */
+    importIntelligence({ records: [ mkRec({ id: "r-promo-seed", type: "promotion-warning", direction: "up",
+      items: [{ id: 9070 }], title: "Probe ranarr seed being promoted",
+      sources: [{ url: "https://example.test/discord3", note: "seed call", tier: 3, community: "merch-discord-x" }] }) ] });
+    for (let i = 0; i < 3; i++) DB.flips.push({ id: Date.now() - (i + 4) * 3600e3, itemId: 9070,
+      name: "Probe ranarr seed", qty: 10, buy: 4000, sell: 4400, date: today(), note: "" });
+    DB.watch = DB.watch.concat([{ id: 9070, qty: null }]);
+    DB.qual[9070] = qualified();
+    ok("[R70.1] the pump guard is asserted at the TERM — wins graduate a caution, but never a pump",
+       cautionProvenFor(null, { key: "seed" }, 3) === true
+       && cautionProvenFor({ why: "flagged" }, { key: "seed" }, 3) === false
+       && cautionProvenFor({ why: "flagged" }, { key: "seed" }, 99) === false
+       && cautionProvenFor(null, null, 3) === false
+       && cautionProvenFor(null, { key: "seed" }, 2) === false,
+       JSON.stringify({ noPump3: cautionProvenFor(null, { key: "seed" }, 3),
+                        pump3: cautionProvenFor({ why: "x" }, { key: "seed" }, 3),
+                        pump99: cautionProvenFor({ why: "x" }, { key: "seed" }, 99) }));
+    /* END-TO-END, on an item whose NAME carries a caution category, so the
+       `!!cat` conjunct is true and cannot pin the result. 9054 is a seed by
+       name (/\bseeds?$/i), pump-flagged and win-laden like 9051. */
+    ok("[R70.2] an item that DOES carry a caution category still refuses to graduate under a pump flag",
+       /* Searched across EVERY bucket, and the bucket is reported: a pump-flagged
+          candidate may legitimately land in picks, bench, nextUp or qualifying
+          depending on the fixture's gates, and which one it lands in is not the
+          property under test. Pinning it to one bucket made this fail for a
+          reason unrelated to its own claim. */
+       (() => { const pl = buildPlan();
+                const p = [].concat(pl.picks, pl.bench, pl.nextUp || [], pl.qualifying || [], pl.all || [])
+                            .find(x => x && x.id === 9070);
+                return !!p && !!cautionCat("Probe ranarr seed") && itemWins(9070) >= 3
+                    && !!suspectedPump(9070) && p.cautionProven === false; })(),
+       JSON.stringify((() => { const pl = buildPlan();
+                const where = ["picks","bench","nextUp","qualifying","all"]
+                  .filter(k => (pl[k] || []).some(x => x && x.id === 9070));
+                const p = [].concat(pl.picks, pl.bench, pl.nextUp || [], pl.qualifying || [], pl.all || [])
+                            .find(x => x && x.id === 9070);
+                return { buckets: where, cat: !!cautionCat("Probe ranarr seed"), wins: itemWins(9070),
+                         pump: !!suspectedPump(9070), proven: p && p.cautionProven }; })()));
     ok("[R7.3] recent wins never graduate a pump flag — the wins are the bait",
        !!pPump && itemWins(9051) >= 3 && !pPump.cautionProven, JSON.stringify({ wins: itemWins(9051) }));
     // sleeve refuses the pump candidate with the reason
@@ -1852,10 +2154,24 @@
     ok("[R12.1] watch-note direction coerced to caution",
        !!rWN && rWN.direction === "caution", JSON.stringify(rWN && rWN.direction));
     // R12.2 — ratified long-catalyst joins the calendar as an estimate window
-    const effLC = activateIntel(rLC);
+    const effLC = activateChecked(rLC);
     const catLC = DB.catalysts.find(c => c.name === "Far Event");
     ok("[R12.2] ratified long-catalyst creates an estimate-window calendar entry",
        !!catLC && catLC.estWindow === 1 && /ESTIMATE/.test(effLC), effLC);
+    /* THE UNIVERSAL IS EXERCISED UNIVERSALLY (adversarial pass, Aug 13 2026).
+       Two claims, and the second is what stops this degenerating back to what
+       it was. First: no activation anywhere in the suite moved the sacred set.
+       Second: the activations actually covered the branches that CAN write —
+       a check that only ever ran against `demand-context`, the one branch with
+       no write path, is what made the original assertion vacuous, and asserting
+       the type coverage is what makes that impossible to reintroduce quietly.
+       If a new writing branch is added to activateIntel and no fixture
+       exercises it, this goes red and names the gap. */
+    ok("[R4.3] EVERY activation left the sacred set untouched — not just the one branch that cannot write",
+       sacredBreaches.length === 0
+       && ["demand-context", "catalyst", "catalyst-update", "cluster-membership", "long-catalyst"]
+            .every(t => sacredTypes.includes(t)),
+       JSON.stringify({ breaches: sacredBreaches, typesExercised: sacredTypes }));
     // R15.1 (audit F1) — the estimate is visible everywhere the window renders
     S.tab = "sleeve"; renderSleeve(); renderClusters();
     ok("[R15.1] calendar card badges the estimate window",
@@ -2483,6 +2799,113 @@
                 return /class="curves"/.test(s) && (s.match(/<polyline/g) || []).length === 3
                     && /ONE shared scale/.test(s) && /all three SIMULATED/.test(s); })(),
        paperRegimeSection().slice(0, 900));
+
+    /* ═══ R68.6–8 THE REGIME BAND: three states that used to render as one ═══
+       (user ruling, Aug 13 2026; ELIGIBILITY REWRITTEN Aug 13 2026 — see below)
+
+       ═══ WHY THESE THREE WENT RED, AND WHY THAT WAS THE POINT ═══
+       The eligibility predicate they were written against was itself wrong:
+       `eligible: p => p.cohort === "scanner"`, on the reasoning that only the
+       scanner screens below the current floor. Measurement showed BOTH halves
+       false — the watchlist path applies no ROI screen at all, and the scanner
+       is not eligible either, because it requires `pass || nearMiss` and a
+       band item carries TWO gate failures (ROI floor and margin floor, whose
+       tax limb enforces effRoiFloorPct() ≈ 6.52%). The band is unreachable for
+       every taxed item by every path.
+
+       So the state space grew a member and lost one. THREE states now:
+         6 — the band is COMPUTED and holds the right trip (set membership)
+         7 — EMPTY BY POPULATION: eligible trips exist, none in the band → INERT
+         8 — UNREACHABLE: the gate constants forbid it → not never-fed, not inert
+
+       The old "empty by construction / never-fed" state is GONE as a distinct
+       render for these two bands, because eligibility is now a property of the
+       BAND (plus the tax-exempt carve-out) rather than of the cohort: a
+       reachable band makes every trip eligible, so `nEligible === 0` can only
+       arise on an unreachable one. The dead branch was deleted rather than
+       left with an assertion propping it up (eighth face).
+
+       Fixture shape (twelfth face): these pass a constructed array, which is
+       the shape the production caller supplies — regimeSeparatorSection(closed)
+       is called from paperRegimeSection() with `closed = paperClosed()`, an
+       array of closed shadowBook trips carrying exactly these fields.
+
+       regimeSeparators walked ADJACENT PAIRS of REGIME_DEFS — ordered
+       [current, loose, tight], which is DISPLAY order — computing `a && !b`.
+       The regimes nest (tight ⊆ current ⊆ loose, [R43.1]), so pair 0 was
+       `current && !loose`: EMPTY FOR EVERY POSSIBLE POPULATION. The surface
+       therefore reported "current and loose are identical … the tighter
+       setting is inert" from the day it shipped, from an arithmetic that
+       could not return anything else — and the band the ROI-floor question is
+       actually about, loose \ current, was computed nowhere in the file.
+
+       The three states these assert, which the old code could not tell apart:
+         6 — the band is COMPUTED and holds the right trip
+         7 — the band is EMPTY BY POPULATION (eligible trips exist, none in it)
+         8 — the band is EMPTY BY CONSTRUCTION (no trip could ever be in it)
+
+       Fixture shape (twelfth face): these pass a constructed array, which is
+       the shape the production caller supplies — regimeSeparatorSection(closed)
+       is called from paperRegimeSection() with `closed = paperClosed()`, an
+       array of closed shadowBook trips carrying exactly these fields.
+
+       DISCRIMINATING SEEDS, one per assertion, each failing its target and
+       leaving the other two green:
+         R68.6 — restore adjacency pairing over REGIME_DEFS   → 6 fails, 7 and 8 pass
+         R68.7 — render the unreachable branch unconditionally → 7 fails, 6 and 8 pass
+         R68.8 — restore `eligible: p => p.cohort === "scanner"` → 8 fails, 6 red too
+                 (6 reads the eligibility pair, so this seed is NOT discriminating
+                  for 6/8 — it is the one pair the fixture cannot separate, and it
+                  is recorded rather than counted as proof; 7 stays green, which is
+                  the discrimination that matters for the state under test) */
+    const rgTrip = (id, coh, regimes, net) => ({ id, itemId: id, name: "Probe reg " + id, cohort: coh,
+      regimes, net, qty: 10, bid: 1000, ask: 1030, state: "filled", closedAt: Date.now() });
+    const rgBand = [ rgTrip(9101, "scanner",   ["loose"], 5e3),
+                     rgTrip(9102, "scanner",   ["current", "loose"], 7e3),
+                     rgTrip(9103, "watchlist", ["current", "loose", "tight"], 9e3) ];
+    const sepBand = regimeSeparators(rgBand);
+    /* The loose\current row is UNREACHABLE and every trip in it ineligible —
+       none is tax-exempt. The current\tight row is reachable, so all three
+       count. NB the fixture deliberately puts a trip (9101) inside a band the
+       product cannot populate: this assertion is about the SET ARITHMETIC, and
+       the arithmetic must be right on any input the caller can hand it. */
+    ok("[R68.6] the band is loose\\current, computed from set membership and never from array position",
+       sepBand.length === 2
+       && sepBand[0].a.key === "loose"   && sepBand[0].b.key === "current"
+       && sepBand[0].only.length === 1   && sepBand[0].only[0].itemId === 9101
+       && sepBand[0].unreachable === true
+       && sepBand[0].nEligible === 0     && sepBand[0].nIneligible === 3
+       && sepBand[1].a.key === "current" && sepBand[1].b.key === "tight"
+       && sepBand[1].unreachable === false
+       && sepBand[1].only.length === 1   && sepBand[1].only[0].itemId === 9102
+       && sepBand[1].nEligible === 3     && sepBand[1].nIneligible === 0,
+       JSON.stringify(sepBand.map(s => ({ a: s.a.key, b: s.b.key, only: s.only.map(p => p.itemId),
+                                          unreach: s.unreachable, elig: s.nEligible, inelig: s.nIneligible }))));
+    /* EMPTY BY POPULATION — a REACHABLE band (current\tight) whose eligible
+       trips exist and none of which sits between the floors. Both fixture trips
+       carry tight, so nothing separates current from tight. */
+    const htmlPop = regimeSeparatorSection([ rgTrip(9111, "scanner", ["current", "loose", "tight"], 3e3),
+                                             rgTrip(9112, "watchlist", ["current", "loose", "tight"], 4e3) ]);
+    const fragPop = sepFrag(htmlPop, "current");
+    ok("[R68.7] an eligible population with no band trip reads INERT — and must not claim nothing fed it",
+       /identical<\/b> across 2 eligible trips/.test(fragPop)
+       && /tighter setting is <b>inert/.test(fragPop)
+       && !/nothing has fed this comparison/i.test(fragPop)
+       && !/cannot be fed at all/i.test(fragPop),
+       fragPop.slice(0, 800));
+    /* UNREACHABLE — the same render, read at the band the gate constants
+       forbid. Asserted in both directions per the eleventh face: the correct
+       claim required AND the two contradicting claims (inert, never-fed)
+       forbidden, because "nothing has fed this" and "nothing can" are the two
+       readings this whole entry exists to separate. */
+    const fragCons = sepFrag(htmlPop, "loose");
+    ok("[R68.8] a band the gate constants forbid reads UNREACHABLE — not never-fed, and not inert",
+       /cannot be fed at all/i.test(fragCons)
+       && /Zero eligible trips, not zero results/.test(fragCons)
+       && /arithmetic between GATE\.roi and GATE\.taxMult/.test(fragCons)
+       && !/nothing has fed this comparison/i.test(fragCons)
+       && !/tighter setting is <b>inert/.test(fragCons),
+       fragCons.slice(0, 800));
 
     // ═══ R20 SURFACE REORG (Aug 11 2026) — tier-1 Home, 4 tabs, click audit ═══
     // R20.1 — four top-level tabs; Home is the boot surface (zero clicks)
@@ -6061,6 +6484,45 @@
        calibWindow({ id: logAt46, bh: 0.5 }, logAt46 + 60e3).reason === "noWindow"
        && calibWindow({ id: logAt46, bh: 0.5, sh: 0 }, logAt46 + 60e3).ok === true,
        "sh required, and sh=0 is a real value rather than a missing one");
+    /* ═══ R69.1–2 A RECORDED ZERO IS NOT A MISSING VALUE ═══
+       (falsy-zero census, Aug 13 2026 — CONFIRMED, and live in real data)
+       `!(bh > 0)` sent a buy duration of ZERO down the `noWindow` path, whose
+       copy and export both describe the bucket as flips that "lacked a
+       recorded buy or sell leg duration". Two of the fifty logged flips carry
+       `bh: 0`, so the claim was false about real rows. The writer produces it
+       routinely — any buy filling inside ~18s rounds to 0.
+       Seeds: restore `!(bh > 0)` → 69.1 alone (the copy still carries its
+       clause and the export still carries its key); delete the copy clause →
+       69.2 alone (calibWindow is untouched). */
+    ok("[R69.1] a buy duration of ZERO skips as instantBuy, a MISSING one as noWindow — and null is missing, not zero",
+       calibWindow({ id: logAt46, bh: 0, sh: 1 }, logAt46 + 60e3).reason === "instantBuy"
+       && calibWindow({ id: logAt46, sh: 1 }, logAt46 + 60e3).reason === "noWindow"
+       && calibWindow({ id: logAt46, bh: null, sh: 1 }, logAt46 + 60e3).reason === "noWindow"
+       && calibWindow({ id: logAt46, bh: 2, sh: 1 }, logAt46 + 60e3).ok === true,
+       JSON.stringify({ zero: calibWindow({ id: logAt46, bh: 0, sh: 1 }, logAt46 + 60e3).reason,
+                        missing: calibWindow({ id: logAt46, sh: 1 }, logAt46 + 60e3).reason,
+                        nul: calibWindow({ id: logAt46, bh: null, sh: 1 }, logAt46 + 60e3).reason }));
+    ok("[R69.2] the skip copy names the real cause, and must NOT call a recorded zero a missing duration",
+       /* Same shape [R45.3]'s skip-census fixture uses — strict/lenient are
+          required by calibSection and omitting them threw a TypeError that
+          aborted the whole try block, taking R46.2 and R46.3 down with it. */
+       (() => { const keepC69 = DB.calib;
+                const z = { agree: 0, falsePartial: 0, falseNever: 0, falseForced: 0,
+                            agreePct: null, medianBuyShortfallPct: null };
+                DB.calib = { at: Date.now(), rows: [], total: 2, retentionH: CALIB_5M_RETENTION_H,
+                             skipped: { tooOld: 0, noWindow: 0, noTape: 0, instantBuy: 2 },
+                             strict: z, lenient: z };
+                /* try/finally, not a bare restore: the first version of this
+                   fixture omitted strict/lenient, calibSection threw BEFORE
+                   the restore line, and the broken calib was then PERSISTED
+                   into the probe's Edge profile — so the next run could not
+                   even load the app. A fixture that mutates persisted state
+                   must put it back on the throwing path too. */
+                let s; try { s = calibSection(); } finally { DB.calib = keepC69; save(); }
+                return /buy duration IS recorded and is zero/.test(s)
+                    && /2 whose buy duration IS recorded/.test(s)
+                    && !/2 with no recorded buy duration/.test(s); })(),
+       "instantBuy=2 must read as recorded-and-zero, never as no-recorded-duration");
     ok("[R46.1] a flip outside the 5m retention window is skipped as tooOld, not replayed on stale tape",
        calibWindow({ id: logAt46 - 40 * 3600e3, bh: 1, sh: 1 }, logAt46).reason === "tooOld",
        "retention guard");
@@ -6457,6 +6919,29 @@
                 return c.cls === "dilution" && c.medGapPct != null && c.medGapPct >= -SELL_DILUTION_GAP_PCT
                     && c.volShare === 1 && c.n === 10 && /prints above the ask are plausible/.test(c.why); })(),
        JSON.stringify(classifySellFailure(mkB(-0.5, 500, 10), 1200)));
+    /* ═══ R69.3–4 A ZERO SPREAD IS NOT AN UNKNOWN SPREAD ═══
+       (falsy-zero census, Aug 13 2026)
+       `spreadPct > 0` merged a KNOWN spread of zero — a locked book — with an
+       UNKNOWN one, so a locked item fell through to the frozen 1.0% absolute
+       band and classified DILUTION for any gap inside it. That inverts the
+       spread-relative band ratified the day before, on exactly the items where
+       the band is tightest. A third of zero is zero: the spread explains
+       nothing, so no gap is inside it.
+       Seeds: restore `spreadPct > 0 ? … : ABS` → 69.3 alone; restore
+       `spreadPct || null` → 69.4 alone (classification is unaffected). */
+    ok("[R69.3] a KNOWN zero spread gives a zero band and does not classify as dilution; an UNKNOWN spread still falls back",
+       (() => { const z = classifySellFailure(mkB(-0.5, 500, 10), 1200, 0);
+                const u = classifySellFailure(mkB(-0.5, 500, 10), 1200);
+                return z.relBandPct === 0 && z.cls !== "dilution" && u.cls === "dilution"; })(),
+       JSON.stringify({ zeroSpread: classifySellFailure(mkB(-0.5, 500, 10), 1200, 0),
+                        unknownSpread: classifySellFailure(mkB(-0.5, 500, 10), 1200).cls }));
+    ok("[R69.4] a spread of zero is REPORTED as 0, never erased to null — in the case record and in the reach bounds",
+       classifySellFailure(mkB(-0.5, 500, 10), 1200, 0).spreadPct === 0
+       && sellReachBounds([{ t: 1, hi: 1210, hv: 5 }], 1200, 0).spreadPct === 0
+       && classifySellFailure(mkB(-0.5, 500, 10), 1200).spreadPct === null,
+       JSON.stringify({ cls: classifySellFailure(mkB(-0.5, 500, 10), 1200, 0).spreadPct,
+                        bounds: sellReachBounds([{ t: 1, hi: 1210, hv: 5 }], 1200, 0).spreadPct,
+                        unknown: classifySellFailure(mkB(-0.5, 500, 10), 1200).spreadPct }));
     ok("[R59.1] a large SUSTAINED gap classifies as MISLOCATED WINDOW",
        (() => { const c = classifySellFailure(mkB(-12, 500, 10), 1200);
                 return c.cls === "mislocated-window" && c.sustainShare >= SELL_MISLOC_SUSTAIN
@@ -6997,8 +7482,18 @@
     const seps = regimeSeparators(paperClosed());
     const cl = seps.find(s => s.a.key === "current" && s.b.key === "tight")
             || seps.find(s => s.a.key === "loose" && s.b.key === "tight");
-    ok("[R65.2] current and loose report as IDENTICAL when no trip sits in the band between them",
-       !!seps.find(s => s.a.key === "current" && s.b.key === "loose" && s.only.length === 0),
+    /* REWRITTEN Aug 13 2026 — this assertion used to codify the defect. It
+       required a separator keyed a="current", b="loose" and asserted its
+       `only.length === 0`, which the OLD adjacency arithmetic guaranteed:
+       current ⊆ loose, so that set was empty for every possible population.
+       The assertion could not fail, and it made the tautology a ruled
+       requirement — the first face, sitting in the ledger as coverage.
+       It now names the band the ROI-floor question is about, loose \ current,
+       whose emptiness here is a property of THE FIXTURE (no trip carries
+       loose without current) and not of the arithmetic. Seed a loose-only
+       trip and it fails; [R68.6] asserts the populated case. */
+    ok("[R65.2] the loose\\current band reports empty when no trip sits between the two floors",
+       !!seps.find(s => s.a.key === "loose" && s.b.key === "current" && s.only.length === 0),
        JSON.stringify(seps.map(s => ({ a: s.a.key, b: s.b.key, only: s.only.length }))));
     ok("[R65.2] the separating trips are exactly those in one regime and not the next",
        !!cl && cl.only.length === 4 && cl.only.every(p => (p.regimes || []).indexOf("tight") < 0),
@@ -7007,10 +7502,22 @@
        !!cl && cl.top1 > 0 && cl.top1 <= 1 && cl.top2 >= cl.top1 && cl.top2 <= 1,
        JSON.stringify({ top1: cl && cl.top1, top2: cl && cl.top2, sepNet: cl && cl.sepNet }));
     const sepHTML = regimeSeparatorSection(paperClosed());
-    ok("[R65.2] the section renders standing, names the identical pair as INERT, and calls out concentration",
-       /identical/.test(sepHTML) && /inert/.test(sepHTML)
-       && /fact about those trips, not about the floor/.test(sepHTML),
-       sepHTML.slice(0, 400));
+    /* REWRITTEN Aug 13 2026 (second time). This asserted /identical/ and
+       /inert/ against the WHOLE section — the ninth face — and it was the
+       assertion that failed to notice the eligibility ratification: the
+       loose\current band stopped being "inert" and became "unreachable", and
+       a section-wide match went on being satisfied by whichever band happened
+       to say the word. It now reads each band's own fragment and asserts what
+       THIS fixture actually shows: loose\current unreachable, current\tight
+       populated with a concentration callout. The inert state has its own
+       fixture in [R68.7], where it can be reached. */
+    ok("[R65.2] the section renders standing, and each band's state is read in its own fragment",
+       /cannot be fed at all/.test(sepFrag(sepHTML, "loose"))
+       && !/fact about those trips, not about the floor/.test(sepFrag(sepHTML, "loose"))
+       && /fact about those trips, not about the floor/.test(sepFrag(sepHTML, "current"))
+       && !/cannot be fed at all/.test(sepFrag(sepHTML, "current")),
+       JSON.stringify({ loose: sepFrag(sepHTML, "loose").slice(0, 200),
+                        current: sepFrag(sepHTML, "current").slice(0, 200) }));
     ok("[R65.2] and it opens to the separating rows with ROI at open, cohort, outcome, notional and net",
        /data-drill="paper:regsep:/.test(sepHTML)
        && REGIME_SEP_COLS.map(c => c.k).join(",") === "item,cohort,roi,outcome,notional,net"
@@ -7184,6 +7691,683 @@
        FILL_MODEL_V === 2, String(FILL_MODEL_V));
   } catch(e){
     out.push("FAIL sell reach bounds :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §73 THE GATE INTERACTION SURFACE (user rulings, Aug 13 2026) ═══════
+     Measured in audits/SURFACE-2026-08-13-gate-interaction.md: the ROI floor
+     cannot be a single-gate failure for any taxed item, because the margin
+     gate's tax limb is a sustained-ROI floor at 0.06/0.92 = 6.52%. Three
+     things are asserted here — the derived TERM, the reachability predicate
+     built on it, and the labelling ruling (present where attribution is
+     positional, ABSENT where it is not). */
+  try {
+    /* THE TERM, at the source. Asserted by DEPENDENCE rather than by restating
+       the expression (seventh face): moving taxMult must move the floor, and
+       the closed form must match an independent derivation from the margin
+       gate's own inequality. Nothing clamps this — effRoiFloorPct() is a bare
+       ratio of constants with no Math.min anywhere in it, which is the input
+       that "pins" its output and is why it is assertable at all; the reason it
+       was extracted is that the same quantity inside candidateFor() is buried
+       behind Math.max(taxMult*tax, tickFloor) and cannot be read there. */
+    const keepTM = GATE.taxMult;
+    const floorAt = m => { GATE.taxMult = m; const v = effRoiFloorPct(); GATE.taxMult = keepTM; return v; };
+    ok("[R73.1] the effective ROI floor is DERIVED from taxMult and the tax rate, not carried as a literal",
+       Math.abs(effRoiFloorPct() - 6.5217391304) < 1e-6
+       && Math.abs(floorAt(6) - 12 / 0.86) < 1e-6
+       && floorAt(6) > floorAt(3) && floorAt(1) < floorAt(3)
+       && GATE.taxMult === keepTM,
+       JSON.stringify({ at3: effRoiFloorPct(), at6: floorAt(6), at1: floorAt(1) }));
+    /* THE INEQUALITY THE TERM CLAIMS, checked against the production gate
+       rather than against the algebra. An item priced just under the derived
+       floor must fail the margin gate and an item just over it must pass —
+       computed through the same Math.max(taxMult*tax, tickFloor) the chain
+       uses, at a price high enough that the TICK limb cannot be what decides
+       (which is the "name the pinning input" half of the clamp rule). */
+    const marginFailsAt = roiPct => {
+      const P = 100000, m = Math.round(P * roiPct / 100);
+      const S = Math.round((P + m) / (1 - TAX_RATE)), tax = geTax(S, 9001);
+      /* PRODUCTION'S OWN requirement, not a copy of it — marginNeedFor is the
+         extraction the gate chain itself calls, and `limb` is the pinning
+         input reported rather than inferred. */
+      const mn = marginNeedFor(9001, tax);
+      return { fails: (S - P - tax) < mn.need, need: mn.need, limb: mn.limb };
+    };
+    const justUnder = marginFailsAt(effRoiFloorPct() - 0.2), justOver = marginFailsAt(effRoiFloorPct() + 0.2);
+    ok("[R73.2] the derived floor is where the production margin gate actually flips, with the TAX limb pinning it",
+       justUnder.fails === true && justOver.fails === false
+       && justUnder.limb === "tax" && justOver.limb === "tax",
+       JSON.stringify({ justUnder, justOver, floor: effRoiFloorPct() }));
+    /* REACHABILITY reads both constants. A band under the ROI floor is
+       unreachable while the margin gate outranks it; raise GATE.roi above the
+       effective floor and the same band becomes reachable, which is the
+       dependence a hardcoded `false` could not express. */
+    const keepRoi = GATE.roi;
+    const unreachAt = (roi, hi) => { GATE.roi = roi; const v = bandUnreachable(hi); GATE.roi = keepRoi; return v; };
+    ok("[R73.3] band reachability is computed from BOTH constants, never asserted as a constant",
+       bandUnreachable(GATE.roi) === true
+       && bandUnreachable(GATE.roi * SHADOW_TIGHT) === false
+       && unreachAt(20, 20) === false && unreachAt(1.2, 1.2) === true
+       && GATE.roi === keepRoi,
+       JSON.stringify({ atRoi: bandUnreachable(GATE.roi), atTight: bandUnreachable(GATE.roi * SHADOW_TIGHT),
+                        roiAbove: unreachAt(20, 20) }));
+    /* THE TAX-EXEMPT CARVE-OUT is the one region where the ROI floor can act
+       alone, so it is the one population that can feed an otherwise unreachable
+       band. Asserted through exemptIds, which is what production reads. */
+    const exTrip = (id, regimes) => ({ id, itemId: id, name: "Probe exempt " + id, cohort: "watchlist",
+      regimes, net: 1e3, qty: 10, bid: 1000, ask: 1030, state: "filled", closedAt: Date.now() });
+    const hadEx = exemptIds.has(9131);
+    exemptIds.add(9131);
+    const sepEx = regimeSeparators([ exTrip(9131, ["loose"]), exTrip(9132, ["current", "loose", "tight"]) ]);
+    const htmlEx = regimeSeparatorSection([ exTrip(9131, ["current", "loose", "tight"]),
+                                            exTrip(9132, ["current", "loose", "tight"]) ]);
+    if (!hadEx) exemptIds.delete(9131);
+    ok("[R73.4] a tax-exempt trip is eligible for the band the tax limb forbids, and the copy names the carve-out",
+       sepEx[0].unreachable === true && sepEx[0].nEligible === 1 && sepEx[0].nIneligible === 1
+       && /tax-exempt trip/.test(sepFrag(htmlEx, "loose"))
+       && /pay no tax/.test(sepFrag(htmlEx, "loose")),
+       JSON.stringify({ elig: sepEx[0].nEligible, inelig: sepEx[0].nIneligible,
+                        frag: sepFrag(htmlEx, "loose").slice(0, 260) }));
+    /* THE LABEL, PRESENT. The funnel is headline-attributed and says so.
+       THE FIXTURE HAD TO BE BUILT TO REACH THE ⚑ LINE (dead seed, caught on
+       this assertion's own proof run). The first attempt reused whatever
+       DB.watch held; the flag renders only when a stage kills more than one
+       candidate, that condition did not hold, and the `!/biggest killers/`
+       clause was therefore satisfied by a line that was not on the page.
+       Seeding the word back changed the file and changed NOTHING observable —
+       green, and indistinguishable from proof. Three unpriced ids give the
+       "no live price" stage three kills, so the flag renders; the assertion
+       now REQUIRES the ⚑ line before forbidding the word, which is what stops
+       the negative clause going vacuous again. */
+    const keepWatch73 = DB.watch;
+    DB.watch = [{ id: 90991, qty: null }, { id: 90992, qty: null }, { id: 90993, qty: null }];
+    renderDeploy();
+    const depHTML = $("#depBody") ? $("#depBody").innerHTML : "";
+    DB.watch = keepWatch73;
+    ok("[R73.5] the deployment funnel declares itself headline-attributed, and never calls the top rows killers",
+       /headline gate, not binding gate/.test(depHTML)
+       && /first gate in the chain that rejected the item/.test(depHTML)
+       && !/killer/i.test(depHTML)
+       /* THE FLAG IS GONE, asserted by absence. Its job was "look here" and the
+          binds ranking does that honestly; leaving it would re-create the
+          conclusion the strike removed. */
+       && depHTML.indexOf("⚑") < 0,
+       depHTML.slice(0, 400));
+    /* THE CAUSAL NUMBER LEADS. Ordering asserted on POSITION IN THE DOCUMENT,
+       not on presence — both blocks render, and "leads" is the whole ruling. */
+    const looAt = depHTML.indexOf("What each gate is actually blocking");
+    const funAt = depHTML.indexOf("Gate funnel");
+    ok("[R73.10] leave-one-out leads the panel and first-fail is demoted below it, labelled as ordering",
+       looAt > 0 && funAt > 0 && looAt < funAt
+       && /relax this gate alone and this many/.test(depHTML)
+       && /<b>heads<\/b> is the first-fail count/.test(depHTML),
+       JSON.stringify({ looAt, funAt }));
+    /* THE LABEL, ABSENT — the half that makes the mark mean something (the
+       scoping ruling: a rule about where something renders is only verified by
+       asserting where it must NOT appear). The marginal-gate attribution reads
+       failProfile(), the FULL fail set, so it is sound and must stay unmarked;
+       if the mark were sprayed over the whole panel it would stop
+       distinguishing the two kinds of surface, which is its entire job. */
+    const attribFrag = depHTML.split('<div class="dep-h">Marginal-gate attribution</div>')[1] || "";
+    const attribOnly = attribFrag.split('<div class="dep-h">')[0] || "";
+    ok("[R73.6] the mark is ABSENT from the marginal-gate attribution, which reads the full fail set and is sound",
+       depHTML.indexOf('<div class="dep-h">Marginal-gate attribution</div>') > 0
+       && !/headline gate, not binding gate/.test(attribOnly)
+       && /near-miss/.test(attribOnly),
+       attribOnly.slice(0, 300));
+    /* THE GLOSSARY ENTRY, in the same commit as the term (BINDING rule). */
+    const glH = (GLOSSARY.find(g => g.g === "gates") || { entries: [] })
+      .entries.find(e => e.id === "gate-headline");
+    ok("[R73.7] the term ships with its glossary entry, carrying all three fields",
+       !!glH && glH.term === HEADLINE_TERM
+       && !!glH.what && !!glH.from && !!glH.do
+       && /fails\[0\]/.test(glH.from) && !/nothing directly/i.test(glH.do),
+       JSON.stringify({ found: !!glH, term: glH && glH.term }));
+    /* THE CLOSURES land once and carry the arithmetic. STAMPED `auto` (ruled
+       Aug 13 2026, correcting the first shipped form): `auto` means WRITTEN BY
+       THE TOOL, uniformly, so an entry that appears with no press is findable
+       in the block built to catch that — whoever made the call. Provenance is
+       `by`, a separate field, and this is the case that proves the two are
+       independent: written by the tool, decided by the user. */
+    const keepDL = DB.decisionLog;
+    DB.decisionLog = [];
+    S.gateClosureLogged = 0; gateClosureLog();
+    S.gateClosureLogged = 0; gateClosureLog();
+    const closures = DB.decisionLog.slice();
+    DB.decisionLog = keepDL;
+    const roiC = closures.find(e => e.subject === ROI_EXP_CLOSED_KEY);
+    ok("[R73.8] both closures land exactly once, carry the arithmetic, and are stamped auto with by:user",
+       closures.length === 2
+       && closures.filter(e => e.subject === ROI_EXP_CLOSED_KEY).length === 1
+       && closures.filter(e => e.subject === PAPER_POP_CLOSED_KEY).length === 1
+       && closures.every(e => e.auto === 1 && e.by === "user")
+       && !!roiC && /0 of 41/.test(roiC.reason) && /74%/.test(roiC.reason)
+       && /fails\[0\]/.test(roiC.reason),
+       JSON.stringify({ n: closures.length, autos: closures.filter(e => e.auto).length,
+                        by: closures.map(e => e.by), subjects: closures.map(e => e.subject) }));
+    /* THE FLAG MEANS ONE THING; PROVENANCE IS ITS OWN FIELD. Asserted on the
+       writer, across all three states, because the whole ruling is that a
+       reader six weeks out can rely on the flag meaning the same thing in
+       every row. The third state — auto with no `by` — is what a row written
+       before the field existed looks like, and it must read as unrecorded
+       rather than defaulting to either side. */
+    const keepDL2 = DB.decisionLog;
+    DB.decisionLog = [];
+    logDecision("settings", "probe press", "hand-pressed", "no auto flag");
+    logDecision("settings", "probe tool", "tool's own call", "auto, no by given", 1);
+    logDecision("settings", "probe user", "user ruling written down", "auto, by user", 1, "user");
+    const dl3 = DB.decisionLog.slice();
+    DB.decisionLog = keepDL2;
+    ok("[R73.11] `auto` means written-by-the-tool uniformly, and whose-call rides its own field",
+       dl3[0].auto === undefined && dl3[0].by === undefined
+       && dl3[1].auto === 1 && dl3[1].by === "tool"
+       && dl3[2].auto === 1 && dl3[2].by === "user"
+       && /your press/.test(decidedByTxt(dl3[0]))
+       && /the tool's own call/.test(decidedByTxt(dl3[1]))
+       && /your ruling, written down/.test(decidedByTxt(dl3[2]))
+       && /predates the provenance field/.test(decidedByTxt({ auto: 1 })),
+       JSON.stringify(dl3.map(e => ({ auto: e.auto, by: e.by }))));
+    /* THE EXPORT carries the same mark — a file read away from the tool has no
+       tooltip to fall back on, and gate counts are what an analyst sums. */
+    const gx = analysisGates();
+    ok("[R73.9] the gates export carries the attribution caveat beside the counts it qualifies",
+       !!gx.attributionCaveat && gx.attributionCaveat.basis === HEADLINE_TERM
+       && /fails\[0\]/.test(gx.attributionCaveat.what)
+       && /benchedByGate/.test(gx.attributionCaveat.soundAlternative)
+       && !!gx.gates,
+       JSON.stringify({ basis: gx.attributionCaveat && gx.attributionCaveat.basis }));
+  } catch(e){
+    out.push("FAIL gate interaction surface :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §74 THE INSTRUMENT GATE CORE — stage 1a (build ruled Aug 14 2026) ═══
+     The universe scorer's pure core: (stats, config) → fails. Purity is the
+     contract; the live chain routes through it; operator state is excluded
+     one leak at a time, each with its own assertion, per the staging ruling. */
+  try {
+    /* Fixture stats: a taxed 100k item with eRoi 3.0%. tax = 2% of ~103.1k
+       ≈ 2062; at taxMult 3 need ≈ 6186 > eMargin 3000 → margin fails; at
+       taxMult 1 need = 2062 ≤ 3000 → passes. ROI floor: 3.0 ≥ 1.2 → passes
+       both. All other inputs clean. */
+    const st74 = { buy: 100000, tax: 2062, exempt: false, eMargin: 3000, eRoi: 3.0,
+      skewMin: 5, imbalance: 0.5, volGate: 5000, tr: null, vt: null, moState: "flat" };
+    const cfgA = { roi: 1.2, taxMult: 3, tickFloor: 15, volBase: 1000, skewHard: 60,
+      balHardLo: 0.15, balHardHi: 0.85, trendSoft: -5, falling: -8, volDecline: -40 };
+    const cfgB = Object.assign({}, cfgA, { taxMult: 1 });
+    const outA = marketGateFails(st74, cfgA), outB = marketGateFails(st74, cfgB);
+    ok("[R74.1] the core is config-parameterized — the same stats fail one config and pass another",
+       outA.length === 1 && outA[0].g === "margin"
+       && outA[0].have === 3000 && outA[0].need === 6186
+       && outB.length === 0,
+       JSON.stringify({ A: outA, B: outB }));
+    /* PURITY, both halves. Functional: mutate every ambient source the old
+       chain read and the core's answer must not move. Source scan: the
+       forbidden identifiers are the operator-state leaks and the ambient
+       constants; any of them appearing in the core's source is a finding
+       whatever the functional half says (a leak can be inert on this fixture
+       and real on another). */
+    const keepRoi74 = GATE.roi, keepTM74 = GATE.taxMult, keepTick74 = DB.tickFloor;
+    GATE.roi = 99; GATE.taxMult = 99; DB.tickFloor = 999;
+    const outMut = marketGateFails(st74, cfgA);
+    GATE.roi = keepRoi74; GATE.taxMult = keepTM74; DB.tickFloor = keepTick74;
+    const coreSrc = String(marketGateFails) + String(marginNeedCfg) + String(volFloorCfg);
+    const forbidden74 = ["GATE.", "DB.", "S.", "exemptIds", "itemWins", "provenLoser",
+      "slowHistory", "isBlk", "workingStack", "lastWalkupAt", "tickFloorFor", "TICKF",
+      "volFloorFor", "marginNeedFor", "geTax", "calc("];
+    ok("[R74.2] the core is pure — ambient mutation changes nothing, and its source names no ambient state",
+       JSON.stringify(outMut) === JSON.stringify(outA)
+       && forbidden74.every(t => coreSrc.indexOf(t) < 0),
+       JSON.stringify({ mut: outMut, hits: forbidden74.filter(t => coreSrc.indexOf(t) >= 0) }));
+    /* THE LIVE CHAIN ROUTES THROUGH THE CORE. Two halves: (a) equivalence —
+       candidateFor's market-gate fails equal the core's at the live config for
+       a fixture item; (b) the routing seed's target — a fixture that PASSES the
+       ROI floor at the live config, asserted through candidateFor, so a seeded
+       change inside the core flips a verdict in code this assertion never
+       touches. This block owns its fixtures (mkItem is scoped to the first
+       try-block — same pattern as mkItem27). */
+    const now74 = Math.floor(Date.now() / 1000);
+    const mkItem74 = (id, n) => {
+      const it = { i: id, n, l: 25000, m: 0, v: 0, a: 0 };
+      S.items.push(it); S.byId.set(id, it);
+      const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+      for (let k = 0; k < 168; k++){ const mid = 4200 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: now74 - (168 - k) * 3600, mid }); }
+      S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
+    };
+    /* sell 4250 / buy 4100: tax 85, margin 65, eRoi 1.585% — above the 1.2%
+       floor and inside (1.2, 2.2) so the routing seed (+1 on the floor inside
+       the core) flips exactly this verdict. The margin floor fails (need 255)
+       — the entanglement in miniature, and harmless here: the target verdict
+       is the ROI floor's alone. */
+    mkItem74(9741, "Probe core routing");
+    S.latest[9741] = { high: 4250, low: 4100, highTime: now74 - 60, lowTime: now74 - 120 };
+    S.hour[9741] = { avgHighPrice: 4250, avgLowPrice: 4100, highPriceVolume: 60000, lowPriceVolume: 60000 };
+    const keepWatch74 = DB.watch;
+    DB.watch = [{ id: 9741, qty: null }];
+    const cand74 = candidateFor(DB.watch[0]);
+    DB.watch = keepWatch74;
+    /* Keys → display names through the ONE map (config-free keys, stage 1c):
+       the chain renders labels, the core emits keys, and the comparison
+       crosses the map the product itself uses. */
+    const marketLabelSet = new Set(Object.values(MARKET_GATE_LABEL));
+    const candMarket = (cand74.fails || []).filter(f => marketLabelSet.has(f.g)).map(f => f.g);
+    const coreLive = marketGateFails({ buy: cand74.c.buy, tax: cand74.c.tax, exempt: cand74.c.exempt,
+      eMargin: cand74.eMargin, eRoi: cand74.eRoi, skewMin: cand74.c.skewMin, imbalance: cand74.c.imbalance,
+      volGate: cand74.volGate, tr: cand74.tr, vt: cand74.vt, moState: cand74.mo.state }, liveMarketConfig())
+      .map(f => MARKET_GATE_LABEL[f.g]);
+    /* trend appears once in the core and up to once in the chain — compare as sets. */
+    ok("[R74.3] the live chain's market-gate verdicts ARE the core's at the live config — and this fixture passes the ROI floor",
+       JSON.stringify([...new Set(candMarket)].sort()) === JSON.stringify([...new Set(coreLive)].sort())
+       && !candMarket.includes("ROI floor")
+       && cand74.eRoi > 1.2 && cand74.eRoi < 2.2,
+       JSON.stringify({ cand: candMarket, core: coreLive, eRoi: cand74.eRoi }));
+    /* THE CORE'S VOCABULARY IS EXACTLY THE MARKET GATES. Sweep a stats grid
+       broad enough to trip every limb; no operator gate name can appear, and
+       every emitted key is in MARKET_GATE_KEYS. */
+    const emitted = new Set();
+    for (const s of [
+      st74,
+      { buy: 100, tax: 0, exempt: true, eMargin: 2, eRoi: 2, skewMin: 90, imbalance: 0.05, volGate: 1, tr: -9, vt: -50, moState: "knife" },
+      { buy: 5000, tax: 90, exempt: false, eMargin: 100, eRoi: 0.5, skewMin: null, imbalance: null, volGate: null, tr: -6, vt: null, moState: null },
+      { buy: 2000, tax: 40, exempt: false, eMargin: null, eRoi: null, skewMin: 10, imbalance: 0.9, volGate: 0, tr: 5, vt: 5, moState: "chasing" }
+    ]) for (const f of marketGateFails(s, cfgA)) emitted.add(f.g);
+    ok("[R74.4] the core's vocabulary is exactly the config-free market keys — no operator gate, no baked constant",
+       [...emitted].every(g => MARKET_GATE_KEYS.includes(g)) && emitted.size >= 6
+       && MARKET_GATE_KEYS.every(k => !!MARKET_GATE_LABEL[k])
+       /* The keys themselves carry no constants; the one legacy label that
+          does ("3× tax") is a persisted ledger key living in the map's
+          VALUES, where the live chain — whose taxMult is 3 — is the only
+          reader (stage-1c ruling). */
+       && MARKET_GATE_KEYS.every(k => !/\d/.test(k))
+       && !emitted.has("sizing") && !emitted.has("blacklist") && !emitted.has("proven-loser bench")
+       && !emitted.has("fill history") && !emitted.has("drift bench"),
+       JSON.stringify([...emitted]));
+    /* THE OPERATOR LEAKS, ONE BY ONE. (a) tested-price overrides: a fresh
+       margin test on the watch row moves calc() and must NOT move
+       marketStatsFor — the instrument never sees my experiments. (b) the wins
+       waiver: the core reports the volume floor while the live chain, given
+       2 realized wins, forgives it — the overlay lives in exactly one place.
+       (c) blacklist and (d) proven-loser: candidateFor benches, the core's
+       stats-level view is unchanged — asserted via marketStatsFor equality
+       since the core cannot even express those gates ([R74.4]). */
+    DB.watch = [{ id: 9741, qty: null, tBuy: 3000, tSell: 5000, tAt: Date.now() }];
+    const stNoTest = marketStatsFor(9741);
+    const cTested = calc(9741);
+    DB.watch = keepWatch74;
+    const stAfter = marketStatsFor(9741);
+    ok("[R74.5a] the instrument's stats ignore tested-price overrides — calc() moves, marketStatsFor does not",
+       cTested.tested === true && cTested.buy === 3000
+       && stNoTest.buy === 4100
+       && JSON.stringify(stNoTest) === JSON.stringify(stAfter),
+       JSON.stringify({ calcBuy: cTested.buy, stBuy: stNoTest.buy }));
+    /* (b) the wins waiver. Thin item: volGate under the floor. With 2 recent
+       profitable round trips the LIVE chain drops the volume floor; the core
+       still reports it. */
+    mkItem74(9742, "Probe waiver");
+    S.latest[9742] = { high: 260, low: 250, highTime: now74 - 60, lowTime: now74 - 120 };
+    S.hour[9742] = { avgHighPrice: 260, avgLowPrice: 250, highPriceVolume: 40, lowPriceVolume: 40 };
+    const keepFlips74 = DB.flips;
+    DB.flips = [ { id: Date.now() - 1e6, itemId: 9742, name: "Probe waiver", qty: 10, buy: 250, sell: 265, date: today(), note: "" },
+                 { id: Date.now() - 2e6, itemId: 9742, name: "Probe waiver", qty: 10, buy: 250, sell: 266, date: today(), note: "" } ];
+    DB.watch = [{ id: 9742, qty: null }];
+    const candW = candidateFor(DB.watch[0]);
+    DB.watch = keepWatch74; DB.flips = keepFlips74;
+    const coreW = marketGateFails({ buy: candW.c.buy, tax: candW.c.tax, exempt: candW.c.exempt,
+      eMargin: candW.eMargin, eRoi: candW.eRoi, skewMin: candW.c.skewMin, imbalance: candW.c.imbalance,
+      volGate: candW.volGate, tr: candW.tr, vt: candW.vt, moState: candW.mo.state }, liveMarketConfig());
+    ok("[R74.5b] the wins waiver is a live-chain overlay — the core reports the volume floor, the plan forgives it",
+       coreW.some(f => f.g === "volFloor")
+       && !(candW.fails || []).some(f => f.g === "volume floor")
+       && candW.wins >= 2,
+       JSON.stringify({ core: coreW.map(f => f.g), cand: (candW.fails || []).map(f => f.g), wins: candW.wins }));
+  } catch(e){
+    out.push("FAIL instrument gate core :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §75 T0 MARKET ARCHIVE — stage 1b (build ruled Aug 14 2026) ══════════
+     Async assertions against the real IndexedDB in the probe profile. The
+     profile PERSISTS between runs, so fixtures use run-unique keys in a range
+     no production bucket occupies (epoch ms < 1e12 = before 2001) and clean up
+     after themselves — an assertion must not depend on a prior run's leavings,
+     and must not leave its own. */
+  try {
+    const T75 = 9e11;   // fixture key base: 2001-09-09, unreachable by production accrual
+    const mk75 = k => T75 + k;
+    /* Round trip, with the three-state pack: NaN price survives as NaN (no
+       print), 0 volume as 0 (printed nothing) — distinct after the clone. */
+    const packed = t0Pack({ "2": { avgHighPrice: 100, avgLowPrice: 98, highPriceVolume: 5, lowPriceVolume: 0 },
+                            "7": { avgHighPrice: null, avgLowPrice: 3, highPriceVolume: 0, lowPriceVolume: 2 } });
+    await t0Put("m5", mk75(1), Object.assign(packed, { t: mk75(1) }));
+    const back = await t0Get("m5", mk75(1));
+    const absent = await t0Get("m5", mk75(2));
+    ok("[R75.1] a bucket round-trips exactly — NaN price stays NaN, zero volume stays 0, an absent bucket reads absent",
+       !!back && back.n === 2
+       && back.id[0] === 2 && back.hi[0] === 100 && back.hv[0] === 5 && back.lv[0] === 0
+       && back.id[1] === 7 && Number.isNaN(back.hi[1]) && back.lo[1] === 3 && back.lv[1] === 2
+       && absent === undefined,
+       JSON.stringify({ n: back && back.n, hi1: back && back.hi[1], absent: String(absent) }));
+    /* Retention: a key past the cutoff is pruned, one inside it survives.
+       Pruned COUNT is returned so the caller can know a prune did work. */
+    await t0Put("m5", mk75(3), { t: mk75(3), n: 0 });
+    await t0Put("m5", mk75(4), { t: mk75(4), n: 0 });
+    const pruned = await t0Prune("m5", mk75(4));   // exclusive cutoff: <4 goes, 4 stays
+    const gone3 = await t0Get("m5", mk75(3));
+    const kept4 = await t0Get("m5", mk75(4));
+    ok("[R75.2] retention prunes strictly-older buckets and returns the count — the newer key survives",
+       pruned >= 2 && gone3 === undefined && !!kept4,
+       JSON.stringify({ pruned, gone3: String(gone3), kept4: !!kept4 }));
+    /* Coverage counts KEYS PRESENT against window arithmetic — never assumes.
+       Two observed buckets in a ten-bucket window is 2 of 10, and the pair
+       travels together (daysBenchedBy's {n, obs} construction). */
+    await t0Put("m5", mk75(10), { t: mk75(10), n: 0 });
+    await t0Put("m5", mk75(15), { t: mk75(15), n: 0 });
+    const cov = await t0Coverage("m5", mk75(10), 5, mk75(60));
+    ok("[R75.3] coverage is keys-present over window arithmetic — observed and expected travel as a pair",
+       cov.observed >= 2 && cov.expected === 10,
+       JSON.stringify(cov));
+    /* The warn decision at the term: silent below the bar, and at the bar the
+       note names the MEANING of the gap — unobserved, never quiet. Both
+       directions per the eleventh face: the correct claim required, and the
+       note must not describe the gap as market quiet. */
+    const note75 = t0FailNote(T0_FAIL_WARN, "probe error");
+    ok("[R75.4] the accrual-failure note is null below the threshold and names the gap's meaning at it",
+       t0FailNote(T0_FAIL_WARN - 1, "probe error") === null
+       && !!note75 && /unobserved, not as quiet/.test(note75)
+       && /probe error/.test(note75)
+       && !/market (is |went )?quiet/i.test(note75),
+       String(note75).slice(0, 200));
+    /* THE WIRING ITSELF — the seam the rest of this block cannot see. Every
+       assertion above calls the archive directly; none proves loadHour
+       actually accrues, and a one-line wiring nobody tests is the
+       state-coupled-to-a-fetch-path shape (scan 10). Stub the FETCH layer —
+       the seam under test is loadHour → t0Accrue, not fetch → loadHour — call
+       the real loadHour, and require the bucket to appear WITHOUT this block
+       ever calling accrual. The accrual is fire-and-forget, so the read
+       retries on a bound rather than sleeping once (fifth face: no clock
+       assumptions).
+
+       THE FIXTURE KEY IS IN THE FUTURE, AND THE FIRST FORM OF THIS TEST IS
+       WHY. It used the old-past range the rest of the block uses (safe from
+       production WRITES), and t0Accrue's own retention prune deleted the
+       bucket within the same accrual call — a 2001 key is maximally old, and
+       "safe from writes" put it squarely inside production DELETES. The run
+       read green on accrue and empty on read, firing t0Fails 0 — a working
+       accrual and a working prune composing into a vanishing fixture. A
+       fixture range must clear BOTH the write path and the delete path, and
+       only the future clears retention by construction (production keys come
+       from data timestamps and wall clocks, never ahead of now; retention
+       deletes behind now). */
+    const wireTs = 4200000000;   // seconds → 4.2e12 ms, year ~2103: no production write, no retention delete
+    const keepGetJSON = getJSON, keepHour75 = S.hour, keepMin575 = S.min5,
+          keepMin5At75 = S.min5At, keepVol75 = S.volumes, keepHourAt75 = S.hourAt,
+          keepRank75 = new Map(S.volRank);
+    getJSON = async path =>
+      path === "/5m" ? { timestamp: wireTs, data: { "2": { avgHighPrice: 50, avgLowPrice: 49, highPriceVolume: 1, lowPriceVolume: 1 } } }
+      : path === "/1h" ? { data: { "2": { avgHighPrice: 50, avgLowPrice: 49, highPriceVolume: 9, lowPriceVolume: 9 } } }
+      : { data: {} };
+    S.latestAt = S.latestAt || Date.now();   // the scorer guards on live data having arrived — simulate it (same as §18)
+    await loadHour();
+    let wired = undefined;
+    for (let i = 0; i < 20 && wired === undefined; i++){
+      await new Promise(r => setTimeout(r, 50));
+      wired = await t0Get("m5", wireTs * 1000);
+    }
+    getJSON = keepGetJSON;
+    S.hour = keepHour75; S.min5 = keepMin575; S.min5At = keepMin5At75;
+    S.volumes = keepVol75; S.hourAt = keepHourAt75; S.volRank = keepRank75;
+    ok("[R75.5] loadHour itself accrues — the bucket appears in the archive, carrying its pack version",
+       !!wired && wired.n === 1 && wired.id[0] === 2 && wired.hi[0] === 50
+       && wired.pv === T0_PACK_V,
+       JSON.stringify({ found: !!wired, n: wired && wired.n, pv: wired && wired.pv, t0Fails }));
+    /* THE SCORER'S WIRING, crossed in the same stubbed call (the seam the §76
+       block cannot see — it calls scorerCycle directly, which proves the
+       scorer and not the wiring; this is the R75.5 lesson applied to the
+       second consumer of the same arrival). The stubbed loadHour must have
+       driven a scoring pass for the stub's bucket without this block touching
+       the scorer. */
+    ok("[R76.8] loadHour itself scores — the stubbed arrival advanced the scorer's bucket without this test touching it",
+       S.scoredBucket === wireTs * 1000,
+       JSON.stringify({ scoredBucket: S.scoredBucket, expected: wireTs * 1000 }));
+    /* Future-range fixture cleanup — t0Prune only reaches the past, so this
+       one is deleted by key, and the absence is asserted like the others. */
+    await (async () => { const d = await t0Open();
+      await t0Req(d.transaction("m5", "readwrite").objectStore("m5").delete(wireTs * 1000)); })();
+    const wireGone = await t0Get("m5", wireTs * 1000);
+    ok("[R75.5b] the future-range fixture key is cleaned up — retention cannot reach it, so the delete is explicit and asserted",
+       wireGone === undefined, String(wireGone));
+    /* Cleanup: this run's fixture keys go; assert the cleanup too, so a broken
+       cleanup cannot silently grow the store across runs. */
+    await t0Prune("m5", T75 + 1e9);
+    const leftover = await t0Keys("m5", T75, T75 + 1e9);
+    ok("[R75.4] fixture cleanup leaves no keys in the fixture range",
+       leftover.length === 0, JSON.stringify(leftover));
+  } catch(e){
+    out.push("FAIL t0 archive :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §76 THE UNIVERSE SCORER — stage 1c (build ruled Aug 14 2026) ════════
+     Scoring + T2 rollups. The whole block runs on a REPLACED market: S.items,
+     S.byId, S.latest, S.hour swapped for a two-item fixture so every expected
+     count is exact, and restored after — the scorer iterates the full item
+     list by design, and a fixture riding whatever earlier blocks left in the
+     caches would make these counts a function of test order (fifth face). */
+  try {
+    const keep76 = { t2: DB.scorerT2, bucket: S.scoredBucket, sets: S.scorerIdSets,
+      items: S.items, byId: S.byId, latest: S.latest, hour: S.hour, min5At: S.min5At,
+      fT1vol: DB.filtersT1.vol, tick: DB.tickFloor };
+    DB.scorerT2 = {}; S.scoredBucket = 0; S.scorerIdSets = new Map();
+    DB.filtersT1.vol = 1000; DB.tickFloor = 15;   // pin the live config onto the grid's control cell
+    const now76 = Math.floor(Date.now() / 1000);
+    /* X is a clean passer in EVERY cell (7.8% ROI, deep book); Y fails the
+       ROI and margin gates in every cell (tax-negative spread). Funded per
+       cell is therefore exactly 1, and every divergence from 1 is a defect. */
+    const itX = { i: 9761, n: "Probe scorer X", l: 25000, m: 0, v: 0, a: 0 };
+    const itY = { i: 9762, n: "Probe scorer Y", l: 25000, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY]; S.byId = new Map([[9761, itX], [9762, itY]]);
+    S.latest = {
+      9761: { high: 4400, low: 4000, highTime: now76 - 60, lowTime: now76 - 120 },
+      9762: { high: 4160, low: 4100, highTime: now76 - 60, lowTime: now76 - 120 } };
+    S.hour = {
+      9761: { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 },
+      9762: { avgHighPrice: 4160, avgLowPrice: 4100, highPriceVolume: 50000, lowPriceVolume: 50000 } };
+
+    /* The grid: 16 cells, exactly one control, every hash distinct. The
+       control is the LIVE config, deduped onto the grid cell it equals at
+       the pinned defaults. */
+    const cells76 = scorerConfigs();
+    ok("[R76.1] the grid is 16 cells with exactly one control — the live config, deduped by hash",
+       cells76.length === 16
+       && cells76.filter(c => c.control).length === 1
+       && cells76.find(c => c.control).hash === cfgHash(liveMarketConfig())
+       && new Set(cells76.map(c => c.hash)).size === 16,
+       JSON.stringify({ n: cells76.length, controls: cells76.filter(c => c.control).length }));
+    /* Population identity: every constant in the vector moves the hash. */
+    const baseCfg76 = cells76[0].cfg, baseHash76 = cfgHash(baseCfg76);
+    ok("[R76.2] the config hash partitions on EVERY constant — a moved constant is a new population",
+       CFG_HASH_KEYS.every(k => cfgHash(Object.assign({}, baseCfg76, { [k]: baseCfg76[k] + 1 })) !== baseHash76),
+       JSON.stringify(CFG_HASH_KEYS.map(k => cfgHash(Object.assign({}, baseCfg76, { [k]: baseCfg76[k] + 1 })))));
+
+    /* An hour that is provably not the wall clock's, derived from the live
+       clock so the two always differ (fifth face: no fixed hour). */
+    const nowH76 = new Date().getUTCHours();
+    const bktH76 = (nowH76 + 5) % 24;
+    const day76 = Math.floor(Date.now() / 86400e3) * 86400e3;
+    S.min5At = day76 + bktH76 * 3600e3;
+    S.latestAt = Date.now();
+    const run1 = scorerCycle();
+    const ctlHash = cells76.find(c => c.control).hash;
+    const cell1 = DB.scorerT2[ctlHash];
+    ok("[R76.3] one pass per bucket — a re-run of the same bucket returns null and accrues nothing",
+       !!run1 && run1.rows.length === 16 && run1.rows.every(r => r.funded === 1)
+       && scorerCycle() === null
+       && cell1.cycles === 1 && cell1.fundedItemCycles === 1,
+       JSON.stringify({ run1: !!run1, cycles: cell1 && cell1.cycles }));
+    /* The churn split: a second bucket funds the SAME item — flow advances,
+       stock does not. This pair diverging is the stage-0 finding as schema. */
+    S.min5At += 300e3;
+    const run2 = scorerCycle();
+    ok("[R76.4] flow and stock are first-class and diverge — cycles advance, distinct-ever does not re-count",
+       !!run2 && cell1.cycles === 2 && cell1.fundedItemCycles === 2
+       && cell1.distinct === 1 && cell1.ids.length === 1 && cell1.ids[0] === 9761
+       && cell1.capped === 0,
+       JSON.stringify({ cycles: cell1.cycles, flow: cell1.fundedItemCycles, stock: cell1.distinct }));
+    ok("[R76.5] hour bands are keyed to the BUCKET's UTC hour, never the wall clock's",
+       cell1.cyclesByHour[bktH76] === 2 && cell1.fundedByHour[bktH76] === 2
+       && (nowH76 === bktH76 || (cell1.cyclesByHour[nowH76] === 0 && cell1.fundedByHour[nowH76] === 0)),
+       JSON.stringify({ bktH: bktH76, nowH: nowH76, byHour: cell1.cyclesByHour[bktH76] }));
+    /* The import carry: the hash is RE-DERIVED from the sanitized config, so
+       a wrong stored hash cannot mis-file the population; ids dedupe and
+       distinct re-derives. */
+    const impCfg = Object.assign({}, baseCfg76);
+    const imp = validateImport({ scorerT2: { "cWRONG": { v: 1, cfg: impCfg, firstAt: 1, lastAt: 2,
+      cycles: 3, fundedItemCycles: 4, cyclesByHour: [], fundedByHour: [],
+      ids: [7, 7, 9], distinct: 99, capped: 0 } } });
+    const impCell = imp.db.scorerT2[cfgHash(impCfg)];
+    ok("[R76.6] the import carry re-derives the hash and the distinct count — a hand-edited file cannot mis-file a population",
+       !!impCell && imp.db.scorerT2["cWRONG"] === undefined
+       && impCell.cycles === 3 && impCell.fundedItemCycles === 4
+       && JSON.stringify(impCell.ids) === "[7,9]" && impCell.distinct === 2,
+       JSON.stringify({ keys: Object.keys(imp.db.scorerT2), cell: impCell }));
+    ok("[R76.7] the scorer's failure note is null below the threshold and names the gap as unobserved cycles",
+       scorerFailNote(SCORER_FAIL_WARN - 1, "probe") === null
+       && /unobserved cycles, not a quiet market/.test(scorerFailNote(SCORER_FAIL_WARN, "probe"))
+       && /probe/.test(scorerFailNote(SCORER_FAIL_WARN, "probe")),
+       String(scorerFailNote(SCORER_FAIL_WARN, "probe")).slice(0, 160));
+    /* THE COVERAGE STAMP (conformance flag 1). The decision term is asserted
+       directly in BOTH directions — its with-chart limb is unreachable
+       through scorerCycle until 1d wires tr/vt, and faking a fixture for an
+       unreachable limb is the eighth face; the term extraction is how the
+       limb stays honest until then. The cycle-level counter is asserted in
+       the era that exists: every funded item-cycle in this fixture is
+       six-gate, so the pooled figure decomposes as all-uncharted, and the
+       era fact itself (marketStatsFor carries no chart inputs yet) is pinned
+       so 1d's wiring cannot silently arrive without flipping something red. */
+    ok("[R76.9] every funded item-cycle carries its chart-coverage stamp — the six-gate era decomposes as all-uncharted",
+       scorerNoChart({ tr: null }) === true && scorerNoChart({ tr: -3 }) === false
+       && cell1.fundedNoChart === 2 && cell1.fundedNoChart === cell1.fundedItemCycles
+       && marketStatsFor(9761).tr === null,
+       JSON.stringify({ noChart: cell1.fundedNoChart, funded: cell1.fundedItemCycles }));
+    /* And the import carries it. */
+    ok("[R76.9b] the coverage stamp survives the import carry",
+       (() => { const i2 = validateImport({ scorerT2: { x: { v: 1, cfg: baseCfg76, cycles: 5,
+                  fundedItemCycles: 4, fundedNoChart: 3, cyclesByHour: [], fundedByHour: [], ids: [] } } });
+                const c2 = i2.db.scorerT2[cfgHash(baseCfg76)];
+                return !!c2 && c2.fundedNoChart === 3 && c2.fundedItemCycles === 4; })(),
+       "carry check");
+
+    /* ═══ ROW 23 — the blacklist canary (user ruling as amended) ═══════════
+       Z is byte-identical to X in market shape and blacklisted. The pair of
+       assertions DISCRIMINATE by construction: R76.10 fails if Z leaks into
+       the funded figures (the veto's surviving core), R76.10b fails if Z
+       vanishes entirely (the silenced canary) — a seed that breaks one must
+       leave the other green, which is what separates "excluded from funding"
+       from "excluded from sight". */
+    const itZ = { i: 9763, n: "Probe scorer Z bl", l: 25000, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY, itZ]; S.byId.set(9763, itZ);
+    S.latest[9763] = { high: 4400, low: 4000, highTime: now76 - 60, lowTime: now76 - 120 };
+    S.hour[9763] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    const keepBlk76 = DB.blacklist;
+    DB.blacklist = [9763];
+    S.min5At += 300e3;
+    const run3 = scorerCycle();
+    ok("[R76.10] a blacklisted clean-passer enters NO funded figure — not the count, not the stock, not the coverage split",
+       !!run3 && run3.rows.every(r => r.funded === 1)
+       && cell1.fundedItemCycles === 3
+       && cell1.ids.length === 1 && cell1.ids[0] === 9761
+       && cell1.fundedNoChart === 3,
+       JSON.stringify({ funded: cell1.fundedItemCycles, ids: cell1.ids, rows: run3 && run3.rows[0] }));
+    ok("[R76.10b] and the SAME item is counted as the canary — would-fund blacklisted, per cell, flow and stock",
+       run3.rows.every(r => r.blFunded === 1)
+       && cell1.blFunded === 1 && JSON.stringify(cell1.blIds) === "[9763]",
+       JSON.stringify({ blFunded: cell1.blFunded, blIds: cell1.blIds }));
+    ok("[R76.10c] the canary pair survives the import carry",
+       (() => { const i3 = validateImport({ scorerT2: { x: { v: 1, cfg: baseCfg76, cycles: 1,
+                  fundedItemCycles: 1, cyclesByHour: [], fundedByHour: [], ids: [],
+                  blFunded: 4, blIds: [11, 11, 12] } } });
+                const c3 = i3.db.scorerT2[cfgHash(baseCfg76)];
+                return !!c3 && c3.blFunded === 4 && JSON.stringify(c3.blIds) === "[11,12]"; })(),
+       "carry check");
+
+    /* ═══ FLAG 3 — the reconciliation diff ═════════════════════════════════
+       Fixture: watchlist holds only Y (which the control FAILS); the plan
+       funds Y (stale-proofed stamp). Control passes X (not on the watchlist)
+       → extra = [X]. Plan-funded Y fails the control config → missing carries
+       Y with its full fail-key set. Z is blacklisted and appears NOWHERE in
+       the diff. Async write → bounded retry read, then keyed cleanup. */
+    const keepWatch76 = DB.watch;
+    DB.watch = [{ id: 9762, qty: null }];
+    S.lastPlanPicks = [9762]; S.lastPlanAt = Date.now();
+    S.min5At += 300e3;
+    const run4 = scorerCycle();
+    let rrow = undefined;
+    for (let i = 0; i < 20 && rrow === undefined; i++){
+      await new Promise(r => setTimeout(r, 50));
+      rrow = await t0Get("rdiff", S.min5At);
+    }
+    ok("[R77.1] the diff records both directions with full fail sets — control-passes-unwatched, and plan-funded-control-fails",
+       !!rrow && JSON.stringify(rrow.extra) === "[9761]"
+       && !!rrow.plan && rrow.plan.picksN === 1
+       && rrow.plan.missing.length === 1 && rrow.plan.missing[0].id === 9762
+       && JSON.stringify(rrow.plan.missing[0].fails.slice().sort()) === JSON.stringify(["margin", "roi"])
+       && rrow.extra.indexOf(9763) < 0,
+       String(JSON.stringify(rrow)).slice(0, 400));
+    ok("[R77.1b] and the cycle's own return carries the diff summary",
+       !!run4 && run4.rdiff && run4.rdiff.extraN === 1 && run4.rdiff.plan === 1,
+       JSON.stringify(run4 && run4.rdiff));
+    /* THREE-STATE on the plan side: a never-built plan records null WITH the
+       reason — unobserved is not an empty watchlist. */
+    S.lastPlanPicks = null; S.lastPlanAt = 0;
+    S.min5At += 300e3;
+    scorerCycle();
+    let rrow2 = undefined;
+    for (let i = 0; i < 20 && rrow2 === undefined; i++){
+      await new Promise(r => setTimeout(r, 50));
+      rrow2 = await t0Get("rdiff", S.min5At);
+    }
+    ok("[R77.2] an unobserved plan side records null with its reason — never an empty comparison",
+       !!rrow2 && rrow2.plan === null && /never built this session/.test(rrow2.planWhy || "")
+       && JSON.stringify(rrow2.extra) === "[9761]",
+       String(JSON.stringify(rrow2)).slice(0, 300));
+    /* ═══ THE BOOT RACE (deployment-check finding, Aug 14 2026 — M154) ═════
+       loadHour races loadLatest in doRefresh's Promise.all, so the scorer's
+       inline call can fire with S.latestAt still unset. The property that
+       makes the doRefresh catch-up correct: A GUARDED-OUT CYCLE DOES NOT
+       CONSUME ITS BUCKET — the input guard returns before the bucket is
+       marked scored, so the same bucket scores cleanly the moment the inputs
+       settle, and the two call sites can never double-count. */
+    const keepLatest76 = S.latestAt;
+    S.min5At += 300e3;
+    S.latestAt = 0;
+    const rGuarded = scorerCycle();
+    const consumedEarly = S.scoredBucket === S.min5At;
+    S.latestAt = keepLatest76 || Date.now();
+    const rCaught = scorerCycle();
+    ok("[R76.11] a guarded-out cycle does not consume its bucket — the same bucket scores once the inputs settle",
+       rGuarded === null && !consumedEarly
+       && !!rCaught && S.scoredBucket === S.min5At,
+       JSON.stringify({ rGuarded, consumedEarly, caught: !!rCaught }));
+    /* Let the catch-up cycle's async rdiff write land before the keyed
+       cleanup, or the delete races the put and leaves an orphan row. */
+    let rrow3 = undefined;
+    for (let i = 0; i < 20 && rrow3 === undefined; i++){
+      await new Promise(r => setTimeout(r, 50));
+      rrow3 = await t0Get("rdiff", S.min5At);
+    }
+    /* Cleanup: every rdiff row this block's six cycles could have written —
+       the keys are in the current-day range (production-shaped), so they are
+       deleted by key rather than left to the 90d retention. */
+    await (async () => { const d = await t0Open();
+      const os = d.transaction("rdiff", "readwrite").objectStore("rdiff");
+      for (let k = 0; k < 6; k++) os.delete(S.min5At - k * 300e3);
+    })();
+    ok("[R77.3] rdiff fixture rows are cleaned up",
+       (await t0Get("rdiff", S.min5At)) === undefined, "cleanup");
+    DB.blacklist = keepBlk76; DB.watch = keepWatch76;
+    S.lastPlanPicks = null; S.lastPlanAt = 0;
+
+    DB.scorerT2 = keep76.t2; S.scoredBucket = keep76.bucket; S.scorerIdSets = keep76.sets;
+    S.items = keep76.items; S.byId = keep76.byId; S.latest = keep76.latest; S.hour = keep76.hour;
+    S.min5At = keep76.min5At; DB.filtersT1.vol = keep76.fT1vol; DB.tickFloor = keep76.tick;
+  } catch(e){
+    out.push("FAIL universe scorer :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

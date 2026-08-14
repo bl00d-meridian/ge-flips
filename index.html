@@ -1271,7 +1271,7 @@ let DB = {
   lastCoScanAt: 0,    // weekly co-movement scan stamp
   decisionLog: [],    // audit rulings [{t,d,kind,subject,action,reason}] — the audit of the audit, exportable
   audRuled: {},       // "seed:311"/"sib:227" → {t, action} — a ruled card rests for 7 days
-  gateLog: [],        // gate-health ledger [{d,id,g}] — one row per item·gate·day, 30d retention
+  gateLog: [],        // gate-health ledger [{d,id,g,v}] — one row per item·gate·day, 30d retention. `v` is the value the gate SAW (user ruling, Aug 13 2026), in three distinct states: absent = the row predates the field, null = this gate has no single-number miss, a number = the reading. Read it with `!= null`, NEVER truthily — a 0% ROI item is benched by the ROI floor with have: 0
   obsDays: [],        // OBSERVED-DAY ledger ["YYYY-MM-DD"] (user ruling, Aug 12 2026): one entry per day a plan actually built, 30d retention. The honest denominator for every "d of the last N days" claim — no claim may be made about a period that was not observed. Written even when nothing benched, funded or qualified, which is the case DB.gateLog alone cannot witness
   dieOffLog: [],      // die-off episodes [{d,id,t,rec}] (ruled Aug 10 2026): 5m-confirmed die-off against a passing 1h book; rec = recovery stamp ms (confirmed healthy 5m sample) or null; 30d retention
   qual: {},           // sustained qualification: id → {n, firstAt, lastAt} counted full-gate passes (spec: 3 spanning ≥2h)
@@ -1289,6 +1289,7 @@ let DB = {
   shadowDivLog: [],   // daily regime-divergence ledger [{d,cur,loose,tight}] — 30d cumulative simulated net per regime, last write of day wins; the 4-of-7 persistence evidence for regime proposals
   shadowExceptions: [], // PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): per-item, evidence-gated, user-granted [{id,gate,grantedAt,trips,status:"active"|"waived"|"revoked",evidence:{n,filled,net},adjudicatedAt?,realNet?,mkAdverse?,divergence?}] — active = probation (half size, 2× tick floor; 3 real trips adjudicate on net P&L AND adverse markout, ruled Aug 11 2026); waived = standing per-item gate waiver (revocable); revoked = returned to bench, divergence recorded as fill-model calibration. The GATE ITSELF never moves on paper screening alone — screening ranks candidates for the live test; realized trips are the only path to a waiver.
   strataStats: {},    // POND PROSPECTING (user-directed Aug 11 2026): per-stratum discovery ledger, key → {ids:[distinct item ids seen, capped],samp,nm,pass,trips,filled,net,first} — durable across the paper book's 30d pruning, so the quarterly "which pond regions hold edge" map is answerable with a ledger instead of a hunch; observation only, admits nothing
+  scorerT2: {},       // UNIVERSE SCORER T2 rollups (stage 1c, ruled Aug 14 2026): configHash → {v,cfg,firstAt,lastAt,cycles,fundedItemCycles,cyclesByHour[24],fundedByHour[24],ids[],distinct,capped} — flow (cycles) and stock (distinct-ever) first-class because the frontier churns; hour bands keyed to the BUCKET's UTC hour; population identity is the config hash, re-derived on import, never trusted from the file. Measurement only; admits nothing, funds nothing
   paperEpoch: 1,      // which epoch the paper book is in (user ruling, Aug 12 2026). Epoch 2 = the reset after 149 of 248 trips were identified as pre-causality-fix corruption by a null openSeq. Rendered in every paper banner so a figure can be traced to the generation that produced it
   shadowEpoch: 0,     // ms the counterfactual book was last reset to zero (user ruling Aug 11 2026 — force-exit defect). Every paper surface reads "accruing since <date>" until the first cohort matures, so a thin ledger reads as YOUNG rather than broken
   featTouch: {},      // feature-touch instrumentation: key → {first,last} ms — feeds the quarterly dormancy report; observation only
@@ -1332,7 +1333,7 @@ function load(){
     for (const k of ["watch","flips","positions","targets","planPriority","planDemoted","scoutLog","holds","bankSnaps","gameLedger","touchLog","invLots","frictionLog","blacklist","clusters","clusterCands","decisionLog","gateLog","dieOffLog","deployLog","sleeve","sleeveExits","catalysts","anomalyFlags","intel","flagArchive","rampFlags","walkupLoad","shadowBook","shadowDivLog","shadowExceptions","obsDays"])
       if (!Array.isArray(DB[k])) DB[k] = [];
     if (!Array.isArray(DB.checks.walkup)) DB.checks.walkup = [];   // walk-up cadence migration
-    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog","strataStats"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
+    for (const k of ["seedAt","sibBorn","audRuled","nudgeSnooze","qual","rulingSnooze","entryWatchState","featTouch","cohLog","strataStats","scorerT2"]) if (!DB[k] || typeof DB[k] !== "object" || Array.isArray(DB[k])) DB[k] = {};
     if (!Array.isArray(DB.cohProps)) DB.cohProps = [];
     if (!DB.sibStats || typeof DB.sibStats !== "object") DB.sibStats = { washed: 0, graduated: 0 };
     /* One-time (sustained qualification, Aug 10 2026): items already on the
@@ -1578,6 +1579,10 @@ addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
 const S = {
   items: [], byId: new Map(),
   latest: {}, hour: {}, min5: {}, min5At: 0, pollSeq: 0, volumes: {}, volRank: new Map(),
+  scoredBucket: 0, scorerIdSets: new Map(),   // universe scorer: one pass per 5m bucket; runtime Set mirror of each cell's distinct ids
+  t0LastBucket: 0,   // last bucket the T0 archive actually wrote (session-scoped; the freshness panel's honest age)
+  rdiffLastBucket: 0,   // last bucket the reconciliation diff recorded (flag 3; session-scoped, same discipline)
+  lastPlanPicks: null, lastPlanAt: 0,   // the plan's funded ids, stamped at buildPlan — null means never built this session, [] means built-and-funded-nothing (different claims)
   vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
   spark: new Map(),
@@ -1984,6 +1989,418 @@ function applyMapping(items, at){
 }
 
 async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.data || {}; S.latestAt = Date.now(); }
+
+/* ═══ T0 MARKET ARCHIVE — stage 1b of the universe scorer ══════════════════
+   (build ruled Aug 14 2026; the stage with the clock on it — the 7-day chart
+   cold-start begins when accrual begins, so the archive ships ahead of the
+   scorer that will read it.)
+
+   WHAT IT IS: every /5m bulk response and one /1h reading per wall-clock hour,
+   written to IndexedDB as whole-universe bucket records. The archive is the
+   ledger (design §2): a gate verdict is a pure function of (inputs, config),
+   so storing the INPUTS once makes every config — current and future —
+   scorable and fill-replayable over the window, which no per-verdict ledger
+   can offer. Bucket keys double as the coverage record: a key present is an
+   observed bucket, a key absent is an unobserved one, and no separate ledger
+   can drift from the data it describes.
+
+   THE NAMED STORAGE EXCEPTION (user ruling, Aug 14 2026): this is the one
+   place the app writes outside localStorage. IndexedDB, same client-side
+   no-build model, ~21–31MB/day at full accrual against localStorage's 5MB
+   quota. Scoped to the T0/T1 archive; nothing else moves. CLAUDE.md carries
+   the same exception in the same commit.
+
+   THREE-STATE DISCIPLINE IN THE PACKING: an item with no print in a bucket
+   carries NaN for the price and 0 for the volume — absent-price and
+   zero-volume are different readings and a truthiness pack would merge them
+   (the falsy-zero census class). NaN survives the structured clone.
+
+   FAILURE IS SURFACED, NEVER SWALLOWED: a run of accrual failures warns on
+   the standing warn() channel — an archive that silently stops accruing is a
+   stalled generator, and its gaps would read as market silence. */
+const T0_DB_NAME = "geflips-t0", T0_DB_V = 2;   // v2: + "rdiff" (flag 3, Aug 14 2026)
+const T0_RET_5M_MS = 72 * 3600e3;     // covers the longest horizon + reconstruction slack
+const T0_RET_1H_MS = 8 * 86400e3;     // 7d trend window + one day of slack
+const RDIFF_RET_MS = 90 * 86400e3;    // the cutover's plumb line — kept LONG on purpose
+const T0_FAIL_WARN = 3;
+let t0dbP = null, t0Fails = 0;
+function t0Open(){
+  if (t0dbP) return t0dbP;
+  t0dbP = new Promise((res, rej) => {
+    const rq = indexedDB.open(T0_DB_NAME, T0_DB_V);
+    rq.onupgradeneeded = () => {
+      const d = rq.result;
+      if (!d.objectStoreNames.contains("m5")) d.createObjectStore("m5");
+      if (!d.objectStoreNames.contains("h1")) d.createObjectStore("h1");
+      if (!d.objectStoreNames.contains("rdiff")) d.createObjectStore("rdiff");
+    };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => { t0dbP = null; rej(rq.error); };
+  });
+  return t0dbP;
+}
+const t0Req = rq => new Promise((res, rej) => { rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); });
+async function t0Put(store, key, val){
+  const d = await t0Open();
+  return t0Req(d.transaction(store, "readwrite").objectStore(store).put(val, key));
+}
+async function t0Get(store, key){
+  const d = await t0Open();
+  return t0Req(d.transaction(store, "readonly").objectStore(store).get(key));
+}
+async function t0Keys(store, lo, hi){
+  const d = await t0Open();
+  const range = lo != null && hi != null ? IDBKeyRange.bound(lo, hi)
+              : lo != null ? IDBKeyRange.lowerBound(lo)
+              : hi != null ? IDBKeyRange.upperBound(hi) : null;
+  return t0Req(d.transaction(store, "readonly").objectStore(store).getAllKeys(range));
+}
+async function t0Prune(store, cutoffMs){
+  const d = await t0Open();
+  const os = d.transaction(store, "readwrite").objectStore(store);
+  const keys = await t0Req(os.getAllKeys(IDBKeyRange.upperBound(cutoffMs, true)));
+  for (const k of keys) os.delete(k);
+  return keys.length;
+}
+/* Column-packed bucket record from a bulk response's data object. NaN price =
+   no print on that side; 0 volume = printed nothing. Never conflated. */
+function t0Pack(data){
+  const ks = Object.keys(data), n = ks.length;
+  const id = new Int32Array(n), hi = new Float64Array(n), lo = new Float64Array(n),
+        hv = new Float64Array(n), lv = new Float64Array(n);
+  for (let i = 0; i < n; i++){
+    const d = data[ks[i]];
+    id[i] = +ks[i];
+    hi[i] = Number.isFinite(d.avgHighPrice) ? d.avgHighPrice : NaN;
+    lo[i] = Number.isFinite(d.avgLowPrice) ? d.avgLowPrice : NaN;
+    hv[i] = d.highPriceVolume || 0;
+    lv[i] = d.lowPriceVolume || 0;
+  }
+  return { id, hi, lo, hv, lv, n };
+}
+/* COVERAGE, from the keys themselves: observed buckets vs the buckets the
+   window contains. The denominator is arithmetic on the window, the numerator
+   is keys actually present — a claim about observation, never inferred from
+   whether data "looks" present (no-claim-about-unobserved-periods, applied to
+   the archive from day one). */
+async function t0Coverage(store, sinceMs, stepMs, nowMs){
+  const now = nowMs || Date.now();
+  const keys = await t0Keys(store, sinceMs, null);
+  return { observed: keys.length, expected: Math.max(0, Math.floor((now - sinceMs) / stepMs)), sinceMs, stepMs };
+}
+/* One accrual per data arrival, riding loadHour like every ledger (R34.1 —
+   never a render path). Fire-and-forget with surfaced failure. */
+/* THE PACK VERSION — the partition answer at birth (conformance ruling, Aug
+   14 2026). The regime that writes a bucket is t0Pack's shape; `pv` records
+   it; a shape change bumps the constant and readers partition by it instead
+   of guessing from fields present. Stamped from the first real bucket, so no
+   unversioned population ever accrues. */
+const T0_PACK_V = 1;
+async function t0Accrue(){
+  if (!S.min5At || !S.hour || !Object.keys(S.min5 || {}).length) return;
+  const bkt = S.min5At;   // captured once — the await below must not race a newer poll
+  await t0Put("m5", bkt, Object.assign(t0Pack(S.min5), { t: bkt, pv: T0_PACK_V }));
+  const hourStart = Math.floor(Date.now() / 3600e3) * 3600e3;
+  /* /1h is a rolling window fetched every 5 minutes; one record per wall-clock
+     hour, last write wins — the deployLog hourly-bucket pattern. */
+  await t0Put("h1", hourStart, Object.assign(t0Pack(S.hour), { t: hourStart, pv: T0_PACK_V }));
+  await t0Prune("m5", Date.now() - T0_RET_5M_MS);
+  await t0Prune("h1", Date.now() - T0_RET_1H_MS);
+  /* Freshness reads the age of the thing it names: the last BUCKET accrued,
+     not the last attempt. Session-scoped by design — after a reload the panel
+     says "not yet this session" rather than trusting a stamp it cannot see. */
+  S.t0LastBucket = bkt;
+}
+/* The warn decision, extracted so the threshold is assertable at the term
+   (the strataCount pattern): null below the bar, the full note at it. The
+   note names what the gap MEANS — unobserved, never quiet — because that is
+   the reading the archive's whole coverage discipline exists to protect. */
+function t0FailNote(fails, errMsg){
+  if (fails < T0_FAIL_WARN) return null;
+  return "⚠ The market archive (T0) has failed to accrue " + fails + " times in a row — "
+    + (errMsg ? String(errMsg).slice(0, 120) : "IndexedDB error")
+    + ". The universe scorer's coverage has a gap starting now; scoring and fill replay over this window will report it as unobserved, not as quiet.";
+}
+function t0AccrueSafe(){
+  return t0Accrue().then(() => { t0Fails = 0; clearWarn("t0"); })
+    .catch(e => {
+      t0Fails++;
+      const note = t0FailNote(t0Fails, e && e.message);
+      if (note) warn("t0", note);
+    });
+}
+
+/* ═══ THE UNIVERSE SCORER — stage 1c: scoring + T2 rollups ═════════════════
+   (build ruled Aug 14 2026; design §2/§3/§5; stage-0 findings absorbed here)
+
+   Every item in the mapping is scored against every grid cell each 5m bucket,
+   through the SAME pure core the live chain routes through — one gate
+   implementation, N configs. No admission step, no near-miss filter, no
+   watchlist: the population is the universe, which is the entire point.
+
+   WHAT A CELL RECORDS, and why these figures and not others (stage-0 ruling:
+   the frontier is a FLOW — 109/89 at two times of day with intersection 27 —
+   so a snapshot count understates the population ~6× and T1 sizing budgets
+   from the UNION flow):
+   - `cycles` / `fundedItemCycles` — the FLOW: observed scoring cycles and
+     item-cycles funded. The honest denominator and numerator for "how much
+     does this rule set fund", robust to churn.
+   - `ids` / `distinct` — the STOCK: distinct items EVER funded, capped at
+     SCORER_ID_CAP with a declared `capped` flag (the strataSeen pattern).
+     Flow and stock diverge exactly when the frontier churns, which is the
+     finding; a cell where they agree is a stable list, a cell where they
+     diverge is a flow, and both render from these two figures.
+   - `cyclesByHour` / `fundedByHour` — 24 UTC-hour bands, attributed to the
+     BUCKET's hour, never the wall clock's (a delayed cycle scores old data
+     and must file under the data's hour — the information-horizon rule).
+     Today's config funds 13 at 22:00Z and 5 at 10:00Z; pooling across hours
+     pools populations that answer different questions, so the split is in
+     the schema from birth rather than discovered later.
+
+   POPULATION IDENTITY IS THE CONFIG HASH. Rollups are keyed by cfgHash over
+   the full constant vector — a config edited in any way is a NEW population,
+   never a continuation (the FILL_MODEL_V discipline, applied at birth). The
+   CONTROL cell is the live config, marked, deduped by hash when it equals a
+   grid cell; if the user moves a live constant the control's hash moves with
+   it and its old population closes, which is correct.
+
+   T2 lives in DB (localStorage): hundreds of KB worst case, and it rides the
+   existing save/backup/import machinery — WITH an explicit import carry in
+   validateImport, because the sanitizer enumerates keys and an unlisted key
+   silently dies on restore (the R68.9 lesson, applied before the fact).
+
+   NO SURFACE YET (stage 1e). Failure is surfaced through the standing warn
+   channel like the archive's, so a scorer that dies cannot die silently. */
+const SCORER_V = 1;
+const SCORER_ID_CAP = 3000;   // sized from the union flow: 171 over two snapshots at the loosest corner, 6x headroom on a weekly union estimate
+const SCORER_BASE = { tickFloor: 15, skewHard: 60, balHardLo: 0.15, balHardHi: 0.85,
+                      trendSoft: -5, falling: -8, volDecline: -40 };
+function scorerGrid(){
+  const cells = [];
+  for (const m of [3, 2, 1.5, 1, 0.5])
+    for (const b of [1000, 500, 250])
+      cells.push(Object.assign({}, SCORER_BASE, { taxMult: m, roi: 1.2, volBase: b }));
+  /* roi varies only where it binds: below taxMult ≈ 0.55 the stated floor
+     re-emerges from behind the tax limb (measured 54 → 61; the original
+     loosening question, finally testable). The b=100 corner stays deferred
+     until capture calibration exists (ruled). */
+  cells.push(Object.assign({}, SCORER_BASE, { taxMult: 0.5, roi: 1.0, volBase: 250 }));
+  return cells;
+}
+/* Stable hash over the FULL constant vector, fixed key order. Derived, never
+   stored-and-trusted: the import carry re-derives it from the config it
+   sanitized, so a hand-edited file cannot file data under a hash its config
+   does not produce. */
+const CFG_HASH_KEYS = ["roi","taxMult","tickFloor","volBase","skewHard","balHardLo","balHardHi","trendSoft","falling","volDecline"];
+function cfgHash(cfg){
+  const s = CFG_HASH_KEYS.map(k => k + ":" + cfg[k]).join("|");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return "c" + h.toString(36);
+}
+function scorerConfigs(){
+  const cells = scorerGrid().map(c => ({ cfg: c, hash: cfgHash(c), control: false }));
+  const live = liveMarketConfig();
+  const liveHash = cfgHash(live);
+  const dup = cells.find(x => x.hash === liveHash);
+  if (dup) dup.control = true;
+  else cells.push({ cfg: live, hash: liveHash, control: true });
+  return cells;
+}
+/* Runtime Set mirror of a cell's ids — self-healing against an import having
+   replaced DB.scorerT2 underneath it (size mismatch → rebuild). */
+function scorerIdSet(hash, r){
+  if (!S.scorerIdSets) S.scorerIdSets = new Map();
+  let set = S.scorerIdSets.get(hash);
+  if (!set || set.size !== r.ids.length){ set = new Set(r.ids); S.scorerIdSets.set(hash, set); }
+  return set;
+}
+/* ═══ THE COVERAGE STAMP (conformance ruling flag 1, Aug 14 2026) ══════════
+   The design promised it and 1c shipped without it: until the h1 archive
+   matures, `marketStatsFor` carries no chart inputs, so every verdict is a
+   SIX-GATE verdict — and the moment stage 1d wires `tr`/`vt` in, full-chain
+   cycles would have pooled with six-gate cycles under one configHash. Fixed
+   BEFORE anything accrues: `fundedNoChart` counts the funded item-cycles that
+   were scored without chart inputs, so `fundedItemCycles` always decomposes
+   as charted + uncharted and the transition is visible in the data rather
+   than inferred from dates. The decision term is extracted (`scorerNoChart`)
+   because its with-chart limb is UNREACHABLE until 1d wires the inputs — a
+   probe cannot honestly exercise it through `scorerCycle` today, so the term
+   is asserted directly and the cycle-level counter is asserted in the era
+   that exists (the eighth face, handled by naming it instead of faking a
+   fixture). The `ids` stock is deliberately NOT era-split: era-pure stock
+   re-derives from T0 replay (the archive is the ledger), and that answer is
+   on record in the partition register. */
+const scorerNoChart = st => st.tr == null;
+/* ═══ THE BLACKLIST CANARY (row 23, user ruling as amended, Aug 14 2026) ═══
+   The blacklist-never-accrues precedent, narrowed to its actual property:
+   what it forbids is the machine accruing counterfactual PROFIT evidence
+   against the user's veto — it does not forbid the instrument SEEING vetoed
+   items, and total exclusion would silence a canary. So:
+   - blacklisted items ARE scored at the gate level, at the CYCLE layer
+     (`isBlk` is operator state and may not enter the pure core or the stats
+     builder — the routing lives here, where populations are assigned);
+   - they are EXCLUDED from funded counts, the ids stock, and every future
+     net and ranking, and COUNTED in the per-cell caution pair below — a
+     loose config admitting known-bad items is evidence AGAINST the config;
+   - trips and fill sim NEVER run on them (stage 1d inherits this as a hard
+     rule — no counterfactual P&L brief against the veto, ever);
+   - the honest caveat, recorded with the design: the blacklist is a handful
+     of items — as a labeled corpus its n is tiny. The pump-flag population
+     (machine-armed, larger, expiring) is the real defense-training corpus;
+     the blacklist supplies permanent anchor cases on top.
+   Membership is stamped AT THE CYCLE (partition-at-birth): an item counts
+   into `blFunded` only for cycles while it is actually blacklisted, so a
+   later un-blacklisting starts counting it into the main figures from that
+   cycle forward and the two eras never mix. */
+function scorerCell(hash, cfg){
+  let r = DB.scorerT2[hash];
+  if (!r){
+    r = DB.scorerT2[hash] = { v: SCORER_V, cfg: Object.assign({}, cfg), firstAt: Date.now(), lastAt: 0,
+      cycles: 0, fundedItemCycles: 0, fundedNoChart: 0,
+      cyclesByHour: new Array(24).fill(0), fundedByHour: new Array(24).fill(0),
+      ids: [], distinct: 0, capped: 0,
+      blFunded: 0, blIds: [] };   // the caution pair: flow and (small) stock of would-fund blacklisted items
+  }
+  /* Cells created before row 23 gain the pair at first touch — absent would
+     otherwise read as zero, and these are different claims. */
+  if (r.blFunded == null){ r.blFunded = 0; r.blIds = []; }
+  return r;
+}
+/* One scoring pass per 5m bucket. Returns the per-cell funded counts (with
+   the control marked) so a caller — and the probe — reads the cycle's result
+   from the cycle itself rather than re-deriving it. */
+function scorerCycle(){
+  if (!S.min5At || !S.latestAt || !S.items.length) return null;
+  if (S.scoredBucket === S.min5At) return null;   // one score per bucket — re-runs add nothing
+  S.scoredBucket = S.min5At;
+  const hour = new Date(S.min5At).getUTCHours();  // the BUCKET's hour, never the wall clock's
+  const cells = scorerConfigs();
+  for (const c of cells){ c._funded = 0; c._fundedNoChart = 0; c._blFunded = 0; c._blIds = []; }
+  /* Flag 3's raw material, captured in the same pass: the control cell's
+     per-cycle pass set, and the control-config fail sets of the items the
+     plan currently funds. */
+  const ctl = cells.find(c => c.control);
+  const ctlPass = [];
+  const planPicks = Array.isArray(S.lastPlanPicks) ? S.lastPlanPicks : null;
+  const planFresh = planPicks != null && S.lastPlanAt && (Date.now() - S.lastPlanAt) < 10 * 60e3;
+  const missing = [];
+  for (const it of S.items){
+    const st = marketStatsFor(it.i);
+    if (!st) continue;
+    const bl = isBlk(st.id);   // operator state, read at the CYCLE layer only — never in the core or the stats builder
+    for (const c of cells){
+      const fails = marketGateFails(st, c.cfg);
+      if (c.control && planFresh && planPicks.includes(st.id) && fails.length)
+        missing.push({ id: st.id, fails: fails.map(f => f.g) });
+      if (fails.length) continue;
+      if (bl){
+        /* THE CANARY (row 23): counted, never funded — and never into the
+           ids stock, the noChart split, or the reconciliation pass set. A
+           loose config that would fund a known-bad item is evidence against
+           the config. */
+        c._blFunded++;
+        if (!c._blIds.includes(st.id)) c._blIds.push(st.id);
+        continue;
+      }
+      c._funded++;
+      if (scorerNoChart(st)) c._fundedNoChart++;
+      if (c.control) ctlPass.push(st.id);
+      const r = scorerCell(c.hash, c.cfg);
+      const set = scorerIdSet(c.hash, r);
+      if (!set.has(st.id)){
+        if (r.ids.length >= SCORER_ID_CAP) r.capped = 1;   // declared truncation, never silent
+        else { set.add(st.id); r.ids.push(st.id); r.distinct = r.ids.length; }
+      }
+    }
+  }
+  for (const c of cells){
+    const r = scorerCell(c.hash, c.cfg);
+    r.cycles++; r.cyclesByHour[hour]++;
+    r.fundedItemCycles += c._funded; r.fundedByHour[hour] += c._funded;
+    r.fundedNoChart += c._fundedNoChart;
+    r.blFunded += c._blFunded;
+    /* Small stock, no cap needed at blacklist scale; membership stamped at
+       the cycle, so un-blacklisting moves an item into the main figures
+       from that cycle forward. */
+    for (const id of c._blIds) if (!r.blIds.includes(id)) r.blIds.push(id);
+    r.lastAt = S.min5At; r.v = SCORER_V;
+  }
+  /* ═══ FLAG 3 — THE RECONCILIATION DIFF (user ruling, Aug 14 2026) ════════
+     Each cycle, the diff between the control cell and the live plan: items
+     the control passes that the watchlist does not hold, and plan-funded
+     items the control fails, WITH their full fail sets (config-free keys).
+     This is the plumb line for the cutover — the pool switch is the one
+     deployment-class change in the migration, and this ledger should be the
+     longest-observed number in the instrument by cutover day. Recorded from
+     THIS cycle forward because every cycle it is not recording is
+     reconciliation history that does not exist.
+     THREE-STATE on the plan side: a plan never built this session (or stale
+     beyond 10 min) records `plan: null` with the reason — unobserved is not
+     an empty watchlist, and the diff must not claim a comparison it could
+     not make. */
+  const watchIds = new Set((DB.watch || []).map(w => w.id));
+  rdiffAccrueSafe({
+    t: S.min5At, ch: ctl ? ctl.hash : null, v: SCORER_V,
+    extra: ctlPass.filter(id => !watchIds.has(id)),
+    ctlPassN: ctlPass.length, wlN: watchIds.size,
+    plan: planFresh ? { picksN: planPicks.length, missing } : null,
+    planWhy: planFresh ? null : (planPicks == null ? "plan never built this session" : "last plan build is stale (>10m)")
+  });
+  save();
+  return { bucket: S.min5At, hour,
+    rows: cells.map(c => ({ hash: c.hash, control: c.control, funded: c._funded, blFunded: c._blFunded })),
+    rdiff: { extraN: ctlPass.filter(id => !watchIds.has(id)).length, plan: planFresh ? missing.length : null } };
+}
+/* Failure surfaced at the term, the t0FailNote pattern: a scorer that stops
+   is unobserved cycles, never a quiet market. */
+const SCORER_FAIL_WARN = 3;
+let scorerFails = 0;
+function scorerFailNote(fails, errMsg){
+  if (fails < SCORER_FAIL_WARN) return null;
+  return "⚠ The universe scorer has failed " + fails + " cycles in a row — "
+    + (errMsg ? String(errMsg).slice(0, 120) : "error")
+    + ". Every cell's coverage has a gap starting now: these are unobserved cycles, not a quiet market.";
+}
+function scorerCycleSafe(){
+  try { const r = scorerCycle(); scorerFails = 0; clearWarn("scorer"); return r; }
+  catch(e){
+    scorerFails++;
+    const note = scorerFailNote(scorerFails, e && e.message);
+    if (note) warn("scorer", note);
+    return null;
+  }
+}
+/* ═══ FLAG 3 STORAGE — the reconciliation-diff ledger ══════════════════════
+   One row per scored bucket in IDB "rdiff" (keyed by bucket ms), 90-day
+   retention. NOT localStorage: ~288 rows/day at 150–400B would eat the 5MB
+   quota inside a month, and this ledger's whole value is length. NOT named
+   `recon*` — that prefix is the paper book's reconstruction machinery, a
+   different thing, and a shared prefix is how a reader greps the wrong
+   subsystem. The failure note follows the standing pattern: a gap here is
+   reconciliation history that does not exist, and it must say so. */
+const RDIFF_FAIL_WARN = 3;
+let rdiffFails = 0;
+function rdiffFailNote(fails, errMsg){
+  if (fails < RDIFF_FAIL_WARN) return null;
+  return "⚠ The reconciliation diff has failed to record " + fails + " cycles in a row — "
+    + (errMsg ? String(errMsg).slice(0, 120) : "IndexedDB error")
+    + ". Every unrecorded cycle is reconciliation history that does not exist; the cutover's plumb line has a gap starting now.";
+}
+async function rdiffAccrue(row){
+  await t0Put("rdiff", row.t, row);
+  await t0Prune("rdiff", Date.now() - RDIFF_RET_MS);
+  S.rdiffLastBucket = row.t;
+}
+function rdiffAccrueSafe(row){
+  return rdiffAccrue(row).then(() => { rdiffFails = 0; clearWarn("rdiff"); })
+    .catch(e => {
+      rdiffFails++;
+      const note = rdiffFailNote(rdiffFails, e && e.message);
+      if (note) warn("rdiff", note);
+    });
+}
+
 async function loadHour(){
   const [h, m, v] = await Promise.all([getJSON("/1h"), getJSON("/5m"), getJSON("/volumes")]);
   S.hour = h.data || {}; S.min5 = m.data || {}; S.hourAt = Date.now();
@@ -1992,6 +2409,8 @@ async function loadHour(){
      legs that already existed when the bucket opened. */
   S.min5At = Number.isFinite(m.timestamp) ? m.timestamp * 1000 : Date.now();
   updateVol5Streaks();   // vol5 binding rule: streaks count data arrivals, not renders
+  t0AccrueSafe();        // T0 archive rides the data arrival, never a render (R34.1)
+  scorerCycleSafe();     // the universe scorer rides the same arrival — one pass per 5m bucket
   /* 24h volume ranking = the crowding census. The most-flipped items are where
      every tool sends every flipper — expect spreads compressed to the tax floor. */
   S.volumes = v.data || {};
@@ -2173,6 +2592,17 @@ async function doRefresh(opts = {}){
     const jobs = [loadLatest()];
     if (Date.now() - S.hourAt > HOUR_MS) jobs.push(loadHour());
     await Promise.all(jobs);
+    /* SCORER CATCH-UP (deployment-check finding, Aug 14 2026 — M154). The
+       scorer's inline call rides loadHour, and loadHour RACES loadLatest
+       inside the Promise.all above: at boot the tail of loadHour can run
+       before S.latestAt exists, the input guard returns null, and the next
+       chance is a full HOUR_MS away — so a walk-up shorter than ~5 minutes
+       would score NOTHING while the archive accrued normally. Here both
+       inputs are settled by construction. The bucket guard makes this a
+       no-op whenever the inline call already scored (a guarded-out cycle
+       does not consume its bucket — [R76.11]), so the two call sites can
+       never double-count. */
+    scorerCycleSafe();
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
@@ -2765,7 +3195,23 @@ function renderBeyondNet(watched){
    the term computes 30,000 units while the pick lands at 5,000 — so the size
    the suite asserts is a CAP, and a defect in this term is invisible from
    there. The term under test gets a name; the caps keep their own assertions. */
-const planHorizonUnits = (volGate, qty) => Math.min(qty, Math.floor(volGate * GATE.capture * FILLH()));
+/* THE HORIZON TERM, WITH THE CLAMP OUTSIDE IT (adversarial pass, Aug 13 2026).
+   The extraction that repaired M118 stopped one layer short: the `Math.min`
+   stayed INSIDE the extracted function, so the term was reachable only by
+   passing a qty large enough to neutralise the clamp — and the assertion did
+   exactly that, with `qty = 1e9`, a value production's own call site cannot
+   produce (index.html:4190 passes planQty, bounded by planCap).
+   Worse, the assertion's expectation was a character-for-character copy of the
+   body, so the one defect that matters here is invisible to it: substituting
+   FILLH() for DB.fillHorizonH moves BOTH sides together. That is the M118
+   recurrence — sizing silently reverting from the touch schedule to the
+   no-cadence fallback — and on a machine keeping a real cadence the schedule's
+   gaps are 5.0 / 5.0 / 4.5 / 9.5h against a fallback of 4, so it misprices the
+   overnight buy leg by up to 2.4x with the suite green.
+   Split so the term can be asserted by SCALING rather than by restating it,
+   and under a real schedule where the two horizons are distinguishable. */
+const horizonUnitsFor = volGate => Math.floor(volGate * GATE.capture * FILLH());
+const planHorizonUnits = (volGate, qty) => Math.min(qty, horizonUnitsFor(volGate));
 /* THE SIZE-SHRINKING FACTORS, extracted (clamp-absorption rule, Aug 13 2026 —
    fourth application). These four multipliers are the only thing bounding real
    capital under a caution, a probation grant or an unproven tier, and they sat
@@ -2828,6 +3274,175 @@ const GATE = { roi:1.2, trendSoft:-5, trendWarn:-3, falling:-8, volPerQty:4,
                seedSizeFactor:0.5, seedSlots:1,
                taxMult:3,        // per-unit margin must clear 3× the per-unit tax (plus the tick floor below)
                capture:0.15 };   // share of one side's flow a standing offer can realistically capture
+
+/* ═══ THE FLOOR THE MARGIN GATE ACTUALLY ENFORCES (measured Aug 13 2026) ═══
+   `GATE.roi` is 1.2%. It selects nothing. The margin gate's TAX LIMB —
+   `eMargin >= GATE.taxMult × tax`, with `tax = 2% of the sale price` — is a
+   sustained-ROI floor in disguise, and it is five and a half times higher.
+
+   Writing margin = ρ·P and tax = τ·S with S = (P + margin)/(1 − τ):
+
+       margin < taxMult·tax   ⟺   ρ < taxMult·τ / (1 − τ − taxMult·τ)
+
+   which at τ = 0.02 and taxMult = 3 is 0.06/0.92 = 3/46 = 6.5217%. Every
+   non-exempt item below that ROI is benched by the margin floor whatever the
+   ROI floor says, so `GATE.roi` is dominated below 1.2% and irrelevant between
+   1.2% and 6.52%. Nobody wrote that rule: it is the ratio between two
+   constants set independently, and no rule anywhere stated it. Measured over
+   4,497 live items — 2,358 fail the ROI floor and 2,358 of 2,358 also fail the
+   margin floor. See `audits/SURFACE-2026-08-13-gate-interaction.md`.
+
+   THIS IS A MEASUREMENT, NOT A COMPLAINT. Neither constant is proposed to
+   move; the 3× rule has its own stated rationale (the scratch-exit bleed, at
+   the margin gate below). What the function exists for is that anything
+   reasoning about ROI-floor reachability must read the floor the product
+   APPLIES rather than the one it displays — and must re-derive it if either
+   constant ever moves, instead of carrying 6.52% as a literal.
+
+   Two limbs are deliberately NOT in this number, and both reinforce it rather
+   than qualify it: the TICK floor (`tickFloorFor`) independently dominates the
+   ROI floor for any item under ~1,250 gp, and the 5m `TAX_CAP` flattens
+   `marginNeed` above a 250m sale price so the effective floor there FALLS to
+   `15m / buy`. Tax-exempt items are the one real carve-out — `tax = 0`
+   collapses the requirement to the halved tick floor. */
+const effRoiFloorPct = () => {
+  const k = GATE.taxMult * TAX_RATE, denom = 1 - TAX_RATE - k;
+  return denom > 0 ? k / denom * 100 : Infinity;
+};
+/* The margin gate's requirement, extracted so it can be asserted at the source
+   (seventh face: an assertion that re-derives this in the probe tests the
+   probe's arithmetic twice and the product zero times). `candidateFor` had it
+   inline, which meant nothing outside the gate chain could read the number the
+   gate demands. Returns the PAIR so a caller cannot report the requirement
+   without knowing which limb produced it — the tax limb and the tick limb bind
+   in different price regions and dominate the ROI floor for different reasons,
+   and "which input pins this" is exactly what the clamp rule requires stating. */
+function marginNeedFor(id, tax){
+  return marginNeedCfg({ taxMult: GATE.taxMult, tickFloor: TICKF() }, exemptIds.has(id), tax);
+}
+
+/* ═══ THE INSTRUMENT GATE CORE — stage 1a of the universe scorer ═══════════
+   (build ruled Aug 14 2026; design `audits/DESIGN-2026-08-14-universe-scoring.md`,
+   §6 surgery)
+
+   ONE implementation of the market-gate arithmetic, as a PURE function of
+   (stats, config). The live chain routes through it — `candidateFor` computes
+   its market-gate conditions here and keeps only its copy and its operator
+   overlays — so the instrument and the plan can never disagree about what a
+   gate rejects. This is the `strataCount` extraction pattern applied to the
+   whole chain: the probe asserts the term, production calls the term, nothing
+   re-derives it.
+
+   PURITY IS THE CONTRACT, AND IT IS MECHANICALLY ASSERTED. `marketGateFails`,
+   `marginNeedCfg` and `volFloorCfg` read NOTHING ambient: no `GATE`, no `DB`,
+   no `S`, no `exemptIds`, no operator state (`[R74.2]` scans their source for
+   forbidden identifiers and fails the suite on a match — the detector for the
+   eight operator-state leaks enumerated in the design, each of which is also
+   seeded individually). Everything an evaluation needs arrives in `st` and
+   `cfg`. The input-preparation layer (`marketStatsFor`, `liveMarketConfig`)
+   reads MARKET caches and constants — that is its job — and never reads
+   operator state; the boundary between the two layers is the surgery.
+
+   TWO KNOWN LIMITS, stated rather than hidden:
+   - The gate NAME "margin floor (ticks / 3× tax)" bakes the number 3 into a
+     label while `cfg.taxMult` varies. The name is a schema key today (ledger,
+     glossary, gateName()) and does not move in 1a; the instrument's own schema
+     (stage 1c) needs config-free gate keys, flagged there.
+   - The vol5 binding rule and its streaks (`volGateFor`/`S.vol5Low`) are
+     tracked for WATCH items only, so `marketStatsFor` binds volume on the 1h
+     side alone until the T0 archive carries universe 5m streaks (stage 1b).
+     Chart inputs (`tr`, `vt`, `moState`) are null for the same reason — the
+     core skips them, and unknown is not failing. */
+function marginNeedCfg(cfg, exempt, tax){
+  const byTax = cfg.taxMult * (tax || 0);
+  const byTick = exempt ? Math.max(1, Math.ceil(cfg.tickFloor / 2)) : cfg.tickFloor;
+  return { need: Math.max(byTax, byTick), byTax, byTick, limb: byTax >= byTick ? "tax" : "tick" };
+}
+const volFloorCfg = (volBase, px) => Math.max(4, Math.round(volBase * Math.min(1, 2000 / Math.max(1, px || 1))));
+/* ═══ CONFIG-FREE GATE KEYS (user ruling, Aug 14 2026 — stage 1c) ══════════
+   The core emits SCHEMA KEYS, not display names. The old form emitted
+   "margin floor (ticks / 3× tax)" — a label that bakes the number 3 into a
+   string while `cfg.taxMult` varies, so a cell at taxMult=1 would have
+   rendered a false claim on every surface that named its own gate. The keys
+   carry no constants; the display names live in ONE map below.
+
+   THE DISPLAY NAMES ARE LEDGER KEYS AND DO NOT MOVE. `DB.gateLog` rows,
+   `gateName()`'s returns, `GATE_CHAIN_ORDER` and the glossary `names` arrays
+   all carry the old strings — renaming them would orphan every persisted row
+   (the paper-book rename precedent: persisted keys are not renamed without a
+   migration). The "3×" inside the LIVE chain's label is the one place it may
+   stand, because the live chain's taxMult IS 3 and the label names the live
+   gate; instrument surfaces (stage 1e) render from keys plus their own
+   config's constants, never from these labels. */
+const MARKET_GATE_KEYS = ["roi", "margin", "skew", "imbalance", "trend", "volTrend", "volFloor", "momentum"];
+const MARKET_GATE_LABEL = {
+  roi: "ROI floor", margin: "margin floor (ticks / 3× tax)", skew: "book skew",
+  imbalance: "flow imbalance", trend: "trend", volTrend: "volume trend",
+  volFloor: "volume floor", momentum: "momentum" };
+/* st: { buy, tax, exempt, eMargin, eRoi, skewMin, imbalance, volGate, tr, vt, moState }
+   cfg: { roi, taxMult, tickFloor, volBase, skewHard, balHardLo, balHardHi,
+          trendSoft, falling, volDecline }
+   Returns [{ g: KEY, have, need }] in chain order. A gate whose input is null
+   is skipped (unknown is not failing) — except the ROI floor's null limb,
+   which reproduces the live chain's "sustained ROI unknown" bench exactly. */
+function marketGateFails(st, cfg){
+  const fails = [];
+  const add = (g, have, need) => fails.push({ g, have: have == null ? null : have, need });
+  if (st.eRoi == null || st.eRoi < cfg.roi) add("roi", st.eRoi, cfg.roi);
+  const mn = marginNeedCfg(cfg, !!st.exempt, st.tax || 0);
+  if (st.eMargin != null && st.eMargin < mn.need) add("margin", st.eMargin, mn.need);
+  if (st.skewMin != null && st.skewMin > cfg.skewHard) add("skew", st.skewMin, cfg.skewHard);
+  if (st.imbalance != null && (st.imbalance < cfg.balHardLo || st.imbalance > cfg.balHardHi))
+    add("imbalance", st.imbalance, st.imbalance < cfg.balHardLo ? cfg.balHardLo : cfg.balHardHi);
+  if (st.tr != null && st.tr <= cfg.falling) add("trend", st.tr, cfg.falling);
+  else if (st.tr != null && st.tr <= cfg.trendSoft) add("trend", st.tr, cfg.trendSoft);
+  if (st.vt != null && st.vt <= cfg.volDecline) add("volTrend", st.vt, cfg.volDecline);
+  if (st.volGate != null && st.volGate < volFloorCfg(cfg.volBase, st.buy))
+    add("volFloor", st.volGate, volFloorCfg(cfg.volBase, st.buy));
+  if (st.moState === "knife") add("momentum", null, null);
+  return fails;
+}
+/* The live plan's config, assembled from the same constants the chain read
+   before the extraction — one source, read at call time so a ruled constant
+   change reaches both the plan and any instrument cell using the control
+   config. */
+const liveMarketConfig = () => ({ roi: GATE.roi, taxMult: GATE.taxMult, tickFloor: TICKF(),
+  volBase: (DB.filtersT1 && DB.filtersT1.vol) || 1000,
+  skewHard: GATE.skewHard, balHardLo: GATE.balHardLo, balHardHi: GATE.balHardHi,
+  trendSoft: GATE.trendSoft, falling: GATE.falling, volDecline: GATE.volDecline });
+/* The INSTRUMENT's stats builder: market caches only. It deliberately does NOT
+   apply tested-price overrides (`w.tBuy`/`w.tSell` are the operator's own
+   margin experiments — `[R74.5]` seeds this), does not read the flip log, and
+   mirrors `calc()`'s arithmetic for everything it does carry. Returns null for
+   an item without a live two-sided book — not scoreable, distinct from
+   scoreable-and-failing. */
+function marketStatsFor(id){
+  const meta = S.byId.get(id); if (!meta) return null;
+  const L = S.latest[id], H = S.hour[id];
+  const buy = L && Number.isFinite(L.low) ? L.low : null;
+  const sell = L && Number.isFinite(L.high) ? L.high : null;
+  if (buy == null || sell == null || buy <= 0 || sell <= 0) return null;
+  const tax = geTax(sell, id);
+  const margin = sell - buy - tax;
+  let margin1h = null;
+  if (H && Number.isFinite(H.avgHighPrice) && Number.isFinite(H.avgLowPrice) && H.avgLowPrice > 0)
+    margin1h = H.avgHighPrice - H.avgLowPrice - geTax(H.avgHighPrice, id);
+  /* effMargin minus the tested branch, by design — the conservative of live
+     and 1h-sustained, never the operator's test pair. */
+  const eMargin = margin1h != null && margin1h < margin ? margin1h : margin;
+  const volHigh = H ? (H.highPriceVolume || 0) : 0, volLow = H ? (H.lowPriceVolume || 0) : 0;
+  const vol = volHigh + volLow;
+  const tHigh = L ? (L.highTime || 0) : 0, tLow = L ? (L.lowTime || 0) : 0;
+  return { id, buy, tax, exempt: exemptIds.has(id),
+    eMargin, eRoi: buy > 0 ? eMargin / buy * 100 : null,
+    skewMin: (tHigh && tLow) ? Math.abs(tHigh - tLow) / 60 : null,
+    imbalance: vol > 0 ? volLow / vol : null,
+    volGate: Math.min(volHigh, volLow),
+    /* Chart inputs arrive with the T0 archive (stage 1b); until then the core
+       skips these gates for instrument callers. Null, not 0 — the three-state
+       discipline. */
+    tr: null, vt: null, moState: null };
+}
 
 /* ═══ TOUCH SCHEDULE — PER-TOUCH HORIZONS (user ruling, Aug 11 2026) ═══════
    The day is not uniform and neither are the horizons. Four touches with a
@@ -2959,7 +3574,7 @@ const tickFloorFor = id => exemptIds.has(id) ? Math.max(1, Math.ceil(TICKF() / 2
    For pricier items the honest measure is gp flow, so the unit floor scales
    down with price — never below 4/h, where even a full fill horizon can't
    move a handful of units. */
-const volFloorFor = px => Math.max(4, Math.round(((DB.filtersT1 && DB.filtersT1.vol) || 1000) * Math.min(1, 2000 / Math.max(1, px || 1))));
+const volFloorFor = px => volFloorCfg((DB.filtersT1 && DB.filtersT1.vol) || 1000, px);
 
 /* ── vol5 binding rule (user ruling, Aug 10 2026) ──────────────
    The /5m extrapolation is ×12 on a five-minute sample: one lone fill in a
@@ -3152,7 +3767,47 @@ function fillGateSoftLog(){
     "Graded against 43 replayed paper trips: observed/predicted fill time spanned 0.025×–13.17×, a 518× range, and the "
     + "gate would have benched 4 of the 10 trips that actually completed (Varrock teleport tablets: predicted 49.8h, "
     + "filled in 1.3h). A hard bench on an input that noisy costs more in real candidates than the noise it admits. "
-    + "REVERTS when the corrected input is graded and a confidence-band width is ruled; the reversion is logged too.", 1);
+    + "REVERTS when the corrected input is graded and a confidence-band width is ruled; the reversion is logged too.", 1, "user");
+}
+/* ═══ TWO CLOSURES, NOT TWO BENCHES (user rulings, Aug 13 2026) ════════════
+   Both entries record a line of work being ABANDONED with the arithmetic that
+   killed it, so neither can be re-proposed without meeting that arithmetic
+   first.
+
+   STAMPED `auto: 1, by: "user"` (ruled Aug 13 2026, correcting the first
+   shipped form). These were first written WITHOUT `auto`, on the reasoning
+   that they are the user's rulings rather than machine-applied bookkeeping —
+   defensible, and overruled: `auto` means WRITTEN BY THE TOOL everywhere, and
+   an entry appearing with no press must be findable in the block built to
+   catch exactly that, whoever made the call. The distinction the omission was
+   protecting now lives in `by`, which is what a separate concern gets instead
+   of a second meaning for an existing flag. See logDecision(). */
+const ROI_EXP_CLOSED_KEY = "ROI-floor loosening experiment → CLOSED (2026-08-13)";
+const PAPER_POP_CLOSED_KEY = "paper-book population fix / loose regime → CLOSED (2026-08-13)";
+function gateClosureLog(){
+  if (S.gateClosureLogged) return;
+  S.gateClosureLogged = 1;
+  const seen = s => (DB.decisionLog || []).some(e => e.subject === s);
+  if (!seen(ROI_EXP_CLOSED_KEY))
+    logDecision("settings", ROI_EXP_CLOSED_KEY, "closed — not benched; and the gate choice behind it is struck",
+      "Loosening GATE.roi 1.2% → 1.0% admits NOTHING, by arithmetic rather than by an absence of opportunity. "
+      + "The margin gate's tax limb enforces an effective sustained-ROI floor of taxMult·τ/(1−τ−taxMult·τ) = "
+      + "0.06/0.92 = " + effRoiFloorPct().toFixed(2) + "%, so every item in the [1.0%, 1.2%) band fails the margin "
+      + "floor as well as the ROI floor. Measured on a 4,497-item live snapshot: 41 non-exempt items sat in the "
+      + "band and 0 of 41 passed the margin floor. STRUCK IN THE SAME RULING: the gate choice rested on the ROI "
+      + "floor being 'the sole blocker in 14 of 19 sole-blocked candidate-days, 74%'. That figure is 0% by "
+      + "construction — DB.gateLog stores only fails[0], the HEADLINE gate, so a one-gate day means the headline "
+      + "never changed, not that one gate was failing. The ROI floor cannot be a single-gate failure for any "
+      + "non-exempt item at any price. Ruled by you, 2026-08-13; measurement in "
+      + "audits/SURFACE-2026-08-13-gate-interaction.md.", 1, "user");
+  if (!seen(PAPER_POP_CLOSED_KEY))
+    logDecision("settings", PAPER_POP_CLOSED_KEY, "closed — the band it was meant to populate is unreachable",
+      "The fix aimed to feed the loose regime by loosening the paper book's watchlist screen. It cannot work while "
+      + "the entry condition is `pass || nearMiss`: a trip sits in loose-not-current only at eRoi in [1.0%, 1.2%), "
+      + "and every such non-exempt item carries TWO failures (ROI floor and margin floor), so no entry path — "
+      + "watchlist, scanner, slice or gap band — can admit one. Not a sampling shortfall; an identity. The "
+      + "reserved-scanner-slot carve-out ratified in advance stays on record as SOUND BUT MOOT: it was the right "
+      + "protection for a change that is no longer worth making. Ruled by you, 2026-08-13.", 1, "user");
 }
 /* ONE evaluation, returning everything the estimate and its copy need, so the
    figure and the account of the figure can never come from separate reads.
@@ -3325,6 +3980,26 @@ const CAUTION_CATS = [
     why:"nests: trickle supply, easy to corner — historically pumped" }
 ];
 const cautionCat = name => CAUTION_CATS.find(c => c.test(String(name).trim())) || null;
+/* ═══ THE PUMP GUARD, EXTRACTED SO IT CAN BE ASSERTED ══════════════════════
+   (falsy-fixture census, Aug 13 2026 — and PROVEN by seeding)
+
+   This expression lived inline as `!pump && !!cat && wins >= 3`. Its own named
+   assertion, "[R7.3] recent wins never graduate a pump flag — the wins are the
+   bait", tested it on probe item 9051 "Probe sleeve second", whose name
+   matches NONE of the four CAUTION_CATS patterns — so `!!cat` was already
+   false and pinned the conjunction. The `!pump` term was inert.
+
+   Deleting `!pump &&` from the inline expression left the ENTIRE SUITE GREEN,
+   including that assertion. The BINDING rule this guard implements — a
+   manipulation defense never relaxes on the manipulator's chosen evidence,
+   because recent wins during a pump are the bait — had no working test.
+
+   Extracted rather than merely re-fixtured, per the clamp/re-implementation
+   remedy: a named function can be asserted at the TERM, so the pump limb is
+   testable without depending on which other conjunct happens to dominate the
+   fixture. Both halves were needed and both shipped — see [R70.1] for the
+   term and [R70.2] for the end-to-end path through a real caution category. */
+const cautionProvenFor = (pump, cat, wins) => !pump && !!cat && wins >= 3;
 const isSeed = name => /\bseeds?$/i.test(String(name).trim());   // families still use this
 
 /* §5 in code: the log decides. Three profitable round trips inside two weeks
@@ -4072,20 +4747,31 @@ function candidateFor(w){
        number — the near-miss display feeds on it. */
     const fails = [];
     const chk = (cond, g, detail, gap) => { if (cond) fails.push(Object.assign({ g, detail }, gap || {})); };
+    /* THE MARKET-GATE CONDITIONS COME FROM THE CORE (stage 1a, Aug 14 2026).
+       Every market gate's verdict below is membership in `mf`, computed by
+       `marketGateFails` at the live config — the chain keeps its copy, its
+       order (fails[0] is still the headline) and its operator overlays, and
+       the comparisons live in exactly one place. The stats object mirrors what
+       the inline conditions read, tested overrides INCLUDED: the live chain
+       is the operator's plan and the tested pair is its ruled input — it is
+       the INSTRUMENT's stats builder (`marketStatsFor`) that excludes them. */
+    const mf = marketGateFails({ buy: c.buy, tax: c.tax, exempt: c.exempt, eMargin, eRoi,
+      skewMin: c.skewMin, imbalance: c.imbalance, volGate, tr, vt, moState: mo.state }, liveMarketConfig());
+    const mfHas = g => mf.some(f => f.g === g);
     chk(isBlk(w.id), "blacklist",
       "blacklisted by you — nothing automated can clear this, not even a margin test; remove it in the Blacklist box if you want it back");
     chk(!!loser, "proven-loser bench",
       !loser ? "" : "proven loser — net " + gp(loser.net) + " over your last " + loser.n
              + " completed flips; re-test to unbench (a fresh one-unit margin test recorded after that loss — the unbench lasts only while the test is fresh)");
-    chk(eRoi == null || eRoi < GATE.roi, "ROI floor",
+    chk(mfHas("roi"), "ROI floor",
       "sustained ROI " + (eRoi == null ? "unknown" : eRoi.toFixed(2) + "%") + " — under the " + GATE.roi + "% floor"
              + (c.roi != null && eRoi != null && c.roi - eRoi > 1 ? " (live " + c.roi.toFixed(2) + "% doesn't hold over 1h)" : ""),
       eRoi == null ? null : { have: eRoi, need: GATE.roi, short: "sustained ROI " + eRoi.toFixed(2) + "% vs " + GATE.roi + "% floor" });
     /* Margin ≈ tax is a structural trap: a scratch exit (selling at your own
        buy price) still pays the whole tax, so any adverse move bleeds. 3× tax
        means even giving back two-thirds of the edge still exits positive. */
-    const marginNeed = Math.max(GATE.taxMult * (c.tax || 0), tickFloorFor(w.id));
-    chk(eMargin != null && eMargin < marginNeed, "margin floor (ticks / 3× tax)",
+    const marginNeed = marginNeedFor(w.id, c.tax).need;
+    chk(mfHas("margin"), "margin floor (ticks / 3× tax)",
       eMargin != null && eMargin < tickFloorFor(w.id) && eMargin >= GATE.taxMult * (c.tax || 0)
         ? "only " + full(eMargin) + " ticks of margin — under the " + tickFloorFor(w.id) + "-tick floor"
           + (c.exempt ? " (already halved for tax-exempt items)" : "") + "; a 1-tick move eats "
@@ -4093,23 +4779,26 @@ function candidateFor(w){
         : "margin ≈ tax — " + full(eMargin) + " gp/unit against " + full(c.tax || 0) + " gp/unit tax; needs ≥"
           + GATE.taxMult + "× the tax and ≥" + tickFloorFor(w.id) + " ticks, or scratch exits bleed",
       eMargin == null ? null : { have: eMargin, need: marginNeed, short: "margin " + full(eMargin) + " gp vs " + full(marginNeed) + " gp floor" });
-    chk(c.skewMin != null && c.skewMin > GATE.skewHard, "book skew",
+    chk(mfHas("skew"), "book skew",
       "one-sided book — " + Math.round(c.skewMin) + " min between last buy and last sell",
       c.skewMin == null ? null : { have: c.skewMin, need: GATE.skewHard, short: "book skew " + Math.round(c.skewMin) + " min vs " + GATE.skewHard + " min limit" });
-    chk(c.imbalance != null && (c.imbalance < GATE.balHardLo || c.imbalance > GATE.balHardHi), "flow imbalance",
+    chk(mfHas("imbalance"), "flow imbalance",
       "one-way flow — " + (c.imbalance*100).toFixed(0) + "% of volume on the buy side (dump/pump territory)",
       c.imbalance == null ? null : { have: c.imbalance * 100,
         need: (c.imbalance < GATE.balHardLo ? GATE.balHardLo : GATE.balHardHi) * 100,
         short: "buy-side flow " + (c.imbalance*100).toFixed(0) + "% vs the " + (GATE.balHardLo*100) + "–" + (GATE.balHardHi*100) + "% band" });
     chk(!!(sp && sp.noData), "no history", "no price history published for this item");
     chk(!(sp && sp.noData) && tr == null, "chart still loading", "no chart yet — history still loading");
-    chk(tr != null && tr <= GATE.falling, "trend",
+    /* The core emits ONE "trend" fail; the two copy limbs split on which side
+       of the knife line the reading fell — same conditions as before, read
+       off the value rather than re-compared. */
+    chk(mfHas("trend") && tr <= GATE.falling, "trend",
       "falling chart — " + (tr != null ? tr.toFixed(1) : "?") + "% over 7d",
       tr == null ? null : { have: tr, need: GATE.falling, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.falling + "% knife line" });
-    chk(tr != null && tr > GATE.falling && tr <= GATE.trendSoft, "trend",
+    chk(mfHas("trend") && tr > GATE.falling, "trend",
       "downtrend " + (tr != null ? tr.toFixed(1) : "?") + "% — needs better than " + GATE.trendSoft + "%",
       tr == null ? null : { have: tr, need: GATE.trendSoft, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.trendSoft + "% floor" });
-    chk(vt != null && vt <= GATE.volDecline, "volume trend",
+    chk(mfHas("volTrend"), "volume trend",
       "volume dying — " + (vt != null ? vt.toFixed(0) : "?") + "% vs the prior 6 days",
       vt == null ? null : { have: vt, need: GATE.volDecline, short: "volume trend " + vt.toFixed(0) + "% vs the " + GATE.volDecline + "% floor" });
     chk(!(qty > 0), "sizing",
@@ -4125,7 +4814,11 @@ function candidateFor(w){
        waiver admits the item without inflating it. The copy names the
        component that tripped the floor — a confirmed 5m die-off and a thin
        1h book are different diseases (metric honesty). */
-    chk(volGate < volFloorFor(c.buy) && itemWins(w.id) < 2, "volume floor",
+    /* The wins waiver is an OPERATOR overlay on the core's verdict — realized
+       round trips from MY log waive MY bench; the instrument's population has
+       no log, so the core reports the floor and only the live chain forgives
+       it ([R74.5] asserts the pair). */
+    chk(mfHas("volFloor") && itemWins(w.id) < 2, "volume floor",
       (vg.bound === "5m"
           ? "volume " + gp(volGate) + "/h by the 5m sample — under the " + full(volFloorFor(c.buy))
             + "/h floor (price-scaled) for " + (S.vol5Low.get(c.id) || 0) + " consecutive refreshes; the 1h thin side says "
@@ -4135,7 +4828,7 @@ function candidateFor(w){
             + full(volFloorFor(c.buy)) + "/h floor (price-scaled)")
         + ". Waived automatically once the log shows 2 profitable round trips in 14d — measurement beats prediction",
       { have: volGate, need: volFloorFor(c.buy), short: "volume " + full(Math.round(volGate)) + "/h vs the " + full(volFloorFor(c.buy)) + "/h floor" });
-    chk(mo.state === "knife", "momentum",
+    chk(mfHas("momentum"), "momentum",
       "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
              + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid");
     chk(!!sh, "fill history",
@@ -4178,7 +4871,7 @@ function candidateFor(w){
              estH: estFillH(Math.max(1, horizonUnits), c),
              fam: familyKey(c.name),
              caution: pump ? { key: "pump", label: "suspected pump", why: pump.why } : cat,
-             cautionProven: !pump && !!cat && wins >= 3,
+             cautionProven: cautionProvenFor(pump, cat, wins),
              /* lifetime-net boost (wins) × hour × stability × reliability —
                 each clamped, each explained in the reason string. */
              score: failed ? 0 : eMargin * Math.max(1, horizonUnits)
@@ -4581,17 +5274,42 @@ function buildPlan(){
       if (!(b.id > 0)) continue;
       const g = gateName(b.failed) || "plan gate";
       const k = dToday + "|" + b.id + "|" + g;
-      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g }); have.add(k); logDirty = true; }
+      /* THE VALUE THE GATE SAW (user ruling, Aug 13 2026). The row recorded
+         WHICH gate benched and threw away WHAT it saw, so the ledger could
+         report the ROI floor as the busiest gate in the book — 57 distinct
+         items over 4 observed days, the sole blocker in 14 of 19 sole-blocked
+         candidate-days — and still not answer whether loosening it from 1.2%
+         to 1.0% would admit anything, because "benched by the ROI floor" means
+         only eRoi < 1.2 and cannot separate 1.19 from 0.2. That made the power
+         check for the loosening experiment unanswerable from stored evidence.
+         `chk` already computes `have` for every gate whose miss is a single
+         number and discards it; this stores it. A measurement, not a
+         deployment — nothing here widens what the allocator may fund.
+
+         Matched on the fails entry's OWN canonical `g`, never by re-parsing
+         the detail prose: gateName() is a regex over sentences, and a miss
+         must leave `v` null rather than wrong.
+
+         THREE STATES, deliberately distinct (absence and data-of-absence are
+         different readings): absent = the row predates this field, null = the
+         gate has no single-number miss, a number = the reading. Every reader
+         uses `!= null` and never truthiness — have: 0 is legitimate, since a
+         0% ROI item IS benched by the ROI floor. */
+      const fe = (b.fails || []).find(f => f.g === g);
+      const v = (fe && typeof fe.have === "number" && Number.isFinite(fe.have)) ? fe.have : null;
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g, v }); have.add(k); logDirty = true; }
     }
     for (const p of picks){
       const k = dToday + "|" + p.id + "|funded";
-      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: p.id, g: "funded" }); have.add(k); logDirty = true; }
+      /* `v: null` explicitly, not omitted: absent must mean "predates the
+         field" and nothing else, or the three states collapse into two. */
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: p.id, g: "funded", v: null }); have.add(k); logDirty = true; }
     }
     /* Seasoning delays are ledgered like any gate so the weekly audit can
        judge the qualification rule by realized outcomes too. */
     for (const x of qualifying){
       const k = dToday + "|" + x.id + "|seasoning";
-      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: x.id, g: "seasoning" }); have.add(k); logDirty = true; }
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: x.id, g: "seasoning", v: null }); have.add(k); logDirty = true; }
     }
     /* Die-off tag (ruled Aug 10 2026): an extra ledger row when the volume
        floor benched on a confirmed 5m die-off against a passing 1h book, so
@@ -4610,7 +5328,7 @@ function buildPlan(){
          is unchanged until the proposal below is ruled. */
       if ((S.vol5Low.get(b.id) || 0) < DIEOFF_CONFIRM_REFRESHES) continue;
       const k = dToday + "|" + b.id + "|die-off detected";
-      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g: "die-off detected" }); have.add(k); logDirty = true; }
+      if (!have.has(k)){ DB.gateLog.push({ d: dToday, id: b.id, g: "die-off detected", v: null }); have.add(k); logDirty = true; }
       const last = DB.dieOffLog.filter(e => e.id === b.id).pop();
       if (!last || last.rec != null){ DB.dieOffLog.push({ d: dToday, id: b.id, t: Date.now(), rec: null }); logDirty = true; }
     }
@@ -4623,6 +5341,10 @@ function buildPlan(){
     }
   } catch(e){}
 
+  /* The plan's funded set, stamped for the reconciliation diff (flag 3).
+     An S stamp from a computation the poll drives every 60s — not a ledger
+     write, so no R34.1 concern; the diff's own accrual rides loadHour. */
+  S.lastPlanPicks = picks.map(p => p.id); S.lastPlanAt = Date.now();
   return { all, picks, nextUp, qualifying, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
            reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
            t1Budget, t2Budget, t1Spent, t2Spent, t1Pool: pool0[1], t2Pool: pool0[2],
@@ -5524,6 +6246,35 @@ function renderPlan(P0){
 const GATE_CHAIN_ORDER = ["no live price","blacklist","proven-loser bench","ROI floor",
   "margin floor (ticks / 3× tax)","book skew","flow imbalance","no history","chart still loading",
   "trend","volume trend","sizing","volume floor","momentum","fill history","drift bench"];
+/* ═══ HEADLINE GATE ≠ BINDING GATE (user ruling, Aug 13 2026) ══════════════
+   `DB.gateLog` and the deployment funnel both attribute a bench to `fails[0]`
+   — the first gate in THIS list that rejected the item, not the only one that
+   did. That is a statement about position in the ordering, and it reads as a
+   statement about cause. Measured Aug 13 2026 over 4,497 live items: the ROI
+   floor is the headline on 2,358 of them and the sole binding gate on ZERO,
+   while the volume floor — second to last in the chain — is the sole binding
+   gate on every single one of the 280 it heads. A gate's ledger presence
+   measures where it sits in this array.
+
+   THE RULING WAS TO LABEL, NOT TO RE-ENGINEER. Every surface reading headline
+   attribution is marked so it stops being read as cause in the meantime;
+   what a causal attribution would cost is reported separately and nothing is
+   built on it yet. Surfaces reading the FULL fail set — everything through
+   `failProfile()` — are sound and deliberately carry no mark, so the presence
+   of the mark distinguishes the two rather than decorating both.
+   Measurement: `audits/SURFACE-2026-08-13-gate-interaction.md`. */
+const HEADLINE_TERM = "headline gate, not binding gate";
+const headlineTag = () => glTerm("gate-headline", HEADLINE_TERM);
+/* The inline mark, for a line that already carries its own copy. */
+const headlineMark = () => '<span class="dim"> · ' + headlineTag() + '</span>';
+/* The full sentence, for a panel that opens with a claim about a gate. */
+const headlineNote = () => '<div class="dim" style="font-size:12px;margin-top:2px">'
+  + 'Attribution below is the <b>' + headlineTag() + '</b>: the first gate in the chain that rejected the item, '
+  + 'not the only one that did. A gate earlier in the chain absorbs items later gates would also have benched, '
+  + 'so a big count here is not evidence that relaxing that gate would free anything. '
+  + '<b>The funnel keeps this attribution on purpose</b> — a cumulative "N remain" needs each candidate counted '
+  + 'once, and only first-fail partitions them. Read it for the shape of the drop-off; read the block above for '
+  + 'what relaxing a gate would actually do.</div>';
 /* ═══ OBSERVED TIME (user ruling, Aug 12 2026) ════════════════════════════
    No claim may be made about a period that was not observed. Any denominator
    counting time or occasions counts only OBSERVED ones and states its
@@ -5639,6 +6390,14 @@ function depProposalFor(g, arr){
   if (!haves.length || !needs.length)
     return "Propose: review this gate's constant against the misses above — no single number captures it. Your ruling.";
   const m = medianOf(haves);
+  /* REACHABILITY, named rather than assumed (scan 13, Aug 13 2026). This
+     branch fires from `nmByGate`, whose keys are TRUE single-gate near-misses,
+     and the ROI floor can only be one of those for a TAX-EXEMPT item — the
+     margin floor's tax limb takes every taxed item that fails it. The branch
+     is therefore live but confined to the exempt list (bonds, tabs, jewellery,
+     tools). It is kept rather than deleted because that caller genuinely
+     exists; anything reading its output should know the population it can
+     possibly describe. See effRoiFloorPct(). */
   if (g === "ROI floor"){
     const p = Math.max(0.5, Math.floor(m * 20 + 1e-9) / 20);
     const adm = arr.filter(x => x.fails[0].have >= p - 1e-9);
@@ -5819,7 +6578,7 @@ function paperEpoch2Reset(){
     + "lane's evidence are CUMULATIVE — a per-trip predicate can exclude rows but cannot un-mix a rolled total. "
     + "KEPT: realized streams, the market stream, and per-stratum SAMPLING history (records of tests performed, "
     + "not of simulated outcomes). Epoch 2 starts now, and every trip in it must carry an open-cycle stamp — one "
-    + "that does not raises a stale-host finding rather than passing quietly.", 1);
+    + "that does not raises a stale-host finding rather than passing quietly.", 1, "user");
 }
 const paperStaleHostTrips = () => (DB.shadowBook || []).filter(p => p.openSeq == null);
 function paperStaleHostNote(){
@@ -6073,7 +6832,7 @@ function paperCooldownLog(){
     + "longest exactly where observation time is greatest, which is inverted. Now: an OPEN trip blocks its family; a "
     + "CLOSED one releases it after a fixed " + PAPER_FAM_COOLDOWN_H + "h. The 5h is RULED as proposed (Aug 12 2026) — modal touch "
     + "gap, five fresh hourly readings, horizon-independent. Changes only on a further ruling; the capacity arithmetic "
-    + "renders on the paper surface so the ruling has numbers to work from.", 1);
+    + "renders on the paper surface so the ruling has numbers to work from.", 1, "user");
 }
 /* The family block. Open blocks; closed releases after the fixed cooldown. */
 const paperFamBlocked = () => {
@@ -6815,6 +7574,33 @@ function shadowTick(){
 /* Persistent regime divergence → a change-proposal with the numbers, through
    the same evidence discipline as every gate proposal (4 of the last 7 daily
    readings). Absent persistence, silence — a snapshot is advocacy. */
+/* WHY THERE IS NO DIVERGENCE — a tie and an unfeedable comparison are
+   DIFFERENT CLAIMS (user ruling, Aug 13 2026). Both limbs of
+   shadowRegimeEvidence test `x.loose > x.cur` with a strict `>`, so a
+   population in which no trip could ever sit in the band between two regimes
+   — where the curves are equal BY CONSTRUCTION — produces exactly the reading
+   a genuine tie produces: null, rendered as "no persistent regime divergence,
+   no tuning case". That is the silent-state rule living inside a comparison
+   operator: the ABSENCE of a difference and the IMPOSSIBILITY of one are
+   opposite findings and read identically.
+
+   This classifies the null. It does not change shadowRegimeEvidence's
+   contract — every caller still tests it for truthiness — so the divergence
+   decision is untouched and only the copy explaining a null gains the
+   distinction it was missing. */
+function regimeTieReason(){
+  const seps = regimeSeparators(paperClosed());
+  if (!seps.length) return null;
+  /* ONE OWNER for "this band is dead", matching the render exactly: a band is
+     dead when the constants forbid it. `!s.nEligible` is deliberately NOT a
+     second test here — under the corrected predicate it cannot be true on a
+     reachable band, and a redundant test that can never fire is the same
+     dead-safeguard shape the render branch was deleted for. */
+  const dead = seps.filter(s => s.unreachable);
+  if (!dead.length) return { state: "fed", dead: [] };
+  return { state: dead.length === seps.length ? "never-fed" : "partly-fed",
+           dead, unreachable: dead, anyUnreachable: true };
+}
 function shadowRegimeEvidence(){
   const log = DB.shadowDivLog.slice(-7);
   if (log.length < 7) return null;
@@ -7629,6 +8415,36 @@ function paperCaveat(){
    was excluded, kept openable so the exclusion is never silent. */
 const paperClosed = () => (DB.shadowBook || []).filter(shadowCounts);
 const paperThin = () => (DB.shadowBook || []).filter(shadowThin);
+/* ═══ THE MODEL PARTITION, CHECKED WHERE THE POPULATION IS BUILT ═══════════
+   (user ruling, Aug 13 2026)
+
+   FILL_MODEL_V exists so that trips produced by different fill models are
+   never pooled — that is the entire reason the stamp is written. paperClosed()
+   applied no partition at all, so the rule was holding BY ACCIDENT: every
+   counted trip today is v1 while FILL_MODEL_V is 2, and the moment a v2 trip
+   resolves every paper aggregate silently averages two models. A latent defect
+   with a known trigger, which is worth more than a hypothetical one.
+
+   THIS DOES NOT FILTER, deliberately. Filtering to the current model would
+   empty the counted book — all 81 resolved trips are v1 — and discarding
+   evidence is a ruling, not a defect fix. What the never-pool rule actually
+   requires is that a pooled figure render only ALONGSIDE its decomposition,
+   so the split is made visible and the reader is told the figure is a blend.
+   Renders nothing while the population is single-model, which is today. */
+function paperModelSplit(pop){
+  const m = new Map();
+  for (const p of (pop || [])){ const k = modelKeyOf(p); m.set(k, (m.get(k) || 0) + 1); }
+  const rows = [...m.entries()].map(([model, n]) => ({ model, n })).sort((a, b) => b.n - a.n);
+  return { rows, pooled: rows.length > 1, n: (pop || []).length };
+}
+function paperModelNote(pop){
+  const s = paperModelSplit(pop);
+  if (!s.pooled) return "";
+  return '<div class="plan-note" style="margin-top:4px">⚠ <b>This population pools ' + s.rows.length
+    + ' fill models</b> — ' + s.rows.map(r => esc(r.model) + ' (' + r.n + ')').join(', ')
+    + '. The version stamp exists so results from different models are not averaged: read every figure here as a '
+    + '<b>blend</b> until they are split, and do not rule a constant from one.</div>';
+}
 /* A DIFFERENCE MUST NAME WHAT IT IS A DIFFERENCE FROM, IN THE SENTENCE (user
    ruling, Aug 13 2026). The incident: the paper vitals line rendered
    `tight − current` as "+2.64m vs current" — a DIFFERENCE presented as a
@@ -7828,8 +8644,25 @@ function calibWindow(f, now){
   const logAt = f.t || f.id;
   if (!(logAt > 0)) return { ok: false, reason: "noWindow" };
   if (now - logAt > CALIB_5M_RETENTION_H * 3600e3) return { ok: false, reason: "tooOld" };
+  /* A RECORDED ZERO IS NOT A MISSING VALUE (falsy-zero census, Aug 13 2026).
+     `!(bh > 0)` sent a buy duration of ZERO down the `noWindow` path, where
+     the copy and the export both describe the bucket as flips that "lacked a
+     recorded buy or sell leg duration". Those flips have one. It is zero, and
+     the writer produces it routinely: buyH = Math.round((now - placedAt)/36e3)
+     /100, so any buy that fills inside ~18 seconds records 0. Two of the fifty
+     logged flips carry `bh: 0` today, so the copy was making a false claim
+     about real rows rather than a hypothetical one.
+     Skipping them is still correct — a zero-width window has no buckets to
+     replay against, and inventing one would fabricate the measurement under
+     test — but the REASON must name the real cause. Three outcomes, not two:
+     absent (never recorded), instant (recorded, and zero), unusable (negative
+     or non-finite). Note `Number(null)` is 0, so the null test comes FIRST or
+     a missing duration would arrive here disguised as an instant fill. */
+  if (f.bh == null || f.sh == null) return { ok: false, reason: "noWindow" };
   const bh = Number(f.bh), sh = Number(f.sh);
-  if (!(bh > 0) || !Number.isFinite(sh) || sh < 0) return { ok: false, reason: "noWindow" };
+  if (!Number.isFinite(bh) || bh < 0 || !Number.isFinite(sh) || sh < 0)
+    return { ok: false, reason: "noWindow" };
+  if (bh === 0) return { ok: false, reason: "instantBuy" };
   return { ok: true, f, bh, sh, logAt,
     buyAt: logAt - (sh + bh) * 3600e3,
     buyDoneReal: logAt - sh * 3600e3,
@@ -7860,7 +8693,7 @@ async function calibrateFillModel(){
   try {
     const now = Date.now();
     const flips = (DB.flips || []).filter(f => f.itemId > 0 && f.qty > 0 && f.buy > 0 && f.sell > 0);
-    const rows = [], skipped = { tooOld: 0, noWindow: 0, noTape: 0 };
+    const rows = [], skipped = { tooOld: 0, noWindow: 0, noTape: 0, instantBuy: 0 };
     const eligible = [];
     for (const f of flips){
       const w = calibWindow(f, now);
@@ -8120,11 +8953,25 @@ function classifySellFailure(buckets, ask, spreadPct){
      ARTIFACT, not a mechanism.
      The absolute band survives as `absCls` for one week so the two can be seen
      disagreeing in the wild before it retires; nothing reads it for a verdict. */
-  const relBand = spreadPct > 0 ? spreadPct * SELL_SPREAD_REL_FRACTION : SELL_DILUTION_GAP_PCT;
+  /* AN UNKNOWN SPREAD AND A ZERO SPREAD ARE OPPOSITE READINGS (falsy-zero
+     census, Aug 13 2026). `spreadPct > 0` merged them: a KNOWN spread of zero
+     — a locked book, bid meeting ask — fell through to the frozen absolute
+     band and was then classified DILUTION for any gap inside 1.0%, which
+     INVERTS the spread-relative band ratified the day before on exactly the
+     items where that band is tightest. A third of a zero spread is zero: the
+     spread explains nothing, so no gap is inside it. The absolute band is the
+     fallback for an UNKNOWN spread, which is what it was written for. */
+  const relBand = (typeof spreadPct === "number" && Number.isFinite(spreadPct) && spreadPct >= 0)
+    ? spreadPct * SELL_SPREAD_REL_FRACTION : SELL_DILUTION_GAP_PCT;
   const absCls = medGapPct >= -SELL_DILUTION_GAP_PCT ? "dilution"
     : (medGapPct <= -SELL_MISLOC_GAP_PCT && sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
     : "unclassified";
-  const out = { ...base, medGapPct, sustainShare, spreadPct: spreadPct || null,
+  /* `spreadPct || null` erased a genuine zero — and because this object is
+     spread LAST over the case record, the null overwrote the record's own
+     value, so a locked book became indistinguishable from an unmeasured one
+     in the export and in every reader downstream of it. */
+  const out = { ...base, medGapPct, sustainShare,
+                spreadPct: (typeof spreadPct === "number" && Number.isFinite(spreadPct)) ? spreadPct : null,
                 relBandPct: Math.round(relBand * 100) / 100, absCls };
   if (medGapPct >= -relBand)
     return { ...out, cls: "dilution",
@@ -8288,8 +9135,15 @@ function paperSellCases(){
    still credited ZERO under the proven bound. */
 function sellReachBounds(trace, ask, spreadPct){
   const t = (trace || []).filter(b => b && b.hi != null && (b.hv || 0) > 0);
+  /* Same erasure as classifySellFailure's, twelve lines apart in the same
+     file and not ranked by the census — found by grepping the anchor rather
+     than the line number. A zero spread reported as null says "we could not
+     measure the spread" about an item whose spread was measured and is zero.
+     The `floor` below is already correct for a zero spread (a zero-width band
+     puts the floor AT the ask), so only the reported value was wrong. */
   const out = { n: t.length, totalVol: 0, provenVol: 0, possibleVol: 0,
-                provenBuckets: 0, possibleBuckets: 0, spreadPct: spreadPct || null };
+                provenBuckets: 0, possibleBuckets: 0,
+                spreadPct: (typeof spreadPct === "number" && Number.isFinite(spreadPct)) ? spreadPct : null };
   if (!(ask > 0) || !t.length) return out;
   const floor = spreadPct > 0 ? ask * (1 - spreadPct / 100) : ask;
   for (const b of t){
@@ -8588,7 +9442,7 @@ function sellRelBandLog(){
     + "only where the question is whether they should. Three of 16 cases move, all wide-spread items whose gap is a "
     + "fifth to a quarter of their own spread; an independent computation reproduced the export's own wouldReclassify "
     + "figure, which is the cross-check that made it rulable. The absolute band renders beside it until "
-    + "2026-08-20 and is read for nothing.", 1);
+    + "2026-08-20 and is read for nothing.", 1, "user");
 }
 function sellAbsShadowHTML(cases){
   if (Date.now() >= SELL_ABS_BAND_RETIRES) return "";
@@ -8808,7 +9662,10 @@ function calibSection(){
             + 'in that reading.' })
     + ' of ' + c.total + ' logged · '
     + '<span class="dim">skipped: ' + c.skipped.tooOld + ' outside the ~' + c.retentionH + 'h 5m-tape window, '
-    + c.skipped.noWindow + ' with no recorded buy duration to replay against, ' + c.skipped.noTape + ' with no tape returned'
+    + c.skipped.noWindow + ' with no recorded buy duration to replay against, '
+    + (c.skipped.instantBuy || 0) + ' whose buy duration IS recorded and is zero (filled inside one poll — a real '
+    + 'reading, not a gap, and a zero-width window has nothing to replay against), '
+    + c.skipped.noTape + ' with no tape returned'
     + '</span></div>'
     + '<div class="dim" style="margin-top:4px">Older flips are NOT replayed against 1h buckets to fill the gap: an hour '
     + 'bucket credits twelve times the volume per step and would flatter every fill, so it would be calibrating a '
@@ -9391,25 +10248,115 @@ function paperRoutingQuestion(groups){
    Identical regimes are reported too: it means no trip in the book sits in the
    band between them, so the setting is INERT on this evidence rather than
    vindicated, and that is a finding the curves alone cannot show. */
+/* ═══ THE BANDS ARE NAMED, NEVER DERIVED FROM ARRAY POSITION ══════════════
+   (user ruling, Aug 13 2026)
+
+   WHAT THIS REPLACES. `regimeSeparators` walked ADJACENT PAIRS of
+   REGIME_DEFS and computed `a && !b`. REGIME_DEFS is ordered
+   [current, loose, tight] — DISPLAY order, the operator's own setting first —
+   while `a && !b` means something only in CONTAINMENT order. The regimes nest
+   (tight ⊆ current ⊆ loose, which [R43.1] asserts), so:
+
+     pair 0   current && !loose   →  EMPTY FOR EVERY POSSIBLE POPULATION
+     pair 1   loose   && !tight   →  [1.0%, 1.44%), two real bands merged
+
+   Pair 0 is why this surface reported "current and loose are identical … the
+   tighter setting is inert" continuously from the day it shipped: not a
+   finding about the book but an arithmetic that could not return anything
+   else. And the band the ROI-floor question is actually about —
+   loose \ current, [1.0%, 1.2%) — was computed NOWHERE in the file.
+
+   THE FIX IS NAMED PAIRS, NOT A SORT. Sorting REGIME_DEFS by floor would cure
+   today's symptom and leave the same implicit-ordering dependency one step
+   removed, so the next regime added to the list re-breaks it. Membership is
+   tested with `includes`, labels are looked up BY KEY, and nothing reads
+   position.
+
+   ELIGIBILITY IS PART OF THE BAND, NOT A CAVEAT ON IT. An empty band over a
+   population that could never have entered it is a never-fed aggregate, and it
+   must not render as "no trip sits in this band".
+
+   ═══ THE ELIGIBILITY RULE WAS ITSELF NEVER-FED (user ruling, Aug 13 2026) ═══
+   It read `eligible: p => p.cohort === "scanner"`, because "a trip can land in
+   loose \ current only if its entry path screened below the current floor, and
+   only the scanner cohort does." **Both halves were wrong**, and the surface
+   this predicate feeds is the one written to detect exactly this defect —
+   which is why it is in MISTAKES.md rather than merely fixed.
+
+   • The WATCHLIST path applies no ROI pre-screen at all (`shadowScan`): it
+     admits any single-gate near-miss from `P.all`. The stated reason for its
+     ineligibility was not the operative one.
+   • The SCANNER path is not eligible either. It screens at SHADOW_LOOSE and
+     then requires `pass || nearMiss` (`scannerShadowScan`), and an item in the
+     band fails the ROI floor AND the margin floor — two failures, so it is
+     never a near-miss. Same for the slice and gap band (`clean || fl.length === 1`).
+
+   So `nEligible` counted the scanner's trips as chances that were had and
+   missed, when the true number of chances was ZERO. A false denominator turns
+   "impossible" into "didn't happen", which is the opposite reading.
+
+   THE FIX IS A COMPUTED PREDICATE, NOT A CORRECTED CONSTANT. `bandUnreachable`
+   derives reachability from GATE.roi, GATE.taxMult and TAX_RATE at call time,
+   so if any of them moves the eligibility answer moves with it instead of
+   going stale — the same discipline as deriving the effective floor rather
+   than carrying 6.52% as a literal. The one genuine carve-out is carried too:
+   a TAX-EXEMPT item has no tax limb (`marginNeed` collapses to the halved tick
+   floor), so it CAN fail the ROI floor alone and CAN sit in the band. Its
+   eligibility is a property of the item, evaluated centrally here — never a
+   label an entry path remembers to attach. */
+/* A band [_, hiPct) is unreachable for non-exempt items when every item inside
+   it fails the ROI floor (hiPct <= GATE.roi) AND every item inside it also
+   fails the margin floor (hiPct <= the effective floor the tax limb enforces).
+   Both limbs are tested rather than the second inferred from the first,
+   because the implication only holds while GATE.roi <= effRoiFloorPct(). */
+const bandUnreachable = hiPct => hiPct <= GATE.roi && hiPct <= effRoiFloorPct();
+const REGIME_BANDS = [
+  { wider: "loose", narrower: "current",
+    hiPct: () => GATE.roi,
+    whyIneligible: "taxed, so an ROI-floor miss is never its only miss — the margin floor's "
+                 + "tax limb benches everything under " + effRoiFloorPct().toFixed(2) + "% ROI as well" },
+  { wider: "current", narrower: "tight",
+    hiPct: () => GATE.roi * SHADOW_TIGHT, whyIneligible: "" }
+];
+/* One evaluation, two readers: the separator rows and the tie classifier both
+   ask this, so they cannot disagree about whether a band was feedable. */
+const bandEligible = (band, p) =>
+  !bandUnreachable(band.hiPct()) || exemptIds.has(p && p.itemId);
 function regimeSeparators(closed){
-  const regs = REGIME_DEFS(), out = [];
+  const defs = REGIME_DEFS();
+  const byKey = k => defs.find(r => r.key === k) || { key: k, col: k, lab: k };
   const inReg = (p, k) => (p.regimes || []).includes(k);
-  for (let i = 0; i < regs.length - 1; i++){
-    const a = regs[i], b = regs[i + 1];
-    const aTrips = closed.filter(p => inReg(p, a.key));
-    const bTrips = closed.filter(p => inReg(p, b.key));
-    const only = closed.filter(p => inReg(p, a.key) && !inReg(p, b.key));
+  return REGIME_BANDS.map(band => {
+    const a = byKey(band.wider), b = byKey(band.narrower);
+    const aTrips = closed.filter(p => inReg(p, band.wider));
+    const bTrips = closed.filter(p => inReg(p, band.narrower));
+    const only = closed.filter(p => inReg(p, band.wider) && !inReg(p, band.narrower));
+    const elig = closed.filter(p => bandEligible(band, p));
     const netOf = arr => arr.reduce((s, p) => s + (p.net || 0), 0);
     const nets = only.map(p => p.net || 0).sort((x, y) => Math.abs(y) - Math.abs(x));
     const gross = nets.reduce((s, v) => s + Math.abs(v), 0);
-    out.push({ a, b, only, aNet: netOf(aTrips), bNet: netOf(bTrips), sepNet: netOf(only),
+    return { a, b, only, aNet: netOf(aTrips), bNet: netOf(bTrips), sepNet: netOf(only),
       nA: aTrips.length, nB: bTrips.length,
+      /* The coverage PAIR, always together: how many trips could have landed
+         in this band at all, and how many their entry path excluded. A count
+         of separating trips without its eligible denominator cannot be read —
+         same construction as daysBenchedBy's {n, obs}. */
+      nEligible: elig.length, nIneligible: closed.length - elig.length,
+      whyIneligible: band.whyIneligible,
+      /* UNREACHABLE is not NEVER-FED, and the two must not share copy (user
+         ruling, Aug 13 2026). A band nothing has entered may fill tomorrow; a
+         band the gate constants forbid will not fill ever, and reporting the
+         second as the first is evidence-of-absence dressed as absence-of-
+         evidence. `nEligible === 0` can now arise either way — no exempt trip
+         yet, or a genuinely feedable band nobody has fed — so the reason
+         travels with the count rather than being inferred from it. */
+      unreachable: bandUnreachable(band.hiPct()),
+      hiPct: band.hiPct(), effFloorPct: effRoiFloorPct(),
       /* Shares of GROSS movement, never of a signed net — a share of a negative
          net reads like a concentration figure and is not one. */
       top1: gross > 0 ? Math.abs(nets[0] || 0) / gross : null,
-      top2: gross > 0 ? (Math.abs(nets[0] || 0) + Math.abs(nets[1] || 0)) / gross : null });
-  }
-  return out;
+      top2: gross > 0 ? (Math.abs(nets[0] || 0) + Math.abs(nets[1] || 0)) / gross : null };
+  });
 }
 const REGIME_SEP_COLS = [
   { k: "item", lab: "item" }, { k: "cohort", lab: "cohort" },
@@ -9430,20 +10377,56 @@ function regimeSepRows(trips){
   }));
 }
 function regimeSeparatorSection(closed){
-  /* EVERY adjacent pair reports, including the identical ones. An earlier
-     filter dropped pairs with no separating trips, which silently removed the
-     single most informative case — two regimes reading the same means nothing
-     in the book sits in the band between them, and that is a finding about the
-     setting being untested rather than an empty row worth hiding. */
+  /* EVERY band reports, including the empty ones. An earlier filter dropped
+     pairs with no separating trips, which silently removed the single most
+     informative case — two regimes reading the same means nothing in the book
+     sits in the band between them, and that is a finding about the setting
+     being untested rather than an empty row worth hiding. */
   const seps = regimeSeparators(closed);
   if (!seps.length || !closed.length) return "";
   return '<div class="note" style="margin-top:8px"><b>What separates the regimes</b> — the trips in one and not '
     + 'the other, which is what the difference between the curves IS.'
     + seps.map(s => {
-      if (!s.only.length)
+      if (!s.only.length){
+        /* EMPTY BY POPULATION AND EMPTY BY CONSTRUCTION ARE DIFFERENT CLAIMS
+           (user ruling, Aug 13 2026). "No trip sits in this band" is a
+           statement about the market; "no trip COULD sit in this band" is a
+           statement about the entry paths. Rendering them alike is how the
+           inert reading stood on this surface unchallenged — and with the
+           old adjacency arithmetic the first band could ONLY ever be empty,
+           so the copy was a constant wearing a finding's clothes. */
+        /* THREE readings, not two (user ruling, Aug 13 2026): the constants
+           forbid this band; the band is feedable and nothing has fed it; the
+           band is fed and the two regimes agree. The first was previously
+           rendered as the second, over a denominator that counted trips which
+           could never have qualified. */
+        if (s.unreachable)
+          return '<div style="margin-top:4px">• <b>' + esc(s.a.lab) + '</b> vs <b>' + esc(s.b.lab) + '</b>: '
+            + '<b>this comparison cannot be fed at all.</b> A trip sits between these floors only at a sustained '
+            + 'ROI under ' + s.hiPct.toFixed(2) + '%, and the margin floor\'s tax limb benches every taxed item '
+            + 'under ' + s.effFloorPct.toFixed(2) + '% — so such an item carries two gate failures and no entry '
+            + 'path admits it (all four require a clean pass or a single-gate near-miss). '
+            + '<b>Zero eligible trips, not zero results</b>'
+            + (s.nEligible ? ' — except ' + s.nEligible + ' tax-exempt trip' + (s.nEligible === 1 ? '' : 's')
+                + ', the one carve-out, which pay no tax and so can miss the ROI floor alone' : '')
+            + '. No reading either way, and in particular no claim that the tighter setting is inert. '
+            + '<span class="dim">This is arithmetic between GATE.roi and GATE.taxMult, not a sampling shortfall: '
+            + 'more trips will not change it.</span></div>';
+        /* THE THIRD BRANCH WAS DELETED, NOT LEFT TO ROT (Aug 13 2026). A
+           `!s.nEligible` branch stood here for "empty by construction". Under
+           the corrected predicate it cannot fire: eligibility is a property of
+           the BAND (plus the exempt carve-out), so a REACHABLE band makes every
+           closed trip eligible, and an UNREACHABLE one is caught above. Its
+           trigger is unreachable from its own upstream limits, which is the
+           dead-safeguard shape — and its assertion has been re-pointed at the
+           state that does exist rather than left holding it alive. */
         return '<div style="margin-top:4px">• <b>' + esc(s.a.lab) + '</b> and <b>' + esc(s.b.lab) + '</b> are '
-          + '<b>identical</b> across ' + s.nA + ' counted trip' + (s.nA === 1 ? '' : 's') + '. No trip in the book sits in '
-          + 'the band between them, so on this evidence the tighter setting is <b>inert</b> — not vindicated, untested.</div>';
+          + '<b>identical</b> across ' + s.nEligible + ' eligible trip' + (s.nEligible === 1 ? '' : 's')
+          + (s.nIneligible ? ' <span class="dim">(' + s.nIneligible + ' of ' + closed.length
+              + ' could not enter this band — ' + esc(s.whyIneligible) + ')</span>' : '')
+          + '. No eligible trip sits in the band between them, so on this evidence the tighter setting is '
+          + '<b>inert</b> — not vindicated, untested.</div>';
+      }
       const face = '<span class="' + sign(s.sepNet) + '">' + gp(Math.round(s.sepNet)) + '</span>';
       const conc = s.top1 == null
         ? 'Concentration unavailable — the separating trips net to zero gross movement.'
@@ -9455,12 +10438,27 @@ function regimeSeparatorSection(closed){
               + '% of gross, top two ' + Math.round(s.top2 * 100) + '%. The difference is not carried by one outcome.');
       return '<div style="margin-top:4px">• <b>' + esc(s.a.lab) + '</b> ' + gp(Math.round(s.aNet)) + ' over ' + s.nA
         + ' → <b>' + esc(s.b.lab) + '</b> ' + gp(Math.round(s.bNet)) + ' over ' + s.nB + '. '
-        + '<b>' + s.only.length + ' trip' + (s.only.length === 1 ? '' : 's') + '</b> separate them, netting '
+        + '<b>' + s.only.length + ' of ' + s.nEligible + ' eligible trip'
+        + (s.nEligible === 1 ? '' : 's') + '</b> separate them'
+        + (s.nIneligible ? ' <span class="dim">(' + s.nIneligible + ' of ' + closed.length
+            + ' could not enter this band — ' + esc(s.whyIneligible) + ')</span>' : '')
+        + ', netting '
         + drill("paper:regsep:" + s.a.key + ":" + s.b.key, face, {
             head: s.only.length + " trips in " + s.a.lab + " and not in " + s.b.lab,
             cols: REGIME_SEP_COLS, rows: regimeSepRows(s.only),
             empty: "No separating trips.",
-            note: PAPER_NOTE() + ' ROI at open is the post-tax figure the regime membership was decided on. '
+            /* The ROI column is CLOSE TO but not identical with the deciding
+               figure, and used to claim it was the deciding figure. Membership
+               was decided on `effMargin(c)/c.buy` — the quote pair, and the
+               LOWER of the live and 1h-sustained margins. This column is the
+               post-tax return on the PLACEMENT pair (bid = c.buy+1, ask =
+               c.sell-1), which is one tick worse on each side and carries no
+               1h term, because margin1h is not stored on the trip. Corrected
+               Aug 13 2026 rather than left standing: a column that names
+               itself the deciding number is a claim the code does not keep. */
+            note: PAPER_NOTE() + ' ROI at open is the post-tax return on the PLACEMENT pair. Membership was decided on '
+              + 'the quote pair and on the lower of the live and 1h-sustained margin, so this column is close to that '
+              + 'figure and is not it. '
               + 'Concentration is measured against GROSS movement, because a share of a negative net is not a proportion.'
           })
         + '. ' + conc + '</div>';
@@ -9477,6 +10475,9 @@ function paperRegimeSection(){
   const bits = [];
   if (shadowEpochNote()) bits.push(shadowEpochNote());
   bits.push(paperCaveat());
+  /* Above the curves, not inside a disclosure: a reader who has already taken
+     the number has not been warned by a note below it. */
+  bits.push(paperModelNote(closed));
   if (!fed && (DB.shadowBook || []).length)
     bits.push(neverFedNote("The regime race",
       (DB.shadowBook || []).length + " paper trips exist and not one carries a regime, so the three curves below have "
@@ -9531,8 +10532,21 @@ function paperRegimeSection(){
       })
     + ' behind the 4-of-7 persistence rule.</div>');
   const evd = shadowRegimeEvidence();
+  const tie = regimeTieReason();
   bits.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
-    : '<div class="dim" style="margin-top:4px">No persistent regime divergence (4 of 7 readings) — no tuning case from the paper book right now.</div>');
+    : (tie && tie.dead.length
+        ? '<div class="dim" style="margin-top:4px">No divergence can be read for '
+          + tie.dead.map(s => '<b>' + esc(s.a.lab) + ' vs ' + esc(s.b.lab) + '</b>').join(" or ")
+          + ' — '
+          + (tie.anyUnreachable
+              ? '<b>the gate constants forbid the comparison</b>. Anything in that band fails the margin floor as '
+                + 'well as the ROI floor, so no entry path can admit it and no amount of further trading will feed '
+                + 'it. Those curves are equal by <b>identity</b>, not by tie and not by shortfall.'
+              : '<b>nothing has fed the comparison</b>, so those curves are equal by construction rather than tied.')
+          + ' That is not "no tuning case"; it is <b>no evidence</b>, and the two must not be read alike.'
+          + (tie.state === "partly-fed" ? ' The other band did report above.' : '')
+          + '</div>'
+        : '<div class="dim" style="margin-top:4px">No persistent regime divergence (4 of 7 readings) — no tuning case from the paper book right now.</div>'));
   return bits.join("");
 }
 function paperGateSection(){
@@ -9916,6 +10930,17 @@ function freshnessRows(){
       12 * 3600e3, "scheduled", "one bucket per hour");
   add("Hour-of-day (market stream)", maxOf(DB.watch.map(w => (S.spark.get(w.id) || {}).at || 0)),
       2 * dayMs, "scheduled", "rides the 7-day series each watch item fetches");
+  /* The universe scorer's two streams (stage 1c conformance, Aug 14 2026):
+     the generator-renders-its-own-state rule, satisfied here minimally until
+     stage 1e ships the full state line. Ages are the BUCKET last processed —
+     the thing the claim names — and session-scoped: after a reload both read
+     "not yet", which is could-not-check, never up-to-date. */
+  add("Market archive (T0 accrual)", S.t0LastBucket || 0, 15 * 60e3, "scheduled",
+      "whole-universe 5m buckets into IndexedDB; gaps are unobserved periods, not quiet ones");
+  add("Universe scorer (T2 cells)", S.scoredBucket || 0, 15 * 60e3, "scheduled",
+      "one pass per 5m bucket over every mapped item; no surface until stage 1e — this line and the warn channel are its state");
+  add("Reconciliation diff (control vs plan)", S.rdiffLastBucket || 0, 15 * 60e3, "scheduled",
+      "the cutover's plumb line — one row per scored bucket; a gap is history that does not exist");
   add("Coherence readings", DB.lastCoScanAt || 0, 10 * dayMs, "scheduled", "weekly co-movement scan");
   add("Anomaly scan", DB.lastAnomalyScanAt || 0, 10 * dayMs, "scheduled", "weekly accumulation sweep");
   add("Walk-up attention", dParse(((DB.walkupLoad || []).slice(-1)[0] || {}).d), 3 * dayMs, "scheduled",
@@ -10047,6 +11072,10 @@ function accrueBackground(){
      decide whether a basket recomposed. */
   try { autoApplyCohProps(); } catch(e){}
   try { autoApplyAudits(); } catch(e){}
+  /* Closure records ride the poll for the same reason every other ledger does
+     (R34.1) — a decision-log entry that only lands if you happen to open the
+     right tab is a record of your browsing, not of your rulings. */
+  try { gateClosureLog(); } catch(e){}
 }
 
 function renderDeploy(plan){
@@ -10067,7 +11096,28 @@ function renderDeploy(plan){
      once — an offline boot reads funded 0 and must not pollute the series. */
   stampDeployLog(P);
 
-  /* ── funnel: first-fail attribution, in the order the chain applies ── */
+  /* ══ LEAVE-ONE-OUT LEADS; FIRST-FAIL IS DEMOTED (user ruling, Aug 13 2026) ══
+     The funnel led with first-fail counts, which are position in
+     GATE_CHAIN_ORDER weighted by failure frequency, and flagged the top two as
+     "the biggest killers". Measured over 4,497 live items, the gate at the top
+     of that ranking was blocking nothing at all: relaxing it frees no candidate
+     because the next gate rejects the same population.
+
+     THE CAUSAL NUMBER NEEDED NO NEW MACHINERY. The ENABLER refactor of Aug 10
+     2026 made every gate evaluate independently and collect into `fails`, so
+     leave-one-out is already computable from the fail sets the chain produces:
+     relax gate X and the items that become clean passers are exactly those
+     whose ONLY known failure was X. `failProfile()` has computed that on every
+     refresh since Aug 12; the panel rendered the positional number three lines
+     above it. This is a rendering change, and it retires the ⚑ mark — a flag
+     whose whole job was "look here" is not needed when the ranking itself is
+     the honest answer to what to look at.
+
+     WHAT IT CLAIMS, EXACTLY (metric honesty): "clears the gate chain", never
+     "gets funded". The allocator's stages — family rule, tiering, caps,
+     budgets, seasoning — run after the gates and are not modelled here. And
+     "unknown is not failing": an item whose chart is still loading is counted
+     by the same rule the near-miss pile uses, so the two can never disagree. */
   const firstGate = x => x.fails && x.fails.length ? x.fails[0].g : (gateName(x.failed) || "plan gate");
   const kills = new Map();
   for (const x of all) if (x.failed) kills.set(firstGate(x), (kills.get(firstGate(x)) || 0) + 1);
@@ -10098,12 +11148,10 @@ function renderDeploy(plan){
     ? '<div class="funrow"><span class="neg">⚠ accounting error: stages over-count by ' + (-heldResidual)
       + ' — the funnel\'s first-fail attribution double-counted somewhere; funnel math needs a look</span></div>'
     : '';
-  const ranked = allStages.slice().sort((a, b) => b.kill - a.kill);
-  const top = new Set(ranked.slice(0, 2).filter(s => s.kill > 1 || (s.kill === 1 && N <= 3)).map(s => s.label));
   let remain = N;
   const funRow = s => {
     remain -= s.kill;
-    return '<div class="funrow"><span>' + (top.has(s.label) ? '⚑ ' : '') + esc(s.label) + '</span>'
+    return '<div class="funrow"><span>' + esc(s.label) + '</span>'
       + '<span class="fbar"><i style="width:' + Math.round(s.kill / Math.max(1, N) * 100) + '%"></i></span>'
       + '<span class="fn">−' + s.kill + ' · ' + remain + ' remain</span></div>';
   };
@@ -10112,8 +11160,7 @@ function renderDeploy(plan){
     + allStages.map(funRow).join("")
     + residualErr
     + '<div class="funrow fen"><span><b>funded</b></span><span class="fbar"><i style="width:'
-    + Math.round(P.picks.length / Math.max(1, N) * 100) + '%"></i></span><span class="fn">' + P.picks.length + '</span></div>'
-    + (top.size ? '<div class="dim" style="font-size:12px;margin-top:2px">⚑ = the two biggest killers this refresh.</div>' : '');
+    + Math.round(P.picks.length / Math.max(1, N) * 100) + '%"></i></span><span class="fn">' + P.picks.length + '</span></div>';
 
   /* ── marginal-gate attribution: near-misses vs walls ── */
   /* ONE definition, shared with the discovery slice and the scanner cohort
@@ -10125,8 +11172,67 @@ function renderDeploy(plan){
   const near = gated.filter(x => !!fpOf.get(x).nearMiss);
   const two = gated.filter(x => fpOf.get(x).n === 2);
   const wall = gated.filter(x => fpOf.get(x).n >= 3);
+  /* An item whose only failure is unknowable (chart still loading) has n === 0:
+     neither clean nor a near-miss, and it belongs to no bucket above. Counted
+     here so the buckets can DECLARE that they do not sum to their population
+     rather than leaving the reader to notice. */
+  const pend0 = gated.filter(x => fpOf.get(x).n === 0);
   const nmByGate = new Map();
   for (const x of near){ const g = fpOf.get(x).nearMiss.g; if (!nmByGate.has(g)) nmByGate.set(g, []); nmByGate.get(g).push(x); }
+  /* ── THE CAUSAL BLOCK: what each gate is actually blocking ────────────────
+     `binds` is leave-one-out — relax this gate and this many candidates clear
+     the chain. `heads` is the first-fail count, kept because the funnel below
+     partitions on it, and labelled as ordering wherever it renders. A gate
+     that heads items and binds none is the whole finding, so it RENDERS ITS
+     ZERO rather than dropping out of the list: absent and none are different
+     readings and this list is where the difference shows. */
+  const involved = new Map();
+  for (const x of gated) for (const f of fpOf.get(x).known)
+    involved.set(f.g, (involved.get(f.g) || 0) + 1);
+  for (const g of kills.keys()) if (!involved.has(g)) involved.set(g, involved.get(g) || 0);
+  const looRows = [...involved.keys()].map(g => ({
+    g, binds: (nmByGate.get(g) || []).length, heads: kills.get(g) || 0, involved: involved.get(g) || 0
+  })).sort((a, b) => b.binds - a.binds || b.involved - a.involved || b.heads - a.heads);
+  const looRow = r => {
+    const items = nmByGate.get(r.g) || [];
+    const face = '<b>' + r.binds + '</b>';
+    const bindsCell = items.length
+      ? drill("dep:binds:" + r.g, face, {
+          head: r.g + " — the candidates that would clear the gate chain if this gate were relaxed",
+          cols: [{ k: "item", lab: "Item" }, { k: "miss", lab: "By how much" },
+                 { k: "days", lab: "Headline-benched days (ordering)" }],
+          rows: items.map(x => { const f = fpOf.get(x).nearMiss, d7 = daysBenchedBy(x.id, f.g, 7);
+            return { item: x.name, miss: f.short || f.detail,
+                     days: d7.n > 1 ? benchDaysTxt(d7) : "—", _txt: x.name + " " + (f.short || "") }; }),
+          empty: "None.",
+          note: 'These are the candidates whose ONLY known gate failure is this one, so relaxing it would let them '
+              + 'clear the chain. It does NOT mean they would be funded — the family rule, tiering, caps, budgets and '
+              + 'seasoning all run afterwards. The days column is the ledger\'s headline count and is ordering, not cause.'
+        })
+      : face;
+    return '<div class="funrow"><span>' + gateChip(r.g) + '</span>'
+      + '<span class="fbar"><i style="width:' + Math.round(r.binds / Math.max(1, N) * 100) + '%"></i></span>'
+      + '<span class="fn">' + bindsCell + ' bind'
+      + ' <span class="dim">· heads ' + r.heads + '</span></span></div>';
+  };
+  const looHTML = '<div class="dep-h">What each gate is actually blocking</div>'
+    + '<div class="dim" style="font-size:12px;margin-bottom:4px"><b>bind</b> = relax this gate alone and this many '
+    + 'candidates clear the gate chain (they would still face the family rule, tiering, caps and budgets). '
+    + '<b>heads</b> is the first-fail count the funnel below partitions on — <b>' + headlineTag() + '</b>, kept as a '
+    + 'secondary reading only. A gate that heads candidates and binds none is a gate whose count belongs to whatever '
+    + 'rejects the same items later in the chain.</div>'
+    + (looRows.length
+        ? looRows.map(looRow).join("")
+          + '<div class="dim" style="font-size:12px;margin-top:3px">Single-gate relaxations <b>do not add</b>: '
+          + two.length + ' candidate' + (two.length === 1 ? '' : 's') + ' fail exactly two gates and '
+          + wall.length + ' fail three or more, and no single relaxation reaches any of them — relaxing two gates '
+          + 'together can admit items neither reaches alone, which these numbers cannot show.'
+          + (pend0.length ? ' ' + pend0.length + ' further candidate' + (pend0.length === 1 ? ' has' : 's have')
+              + ' only an unknowable failure (chart still loading) and are counted in none of these figures.' : '')
+          + '</div>'
+        : '<div class="bench-row"><span class="dim">No candidate failed a gate this refresh, so no gate is blocking '
+          + 'anything — this is an empty result, not a missing one.</span></div>');
+
   let verdict = "";
   if (near.length || wall.length)
     verdict = near.length > wall.length
@@ -10134,17 +11240,21 @@ function renderDeploy(plan){
       : wall.length > near.length
       ? "a wall of multi-gate failures reads as a market that is genuinely thin right now"
       : "mixed picture — some tuning candidates, some genuinely unfit";
+  /* CONSOLIDATION, which is what pays for the block above under the zero-based
+     complexity budget (Aug 13 2026): the per-item near-miss list rendered here
+     is the SAME population the new "binds" column opens to, item for item, and
+     it now lives inside that drill with its miss and its persistence count. One
+     number, one expansion — the drill primitive's whole point. What stays here
+     is the shape summary and the two- and multi-gate piles, which the binds
+     column deliberately cannot show. */
   let attrib = '<div class="dep-h">Marginal-gate attribution</div>'
     + '<div class="dim" style="font-size:12px;margin-bottom:4px">' + near.length + ' near-miss' + (near.length === 1 ? "" : "es")
-    + ' (fail exactly one gate) · ' + two.length + ' fail two · ' + wall.length + ' fail three or more'
-    + (verdict ? ' — ' + verdict : '') + '</div>';
-  attrib += near.map(x => {
-    const f = fpOf.get(x).nearMiss;
-    const d7 = daysBenchedBy(x.id, f.g, 7);
-    return '<div class="bench-row"><span>' + esc(x.name) + ' <span class="dim">· ' + esc(f.g) + '</span></span>'
-      + '<span class="r">' + esc(f.short || f.detail)
-      + (d7.n > 1 ? ' · benched by this gate on ' + esc(benchDaysTxt(d7)) : '') + '</span></div>';
-  }).join("");
+    + ' (fail exactly one gate — these are the "binds" counts above, and each one opens to its items there) · '
+    + two.length + ' fail two · ' + wall.length + ' fail three or more'
+    + (pend0.length ? ' · ' + pend0.length + ' with only an unknowable failure, in none of the three' : '')
+    + (verdict ? ' — ' + verdict : '')
+    + (pend0.length ? ' <b>These do not sum to the ' + gated.length + ' benched candidates</b>, by that last group.' : '')
+    + '</div>';
   if (two.length) attrib += '<div class="bench-row"><span class="dim">Two-gate: '
     + esc(two.map(x => x.name + " (" + x.fails.map(f => f.g).join(" + ") + ")").join(", ")) + '</span></div>';
   if (wall.length) attrib += '<div class="bench-row"><span class="dim">Multi-gate (3+), genuinely unfit right now: '
@@ -10183,6 +11293,13 @@ function renderDeploy(plan){
        near-miss pile. Without persistence the pile renders as a
        concur-recommended observation, not a proposal. */
     const obs7 = observedDaysIn(7);
+    /* THE PERSISTENCE BAR IS HEADLINE-ATTRIBUTED (user ruling, Aug 13 2026),
+       and it is the bar that moves gate constants — which makes it the most
+       consequential reader of `fails[0]` in the product. `arr` is a set of
+       TRUE single-gate near-misses, so the pile is sound; the day count that
+       promotes it from observation to proposal is not, because a ledger day
+       records only which gate spoke first. Marked here, on the proposal
+       itself, rather than left to the funnel's header. */
     const persistItems = arr.filter(x => daysBenchedBy(x.id, g, 7).n >= GATE_PERSIST_DAYS);
     const shorts = arr.slice(0, 3).map(x => x.name + ": " + ((fpOf.get(x) && fpOf.get(x).nearMiss && fpOf.get(x).nearMiss.short) || "miss"));
     if (!persistItems.length){
@@ -10210,7 +11327,9 @@ function renderDeploy(plan){
       + persistItems.length + ' with ledger persistence — benched by it on ' + GATE_PERSIST_DAYS + '+ of the '
       + esc(obsCoverageTxt(7)) + ': '
       + esc(persistItems.slice(0, 3).map(x => x.name + " (" + daysBenchedBy(x.id, g, 7).n + " of " + obs7 + ")").join("; "))
-      + ' — ' + esc(shorts.join("; ")) + '. ';
+      + ' — ' + esc(shorts.join("; ")) + '. '
+      + '<span class="dim">The day counts are the ' + headlineTag() + ' — a ledger day records which gate spoke '
+      + 'first, so persistence earns the hearing but is not itself evidence that this gate is what binds.</span> ';
     if (dirs.shadow.dir === "loosen" && dirs.realized.dir === "loosen"){
       props.push({ concur: false, html: persistTxt + 'Realized overrides make the case and the paper screen concurs: ' + dirs.realized.txt + ' · ' + dirs.shadow.txt
         + '. ' + esc(depProposalFor(g, arr)) });
@@ -10261,8 +11380,9 @@ function renderDeploy(plan){
 
   $("#depSub").textContent = P.pass.length + " of " + N + " pass · " + P.picks.length + " funded · "
     + gp(P.deployed) + " of " + gp(pool) + " tier pool deployed" + (pool > 0 ? " (" + Math.round(P.deployed / pool * 100) + "%)" : "");
-  box.innerHTML = deploySparkHTML() + '<div class="dep-h">Gate funnel — cumulative, in the order applied</div>'
-    + funnel + attrib + pipeHTML + propHTML;
+  box.innerHTML = deploySparkHTML() + looHTML
+    + '<div class="dep-h">Gate funnel — cumulative, in the order applied</div>'
+    + headlineNote() + funnel + attrib + pipeHTML + propHTML;
 }
 
 /* 7-day funded-count sparkline from the snapshot ledger. Runs split where
@@ -11663,18 +12783,40 @@ function audRuledInfo(key){
   const r = (DB.audRuled || {})[key];
   return r && Date.now() - r.t < AUD_REST_MS ? r : null;
 }
-function logDecision(kind, subject, action, reason, auto){
+/* ═══ `auto` MEANS WRITTEN BY THE TOOL. FULL STOP. (user ruling, Aug 13 2026) ══
+   It was stamped on machine-applied bookkeeping (Aug 11 2026) so the review
+   could show those as their own reviewable block. Two closure entries written
+   in code to record the user's OWN rulings then raised the question of whether
+   they should carry it — the entries were decided by the user and written by
+   the tool, so both readings of the flag applied.
+
+   RULED: the flag means WRITTEN BY THE TOOL everywhere, and consistency wins
+   over the distinction. A flag that means one thing in some entries and
+   another in others is unusable to a reader six weeks out, who has no way to
+   know which sense a given row is in — and the review's own auto block is
+   built on filtering it. Provenance gets its OWN field rather than overloading
+   this one: `by` is "user" when the tool is writing down a decision the user
+   made, "tool" when the tool made the call itself. Absent on hand-pressed
+   entries, where the press IS the provenance and `auto` is absent too.
+
+   The pairing is the point: `auto` answers "did this appear without a press",
+   `by` answers "whose judgment was it". They are independent, and the two
+   closure entries are exactly the case that proves it — auto: 1, by: "user". */
+function logDecision(kind, subject, action, reason, auto, by){
   const e = { t: Date.now(), d: today(), kind, subject, action, reason: String(reason || "") };
-  /* AUTO-APPLIED (user ruling, Aug 11 2026): machine-applied entries are
-     stamped so the review can show them as their own reviewable block. A
-     log that cannot tell "you decided this" from "it decided this" is not a
-     record of decisions. */
-  if (auto) e.auto = 1;
+  if (auto){ e.auto = 1; e.by = by === "user" ? "user" : "tool"; }
   DB.decisionLog.push(e);
   if (DB.decisionLog.length > 500) DB.decisionLog = DB.decisionLog.slice(-500);
   save();
 }
 const autoApplied = since => (DB.decisionLog || []).filter(x => x.auto && x.t > (since || 0));
+/* The copy for the provenance field, so the block and the drill-down cannot
+   describe the same row differently. Absent reads as "predates the field" —
+   a third state, not a default to either side. */
+const decidedByTxt = x => !x || !x.auto ? "your press"
+  : x.by === "user" ? "your ruling, written down by the tool"
+  : x.by === "tool" ? "the tool's own call"
+  : "unrecorded — this row predates the provenance field";
 
 /* ═══ AUTO-APPLIED MEMBERSHIP + AUDIT RECOMMENDATIONS ═══════════════════
    USER RULING, Aug 11 2026 — supersedes "membership never recomposes
@@ -11966,7 +13108,19 @@ function gateStreamsSection(){
   const shGates = shadowByGate(true);
   const secs = ['<div class="note">Benches this week with BOTH streams per gate: <b>realized</b> (actual logged round trips, tax netted — the evidence) and <b>paper</b> (honest fill simulation at '
     + shadowPartPct() + '% participation — a screen, quarantine-labeled; it assumes a book you\'re not in). Paper profits are a screening rank, never evidence; realized profits alone are attribution-fuzzy; <b>a case needs realized evidence with the screen concurring</b>. '
-    + 'Advisory only: gate constants change on your instruction, never from here (house convention). Every count opens to its items.</div>'];
+    + 'Advisory only: gate constants change on your instruction, never from here (house convention). Every count opens to its items.</div>',
+    /* THE TWO STREAMS ARE NOT ATTRIBUTED THE SAME WAY (user ruling, Aug 13
+       2026), and they are rendered side by side under one gate name inviting
+       exactly the comparison the difference forbids. Realized comes from
+       DB.gateLog (fails[0], headline); paper comes from `benchedBy`, which is
+       set only on a single-gate near-miss and is therefore the binding gate.
+       Stated where they render rather than fixed, per the ruling. */
+    '<div class="plan-note">The two streams answer with <b>different attributions.</b> The <b>realized</b> stream is '
+    + 'the ' + headlineTag() + ' — from the ledger, which records the first gate that rejected each item. The '
+    + '<b>paper</b> stream is the BINDING gate — a trip carries a gate name only when that gate was its single '
+    + 'failure. So a gate can look busy on the left and absent on the right without either being wrong: the volume '
+    + 'floor sits near the end of the chain and heads almost nothing while binding often, and the ROI floor is the '
+    + 'reverse and can never appear on the right at all. <b>Do not read the two counts as the same population.</b></div>'];
   const gateNames = new Set([...gh.rows.map(r => r.g), ...shGates.keys()]);
   if (!gateNames.size){
     secs.push('<div class="dim">No bench data yet this week — the ledger fills as the plan runs.</div>');
@@ -12215,7 +13369,12 @@ function gateSummaryLine(){
     + excActiveN() + ' of ' + EXC_MAX_ACTIVE + ' probation slots in use'
     + (voids ? ' · <b>' + voids + ' exception' + (voids === 1 ? '' : 's') + ' on void basis</b>' : '')
     + ' — <a href="#" data-goto="gates#gateStreamPanel">open gate health →</a></div>'
-    + '<div class="dim">The working surface carries both streams per gate, the die-off episodes and the exception lane, each opening to its items.</div></div>';
+    + '<div class="dim">The working surface carries both streams per gate, the die-off episodes and the exception lane, each opening to its items.</div>'
+    /* The agree/disagree count is computed ACROSS the two attributions, so it
+       inherits the mark from both (user ruling, Aug 13 2026). */
+    + '<div class="dim">Gate names here come from the ' + headlineTag() + ' on the realized side and from the binding '
+    + 'gate on the paper side; an agree/disagree count spans both, so read it as a prompt to look rather than a '
+    + 'verdict on a gate.</div></div>';
 }
 
 const audBtns = (attr, id) =>
@@ -12293,16 +13452,18 @@ function renderAuditInline(){
      has to be prominent, decomposable, and reversible — not a line in a
      500-entry log the user would have to go looking for. */
   const auto = autoApplied(Date.now() - 30 * 86400e3).reverse();
-  secs.push('<div class="nexthead"><b>5b · Applied automatically</b> — membership bookkeeping and seed/sibling calls that no longer wait for a ruling. Everything here cleared its existing evidence bar; what changed is who presses, not what qualifies. All reversible by hand.</div>');
+  secs.push('<div class="nexthead"><b>5b · Applied automatically</b> — everything written to the decision log without a press: membership bookkeeping and seed/sibling calls that no longer wait for a ruling, plus rulings of YOURS the tool recorded on your behalf. Everything here cleared its existing evidence bar; what changed is who presses, not what qualifies. The <b>whose call</b> column says which is which. All reversible by hand.</div>');
   secs.push(auto.length
     ? '<div data-drillrow="1">' + drill("auto:log", auto.length + ' change' + (auto.length === 1 ? '' : 's') + ' in the last 30 days', {
         head: "everything the tool applied without asking, and why",
         cols: [{ k: "d", lab: "Date" }, { k: "kind", lab: "Kind" }, { k: "subject", lab: "Subject" },
-               { k: "action", lab: "Action" }, { k: "reason", lab: "Why it qualified" }],
-        rows: auto.map(x => ({ d: x.d, kind: x.kind, subject: x.subject, action: x.action, reason: x.reason,
+               { k: "action", lab: "Action" }, { k: "by", lab: "Whose call" }, { k: "reason", lab: "Why it qualified" }],
+        rows: auto.map(x => ({ d: x.d, kind: x.kind, subject: x.subject, action: x.action,
+          by: decidedByTxt(x), reason: x.reason,
           _txt: x.subject + " " + x.action + " " + x.kind })),
         empty: "Nothing has been applied automatically.",
-        note: 'Coherence <b>adds</b>, seed KEEP/RETIRE and sibling PRUNE apply themselves. Coherence <b>drops</b> deliberately do not — an add tightens a basket\'s exposure cap (restraint), a drop loosens it and can free capital the cap was withholding, which is the line your standing rule reserves for you. Undo an add from the basket\'s thesis detail; re-seed a retired lineage by hand.'
+        note: 'Coherence <b>adds</b>, seed KEEP/RETIRE and sibling PRUNE apply themselves. Coherence <b>drops</b> deliberately do not — an add tightens a basket\'s exposure cap (restraint), a drop loosens it and can free capital the cap was withholding, which is the line your standing rule reserves for you. Undo an add from the basket\'s thesis detail; re-seed a retired lineage by hand. '
+            + '<b>This block is everything the tool WROTE without a press</b>, which is not the same as everything the tool DECIDED: the "whose call" column separates them, and rows written before that field existed say so rather than defaulting either way.'
       }) + '</div>'
     : '<div class="dim">Nothing applied automatically in the last 30 days.</div>');
   /* §6 decision log */
@@ -14066,7 +15227,7 @@ function importIntelligence(d){
       target.status = "dismissed"; target.ruledAt = Date.now();
       target.dismissReason = disp.reason;
       logDecision("intel", target.title || target.id,
-        "dismiss — ruled at the desk" + (disp.ruledOn ? " " + disp.ruledOn : ""), disp.reason, 1);
+        "dismiss — ruled at the desk" + (disp.ruledOn ? " " + disp.ruledOn : ""), disp.reason, 1, "user");
       dismissedByFile++;
     };
     const existing = DB.intel.find(x => x.id === id);
@@ -15654,20 +16815,48 @@ const GLOSSARY = [
       + "bench reason anywhere in the tool to land here. A bench is never a verdict on the item forever — it is a "
       + "verdict on this item at this price with this book, re-run every refresh.",
   entries: [
+  { id: "gate-headline", term: "headline gate, not binding gate", aka: "first-fail attribution, fails[0]",
+    what: "A warning label on any count that says \"gate X benched N items\". The chain evaluates gates in a fixed "
+        + "order and the ledger records the FIRST one that rejected each item — so the count measures where that gate "
+        + "sits in the order, not how much it is holding back. A gate early in the chain absorbs every item the later "
+        + "gates would also have benched; a gate near the end can only ever head an item that nothing else rejected.",
+    from: "<code>fails[0]</code>, written to <code>DB.gateLog</code> once per item·gate·day and read by the deployment "
+        + "funnel, the gate-health streams, the weekly gate line and the gates export. The surfaces that instead read "
+        + "the FULL failure set — the marginal-gate attribution, the near-miss piles, the paper book's per-gate "
+        + "outcomes — are sound and carry no mark.",
+    do: "Do not read a big headline count as \"relax this and capacity appears\". Ask what else was failing at the "
+        + "same time first. The measured example: the ROI floor is the headline on 2,358 of 4,497 live items and the "
+        + "sole binding gate on <b>zero</b> of them, because the margin floor benches all of the same items; the "
+        + "volume floor is the sole binding gate on every one of the 280 it heads, because almost nothing precedes it.",
+    caveat: "Marked, not fixed (your ruling, Aug 13 2026). These surfaces still compute exactly what they always did — "
+        + "the label is there so they stop being read as causal until it is decided whether to repair the attribution "
+        + "or stop claiming it. Measurement: audits/SURFACE-2026-08-13-gate-interaction.md." },
   { id: "gate-price", term: "Price-and-spread gates", names: ["ROI floor", "margin floor (ticks / 3× tax)"],
+    /* Constants DERIVED, not restated (claims-vs-computation at the schema
+       level, user ruling Aug 14 2026): GATE.taxMult and effRoiFloorPct() are
+       code constants, safe to read at load; the tick floor is a SETTING and
+       is phrased as its default rather than snapshotted stale. */
     what: "The two gates that ask whether the edge is big enough to survive its own costs. <b>ROI floor</b> rejects "
         + "sustained post-tax margin ÷ buy price below the floor (default 1.2%). <b>Margin floor</b> rejects a margin "
-        + "under 3× the per-unit GE tax or under 15 ticks, whichever binds — when margin ≈ tax, a scratch exit at your "
+        + "under " + GATE.taxMult + "× the per-unit GE tax or under the tick floor (default 15, a setting), whichever "
+        + "binds — when margin ≈ tax, a scratch exit at your "
         + "own buy price loses the entire tax, and 4 gp of margin is four ticks of room before a quarter of the edge is gone.",
     from: "Computed from the live instasell/instabuy pair and the 1h averages, net of tax. \"Sustained\" means it also "
         + "holds on the 1h-averaged rebuild, so a single lucky print cannot pass an item.",
     do: "Nothing on a single bench — this is the gate doing its job. What earns your attention is the same item benched "
         + "here on 4+ OBSERVED days out of the last 7: that is a persistence signal, and the deployment funnel raises it "
-        + "as a proposal with numbers. Then the question is whether YOUR floor is too tight, not whether this item is "
-        + "special.",
-    caveat: "Corrected Aug 12 2026: this line used to read \"4+ of the last 7 days\", which counted days the app was never "
-        + "open. Days you did not visit are not evidence either way, so the bar is now stated against observed days and "
-        + "the funnel names how many of the seven it actually saw." },
+        + "as a proposal with numbers. <b>But read a persistence count on the ROI floor as ordering, not as cause</b> — "
+        + "see <em>headline gate, not binding gate</em>. On the ROI floor specifically the honest answer is that "
+        + "loosening it frees nothing, so its persistence count is not a reason to move it.",
+    caveat: "TWO corrections ride this entry. (1) Aug 12 2026: the persistence line used to read \"4+ of the last 7 "
+        + "days\", which counted days the app was never open; the bar is now stated against observed days. (2) Aug 13 "
+        + "2026, and it is the larger one: <b>the 1.2% ROI floor selects nothing.</b> The margin floor's "
+        + GATE.taxMult + "×-tax limb is a sustained-ROI floor in disguise at " + effRoiFloorPct().toFixed(2)
+        + "%, so every taxed item under that is benched by the "
+        + "margin floor whatever the ROI floor says — including the whole range above 1.2% that the ROI floor passes. "
+        + "Measured over 4,497 live items: 2,358 fail the ROI floor and 2,358 of 2,358 also fail the margin floor. "
+        + "Tax-exempt items are the one carve-out, since a zero tax collapses the requirement to the halved tick floor. "
+        + "Neither constant has moved; this is what they currently do." },
   { id: "gate-liquidity", term: "Liquidity gates", names: ["volume floor", "book skew", "flow imbalance", "volume trend", "die-off detected", "sizing"],
     what: "The gates that ask whether you can actually get in and out. <b>Volume floor</b> gates on the THIN side of the "
         + "book (under 5k gp a unit count, at 5k+ a gp-flow floor). <b>Book skew</b> and <b>flow imbalance</b> reject a "
@@ -16071,10 +17260,12 @@ const GLOSSARY = [
     from: "The in-game rule, implemented exactly.",
     do: "Nothing directly — it is context for the tax-multiple rule, which is where it bites." },
   { id: "met-taxmult", term: "Tax-multiple rule / ticks",
-    what: "Margin must clear 3× the per-unit tax and 15 ticks. When margin ≈ tax, a scratch exit at your own buy price "
+    what: "Margin must clear " + GATE.taxMult + "× the per-unit tax and the tick floor (default 15, a setting). When "
+        + "margin ≈ tax, a scratch exit at your own buy price "
         + "loses the whole tax. Prices move in 1 gp steps, so a 4 gp margin is four ticks of room.",
     from: "The margin floor gate.",
-    do: "Do not hand-override this one. At 3×, giving back two-thirds of the edge still exits positive; below it, one "
+    do: "Do not hand-override this one. At " + GATE.taxMult + "×, giving back " + (GATE.taxMult === 3 ? "two-thirds" : "most")
+        + " of the edge still exits positive; below it, one "
         + "tick of adverse movement takes a quarter of your edge." },
   { id: "met-thinside", term: "Thin-side volume / gp-flow",
     what: "Units per hour on the QUIETER side of the book. A round trip needs sellers to buy from and buyers to sell to, "
@@ -17935,6 +19126,22 @@ function analysisGates(){
   const eps = analysisCap((gh.dieOff.eps || []).slice().sort((a, b) => (b.t || 0) - (a.t || 0)),
     ANALYSIS_CAPS.dieOff, "dieOffEpisodes", trunc, "newest first");
   return { header: analysisHeader("gate-health", trunc),
+    /* The artefact carries the same mark the screens do (user ruling, Aug 13
+       2026) — a file read away from the tool has no tooltip to fall back on,
+       and this is the field an analyst is most likely to sum. */
+    attributionCaveat: {
+      basis: "headline gate, not binding gate",
+      what: "Every gate name in this file comes from DB.gateLog, which stores fails[0] — the FIRST gate in the chain "
+          + "that rejected the item, not the only one that did. A count here measures where that gate sits in the "
+          + "chain order as much as how much it is blocking.",
+      worked: "Measured 2026-08-13 over 4,497 live items: the ROI floor is the headline on 2,358 and the SOLE binding "
+          + "gate on 0, because the margin floor's " + GATE.taxMult + "x-tax limb benches everything under "
+          + r2(effRoiFloorPct()) + "% ROI. The volume floor is the sole binding gate on all 280 it heads, because "
+          + "almost nothing precedes it in the chain.",
+      doNot: "Do not read a large count as capacity that relaxing this gate would release.",
+      soundAlternative: "The paper export's benchedByGate field IS the binding gate — it is set only when the gate was "
+          + "the item's single failure. The two are different populations and must not be joined on gate name.",
+      measurement: "audits/SURFACE-2026-08-13-gate-interaction.md" },
     gates: gh.rows.map(r => ({ gate: r.g, itemsBenchedThisWeek: r.benched,
       overrideStreamItemsTraded: r.ovrTraded, overrideStreamNetGp: Math.round(r.ovrNet || 0),
       latencyStreamItemsTraded: r.latTraded, latencyStreamNetGp: Math.round(r.latNet || 0),
@@ -18180,7 +19387,12 @@ function analysisCalibration(){
       flipsReplayed: (c.rows || []).length,
       flipsLogged: c.total,
       tapeRetentionHours: c.retentionH,
-      skippedByReason: { outsideTapeWindow: c.skipped.tooOld, missingLegTiming: c.skipped.noWindow, noTapeReturned: c.skipped.noTape },
+      /* `instantBuyZeroWindow` is split out from `missingLegTiming` because the
+         two are opposite readings: one flip never recorded a duration, the
+         other recorded zero. Merging them made the export claim a timing was
+         missing on rows that carry one. */
+      skippedByReason: { outsideTapeWindow: c.skipped.tooOld, missingLegTiming: c.skipped.noWindow,
+                         instantBuyZeroWindow: c.skipped.instantBuy || 0, noTapeReturned: c.skipped.noTape },
       sellLeg: c.sellLeg ? {
         note: "Anchored independently at the moment the buy really finished, so the sell is graded on its own terms "
             + "rather than only on flips whose buy the model completed. Every logged sell completed, so any verdict "
@@ -18379,7 +19591,9 @@ function gateVerdict(){
     : '<b>None look too tight</b> — all ' + n + ' gate' + (n === 1 ? '' : 's') + ' with benches this week are supported '
       + 'by their own outcome evidence.';
   return verdictHead("Are my gates too tight or too loose?", answer,
-    "A gate is only indicted when realized overrides AND the paper screen agree; disagreement is its own finding.");
+    "A gate is only indicted when realized overrides AND the paper screen agree; disagreement is its own finding. "
+    + "Which gates appear at all is the <em>headline gate, not binding gate</em> — the ledger records the first gate "
+    + "that rejected each item, so a gate late in the chain can be doing most of the blocking and barely show up here.");
 }
 function prospectVerdict(){
   const keys = Object.keys(DB.strataStats || {});
@@ -18442,7 +19656,8 @@ function renderProspectView(){
 }
 function renderGateView(){
   const gh = gateHealthAudit();
-  $("#gateStreamSub").textContent = gh.rows.length + " gate" + (gh.rows.length === 1 ? "" : "s") + " with benches this week";
+  $("#gateStreamSub").textContent = gh.rows.length + " gate" + (gh.rows.length === 1 ? "" : "s")
+    + " with benches this week — headline gate, not binding gate";
   $("#gateExcSub").textContent = excActiveN() + " of " + EXC_MAX_ACTIVE + " probation slots in use"
     + (excVoidBasis().length ? " · " + excVoidBasis().length + " on void basis" : "");
   setHTML("#gateStreams", gateVerdict()
@@ -19445,6 +20660,30 @@ function validateImport(d){
                   return { id, name: String(r.name || itemName(id)), ratio: num(r.ratio) || 0, straddle: r.straddle ? 1 : 0 };
                 }).filter(Boolean).slice(0, 40) }
             : null,
+          /* UNIVERSE SCORER T2 (stage 1c) — carried explicitly, because this
+             sanitizer enumerates keys and an unlisted key silently dies on
+             restore (R68.9, applied before the fact rather than after).
+             THE HASH IS RE-DERIVED FROM THE SANITIZED CONFIG, never trusted
+             from the file: a hand-edited config would otherwise file its data
+             under a hash the config does not produce, which is a pooled
+             population wearing a partition's clothes. `distinct` is re-derived
+             from the carried ids for the same reason. */
+          scorerT2: (d.scorerT2 && typeof d.scorerT2 === "object" && !Array.isArray(d.scorerT2))
+            ? Object.fromEntries(Object.entries(d.scorerT2).map(([, r]) => {
+                if (!r || typeof r !== "object" || !r.cfg || typeof r.cfg !== "object"){ rejected++; return null; }
+                const cfg = {}; for (const k of CFG_HASH_KEYS){ const v = num(r.cfg[k]); if (v == null){ rejected++; return null; } cfg[k] = v; }
+                const arr24 = a => { const o = new Array(24).fill(0); if (Array.isArray(a)) for (let i = 0; i < 24; i++) o[i] = Math.max(0, num(a[i]) || 0); return o; };
+                const ids = [...new Set((Array.isArray(r.ids) ? r.ids : []).map(x => num(x)).filter(x => x > 0))].slice(0, SCORER_ID_CAP);
+                return [cfgHash(cfg), { v: Math.max(1, num(r.v) || 1), cfg,
+                  firstAt: Math.max(0, num(r.firstAt) || 0), lastAt: Math.max(0, num(r.lastAt) || 0),
+                  cycles: Math.max(0, num(r.cycles) || 0), fundedItemCycles: Math.max(0, num(r.fundedItemCycles) || 0),
+                  fundedNoChart: Math.max(0, num(r.fundedNoChart) || 0),
+                  cyclesByHour: arr24(r.cyclesByHour), fundedByHour: arr24(r.fundedByHour),
+                  ids, distinct: ids.length, capped: r.capped ? 1 : 0,
+                  blFunded: Math.max(0, num(r.blFunded) || 0),
+                  blIds: [...new Set((Array.isArray(r.blIds) ? r.blIds : []).map(x => num(x)).filter(x => x > 0))] }];
+              }).filter(Boolean))
+            : {},
           lastBriefImportAt: Math.max(0, num(d.lastBriefImportAt) || 0),
           rulingsCap: Math.min(10, Math.max(1, num(d.rulingsCap) != null ? num(d.rulingsCap) : 5)),
           briefRemindDismissKey: String(d.briefRemindDismissKey || ""),
@@ -19593,6 +20832,81 @@ function validateImport(d){
             if (p.stratum) o2.stratum = String(p.stratum).slice(0, 24);
             if (p.rolled) o2.rolled = 1;
             if (num(p.cleanFind) > 0) o2.cleanFind = num(p.cleanFind);
+            /* ═══ THE CARRY IS THE RECORD (user ruling, Aug 13 2026) ═══
+               This block enumerated fields explicitly and stopped short: TWENTY-ONE
+               were dropped silently on every restore, and none of the losses was
+               cosmetic. Each broke a rule stated elsewhere in this file —
+               `fillModelV` gone collapses every trip to "pre-stamp" and destroys the
+               never-pool partition; `grade` gone relabels reconstructed evidence as
+               live; `hzH` gone falls back to DB.fillHorizonH and retro-applies a
+               horizon to a leg placed under a different one, which the cadence ruling
+               forbids in those words; `openSeq` gone makes paperStaleHostTrips() fire
+               across the whole book, announcing the exact corruption event that forced
+               the epoch-1 discard.
+
+               ⚠ `anchored` IS THE ONLY IRRECOVERABLE ONE. Every other field here
+               records something still knowable — recomputable, or re-derivable from
+               the trip and the tape. `anchored` is an OPEN-TIME FACT: whether the
+               operator was actually present when this trip opened. Dropping it does
+               not leave a gap a reader can see; it silently moves the trip into
+               "predates the stamp", a different and wrong population, and no later
+               pass can put it back. Carried with an explicit boolean test so that
+               FALSE survives as false — a legitimate falsy value, the same class as
+               the gate ledger's `v`.
+
+               NOT num(): `num(null)` returns 0, because `+null` is 0 and 0 is finite.
+               Restoring these through it would turn every absent field into a
+               legitimate-looking zero, which is the defect this carry exists to stop. */
+            const fin = v => (typeof v === "number" && Number.isFinite(v)) ? v : null;
+            const put = (k, v) => { if (v != null) o2[k] = v; };
+            /* Tier 1 — provenance and partitioning. Loss violates a named rule. */
+            put("hzH", fin(p.hzH));
+            put("fillModelV", fin(p.fillModelV));
+            put("openSeq", fin(p.openSeq));
+            put("obsLive", fin(p.obsLive));
+            put("reconMs", fin(p.reconMs));
+            if (["live", "mixed", "reconstructed"].includes(p.grade)) o2.grade = p.grade;
+            if (typeof p.anchored === "boolean") o2.anchored = p.anchored;
+            /* Tier 2 — causality and pricing stamps: the information-horizon
+               rule's own evidence. The bucket stamps are what prove a leg was
+               filled by tape that printed after it was placed. */
+            put("buyBkt", fin(p.buyBkt));
+            put("buyDoneBkt", fin(p.buyDoneBkt));
+            put("sellBkt", fin(p.sellBkt));
+            put("exitPx", fin(p.exitPx));
+            if (p.exitApprox) o2.exitApprox = 1;
+            if (p.reachLimited) o2.reachLimited = 1;
+            if (p.gap) o2.gap = 1;
+            /* Tier 3 — prediction stamps and the per-bucket traces. */
+            for (const k of ["predH", "predOldH", "predCapture", "predFlow", "predShare",
+                             "predReached", "predReadings"]) put(k, fin(p[k]));
+            if (["ok", "no-reach", "no-series"].includes(p.predBasis)) o2.predBasis = p.predBasis;
+            /* Traces carry IN FULL (user ruling): they are already in
+               localStorage, so this is parity rather than new cost, and a
+               truncated restore that does not say it truncated is the same
+               defect one layer down. `fin` per cell, never truthiness — a
+               bucket legitimately carries `hi: null` (no high print) beside
+               `hv: 0` and `credited: 0` (printed, but nothing on that side),
+               and those are three different readings that must not merge.
+               The slice is production's OWN cap, so it cannot fire on data
+               this app wrote — it exists for a hand-edited file. */
+            const traceRows = (arr, keys, cap) => (Array.isArray(arr) ? arr : []).map(x => {
+              if (!x || typeof x !== "object" || fin(x.t) == null) return null;
+              const row = { t: fin(x.t) };
+              for (const k of keys) if (k in x) row[k] = fin(x[k]);
+              return row;
+            }).filter(Boolean).slice(0, cap);
+            if (Array.isArray(p.buyTrace) && p.buyTrace.length)
+              o2.buyTrace = traceRows(p.buyTrace, ["lo", "lv", "tch", "credited", "full"], BUY_TRACE_CAP);
+            if (Array.isArray(p.sellTrace) && p.sellTrace.length)
+              o2.sellTrace = traceRows(p.sellTrace, ["hi", "hv", "credited"], SELL_TRACE_CAP);
+            /* `pend` is DROPPED, and the drop is a DECISION rather than an
+               omission — do not "fix" it in the next enumeration. It is
+               mid-flight per-bucket accrual state (the open bucket's running
+               lo/lv/hi/hv and touch counters), belonging to a polling session
+               that no longer exists once the file is carried. Restoring it
+               would resume a half-finished thought against tape from a
+               different session. Every field above is a RECORD; pend is not. */
             return o2;
           }).filter(Boolean).slice(-300),
           /* Prospecting ledgers: durable by design (they outlive the shadow
@@ -19743,7 +21057,18 @@ function validateImport(d){
           gateLog: (Array.isArray(d.gateLog) ? d.gateLog : []).map(e => {
             const id = num(e && e.id);
             if (!(id > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String((e && e.d) || "")) || !e.g) return null;
-            return { d: String(e.d), id, g: String(e.g) };
+            const r = { d: String(e.d), id, g: String(e.g) };
+            /* `v` restores in all THREE states or the distinction dies here.
+               hasOwnProperty, so a row that predates the field stays absent
+               rather than gaining a null; and NOT `num()`, which is
+               `Number.isFinite(+v) ? +v : null` and therefore maps null → 0,
+               since `+null` is 0 and 0 is finite. Restoring a backup through
+               num() would silently convert every "this gate has no
+               single-number miss" into "this gate saw zero" — the same
+               falsy-zero class this field was added to make measurable. */
+            if (e && Object.prototype.hasOwnProperty.call(e, "v"))
+              r.v = (typeof e.v === "number" && Number.isFinite(e.v)) ? e.v : null;
+            return r;
           }).filter(Boolean).slice(-4000),
           /* The observed-day ledger restores with the gate ledger it is the
              denominator for. Restoring one without the other would make a

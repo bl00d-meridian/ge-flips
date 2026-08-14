@@ -52,12 +52,19 @@ newest-first, so a new incident takes the next unused number and goes at the top
 ## Which patterns are now law
 
 Counted by tag on 2026-08-13 and ruled the same day. `TEST-SUITE` (34 across eleven named
-faces), `CLAMP` (6), `POOLING` (10), `SILENT-STATE` (16), `COMPOSITION` (26),
+faces), `CLAMP` (6), `POOLING` (10), `SILENT-STATE` (17 with M151), `COMPOSITION` (26),
 `UNOBSERVED` (5), `INTERROGABILITY` (4), `STALENESS` (4), `CAUSALITY` (4), `ORPHAN` (4),
-`LEDGER-ONE-WAY` (3) and `CLAIMS-VS-CODE` (12) are BINDING rules in CLAUDE.md with
-detectors. `RESTRAINT-LIFT` (2) is BINDING on the detector limb (scan 6). `REIMPL` (4) is a
-face of `TEST-SUITE`, not a separate law, and `CLAMP` is both a face and a law in its own
-right — counted once, in `TEST-SUITE`'s 34, and reported separately.
+`LEDGER-ONE-WAY` (3) and `CLAIMS-VS-CODE` (13 with M150) are BINDING rules in CLAUDE.md
+with detectors. `RESTRAINT-LIFT` (2) is BINDING on the detector limb (scan 6). `REIMPL` (4)
+is a face of `TEST-SUITE`, not a separate law, and `CLAMP` is both a face and a law in its
+own right — counted once, in `TEST-SUITE`'s 34, and reported separately.
+
+**A new tag was NOT opened for M150/M151.** *Attribution over an ordered chain* is now a
+BINDING rule in its own right, but as an incident shape both entries are instances of tags
+that already exist — M150 is copy claiming what the code does not compute, M151 is a
+component reporting nothing where it should report that it has nothing. Splitting them out
+would give one property a second home and start its count at one, which the prophylactic's
+second clause exists to prevent.
 
 Still evidence, and why: `SCOPE-NAMING` (2) is the prophylactic at the top of CLAUDE.md,
 which governs how rules are written rather than what any rule says, so it sits above the
@@ -69,6 +76,319 @@ qualifies.**
 ---
 
 # 2026-08-13
+
+### M154 · The scorer raced the fetch it depended on, and a short visit would have scored nothing
+2026-08-14 · found by: the deployment check's first run · pattern: `COMPOSITION`
+
+`doRefresh` runs `loadLatest()` and `loadHour()` concurrently in one `Promise.all`. The
+scorer's call rode the tail of `loadHour`, guarded on `S.latestAt` — an input the OTHER
+branch of the race supplies. At boot the guard could fire before `/latest` resolved, the
+cycle returned null, and the next chance was a full `HOUR_MS` (~5 minutes) away. **The
+archive accrued normally the whole time** (its guard reads only its own branch's data),
+so the instrument's two consumers of the same arrival silently diverged: T0 recorded the
+bucket, the scorer starved. A walk-up shorter than ~5 minutes — the DESIGN LENGTH of a
+walk-up — would have scored nothing, every session, while every freshness number that
+existed looked healthy.
+
+**Every part was individually verified and green.** `[R76.8]` proved loadHour calls the
+scorer; `[R76.3]` proved the bucket guard; `[R77.1]` proved the diff writes. All three
+ran against a stubbed fetch layer where the race cannot exist, because a stub resolves
+instantly and in order. **The defect lived in the concurrency of the real boot, which is
+exactly the layer the user's deployment-check ruling ordered a look at** — *"R77's seeds
+prove the code; one real bucket proves the schedule calls it."* The check's first run
+returned `scoredBucket: 0` against an accrued archive at 111 seconds, which is the whole
+finding in one line.
+
+The fix and its proof: a catch-up `scorerCycleSafe()` in `doRefresh` after the
+`Promise.all`, where both inputs are settled by construction — safe because **a
+guarded-out cycle does not consume its bucket** (input guards precede the bucket-consume),
+so the two call sites cannot double-count; that ordering property is now pinned by
+`[R76.11]`, seeded by hoisting the consume above the guard. The re-run: **DEPLOY-OK,
+first bucket archived, scored and diffed within 2 seconds of boot.**
+
+The rule: **a component guarded on another concurrent branch's output is not wired until
+something exercises the race** — stubbed-fetch assertions structurally cannot, because a
+stub collapses the concurrency the defect lives in. A deployment-layer check against the
+real schedule is that detector, and it caught this on its first run, before the first
+real user session shipped a silent gap.
+
+Substantiated from: `index.html` `doRefresh` (the catch-up and its comment),
+`scorerCycle` guard order, `[R76.11]`; the deployment check's two runs (INCOMPLETE with
+`scoredBucket: 0`, then DEPLOY-OK at 2s), recorded in the conformance map §4.
+
+---
+
+### M153 · A store shipped while the constitution's scope statement still excluded it
+2026-08-14 · found by: user (session-close review after a crash) · pattern: `CLAIMS-VS-CODE`
+
+The reconciliation-diff ledger (`rdiff`, flag 3) was added to the `geflips-t0` IndexedDB
+as its third object store, with retention, failure surfacing, a freshness stream and five
+probe assertions — while CLAUDE.md's one named localStorage exception still read *"scoped
+to the archive and its trip ledger; nothing else may move."* For the gap's lifetime the
+constitution and the code contradicted each other, and the constitution was the stale
+side: a reader enforcing the scope statement against the tree would have filed a correct
+finding against ratified work.
+
+**The crash explains the gap; the ORDER is the lesson.** The store landed in a coding
+pass and the scope widening was queued into a bookkeeping pass behind it — then a crash
+consumed the bookkeeping pass, and the mismatch survived to the next session. Any
+interruption between "code" and "bookkeeping" produces this defect, which means the
+sequencing was wrong, not the luck: **a constitutional scope statement rides the same
+commit as the store it governs**, exactly as a detector rides the same commit as the
+surface it watches. A constitution contradicting the code it governs is the same defect
+class as a surface without its detector — the authority that would catch the next
+violation is the thing that is stale.
+
+**The rule, ruled into the conformance gate:** the gate's *"detectors shipped in the same
+commit as the surfaces they watch"* clause is to be read as covering constitutional scope
+statements too. The clause now says so in place.
+
+Substantiated from: CLAUDE.md's exception paragraph (amended in the same tree as this
+entry); `index.html` `T0_DB_V = 2` / `rdiff` store; the resumed session's integrity
+report, which named the mismatch before any new work started.
+
+---
+
+### M152 · The fixture range that was safe from writes sat inside the deletes, and two working parts vanished it
+2026-08-14 · found by: seeding (the wiring assertion's own first run) · pattern: `TEST-SUITE`
+
+The T0 archive's probe fixtures needed keys no production bucket could collide with, so
+they used epoch timestamps below 1e12 — the year 2001, unreachable by production
+*writes*, whose keys come from data timestamps and wall clocks. The wiring assertion
+(`[R75.5]`) then stubbed the fetch layer, called the real `loadHour`, and read for its
+bucket: **absent.** Diagnostics showed the accrual succeeding (`accrue-ok`, `t0Fails: 0`)
+and the store empty anyway — because `t0Accrue` ends with its own retention prune, and a
+2001 key is not merely old enough to avoid collisions, it is **maximally old**: the prune
+deleted the fixture bucket inside the same accrual call that wrote it.
+
+**No part was broken.** The accrual worked, the prune worked, and their composition
+vanished the fixture — a green write and an empty read, with the failure-counter at zero
+because nothing failed. On the report it looked exactly like the wiring not firing, which
+is what the assertion existed to catch, so the first diagnosis chased the wrong seam.
+
+The rule: **a probe fixture's key range must clear BOTH the write path and the delete
+path, and "unreachable by production" must be checked against every path that touches the
+store, not just the one that creates.** For a store with retention, only the FUTURE range
+clears deletion by construction — production keys never run ahead of now, and retention
+only reaches behind it. The corollary is a new obligation the fix carries: retention
+cannot clean a future-range fixture up, so its cleanup is an explicit keyed delete whose
+result is itself asserted (`[R75.5b]`), or the fixture accumulates across runs in the
+persistent probe profile.
+
+This is the composition class (M-catalog `COMPOSITION`) expressed inside a test fixture:
+each part correct, the defect in the seam — filed under `TEST-SUITE` because the damage
+was a test that could not go green for the right reason, and the tell was a success
+counter reading zero while the data was gone.
+
+Substantiated from: `tools/probe/probe-snippet.html` `[R75.5]`/`[R75.5b]` and their
+comments; REQUIREMENTS.md R75.5; the diagnostic run's output is quoted in the assertion's
+history (this session).
+
+---
+
+### M151 · The never-fed detector was itself never-fed, and its denominator counted chances that did not exist
+2026-08-13 · found by: user (interaction-surface measurement) · pattern: `SILENT-STATE`
+
+`REGIME_BANDS[0]` decided which paper trips *could* have landed in the `loose \ current`
+band — the band the whole ROI-floor question is about — with
+`eligible: p => p.cohort === "scanner"`, and told the reader the rest were
+*"screened at the full ROI floor on entry, so it cannot sit below it"*.
+
+**Both halves were false.** The watchlist path applies **no ROI pre-screen at all**: it
+admits any single-gate near-miss from `P.all`, so the stated reason for its ineligibility
+was not the operative one. And the scanner cohort was **not eligible either** — it screens
+at `SHADOW_LOOSE` and then requires `pass || nearMiss`, while a trip in the band sits at
+`eRoi ∈ [1.0%, 1.2%)` and therefore fails the ROI floor **and** the margin floor, two
+failures, never a near-miss. The slice and gap band apply the same test. **No entry path
+can admit a taxed band item, so the true number of chances was zero.**
+
+**Consequence: `nEligible` reported the scanner's 14 stored trips as chances that were had
+and missed.** A false denominator turns *impossible* into *didn't happen* — evidence of
+absence dressed as absence of evidence, which is the exact inversion this surface exists to
+prevent. The code comment eleven lines above the defect says an empty band over an
+ineligible population *"must not render as 'no trip sits in this band'"*. The predicate it
+relies on to know that was wrong, and the surface had been reporting *current ≡ loose* on
+that basis since it shipped.
+
+**Root cause: eligibility was asserted from a plausible story about entry paths rather than
+computed from the gate arithmetic.** "Only the scanner screens that low" is true and
+irrelevant; what decides membership is whether an item in the band can survive the gate
+chain, and it cannot, because `GATE.taxMult = 3` makes the margin floor a 6.52% ROI floor.
+This is the same root as M150 one layer up — a conclusion drawn from ordering and
+plausibility instead of from the constants.
+
+**Why it is worse than an ordinary wrong constant:** three assertions (`[R68.6]`,
+`[R68.7]`, `[R68.8]`) were written against the wrong predicate and were green, and one of
+them, `[R68.8]`, is titled *"empty by construction reads as NEVER-FED"* — a requirement row
+codifying the false mechanism verbatim. **The detector, its requirement and its test all
+agreed with each other and all three were wrong**, which is what a story-shaped rule buys.
+
+The rule: **a reachability claim is COMPUTED from the constants that decide it, never
+asserted from a description of the paths.** `bandUnreachable(hiPct)` now derives from
+`GATE.roi` and `effRoiFloorPct()` at call time, so moving either constant moves the answer;
+the tax-exempt carve-out is read from `exemptIds` as a property of the item, evaluated
+centrally, never a label an entry path attaches. The old `!nEligible` render branch was
+**deleted** rather than left green — under the corrected predicate its trigger is
+unreachable from its own upstream limits, which is the dead-safeguard shape, and an
+assertion propping up a dead branch is the twelfth face.
+
+Substantiated from: `index.html` `REGIME_BANDS` / `bandEligible` / `regimeSeparators`;
+`audits/SURFACE-2026-08-13-gate-interaction.md` §6;
+`audits/POWER-2026-08-13-roi-floor.md` §4, whose stated mechanism this corrects;
+REQUIREMENTS.md R68.8 (superseded in place) and R73.3–R73.4.
+
+---
+
+### M150 · Two constants set independently made one gate arithmetically inert, and four conclusions were drawn off it
+2026-08-13 · found by: user (following the arithmetic of a claim that could not be supported)
+pattern: `CLAIMS-VS-CODE`
+
+`GATE.roi = 1.2` and `GATE.taxMult = 3` were set at different times for different reasons.
+Their ratio makes the margin floor's tax limb a sustained-ROI floor in disguise at
+`taxMult·τ/(1 − τ − taxMult·τ)` = `0.06/0.92` = **6.5217%**, five and a half times the
+stated floor. **Every taxed item below 6.52% ROI is benched by the margin floor whatever
+the ROI floor says** — including the entire 1.2%–6.52% range the ROI floor passes. Measured
+over 4,497 live items: **2,358 fail the ROI floor and 2,358 of 2,358 also fail the margin
+floor.** The ROI floor's sole-failure region is empty at every price.
+
+Because the ROI floor sits one slot **ahead** of the margin floor in `GATE_CHAIN_ORDER`, it
+takes the headline on every one of those items, and `DB.gateLog` records only `fails[0]`.
+So the ledger reported the ROI floor as the busiest gate in the book while it was never the
+binding one.
+
+**Four conclusions had already been drawn off the artifact, and the user struck all four:**
+
+1. *"Sole blocker in 14 of 19 sole-blocked candidate-days, 74%"* — **0% by construction.** A
+   one-gate ledger day means the headline never changed that day, not that one gate was
+   failing. On the same ledger, 127 of 162 ROI-floor candidate-days also carry a
+   margin-floor row, which is the headline flipping *within* the day.
+2. *"The volume floor is never the sole blocker, so loosening it would free nothing"* —
+   **inverted.** It is the most common true sole blocker there is (280 market-wide, 66 of
+   132 paper trips); it reads as never-sole because it sits second-to-last in the chain and
+   can barely ever be a headline.
+3. *"Current ≡ loose in the paper book, so the floor looks right"* — the band is unfeedable
+   (M151); the equality is an identity.
+4. The ⚑ **"two biggest killers this refresh"**, the surface the user reads most. A ranking
+   of first-fail counts is a ranking of chain positions.
+
+**Root cause: no rule anywhere stated the relationship, so no detector could read code
+against it.** The integration audit's fifteen scans all check code or copy against a STATED
+rule; this was arithmetic between two numbers nobody had ever put beside each other. It was
+found by trying to verify a claim that could not be supported and following the algebra.
+
+The rule, now BINDING: **an ordered rule chain that reports "the reason" is reporting
+position in the ordering; per-rule attribution may not be read as causal without an
+interaction surface.** Detector: scan 16, plus `effRoiFloorPct()` extracted and asserted at
+the source. The methodological half — **arithmetic on the constants, not a pattern match on
+the code** — is DOCTRINE, because it names a gap rather than a rule.
+
+**Neither constant moved.** The ROI-floor loosening experiment was CLOSED rather than
+benched: it admits 0 of the 41 live band items.
+
+Substantiated from: `audits/SURFACE-2026-08-13-gate-interaction.md` (full measurement);
+`audits/POWER-2026-08-13-roi-floor.md` §3 and §5, corrected in place; `index.html`
+`effRoiFloorPct` / `marginNeedFor` / `GATE_CHAIN_ORDER`; REQUIREMENTS.md §73.
+
+---
+
+### M149 · A cached replay of a 51-agent run is not free, and it cost both syntheses
+2026-08-13 · found by: use · pattern: `TEST-SUITE`
+
+A 51-agent census finished with one agent dead — Job A's synthesis, lost to a mid-response
+connection failure. The documented repair is to relaunch with `resumeFromRunId`, where
+*"agents whose (prompt, opts) are unchanged replay from cache"*, so the obvious reading is
+that resuming re-runs the one dead agent and replays the other fifty for nothing.
+
+**It re-ran far more than the dead agent and hit the account's session limit.** Thirteen
+agents died: both syntheses, plus eleven Job B finders and verifiers that had already
+succeeded on the first run. The resume therefore ended with *strictly less* than it started
+with — Job B's synthesis had been intact and was now gone — and no further agent work was
+possible for the rest of the session.
+
+No data was lost, only because each run writes its own output file and the first run's
+results were still readable, plus the per-agent journal. Had the resume overwritten in
+place, the intact Job B synthesis would have been destroyed by an operation performed to
+*recover* a different one.
+
+**Root cause: a cost model inferred from a tool description rather than measured.** "Replay
+from cache" describes what happens to the agents that hit cache and says nothing about how
+many will. On a large fan-out the ones that miss can exceed a session budget on their own.
+
+The rule: **before resuming a large fan-out, treat the replay as a fresh run for budgeting,
+and confirm the surviving artefacts are readable from the completed run first.** Where the
+only missing piece is an aggregation over results you already hold — a synthesis, an
+ordering, a dedupe — **do it by hand.** Job A's synthesis was assembled from the journal
+with no agents at all, and anchoring by text rather than by line made it *more* accurate
+than the agent version would have been.
+Substantiated from: workflow run `wf_11e0195c-3ea` failure list; task notifications for
+`w82q5njwx` and `wv2joxxiw`; `audits/CENSUS-2026-08-13-jobA-verification.md`.
+
+### M148 · A rule about touch gaps is tested only where there are no touches
+2026-08-13 · found by: audit scan · pattern: `TEST-SUITE`
+
+The die-off auto-void rule reads, in production and in its own rendered copy,
+*"recovered inside one touch gap"* (`index.html:3022`, `12112`). Every assertion covering
+it — `[R43.5]`, four of them — runs inside a fixture that sets `DB.touchWindows = []`, the
+explicitly-empty schedule. With no schedule, `scheduleOn()` is false, `gapHoursAt()` returns
+the flat `DB.fillHorizonH` fallback for any timestamp, and the concept the rule is written
+in terms of **does not exist**.
+
+So the rule is exercised exclusively in the one configuration where its own subject is
+absent. This is the twelfth face — an assertion reaching its subject by a call path
+production does not have — landing on a BINDING behaviour rather than on a guard.
+
+The same fixture line puts the whole first 622 lines of the suite on that fallback:
+allocator sizing, quote-leg participation caps, quote-leg aging and die-off voiding are all
+asserted against a constant 4h, never against `TOUCH_DEFAULT = [7,12,17,21.5]`, which is the
+product's default. The horizon PRIMITIVES do have real-schedule coverage — §40, §57 and §61
+each set a genuine schedule, and §61 even compares two — but the BEHAVIOURS that consume
+them do not.
+
+The rule: **a rule written in terms of a mechanism must be asserted with that mechanism
+present.** Where a fixture disables a mechanism for determinism, the behaviours that depend
+on it need a second block that turns it on, and the fixture comment should name which
+behaviours it is thereby leaving uncovered rather than pointing vaguely at "the cadence
+block".
+Substantiated from: `tools/probe/probe-snippet.html:65`; `index.html:2858, 2895, 3022, 12112`;
+Job A census slice 1; `audits/CENSUS-2026-08-13-jobA-verification.md`.
+
+### M147 · `planCap` has zero direct coverage, and it defeated three separate assertions
+2026-08-13 · found by: audit scan · pattern: `CLAMP`
+
+**`planCap` appears four times in `index.html` and zero times in the entire 958-assertion
+probe suite.** It is the allocator's sizing clamp — the term named FIRST in scan 9's own
+enumeration of clamps to check — and nothing asserts it directly.
+
+The consequence is not one missing test. It is that **three separate findings this session
+all route through the same untested clamp**, and each was diagnosed and filed as a defect in
+the assertion rather than in the clamp:
+
+- **M118 / `shadowHorizonUnits`** — paper sizing reverting from the fixed horizon to the
+  schedule changed no output at all, because `planCap`'s buy-limit clamp pinned both
+  readings to the same number.
+- **`probe:111`** — the assertion written to REPAIR M118 by asserting the horizon term "at
+  the source" passes `qty = 1e9`, a value no production call site produces, precisely to
+  neutralise the clamp. Production's real call passes `planCap`, which on that fixture is
+  always below the horizon term, so the extracted term is reachable only by an argument
+  production never uses. The extraction stopped one layer short: the `Math.min` is still
+  inside the extracted function.
+- **`probe:116`** — labelled "uncapped item funded full", asserting the per-item cap while
+  the unclamped size is six times larger. The label is false *because* the clamp is what
+  the number actually measures.
+
+**The assertions are symptoms; the untested clamp is the cause.** Each was found separately,
+by a different face, and filed as its own weak-assertion incident — which is how the
+underlying gap stayed invisible: a clamp nobody asserts produces a stream of assertions that
+each look individually repairable.
+
+The rule: **a clamp that gates money must be asserted directly — its inputs, its binding
+side, and which input pins the output for a given fixture — before any assertion downstream
+of it is trusted.** Scan 9 enumerates clamps and checks the assertions beneath them; it does
+not check that the clamp itself has one. That is the gap, and it is why the enumeration kept
+returning repairable-looking symptoms.
+Substantiated from: `grep -c planCap` over `index.html` (4) and
+`tools/probe/probe-snippet.html` (0); CLAUDE.md scan 9; MISTAKES.md M118;
+`audits/CENSUS-2026-08-13-jobA-verification.md`.
 
 ### M146 · The collector's silence was unfalsifiable, and it was reported as failure twice
 2026-08-13 · found by: user, twice · pattern: `SILENT-STATE`
