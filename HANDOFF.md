@@ -1,8 +1,46 @@
-# QUEUE — session close, 2026-08-14 (fourth session: the two retirements + the sleeve landing)
+# WAITING POSTURE — everything is pushed; the next builds are clock- or ruling-triggered
 
-**Read this before starting anything.** Stage 1e + the log-flip landing + the mm bench
-are committed and pushed (`8bf841e`). The working tree carries **the two retirements
-(dormancy lane) and the sleeve-form landing fix**, uncommitted — the record is
+**Baseline: `f0bf448` on main (Pages deploys from it), clean tree.** Nothing is
+mid-flight. Do not start speculative work — each item below starts from this baseline
+with its own conformance stanza when its trigger arrives.
+
+**The three clocks (no code moves them):**
+
+1. **Chart gates — N of 7 OBSERVED days from 1b** (Razer uptime gates it). When day 7
+   lands, the chart-wiring build runs; the armed era-fact tripwire
+   (`marketStatsFor(id).tr === null` inside `[R76.9]`) goes red when the wiring lands,
+   and that stage's stanza must account for the `fundedNoChart`/`ncN` transition.
+2. **Capture grading — waits on the operator's real calibration flips** inside the 36h
+   tape window, on frontier-class items. `[R78.17]` pins
+   `SCORER_CAPTURE_GRADED = false` and forces the accounting when it flips. Until then
+   every ranking surface says "cannot rank yet" in the ruled words. b=100 stays
+   deferred on exactly this.
+3. **Reconciliation history — `rdiff` accrues every scored bucket**; its ruled reader
+   is the cutover gate, and scan 2 re-reports it as STAGED until that gate consumes it.
+
+**The cutover gate (deployment-class, the user rules when):** the plan's candidate pool
+switches from watchlist admission to the scorer's control cell only behind the three
+ruled requirements — reconciliation history explained (every rdiff disagreement
+resolved as extraction defect or understood difference), an integration-audit walk of
+the new surfaces, and an adversarial pass over cutover-critical assertions at the
+`[R7.3]` standard (prove guards red before trusting them green). After cutover proves
+out: scanner + admission machinery retire (the remaining 11 EXPIRE-AT-RETIREMENT
+findings and the paper book's own retirement land there); MM un-bench decision; frozen
+`invTarget` re-keys to pinned-item state or retires by ruling.
+
+**Anytime items (no clock, no ruling needed to start):** scan 14's first run (the
+label-claim scan, written into CLAUDE.md, never executed); the production-anchor
+`codeQuote` schema for future censuses.
+
+**Queued behind capture calibration:** the sleeve integration stages — the conformance
+gate applies identically, and the conviction-boundary detector ships with the first
+planner surface. Only the 90d retention extension may ride early.
+
+---
+
+# SESSION CLOSE — 2026-08-14 (fourth session: the two retirements + the sleeve landing)
+
+**Committed and pushed in `f0bf448`** — the record is
 `audits/RETIRE-2026-08-14-dormancy.md`. Suite at close: **PROBE-PASS — 1,061
 assertions, BOTH viewports, pairing clean both directions, 376 requirement ids; 15
 discriminating seeds this session (S1–S15), all bit, one at a time, restore-green
