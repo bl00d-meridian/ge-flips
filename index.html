@@ -1582,6 +1582,9 @@ const S = {
   scoredBucket: 0, scorerIdSets: new Map(),   // universe scorer: one pass per 5m bucket; runtime Set mirror of each cell's distinct ids
   t0LastBucket: 0,   // last bucket the T0 archive actually wrote (session-scoped; the freshness panel's honest age)
   rdiffLastBucket: 0,   // last bucket the reconciliation diff recorded (flag 3; session-scoped, same discipline)
+  t1LastBucket: 0,   // last bucket the fill sim opened trips for (stage 1d; session-scoped, same discipline)
+  t1Bucket: 0,       // fill-sim bucket guard — SEPARATE from scoredBucket so a held/guarded-out trip pass does not consume the scorer's bucket or vice versa (the R76.11 property, one guard per consumer)
+  t1Pending: null,   // a frontier held while the open-trip carry loads at boot — held, never dropped; the catch-up runs on load resolution
   lastPlanPicks: null, lastPlanAt: 0,   // the plan's funded ids, stamped at buildPlan — null means never built this session, [] means built-and-funded-nothing (different claims)
   vol5Low: new Map(),   // id → consecutive /5m refreshes with a real (≥5-unit) sample under the volume floor
   latestAt: 0, hourAt: 0, mapAt: 0,
@@ -2018,7 +2021,7 @@ async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.da
    FAILURE IS SURFACED, NEVER SWALLOWED: a run of accrual failures warns on
    the standing warn() channel — an archive that silently stops accruing is a
    stalled generator, and its gaps would read as market silence. */
-const T0_DB_NAME = "geflips-t0", T0_DB_V = 2;   // v2: + "rdiff" (flag 3, Aug 14 2026)
+const T0_DB_NAME = "geflips-t0", T0_DB_V = 3;   // v2: + "rdiff" (flag 3, Aug 14 2026); v3: + "t1"/"t1open" (stage 1d trip ledger — closed trips and the open-trip carry; one ledger, two stores, both inside the constitution's named exception)
 const T0_RET_5M_MS = 72 * 3600e3;     // covers the longest horizon + reconstruction slack
 const T0_RET_1H_MS = 8 * 86400e3;     // 7d trend window + one day of slack
 const RDIFF_RET_MS = 90 * 86400e3;    // the cutover's plumb line — kept LONG on purpose
@@ -2033,6 +2036,8 @@ function t0Open(){
       if (!d.objectStoreNames.contains("m5")) d.createObjectStore("m5");
       if (!d.objectStoreNames.contains("h1")) d.createObjectStore("h1");
       if (!d.objectStoreNames.contains("rdiff")) d.createObjectStore("rdiff");
+      if (!d.objectStoreNames.contains("t1")) d.createObjectStore("t1");
+      if (!d.objectStoreNames.contains("t1open")) d.createObjectStore("t1open");
     };
     rq.onsuccess = () => res(rq.result);
     rq.onerror = () => { t0dbP = null; rej(rq.error); };
@@ -2285,10 +2290,21 @@ function scorerCycle(){
   const planPicks = Array.isArray(S.lastPlanPicks) ? S.lastPlanPicks : null;
   const planFresh = planPicks != null && S.lastPlanAt && (Date.now() - S.lastPlanAt) < 10 * 60e3;
   const missing = [];
+  /* STAGE 1d — the frontier, collected in the same pass: every item at least
+     one cell funds this cycle, with the cells that fund it. Membership is
+     stamped AT BIRTH on the trips this feeds (partition-at-birth: a cell that
+     starts funding an item mid-trip joins at the next reopen, because its own
+     simulated placement could only have happened at the cycle it first
+     funded — the information-horizon rule applied to membership). THIS is the
+     single owner of the no-trips-on-blacklist promise (row 23c): a bl item
+     never enters the frontier, so the trip layer cannot see it — one owner,
+     stated here, seeded at the trip layer. */
+  const frontier = [];
   for (const it of S.items){
     const st = marketStatsFor(it.i);
     if (!st) continue;
     const bl = isBlk(st.id);   // operator state, read at the CYCLE layer only — never in the core or the stats builder
+    let fundedBy = null;
     for (const c of cells){
       const fails = marketGateFails(st, c.cfg);
       if (c.control && planFresh && planPicks.includes(st.id) && fails.length)
@@ -2296,7 +2312,8 @@ function scorerCycle(){
       if (fails.length) continue;
       if (bl){
         /* THE CANARY (row 23): counted, never funded — and never into the
-           ids stock, the noChart split, or the reconciliation pass set. A
+           ids stock, the noChart split, the reconciliation pass set, or the
+           frontier (no trips, no nets, ever — the veto's surviving core). A
            loose config that would fund a known-bad item is evidence against
            the config. */
         c._blFunded++;
@@ -2306,6 +2323,8 @@ function scorerCycle(){
       c._funded++;
       if (scorerNoChart(st)) c._fundedNoChart++;
       if (c.control) ctlPass.push(st.id);
+      if (!fundedBy) fundedBy = [];
+      fundedBy.push(c.hash);
       const r = scorerCell(c.hash, c.cfg);
       const set = scorerIdSet(c.hash, r);
       if (!set.has(st.id)){
@@ -2313,6 +2332,7 @@ function scorerCycle(){
         else { set.add(st.id); r.ids.push(st.id); r.distinct = r.ids.length; }
       }
     }
+    if (fundedBy) frontier.push({ st, cells: fundedBy });
   }
   for (const c of cells){
     const r = scorerCell(c.hash, c.cfg);
@@ -2347,10 +2367,16 @@ function scorerCycle(){
     plan: planFresh ? { picksN: planPicks.length, missing } : null,
     planWhy: planFresh ? null : (planPicks == null ? "plan never built this session" : "last plan build is stale (>10m)")
   });
+  /* STAGE 1d — the fill sim opens trips at the funded edge, same pass, same
+     bucket. Safe-wrapped separately: a trip layer that dies must not take
+     scoring down with it, and vice versa. */
+  const t1 = scorerTripOpenSafe(frontier, S.min5At, hour);
+  try { scorer1dRulingsLog(); } catch(e){}   // the ruled constants, decision-logged once (by: user)
   save();
   return { bucket: S.min5At, hour,
     rows: cells.map(c => ({ hash: c.hash, control: c.control, funded: c._funded, blFunded: c._blFunded })),
-    rdiff: { extraN: ctlPass.filter(id => !watchIds.has(id)).length, plan: planFresh ? missing.length : null } };
+    rdiff: { extraN: ctlPass.filter(id => !watchIds.has(id)).length, plan: planFresh ? missing.length : null },
+    t1 };
 }
 /* Failure surfaced at the term, the t0FailNote pattern: a scorer that stops
    is unobserved cycles, never a quiet market. */
@@ -2603,6 +2629,7 @@ async function doRefresh(opts = {}){
        does not consume its bucket — [R76.11]), so the two call sites can
        never double-count. */
     scorerCycleSafe();
+    scorerTripTickSafe();   // fill sim observes every refresh — fills only accrue while watching (the paper book's own discipline, on the instrument's trips)
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
@@ -3433,7 +3460,7 @@ function marketStatsFor(id){
   const volHigh = H ? (H.highPriceVolume || 0) : 0, volLow = H ? (H.lowPriceVolume || 0) : 0;
   const vol = volHigh + volLow;
   const tHigh = L ? (L.highTime || 0) : 0, tLow = L ? (L.lowTime || 0) : 0;
-  return { id, buy, tax, exempt: exemptIds.has(id),
+  return { id, buy, sell, tax, exempt: exemptIds.has(id),   // `sell` added stage 1d — the fill sim's ask reads it; the pure core never does
     eMargin, eRoi: buy > 0 ? eMargin / buy * 100 : null,
     skewMin: (tHigh && tLow) ? Math.abs(tHigh - tLow) / 60 : null,
     imbalance: vol > 0 ? volLow / vol : null,
@@ -6440,6 +6467,15 @@ function depProposalFor(g, arr){
    observed share of the horizon. */
 const SHADOW_LOOSE = 1 / 1.2, SHADOW_TIGHT = 1.2;   // ROI-floor one notch each way (1.2% → 1.0% / 1.44%); other gates unchanged, stated wherever regimes render
 const SHADOW_MAX_OPEN = 40, SHADOW_OBS_CAP = 10 * 60e3;
+/* ═══ OBS ACCRUAL, EXTRACTED (stage 1d — census probe:2505, the shared fill
+   core). The per-tick observation increment: elapsed-since-last-look, floored
+   at 0 and capped so an observation GAP cannot masquerade as watched time.
+   Extracted because the cap arm was asserted only through a fixture whose
+   5-minute gap could never reach the 10-minute cap — the dead-relationship
+   shape — so the term is named and asserted directly, at the constant, and
+   both ticks (paper book and the 1d fill sim) route through it. `lastObs || now`
+   deliberately: a record with no last-look accrues nothing this tick. */
+const obsAccrual = (now, lastObs, cap) => Math.min(Math.max(0, now - (lastObs || now)), cap);
 const shadowPart = () => Math.min(1, Math.max(0.1, (Number.isFinite(DB.shadowPartPct) ? DB.shadowPartPct : 50) / 100));
 const shadowPartPct = () => Math.round(shadowPart() * 100);
 /* The 100%-participation reading per closed leg: did the tape (capture-capped
@@ -7194,7 +7230,13 @@ function reconReplay(p, pts, from, to){
   for (const b of pts){
     if (b.t < from || b.t > to) continue;
     covered += M5_MS;
-    if (p.state !== "open") break;
+    /* A `state !== "open"` break used to live here and could never fire
+       (census probe:4963, stage 1d): the only caller iterates shadowOpen(),
+       and every in-loop state mutation below is followed immediately by
+       `break` — so the caller owns the only-open-trips promise, stated there,
+       and the dead guard is deleted rather than kept as decoration. Worse
+       than decoration, in fact: it sat AFTER the coverage credit, so if it
+       ever HAD fired it would have credited five minutes to a closed trip. */
     const bt = b.t;
     /* THE CAUSALITY GUARD THAT USED TO LIVE HERE IS GONE (user ruling, Aug 13
        2026 — S11-F1). It read `if (bt < p.t) continue;` and could never fire:
@@ -7257,6 +7299,11 @@ function reconReplay(p, pts, from, to){
 async function shadowRecover(){
   if (S.reconBusy) return null;
   const now = Date.now();
+  /* THIS FILTER OWNS THE ONLY-OPEN-TRIPS PROMISE for reconReplay (stage 1d,
+     census probe:4963): the replay mutates whatever it is handed as the live
+     tick would, so a closed trip must never reach it — and the guard that
+     pretended to enforce that inside the loop was unreachable decoration.
+     One layer owns the promise; it is this line. */
   const open = shadowOpen();
   if (!open.length) return null;
   /* The gap is measured per trip: each carries its own lastObs. */
@@ -7321,7 +7368,17 @@ async function shadowRecover(){
      lenient   — everything that touched, at full. "Possibly reachable."
    lenient ≥ operative ≥ strict always, so the operative outcome is bracketed
    by two honest bounds rather than asserted alone. */
-function reachCredit(px, mine, vol, side, touched){
+/* ═══ THE PURE CREDIT TERM (stage 1d — the shared fill core) ═══════════════
+   `fillCredit` is the credit arithmetic with capture and participation as
+   ARGUMENTS — the 1a purity surgery applied to the fill tier. It reads
+   nothing ambient, so the instrument can run it at its own capture points
+   (the three-point probe) and participation levels while the paper book
+   keeps its constants; one implementation, N configurations, and the probe
+   asserts the TERM instead of re-deriving its arithmetic (census probe:3701,
+   probe:5976, probe:6052 — the reimplementation tell, closed by extraction).
+   `reachCredit` is the paper book's binding of it and keeps its exact
+   behaviour. */
+function fillCredit(px, mine, vol, side, touched, capture, part){
   const v = Number(vol) || 0;
   if (!(v > 0) || !(mine > 0)) return { any: false, strict: 0, oper: 0, lenient: 0 };
   const beyond = px != null && (side === "buy" ? px < mine : px > mine);   // past my price: the queue cleared
@@ -7336,12 +7393,26 @@ function reachCredit(px, mine, vol, side, touched){
      The price dipped to me briefly; some prints reached me, most did not. */
   const at = !beyond && (px === mine || !!touched);
   if (!beyond && !at) return { any: false, strict: 0, oper: 0, lenient: 0 };
-  const tape = Math.max(1, Math.floor(v * GATE.capture));
+  const tape = Math.max(1, Math.floor(v * capture));
   return { any: true, beyond, at,
     strict: beyond ? tape : 0,
-    oper: beyond ? tape : Math.max(1, Math.floor(tape * shadowPart())),
+    oper: beyond ? tape : Math.max(1, Math.floor(tape * part)),
     lenient: tape };
 }
+function reachCredit(px, mine, vol, side, touched){
+  return fillCredit(px, mine, vol, side, touched, GATE.capture, shadowPart());
+}
+/* ═══ SELL-BUCKET ELIGIBILITY, EXTRACTED (stage 1d — census probe:2543) ════
+   The whole conjunction that decides whether a rolled bucket may credit the
+   SELL leg: the buy must be done, the bucket must start at or after it
+   finished, the bucket that completed the buy can never also fill the sell,
+   and a bucket credits once. It was delivered by if/else-if ordering in the
+   tick — the named guard was unreachable on the tick that completes the buy —
+   so the predicate is named, both ticks route through it, and the assertion
+   points at the term. Works on any record carrying the four fields, which is
+   what lets the 1d fill sim's per-capture variants share it. */
+const sellBucketEligible = (leg, q) => !!leg.buyDone && q.bkt >= leg.buyDone
+  && q.bkt !== leg.buyDoneBkt && leg.sellBkt !== q.bkt;
 /* Apply one bucket's credit to a leg, all three readings together. */
 function shadowCredit(p, side, cr){
   const q = p.qty;
@@ -7398,7 +7469,7 @@ function shadowTick(){
        back to the old global, which is what they actually ran against. */
     const H = legHorizonH(p) * 3600e3;
     const L = S.latest[p.itemId];
-    const dt = Math.min(Math.max(0, now - (p.lastObs || now)), SHADOW_OBS_CAP);
+    const dt = obsAccrual(now, p.lastObs, SHADOW_OBS_CAP);
     p.obsMs += dt; p.lastObs = now;
     if (dt > 0){ p.obsLive = (p.obsLive || 0) + dt; if (p.reconMs) p.grade = "mixed"; else p.grade = "live"; }
     if (!L || sameCycle){ continue; }
@@ -7435,7 +7506,7 @@ function shadowTick(){
             p.buyTrace.push({ t: q.bkt, lo: q.lo, lv: q.lv, tch: q.touchBuy ? 1 : 0,
               credited: cr.oper || 0, full: cr.lenient || 0 });
           if (cr.any){ p.buyBkt = q.bkt; shadowCredit(p, "buy", cr); changed = true; }
-        } else if (p.buyDone && q.bkt >= p.buyDone && q.bkt !== p.buyDoneBkt && p.sellBkt !== q.bkt){
+        } else if (sellBucketEligible(p, q)){
           const cr = reachCredit(q.hi, p.ask, q.hv, "sell", q.touchSell);
           /* SELL-LEG TRACE (Aug 12 2026). The live book previously kept no
              per-bucket evidence at all — `p.pend` is nulled once credited —
@@ -7571,6 +7642,509 @@ function shadowTick(){
   DB.shadowDivLog = DB.shadowDivLog.slice(-31);
   if (changed) save();
 }
+
+/* ═══ STAGE 1d — THE FILL SIM ON THE FRONTIER (build ruled Aug 14 2026) ════
+   Trips per (item × participation level) at the ruled 6h measurement horizon,
+   opened at the funded edge — an item at least one cell funds this cycle —
+   and SHARED across cells: the cells funding the item at open are stamped on
+   the trip at birth (`cells`), and the trip's outcome rolls into each of them
+   at close. A cell that starts funding an item mid-trip joins at the next
+   reopen, because its own simulated placement could only have happened at the
+   cycle it first funded (design §4; the information-horizon rule applied to
+   membership).
+
+   THE CAPTURE PROBE IS THREE LIFECYCLES PER TRIP, not three readings of one.
+   Capture moves how fast the buy completes, buy completion anchors the sell
+   window, and the sell window decides the outcome — so each capture point
+   {0.05, 0.15, 0.30} runs its own legs against the same tape (`vars`). Cell
+   economics land under keys that carry horizon, participation, capture and
+   fill-model version (`h6|p50|c15|fv1`), so no aggregate can pool across any
+   of them. Within each lifecycle the three reach readings accrue as bounds:
+   strict (proven), operative (drives state and net), lenient (possible) —
+   the paper book's bracket, unchanged.
+
+   WHAT TRANSFERS UNCHANGED from the paper book (triage 2026-08-14): the
+   causality rules (a leg is credited only by a bucket that started at or
+   after the leg was placed; deferred bucket credit; once per bucket per leg;
+   no resolution in the opening cycle), the observation discipline (obsAccrual
+   capped, unobserved horizons are holes, the observed-share floor's three
+   named states), forced exits priced at the horizon, and the provenance
+   stamps. What deliberately does NOT transfer: cohorts, cooldowns, open
+   caps, eviction, touch-schedule horizons, operator sizing — sampling rules
+   for a capped book, and an exhaustive instrument does not sample (§6).
+
+   SIZING CONVENTION, stated and stamped: qty = ONE GE buy limit (`sz:
+   "lim1"`), the market's own per-window cap and the one size constant that
+   reads no operator state. It is a measurement convention, not a strategy
+   parameter — it gates nothing and funds nothing — and it is stamped on
+   every trip so a changed convention partitions rather than pools.
+
+   NO TRIPS ON BLACKLISTED ITEMS, EVER (row 23c): the frontier assembly in
+   scorerCycle is the single owner of that promise — a bl item never reaches
+   this layer. An item blacklisted MID-trip voids the trip at that cycle
+   (`voided-bl`, counted per cell, no nets): accruing further P&L on a vetoed
+   item would be the counterfactual-evidence shape the precedent forbids.
+   Pump flags get the OPPOSITE treatment (row 15, pre-ruled): stamped at
+   birth, never excluded, decomposed in every econ bucket.
+
+   NO PROJECTED PROFIT ANYWHERE. `net`/`netS`/`netL` are simulated sums at
+   the operative/proven/possible bounds, for comparison against the control
+   cell at stated bounds only. Reconstruction from T0 is the ruled backstop
+   and is DEFERRED with its reason on record: the archive accrues only while
+   the app is open, so a closed-browser gap has no archive to replay — the
+   honest treatment of such a gap is an unobserved hole, which forward
+   accrual already produces; T0 replay's real use is retroactive evaluation
+   of a config added later, which lands with 1e's read paths. */
+const SCORER_FILL_V = 1;                  // the trip layer's own fill-model version — parameterized capture/participation is a different measurement from the paper book's FILL_MODEL_V, and the two are never pooled
+/* THE MEASUREMENT HORIZON SET — RATIFIED {6h, 9.5h} (user ruling, Aug 14 2026,
+   stage 1d report §6a). The 9.5h variant answers the overnight question the
+   retired gap-labelling never could, and answers it honestly: horizon is in
+   the trip key and the econ key, so the comparison that inverted twice under
+   duration thresholds is a stamped population against a stamped population. */
+const SCORER_HORIZONS = [6, 9.5];
+const SCORER_PARTS = [0.25, 0.5, 1];      // ruled participation levels — confirmed with the horizon ruling; a trip dimension
+const SCORER_CAPTURES = [0.05, 0.15, 0.3];// the BINDING capture probe points — three lifecycles per trip
+const SCORER_CAPTURE_REF = 0.15;          // the reference point (the paper book's inherited, ungraded constant) — concentration reads here; ranking stability reads all three
+/* THE CONCENTRATION CEILING — RATIFIED 0.5 (user ruling, Aug 14 2026), with
+   the measurement specified: the TOP MOVER'S share of the cell's GROSS
+   movement, |net| terms — a share of a negative net is not a proportion, and
+   the gross denominator keeps concentration measurable on losing cells, which
+   is where it matters most. Rank-disqualifier ONLY, never a data exclusion.
+   Grounded in the 103% case law: every retracted finding in this project was
+   carried by one or two trips. */
+const SCORER_CONC_CEIL = 0.5;
+/* CAPTURE STATUS — RATIFIED AS THE RENDERED VERDICT (user ruling, Aug 14
+   2026): the probe detects rank-instability from birth; it validates no
+   capture point until real flips exist on frontier-class items. Until then
+   the instrument says "cannot rank yet", in those words, wherever a ranking
+   would render. This constant flips ONLY by ruling, once calibration flips
+   inside the tape window exist — and it is pinned by an assertion (the
+   staging practice's fourth rule), so the grading era cannot arrive without
+   turning something red and forcing the accounting. */
+const SCORER_CAPTURE_GRADED = false;
+function scorerRankReadiness(){
+  if (!SCORER_CAPTURE_GRADED) return { ready: false,
+    why: "cannot rank yet — capture is ungraded until real flips exist on frontier-class items; "
+       + "the dependency is the operator's calibration flips inside the tape window" };
+  return { ready: true, why: null };
+}
+const SCORER_OBS_CAP = SHADOW_OBS_CAP;    // one home for the observation-gap cap
+const T1_RET_MS = 30 * 86400e3;           // closed-trip ledger retention; econ buckets outlive it and 1e declares the difference where it renders
+const T1_FAIL_WARN = 3;
+let t1Loaded = false, t1Fails = 0, t1Seq = 0, t1PersistBusy = false;
+function t1FailNote(fails, errMsg){
+  if (fails < T1_FAIL_WARN) return null;
+  return "⚠ The fill sim has failed " + fails + " times in a row — "
+    + (errMsg ? String(errMsg).slice(0, 120) : "error")
+    + ". Its trips' coverage has a gap starting now: unobserved trip time, never evidence of no fill.";
+}
+function scorerTripKey(id, part, hz){ return id + "|" + part + "|" + hz; }
+function scorerTrips(){ if (!S.scorerTrips) S.scorerTrips = new Map(); return S.scorerTrips; }
+const scorerVarNew = cap => ({ cap, buyQ: 0, buyQStrict: 0, buyQFull: 0, sellQ: 0, sellQStrict: 0, sellQFull: 0,
+  buyBkt: 0, sellBkt: 0, buyDone: 0, buyDoneBkt: 0, state: "open",
+  net: null, netS: null, netL: null, exitPx: null, exitApprox: 0 });
+/* Apply one bucket's credit to one capture-lifecycle's leg — the shadowCredit
+   clamp structure with the trip's qty as the ceiling. */
+function scorerVarCredit(v, side, cr, qty){
+  if (side === "buy"){
+    v.buyQ = Math.min(qty, v.buyQ + cr.oper);
+    v.buyQStrict = Math.min(qty, v.buyQStrict + cr.strict);
+    v.buyQFull = Math.min(qty, v.buyQFull + cr.lenient);
+  } else {
+    v.sellQ = Math.min(qty, v.sellQ + cr.oper);
+    v.sellQStrict = Math.min(qty, v.sellQStrict + cr.strict);
+    v.sellQFull = Math.min(qty, v.sellQFull + cr.lenient);
+  }
+}
+/* All three nets from one formula: sold units at the ask, the unsold
+   remainder of what was bought at the exit price, cost at the bid — tax
+   netted on every sale leg. Covers filled (rem 0), forced-exit and partial;
+   unfilled/unobserved never reach it (nothing bought at the operative bound
+   implies nothing at the proven one, and possible ≥ operative ≥ proven can
+   only be nonzero together per fillCredit). */
+function scorerVarNets(v, p, exitPx){
+  const px = exitPx != null ? exitPx : p.bid;
+  const netOf = (bought, sold) => {
+    const s = Math.min(sold, bought), rem = Math.max(0, bought - s);
+    return s * (p.ask - geTax(p.ask, p.id)) + rem * (px - geTax(px, p.id)) - bought * p.bid;
+  };
+  v.net = netOf(v.buyQ, v.sellQ);
+  v.netS = netOf(v.buyQStrict, v.sellQStrict);
+  v.netL = netOf(v.buyQFull, v.sellQFull);
+  v.exitPx = exitPx != null ? Math.round(exitPx) : null;
+}
+/* ═══ OPEN AT THE FUNDED EDGE — one pass per bucket, held at boot ══════════
+   The open-trip carry loads from IndexedDB asynchronously at boot; a frontier
+   arriving before it resolves is HELD (S.t1Pending) and run by t1RunPending
+   the moment the carry lands — held, never dropped, and a held pass does not
+   consume its bucket (the R76.11 property, on this layer's own guard). */
+function scorerTripOpen(frontier, bkt, hour){
+  if (!bkt) return null;
+  if (!t1Loaded){ S.t1Pending = { frontier, bkt, hour }; return null; }
+  if (S.t1Bucket === bkt) return null;
+  S.t1Bucket = bkt;
+  const now = Date.now();
+  const trips = scorerTrips();
+  let opened = 0, voided = 0;
+  /* Mid-trip blacklisting voids at THIS cycle — membership stamped at the
+     cycle, the row-23 discipline: no further accrual against the veto. */
+  for (const p of trips.values()){
+    if (p.state === "open" && isBlk(p.id)){
+      p.state = "closed"; p.closedAt = now; p.voidedBl = 1;
+      for (const v of p.vars) if (v.state === "open"){ v.state = "voided-bl"; v.net = null; v.netS = null; v.netL = null; }
+      voided++;
+    }
+  }
+  for (const f of frontier || []){
+    const meta = S.byId.get(f.st.id);
+    for (const hz of SCORER_HORIZONS)
+    for (const part of SCORER_PARTS){
+      const k = scorerTripKey(f.st.id, part, hz);
+      if (trips.has(k)) continue;   // one rolling cycle per (item, participation, horizon): close, then reopen if still funded
+      trips.set(k, {
+        id: f.st.id, part, hzH: hz, fv: SCORER_FILL_V, v: SCORER_V, sz: "lim1",
+        t: now, openBkt: bkt, openSeq: S.pollSeq, hour,
+        cells: f.cells.slice(),
+        bid: f.st.buy + 1, ask: f.st.sell - 1,
+        qty: Math.max(1, (meta && meta.l) || 1),
+        pump: suspectedPump(f.st.id) ? 1 : 0,   // stamped at birth, never excluded (row 15 pre-ruling)
+        noChart: scorerNoChart(f.st) ? 1 : 0,   // chart-coverage state at birth
+        grade: "live",
+        obsMs: 0, lastObs: now, pend: null,
+        vars: SCORER_CAPTURES.map(scorerVarNew),
+        state: "open", closedAt: 0 });
+      opened++;
+    }
+  }
+  S.t1LastBucket = bkt;
+  t1PersistOpen();
+  return { bucket: bkt, opened, voided, openN: trips.size };
+}
+function scorerTripOpenSafe(frontier, bkt, hour){
+  try { const r = scorerTripOpen(frontier, bkt, hour); t1Fails = 0; clearWarn("t1"); return r; }
+  catch(e){ t1Fails++; const n = t1FailNote(t1Fails, e && e.message); if (n) warn("t1", n); return null; }
+}
+/* ═══ THE TICK — observes every refresh, credits on bucket roll ════════════
+   The paper book's own structure: observe the current bucket while it is
+   current (prices, volumes, and whether a live touch reached my price on any
+   poll inside it), credit it once when the next bucket arrives, and apply
+   the horizon by wall clock. Each capture-lifecycle takes the credit
+   independently through the same pure term. */
+function scorerTripTick(){
+  if (!t1Loaded) return;
+  const trips = scorerTrips();
+  if (!trips.size) return;
+  const now = Date.now();
+  const bkt = S.min5At || 0;
+  let changed = false, closedAny = false;
+  for (const p of trips.values()){
+    if (p.state !== "open") continue;
+    const H = p.hzH * 3600e3;
+    const dt = obsAccrual(now, p.lastObs, SCORER_OBS_CAP);
+    p.obsMs += dt; p.lastObs = now;
+    const sameCycle = p.openSeq === S.pollSeq;   // minimum life: no resolution in the opening cycle
+    if (sameCycle) continue;
+    const L = S.latest[p.id];
+    const m5 = S.min5[p.id] || {};
+    /* Causality: a bucket may credit only if it began at or after the trip
+       opened, once, deferred to its roll — transferred verbatim. */
+    if (bkt > 0 && bkt >= p.t){
+      if (p.pend && p.pend.bkt !== bkt){
+        const q = p.pend;
+        for (const v of p.vars){
+          if (v.state !== "open") continue;
+          if (!v.buyDone){
+            if (v.buyBkt !== q.bkt){
+              const cr = fillCredit(q.lo, p.bid, q.lv, "buy", q.touchBuy, v.cap, p.part);
+              if (cr.any){ v.buyBkt = q.bkt; scorerVarCredit(v, "buy", cr, p.qty); changed = true; }
+            }
+          } else if (sellBucketEligible(v, q)){
+            const cr = fillCredit(q.hi, p.ask, q.hv, "sell", q.touchSell, v.cap, p.part);
+            if (cr.any){ v.sellBkt = q.bkt; scorerVarCredit(v, "sell", cr, p.qty); changed = true; }
+          }
+        }
+        p.pend = null;
+      }
+      if (!p.pend) p.pend = { bkt, lo: null, lv: 0, hi: null, hv: 0, touchBuy: 0, touchSell: 0 };
+      if (p.pend.bkt === bkt){
+        p.pend.lo = m5.avgLowPrice != null ? m5.avgLowPrice : p.pend.lo;
+        p.pend.hi = m5.avgHighPrice != null ? m5.avgHighPrice : p.pend.hi;
+        p.pend.lv = Math.max(p.pend.lv, m5.lowPriceVolume || 0);
+        p.pend.hv = Math.max(p.pend.hv, m5.highPriceVolume || 0);
+        if (L && L.low != null && L.low <= p.bid) p.pend.touchBuy = 1;
+        if (L && L.high != null && L.high >= p.ask) p.pend.touchSell = 1;
+      }
+    }
+    /* The horizon exit price: the last observed low-side bucket value. The
+       unobserved branch is checked FIRST, so this is only ever read within
+       SCORER_OBS_CAP (two buckets) of the horizon — the same ±2-bucket
+       tolerance seriesPxAt applies, i.e. the series value AT the horizon
+       within the model's stated resolution. exitApprox marks a spot-price
+       fallback where no bucket average was available. */
+    const lastLo = (p.pend && p.pend.lo != null) ? p.pend.lo : (L && L.low != null ? L.low : null);
+    const approx = !(p.pend && p.pend.lo != null);
+    for (const v of p.vars){
+      if (v.state !== "open") continue;
+      if (!v.buyDone){
+        if (v.buyQ >= p.qty){ v.buyDone = now; v.buyDoneBkt = v.buyBkt || bkt; }
+        else if (now - p.t > H){
+          if (now - (p.t + H) > SCORER_OBS_CAP){
+            /* The horizon expired while nobody watched: a hole, never a
+               "would not have filled". */
+            v.state = "unobserved"; v.net = 0; v.netS = 0; v.netL = 0;
+          } else if (v.buyQ > 0){
+            v.state = "partial"; v.exitApprox = approx ? 1 : 0;
+            scorerVarNets(v, p, lastLo != null ? lastLo : p.bid);
+          } else {
+            v.state = "unfilled"; v.net = 0; v.netS = 0; v.netL = 0;
+          }
+          changed = true;
+        }
+      }
+      if (v.buyDone && v.state === "open"){
+        if (v.sellQ >= p.qty){
+          /* Filled at the operative bound; the PROVEN bound's untraded
+             remainder still needs a mark, and the honest one is the last
+             observed value at close — never the ask it did not provably
+             reach. */
+          v.state = "filled"; scorerVarNets(v, p, lastLo); changed = true;
+        } else if (now - (v.buyDone + H) > SCORER_OBS_CAP){
+          v.state = "unobserved"; v.net = 0; v.netS = 0; v.netL = 0; changed = true;
+        } else if (now - v.buyDone > H){
+          v.state = "forced-exit"; v.exitApprox = approx ? 1 : 0;
+          scorerVarNets(v, p, lastLo != null ? lastLo : p.bid);
+          changed = true;
+        }
+      }
+    }
+    if (p.vars.every(v => v.state !== "open")){ p.state = "closed"; p.closedAt = now; }
+  }
+  /* Roll closed trips into their birth cells' econ buckets, persist them to
+     the t1 ledger, and free the slot — roll-then-prune, each record once. */
+  for (const [k, p] of [...trips.entries()]){
+    if (p.state === "open") continue;
+    scorerTripRoll(p);
+    t1PutClosed(p);
+    trips.delete(k);
+    closedAny = true; changed = true;
+  }
+  if (changed) save();
+  if (changed || closedAny) t1PersistOpen();
+}
+function scorerTripTickSafe(){
+  try { scorerTripTick(); t1Fails = 0; clearWarn("t1"); }
+  catch(e){ t1Fails++; const n = t1FailNote(t1Fails, e && e.message); if (n) warn("t1", n); }
+}
+/* ═══ ECON ROLLUPS — per cell, per (horizon | participation | capture | fill
+   model), never pooled across any stamp ════════════════════════════════════
+   Exclusions are their own named figures (the observed-share floor's three
+   states, transferred): `n` counts only trips whose horizon was observed
+   above the floor; `insuf` (insufficient observation), `unobs` (horizon
+   expired unwatched — a hole) and `vbl` (voided by mid-trip blacklisting)
+   are counted beside it, never inside it. Pump-stamped trips are IN the main
+   figures and decomposed (`pumpN`/`pumpNet`) — stamp, don't exclude. */
+function scorerEconKey(hz, part, cap, fv){
+  return "h" + hz + "|p" + Math.round(part * 100) + "|c" + Math.round(cap * 100) + "|fv" + fv;
+}
+function scorerEconCell(r, key){
+  if (!r.econ) r.econ = {};
+  let e = r.econ[key];
+  if (!e) e = r.econ[key] = { n: 0, filled: 0, partial: 0, forced: 0, unfilled: 0, unobs: 0, insuf: 0, vbl: 0,
+    net: 0, netS: 0, netL: 0, gross: 0, top: 0, pumpN: 0, pumpNet: 0, ncN: 0 };
+  return e;
+}
+const scorerObsShare = p => Math.min(1, (p.obsMs || 0) / Math.max(1, (p.hzH || SCORER_HORIZONS[0]) * 3600e3));
+function scorerTripRoll(p){
+  /* `rolled` is set FIRST so an exception mid-roll (a cell throwing after
+     some cells took the trip) can only UNDER-count on retry, never double-
+     count — the reachable path is a throw between this roll and the map
+     delete in the tick, which would otherwise re-roll every cell next tick. */
+  if (p.rolled) return;
+  p.rolled = 1;
+  const share = scorerObsShare(p);
+  for (const hash of p.cells){
+    const r = DB.scorerT2[hash];
+    /* A cell that no longer exists (an import replaced scorerT2 mid-trip)
+       has no summary to roll into — the trip row itself still lands in the
+       t1 ledger, so the evidence is kept even where the population closed. */
+    if (!r) continue;
+    for (const v of p.vars){
+      const e = scorerEconCell(r, scorerEconKey(p.hzH, p.part, v.cap, p.fv));
+      if (v.state === "voided-bl"){ e.vbl++; continue; }
+      if (v.state === "unobserved"){ e.unobs++; continue; }
+      if (share < SHADOW_MIN_OBS){ e.insuf++; continue; }
+      e.n++;
+      if (v.state === "filled") e.filled++;
+      else if (v.state === "partial") e.partial++;
+      else if (v.state === "forced-exit") e.forced++;
+      else if (v.state === "unfilled") e.unfilled++;
+      e.net += v.net || 0; e.netS += v.netS || 0; e.netL += v.netL || 0;
+      /* Concentration per the ruled measurement (Aug 14 2026): GROSS movement
+         is the sum of |net| terms and `top` is the largest single MOVER —
+         |net|, either sign — so the share stays a true proportion on losing
+         cells, which is where concentration matters most. */
+      const mv = Math.abs(v.net || 0);
+      e.gross += mv;
+      if (mv > e.top) e.top = mv;
+      if (p.pump){ e.pumpN++; e.pumpNet += v.net || 0; }
+      if (p.noChart) e.ncN++;
+    }
+  }
+}
+/* ═══ T1 PERSISTENCE — the trip ledger (IndexedDB, inside the named
+   exception: "the archive, its trip ledger, and the reconciliation-diff
+   ledger") ═════════════════════════════════════════════════════════════════
+   Closed trips: one row each in "t1", keyed closedAt·1000+seq (numeric, so
+   retention pruning is a key-range like the archive's), 30-day retention,
+   rolled into econ BEFORE the prune can touch them. Open trips: the whole
+   open map as ONE carry record in "t1open" — written per tick, read once at
+   boot, so a reload resumes open trips instead of silently discarding their
+   observations. A carry that cannot be read is warned IMMEDIATELY (not
+   threshold-gated): the trips it held are lost as unrecorded holes, and a
+   silent loss is the defect. */
+function t1PutClosed(p){
+  const key = (p.closedAt || Date.now()) * 1000 + (t1Seq++ % 1000);
+  t0Put("t1", key, p)
+    .then(() => t0Prune("t1", (Date.now() - T1_RET_MS) * 1000))
+    .catch(e => { t1Fails++; const n = t1FailNote(t1Fails, e && e.message); if (n) warn("t1", n); });
+}
+function t1PersistOpen(){
+  if (t1PersistBusy) return;   // one write in flight; the next tick re-persists current state
+  t1PersistBusy = true;
+  const rows = [...scorerTrips().values()];
+  t0Put("t1open", 0, rows)
+    .then(() => { t1PersistBusy = false; })
+    .catch(e => { t1PersistBusy = false; t1Fails++; const n = t1FailNote(t1Fails, e && e.message); if (n) warn("t1", n); });
+}
+function t1RunPending(){
+  if (!S.t1Pending) return null;
+  const q = S.t1Pending; S.t1Pending = null;
+  const r = scorerTripOpenSafe(q.frontier, q.bkt, q.hour);
+  scorerTripTickSafe();
+  return r;
+}
+async function t1LoadOpen(){
+  try {
+    const rows = await t0Get("t1open", 0);
+    if (Array.isArray(rows) && rows.length){
+      const m = scorerTrips();
+      for (const p of rows)
+        if (p && p.state === "open" && !m.has(scorerTripKey(p.id, p.part, p.hzH)))
+          m.set(scorerTripKey(p.id, p.part, p.hzH), p);
+    }
+  } catch(e){
+    warn("t1", "⚠ The fill sim could not load its open-trip carry from IndexedDB — trips open at last close are lost, "
+      + "and they are lost as UNRECORDED holes (they cannot even be counted): " + String(e && e.message || e).slice(0, 120));
+  }
+  t1Loaded = true;
+  t1RunPending();   // a frontier held at boot runs now — held, never dropped
+}
+t1LoadOpen();
+/* ═══ THE CAPTURE PROBE'S VERDICT TERMS (BINDING, ratified) ════════════════
+   Read-time, pure over the econ buckets; STAGED for 1e's surfaces (named
+   consumers: the cell verdict line and the ranking panel) and asserted
+   directly meanwhile — the scorerNoChart discipline for terms whose consumer
+   is a ruled future stage. The concentration ceiling is NOT a constant in
+   this file: it is a verdict boundary, i.e. a strategy parameter, proposed
+   in the 1d report and passed in by the caller only once ruled.
+   If cell RANKINGS flip across the capture points, the instrument's verdict
+   IS "insufficient calibration to rank" — rendered as the verdict, never a
+   caveat (the thin-trips-never-argue property, generalized). */
+function scorerCellEconState(e){
+  if (!e) return { state: "never-fed",
+    why: "no trip has ever rolled into this cell at this key — an aggregate nothing has fed, not a reading of zero" };
+  if (e.n > 0) return { state: "counted", n: e.n,
+    excluded: { insufficientObservation: e.insuf, unobservedHoles: e.unobs, voidedBlacklistMidTrip: e.vbl } };
+  return { state: "only-excluded",
+    why: "trips rolled here, and every one was excluded — " + e.insuf + " under the " + Math.round(SHADOW_MIN_OBS * 100)
+       + "% observed-share floor, " + e.unobs + " unobserved holes, " + e.vbl + " voided by mid-trip blacklisting; "
+       + "that is a coverage fact about the instrument, not a market reading of zero",
+    excluded: { insufficientObservation: e.insuf, unobservedHoles: e.unobs, voidedBlacklistMidTrip: e.vbl } };
+}
+/* Rankings at one capture point: cells ordered by simulated net at the
+   PROVEN bound, hash as the deterministic tiebreak. Only cells counted at
+   ALL capture points enter — exclusions are trip-level, so a cell counted at
+   one point is counted at every point, and this filter can only drop cells
+   with no counted evidence at all. */
+function scorerRanking(hz, part, fv, cap){
+  const rows = [];
+  for (const [hash, r] of Object.entries(DB.scorerT2)){
+    const st = scorerCellEconState(r.econ && r.econ[scorerEconKey(hz, part, cap, fv)]);
+    if (st.state !== "counted") continue;
+    rows.push({ hash, netS: r.econ[scorerEconKey(hz, part, cap, fv)].netS });
+  }
+  rows.sort((a, b) => (b.netS - a.netS) || (a.hash < b.hash ? -1 : 1));
+  return rows;
+}
+function scorerCaptureVerdict(hz, part, fv){
+  const ranks = SCORER_CAPTURES.map(cap => scorerRanking(hz, part, fv, cap));
+  const eligible = ranks[0].map(r => r.hash).filter(h => ranks.every(rk => rk.some(x => x.hash === h)));
+  const orders = ranks.map(rk => rk.map(x => x.hash).filter(h => eligible.includes(h)));
+  const flips = [];
+  for (let i = 1; i < orders.length; i++)
+    for (let j = 0; j < eligible.length; j++)
+      if (orders[i][j] !== orders[0][j])
+        flips.push({ at: SCORER_CAPTURES[i], pos: j, was: orders[0][j], is: orders[i][j] });
+  const stable = flips.length === 0;
+  return { cells: eligible.length, stable, flips,
+    verdict: eligible.length === 0 ? "no cell carries counted evidence at every capture point — nothing to rank"
+      : stable ? "capture-stable" : "insufficient calibration to rank",
+    why: stable ? null
+      : "cell rankings flip across the capture probe {" + SCORER_CAPTURES.join(", ") + "} — the ordering depends on an "
+      + "ungraded constant, so the instrument's verdict is that it cannot rank, stated as the verdict, not a caveat" };
+}
+/* One cell against the control, every disqualifier named. The ruled set
+   (Aug 14 2026): capture-readiness first — until real frontier-class flips
+   grade capture, EVERY ranking renders "cannot rank yet" in those words —
+   then beats-control at the PROVEN bound per capture point (full fail set),
+   concentration against the ruled ceiling on GROSS movement, and
+   capture-stability. Rank-disqualifiers only; nothing here excludes data. */
+function scorerRankGate(hash, ctlHash, hz, part, fv){
+  const reasons = [];
+  const ready = scorerRankReadiness();
+  if (!ready.ready) reasons.push(ready.why);
+  const cellR = DB.scorerT2[hash], ctlR = DB.scorerT2[ctlHash];
+  const eRef = cellR && cellR.econ && cellR.econ[scorerEconKey(hz, part, SCORER_CAPTURE_REF, fv)];
+  const st = scorerCellEconState(eRef);
+  if (st.state !== "counted") return { rank: false, reasons: reasons.concat([st.why || st.state]), state: st.state };
+  /* Full fail set across the capture points — never only the first failing
+     one (the standing first-fail rule, applied to this small chain too). */
+  for (const cap of SCORER_CAPTURES){
+    const ec = cellR.econ[scorerEconKey(hz, part, cap, fv)];
+    const et = ctlR && ctlR.econ && ctlR.econ[scorerEconKey(hz, part, cap, fv)];
+    if (!et || !(et.n > 0)) reasons.push("the control cell carries no counted evidence at capture " + cap + " — nothing to beat");
+    else if (!ec || !(ec.netS > et.netS)) reasons.push("does not beat the control at the PROVEN bound at capture " + cap);
+  }
+  /* Concentration per the ruled measurement: the top MOVER's share of GROSS
+     movement (|net| terms). A gross of zero means nothing moved at all, so
+     there is nothing to concentrate and the disqualifier is vacuously clear. */
+  if (eRef.gross > 0 && eRef.top / eRef.gross > SCORER_CONC_CEIL)
+    reasons.push("the top mover carries " + Math.round(eRef.top / eRef.gross * 100)
+      + "% of the cell's gross movement — over the ruled " + Math.round(SCORER_CONC_CEIL * 100)
+      + "% ceiling, the figure measures one trip, not the population");
+  const cv = scorerCaptureVerdict(hz, part, fv);
+  if (!cv.stable) reasons.push(cv.verdict + ": " + cv.why);
+  return { rank: reasons.length === 0, reasons, state: "counted" };
+}
+/* ═══ THE 1d RULINGS, RECORDED WHERE THE OPERATOR READS DECISIONS ══════════
+   (the sellRelBandLog pattern: written by the tool, decided by the user;
+   once per store.) */
+const SCORER_1D_RULINGS_KEY = "fill-sim measurement constants (2026-08-14)";
+function scorer1dRulingsLog(){
+  if (S.scorer1dLogged) return;
+  S.scorer1dLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === SCORER_1D_RULINGS_KEY)) return;
+  logDecision("settings", SCORER_1D_RULINGS_KEY,
+    "horizon set {6h, 9.5h} · participation {25, 50, 100%} · concentration ceiling 0.5 on gross · capture ungraded",
+    "RATIFIED. Measurement horizons {6, 9.5}h per (item × participation) — the 9.5h variant answers the overnight "
+    + "question as a stamped population against a stamped population, which the retired duration-threshold labelling "
+    + "inverted twice. Concentration ceiling 0.5, measured as the top mover's share of the cell's GROSS movement "
+    + "(|net| terms — a share of a negative net is not a proportion, and the gross denominator keeps the reading on "
+    + "losing cells); a rank-disqualifier only, never a data exclusion. Capture stays ungraded until real flips exist "
+    + "on frontier-class items, and every ranking renders 'cannot rank yet' in those words until then — the dependency "
+    + "is the operator's calibration flips inside the tape window.", 1, "user");
+}
+
 /* Persistent regime divergence → a change-proposal with the numbers, through
    the same evidence discipline as every gate proposal (4 of the last 7 daily
    readings). Absent persistence, silence — a snapshot is advocacy. */
@@ -8798,10 +9372,18 @@ function calibReplayOne(e, pts){
    caveat: the comparison price is the trader's realized SELL fill, so a
    bucket whose average high lands exactly on it very likely contains that
    trade, and the proven bound refuses to credit it by construction. */
+/* THE LAYER THAT OWNS THE SELL-WINDOW ANCHOR (stage 1d — census probe:6536,
+   the reconWindowStart pattern). The sell window opens where the BUY REALLY
+   finished — the trader's own realized buy completion, never the model's and
+   never the placement time. The promise is stated here as a named term so the
+   assertion points at it; inside the replay loop the filter-and-arithmetic
+   relationship made "no tape before the window credits" an identity that
+   could not fail. */
+const sellWindowStart = e => e.buyDoneReal;
 function calibReplaySell(e, pts){
   const f = e.f, sh = Number(e.sh != null ? e.sh : f.sh);
   const H = Math.max(0.25, sh * 2) * 3600e3;
-  const start = e.buyDoneReal;                 // the sell leg opens where the buy really finished
+  const start = sellWindowStart(e);
   const out = { sh, fastLeg: sh < 1 ? 1 : 0, trace: [] };
   for (const mode of ["strict", "lenient"]){
     let sold = 0;
@@ -8982,8 +9564,12 @@ function classifySellFailure(buckets, ask, spreadPct){
     return { ...out, cls: "mislocated-window",
       why: "median bucket average sat " + Math.abs(medGapPct) + "% below the ask and " + Math.round(sustainShare * 100)
          + "% of buckets were at least " + SELL_MISLOC_GAP_PCT + "% below — a sustained gap, not noise" };
+  /* The copy names the band that actually DECIDED — relBand, which is the
+     spread-relative one whenever a spread was known and the absolute
+     fallback only when it was not (stage 1d, claims-vs-computation: the old
+     copy quoted the retired constant even when the relative band judged). */
   return { ...out, cls: "unclassified",
-    why: "median gap " + medGapPct + "% falls between the dilution band (within " + SELL_DILUTION_GAP_PCT
+    why: "median gap " + medGapPct + "% falls between the dilution band (within " + (Math.round(relBand * 100) / 100)
        + "%) and the mislocation bar (" + SELL_MISLOC_GAP_PCT + "% sustained over " + Math.round(SELL_MISLOC_SUSTAIN * 100)
        + "%) — neither signature fits, which is a finding rather than a residue" };
 }
@@ -9013,51 +9599,52 @@ function sellThresholdDrift(){
    1.0% — the two agree at the population the absolute figure was derived on
    and diverge exactly where the question is whether they should. */
 const SELL_SPREAD_REL_FRACTION = 1 / 3;
-/* EXTRACTED so the report, the export and any assertion all read ONE
-   implementation of the shadow classification. It had been inline in
-   sellShapeReport(), which meant the export could only carry the count and a
-   probe could only re-derive it — the reimplementation tell. */
-function sellRelClassOf(c){
-  const relBand = c.spreadPct * SELL_SPREAD_REL_FRACTION;
-  return c.medGapPct >= -relBand ? "dilution"
-    : (c.medGapPct <= -SELL_MISLOC_GAP_PCT && c.sustainShare >= SELL_MISLOC_SUSTAIN) ? "mislocated-window"
-    : "unclassified";
-}
+/* ═══ THE SHAPE REPORT'S DIRECTION FLIPPED WITH THE RATIFICATION ═══════════
+   (stage 1d — census probe:6827.) This report was built BEFORE the Aug 13
+   ratification to ask "what would a spread-relative band change?" — a real
+   counterfactual then. The ratification made the spread-relative band the
+   LIVE classifier, so that comparison became the live class against a
+   re-derivation of itself: zero on every real population, by construction,
+   while the report's own copy read "the absolute figure is not doing any
+   harm" — a false claim wearing a measurement's clothes. The counterfactual
+   that still carries information is the RETIRED absolute band, which the
+   classifier stamps on every case as `absCls` for exactly this transition
+   ledger. `sellRelClassOf` — the old second implementation — is deleted:
+   both classifications now come from the one classifier. */
 function sellShapeReport(cases){
-  const cs = (cases || []).filter(c => c && c.spreadPct > 0 && c.medGapPct != null);
+  const cs = (cases || []).filter(c => c && c.spreadPct > 0 && c.medGapPct != null && c.absCls != null);
   if (cs.length < SELL_CLASSIFY_MIN_N)
     return { n: cs.length, enough: false,
-      note: "Spread-shape comparison needs " + SELL_CLASSIFY_MIN_N + " classified cases carrying a spread; there "
+      note: "Band-transition comparison needs " + SELL_CLASSIFY_MIN_N + " classified cases carrying a spread; there "
           + (cs.length === 1 ? "is " : "are ") + cs.length + ". Reported as insufficient rather than estimated." };
   const spreads = cs.map(c => c.spreadPct).sort((a, b) => a - b);
   const q = p => spreads[Math.min(spreads.length - 1, Math.floor(p * spreads.length))];
   let differ = 0;
   const moves = [];
   for (const c of cs){
-    const relCls = sellRelClassOf(c);
-    if (relCls !== c.cls){ differ++; moves.push({ item: c.item, from: c.cls, to: relCls,
+    if (c.absCls !== c.cls){ differ++; moves.push({ item: c.item, live: c.cls, underRetiredAbsolute: c.absCls,
       spreadPct: c.spreadPct, medGapPct: c.medGapPct }); }
   }
   /* The count opens to the cases that move, and to what each class becomes —
      a reclassification figure whose rows are missing cannot be ruled on. */
-  const relCounts = { dilution: 0, mislocatedWindow: 0, unclassified: 0, noLiquidity: 0 };
+  const absCounts = { dilution: 0, mislocatedWindow: 0, unclassified: 0, noLiquidity: 0 };
   for (const c of cs){
-    const k = sellRelClassOf(c);
-    if (k === "dilution") relCounts.dilution++;
-    else if (k === "mislocated-window") relCounts.mislocatedWindow++;
-    else relCounts.unclassified++;
+    const k = c.absCls;
+    if (k === "dilution") absCounts.dilution++;
+    else if (k === "mislocated-window") absCounts.mislocatedWindow++;
+    else absCounts.unclassified++;
   }
-  return { n: cs.length, enough: true, cases: moves, classCountsUnderRelative: relCounts,
+  return { n: cs.length, enough: true, cases: moves, classCountsUnderRetiredAbsolute: absCounts,
     spreadMedianPct: Math.round(q(0.5) * 100) / 100,
     spreadP10Pct: Math.round(q(0.1) * 100) / 100, spreadP90Pct: Math.round(q(0.9) * 100) / 100,
-    wouldReclassify: differ, wouldReclassifyPct: Math.round(differ / cs.length * 100),
+    retiredBandWouldDiffer: differ, retiredBandWouldDifferPct: Math.round(differ / cs.length * 100),
     note: differ === 0
-      ? "A spread-relative threshold would classify every case identically — on this population the absolute figure is "
-        + "not doing any harm, and the shape question is answered in favour of leaving it alone."
-      : differ + " of " + cs.length + " cases would classify differently under a spread-relative threshold ("
-        + Math.round(differ / cs.length * 100) + "%). That is the ruling material: item spreads here run "
-        + Math.round(q(0.1) * 100) / 100 + "%–" + Math.round(q(0.9) * 100) / 100 + "%, so a single absolute band is "
-        + "doing different work at the two ends." };
+      ? "The retired absolute band would classify every case here identically to the live spread-relative one — the "
+        + "ratification changed nothing on this population, which is worth knowing and is not evidence about others."
+      : differ + " of " + cs.length + " cases classify differently under the live spread-relative band than the retired "
+        + "absolute one (" + Math.round(differ / cs.length * 100) + "%). That is the transition ledger: item spreads here run "
+        + Math.round(q(0.1) * 100) / 100 + "%–" + Math.round(q(0.9) * 100) / 100 + "%, and these rows are what the "
+        + "ratification actually moved." };
 }
 /* A population's split. Counts always; percentages only once the sample can
    support them, and it SAYS which it is doing. */
@@ -9467,10 +10054,13 @@ function sellAbsShadowHTML(cases){
       })
     + ' case' + (differ.length === 1 ? '' : 's') + '.</div>';
 }
-function sellDiscriminatorHTML(c){
-  try { sellRelBandLog(); } catch(e){}
-  const cal = calibSellCases(c), live = paperSellCases();
-  const calS = sellSplitOf(cal), liveS = sellSplitOf(live);
+/* ═══ THE VERDICT TERM, EXTRACTED (stage 1d — census probe:7402) ═══════════
+   The discriminator's verdict was computed inline in sellDiscriminatorHTML,
+   so the assertion that "the panel names the falsification test" matched the
+   WHOLE panel — and an always-emitted dim span satisfied it whatever branch
+   the verdict took. The verdict is now a named term: the probe drives the
+   populations' splits through it and asserts the branch, not the wallpaper. */
+function sellVerdictOf(calS, liveS){
   let verdict;
   if (!calS.enough && !liveS.enough)
     verdict = '<b>Insufficient sample in both populations</b> — no mechanism claim is made. That is the result, not a '
@@ -9502,6 +10092,13 @@ function sellDiscriminatorHTML(c){
     verdict = '<b>The split does not match either predicted outcome.</b> Stated rather than accommodated: the '
       + 'populations disagree in a way neither the dilution nor the mislocation story explains, so the next step is '
       + 'reading the unclassified pile, not proposing a fix.';
+  return verdict;
+}
+function sellDiscriminatorHTML(c){
+  try { sellRelBandLog(); } catch(e){}
+  const cal = calibSellCases(c), live = paperSellCases();
+  const calS = sellSplitOf(cal), liveS = sellSplitOf(live);
+  const verdict = sellVerdictOf(calS, liveS);
   return '<div style="margin-top:10px"><b>Sell discriminator</b> '
     + '<span class="dim">— which mechanism failed each sell, computed per case. The two causes have OPPOSITE fixes, so '
     + 'nothing is proposed until the split is ruled on.</span></div>'
@@ -9646,7 +10243,17 @@ function calibSection(){
     + '<td class="num">' + m.falsePartial + '</td><td class="num">' + m.falseForced + '</td>'
     + '<td class="num ' + (m.falseNever ? 'neg' : '') + '">' + m.falseNever + '</td>'
     + '<td class="num dim">' + (m.medianBuyShortfallPct != null ? m.medianBuyShortfallPct + '%' : '—') + '</td></tr>';
+  /* The load-bearing sentence renders INLINE, beside the table where the
+     proven bound is read — the R47.5 rule as written. It was previously only
+     inside the teach() disclosure above, which is exactly the footnote form
+     the rule forbids; the scoped assertion (stage 1d, census probe:6511)
+     caught it the moment the match stopped accepting disclosure bodies. The
+     long explanation stays in the disclosure; this line is the claim. */
   return head + note
+    + '<div class="plan-note" style="white-space:normal"><b>The proven bound is depressed here by SELF-COMPARISON</b> — '
+    + 'an artifact of the measurement, not the market: ' + atP + ' at-price bucket' + (atP === 1 ? '' : 's')
+    + ' this run, each credited on the possible bound and refused on the proven one. <b>This does NOT apply to the '
+    + 'paper book</b>, whose simulated bid never traded. Two different constructs; do not read one bound against the other.</div>'
     + '<div class="tw"><table><thead><tr><th>Reading</th><th>Agreed (filled)</th><th>False partial</th>'
     + '<th>False forced-exit</th><th>False never-filled</th>'
     + '<th title="Median share of the buy leg the model did credit, across the trips it got wrong — how wrong it was, not just that it was">Median buy credited when wrong</th>'
@@ -10941,6 +11548,8 @@ function freshnessRows(){
       "one pass per 5m bucket over every mapped item; no surface until stage 1e — this line and the warn channel are its state");
   add("Reconciliation diff (control vs plan)", S.rdiffLastBucket || 0, 15 * 60e3, "scheduled",
       "the cutover's plumb line — one row per scored bucket; a gap is history that does not exist");
+  add("Fill sim (frontier trips)", S.t1LastBucket || 0, 15 * 60e3, "scheduled",
+      "trips per (item × participation) on the funded frontier, three capture lifecycles each; blacklisted items get none by rule");
   add("Coherence readings", DB.lastCoScanAt || 0, 10 * dayMs, "scheduled", "weekly co-movement scan");
   add("Anomaly scan", DB.lastAnomalyScanAt || 0, 10 * dayMs, "scheduled", "weekly accumulation sweep");
   add("Walk-up attention", dParse(((DB.walkupLoad || []).slice(-1)[0] || {}).d), 3 * dayMs, "scheduled",
@@ -19435,10 +20044,17 @@ function analysisCalibration(){
                   ? Math.round(c.spreadPct * SELL_SPREAD_REL_FRACTION * 100) / 100 : null,
                 gapAsShareOfSpread: (c.spreadPct > 0 && c.medGapPct != null)
                   ? Math.round(Math.abs(c.medGapPct) / c.spreadPct * 100) / 100 : null,
-                wouldReclassifyUnderSpreadRelative: (c.spreadPct > 0 && c.medGapPct != null)
-                  ? (sellRelClassOf(c) !== c.cls) : null,
-                classUnderSpreadRelative: (c.spreadPct > 0 && c.medGapPct != null)
-                  ? sellRelClassOf(c) : null,
+                /* DIRECTION FLIPPED WITH THE RATIFICATION (stage 1d — census
+                   probe:6827). The live classifier IS the spread-relative one
+                   since Aug 13, so "would the relative band reclassify this"
+                   compared the live class against a re-derivation of itself
+                   and was false by construction on every real case. The
+                   counterfactual that still carries information is the
+                   RETIRED absolute band, which the classifier stamps as
+                   `absCls` for exactly this transition ledger. */
+                classUnderRetiredAbsoluteBand: c.absCls != null ? c.absCls : null,
+                retiredAbsoluteBandWouldDiffer: (c.absCls != null && c.cls != null)
+                  ? (c.absCls !== c.cls) : null,
                 why: c.why,
                 /* Live cases only — the calibration side carries its own trace
                    under `sellLeg`. Complete by construction: the stored cap
@@ -20681,7 +21297,20 @@ function validateImport(d){
                   cyclesByHour: arr24(r.cyclesByHour), fundedByHour: arr24(r.fundedByHour),
                   ids, distinct: ids.length, capped: r.capped ? 1 : 0,
                   blFunded: Math.max(0, num(r.blFunded) || 0),
-                  blIds: [...new Set((Array.isArray(r.blIds) ? r.blIds : []).map(x => num(x)).filter(x => x > 0))] }];
+                  blIds: [...new Set((Array.isArray(r.blIds) ? r.blIds : []).map(x => num(x)).filter(x => x > 0))],
+                  /* Stage 1d econ buckets: keys must carry all four stamps
+                     (horizon | participation | capture | fill-model) or the
+                     bucket is dropped — an unstamped population cannot be
+                     carried without pooling it. Fields coerced, unknown keys
+                     inside a bucket dropped. */
+                  econ: (r.econ && typeof r.econ === "object" && !Array.isArray(r.econ))
+                    ? Object.fromEntries(Object.entries(r.econ)
+                        .filter(([k, e]) => /^h\d+(\.\d+)?\|p\d+\|c\d+\|fv\d+$/.test(k) && e && typeof e === "object")
+                        .map(([k, e]) => [k, Object.fromEntries(
+                          ["n","filled","partial","forced","unfilled","unobs","insuf","vbl","pumpN","ncN"]
+                            .map(f => [f, Math.max(0, num(e[f]) || 0)])
+                          .concat(["net","netS","netL","gross","top","pumpNet"].map(f => [f, num(e[f]) != null ? num(e[f]) : 0])))]))
+                    : {} }];
               }).filter(Boolean))
             : {},
           lastBriefImportAt: Math.max(0, num(d.lastBriefImportAt) || 0),

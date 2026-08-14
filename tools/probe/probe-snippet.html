@@ -2658,9 +2658,22 @@
     S.min5[9002] = { avgHighPrice: 4500, avgLowPrice: 4100, highPriceVolume: 4000, lowPriceVolume: 4000 };  // above bid — no fill
     shadowTick();
     const sb2 = DB.shadowBook[0];
-    ok("[R18.2] no print at-or-below the bid = no fill; observed time accrues capped",
-       sb2.buyQ === 0 && sb2.state === "open" && sb2.obsMs > 0 && sb2.obsMs <= 10 * 60e3,
+    ok("[R18.2] no print at-or-below the bid = no fill; observed time accrues through the tick",
+       sb2.buyQ === 0 && sb2.state === "open" && sb2.obsMs > 0 && sb2.obsMs <= SHADOW_OBS_CAP,
        JSON.stringify(sb2));
+    /* THE CAP, AT THE TERM (stage 1d — census probe:2505). The fixture above
+       has a 5-minute gap against a 10-minute cap, so its cap clause could
+       never select the cap arm — the dead-relationship shape. The extracted
+       term is asserted against the CONSTANT at a gap that reaches it, and
+       both ticks are checked to route through the extraction. */
+    ok("[R18.2] observed time accrues capped AT THE TERM — the gap below the cap, the constant at it, and both ticks route through obsAccrual",
+       (() => { const n0 = Date.now();
+                return obsAccrual(n0, n0 - 5 * 60e3, SHADOW_OBS_CAP) === 5 * 60e3
+                    && obsAccrual(n0, n0 - 30 * 60e3, SHADOW_OBS_CAP) === SHADOW_OBS_CAP
+                    && obsAccrual(n0, 0, SHADOW_OBS_CAP) === 0
+                    && obsAccrual(n0, n0 + 60e3, SHADOW_OBS_CAP) === 0
+                    && /obsAccrual\(/.test(String(shadowTick)) && /obsAccrual\(/.test(String(scorerTripTick)); })(),
+       "gap below cap, the constant at the cap, no-last-look and future-last-look accrue nothing");
     /* Credit lands when a bucket ROLLS (Aug 12 2026), because the ambiguous
        class needs every touch inside a bucket to have been observed before it
        can be judged. So each credited bucket takes two ticks in the fixture:
@@ -2695,10 +2708,32 @@
                 return a && a.qty === 10 && a.offered >= Math.floor(4000 * GATE.capture)
                     && a.absorbed === a.offered - 10 && a.ratio > 50; })(),
        JSON.stringify(buyAbsorption(sb2)));
+    /* ONCE-PER-BUCKET AT THE PRE-CLAMP TERM (stage 1d — census probe:5649):
+       the qty clamp pins buyQ at 10 whatever the crediting does, so the
+       once-ness is asserted where the clamp cannot absorb it — no bucket
+       timestamp may appear twice in the trace the tick writes. */
+    ok("[R43.2] no bucket timestamp appears twice in the live buy trace — once-per-bucket read at the pre-clamp term",
+       Array.isArray(sb2.buyTrace) && sb2.buyTrace.length > 0
+       && new Set(sb2.buyTrace.map(b => b.t)).size === sb2.buyTrace.length,
+       JSON.stringify((sb2.buyTrace || []).map(b => b.t)));
     S.latest[9002] = { high: 4399, low: 4000, highTime: nowS, lowTime: nowS };   // lifts the ask
     ok("[R43.2] the bucket that completed the buy cannot also fill the sell — no instant round trip",
        sb2.state === "open" && sb2.sellQ === 0,
        JSON.stringify({ state: sb2.state, sellQ: sb2.sellQ, bkt: S.min5At, buyDoneBkt: sb2.buyDoneBkt }));
+    /* THE ELIGIBILITY, AT THE TERM (stage 1d — census probe:2543). The tick's
+       if/else-if ordering delivered the property while the named guard was
+       unreachable on the completing tick, and the assertion could not tell
+       the two apart. The conjunction is now the named `sellBucketEligible`,
+       asserted directly, and both ticks are checked to route through it. */
+    ok("[R43.2] sell-bucket eligibility at the term — false for the completing bucket, false for a re-presented one, true for the next; both ticks route through it",
+       (() => { const leg = { buyDone: 5, buyDoneBkt: 300e3, sellBkt: 0 };
+                return sellBucketEligible(leg, { bkt: 300e3 }) === false
+                    && sellBucketEligible(leg, { bkt: 600e3 }) === true
+                    && sellBucketEligible({ buyDone: 0, buyDoneBkt: 0, sellBkt: 0 }, { bkt: 600e3 }) === false
+                    && sellBucketEligible({ buyDone: 5, buyDoneBkt: 300e3, sellBkt: 600e3 }, { bkt: 600e3 }) === false
+                    && sellBucketEligible({ buyDone: 900e3, buyDoneBkt: 300e3, sellBkt: 0 }, { bkt: 600e3 }) === false
+                    && /sellBucketEligible\(/.test(String(shadowTick)) && /sellBucketEligible\(/.test(String(scorerTripTick)); })(),
+       "completing bucket, next bucket, no-buy, already-credited, pre-buyDone bucket");
     roll(bkt18(t18 + 1200e3));            // observe a sell-eligible bucket
     roll(bkt18(t18 + 1500e3));            // and close it
     ok("[R18.2] sell side symmetric — full round trip closes with net after tax",
@@ -3883,8 +3918,12 @@
     const roll27 = ms => { S.min5At = ms; shadowTick(); };
     roll27(b27); roll27(b27 + 300e3);      // observe, then close the bucket
     const sb27 = DB.shadowBook[0];
-    const tape27 = Math.max(1, Math.floor(40 * GATE.capture));
-    const cons27 = Math.max(1, Math.floor(tape27 * 0.5));
+    /* Expectations from PRODUCTION calls, not probe arithmetic (stage 1d —
+       census probe:3701: the old tape27/cons27 reproduced reachCredit's
+       expression verbatim, so a refactor with different rounding could not
+       be told apart). */
+    const tape27 = reachCredit(3900, 4001, 40, "buy", false).oper;   // proven: full capture-capped credit
+    const cons27 = reachCredit(4000, 4000, 40, "buy", false).oper;   // ambiguous: the participation haircut
     /* REACHABILITY (ruled Aug 12 2026) makes the haircut POSITION-DEPENDENT:
        a print strictly below the bid proves the queue at my price cleared and
        takes full credit, so the fixture above (avgLowPrice 4000 vs bid 4001)
@@ -3903,6 +3942,46 @@
        sbAt.buyQ === cons27 && sbAt.buyQStrict === 0 && sbAt.buyQFull === tape27
        && sbAt.buyQFull > sbAt.buyQ && sbAt.buyQ > sbAt.buyQStrict,
        JSON.stringify({ oper: sbAt.buyQ, strict: sbAt.buyQStrict, lenient: sbAt.buyQFull }));
+    /* THE TRACE FOLLOWS THE RIGHT READINGS on a bucket where they DIVERGE
+       (stage 1d — census probe:2528): on the beyond branch oper === lenient,
+       so a swap of which reading lands in `credited` vs `full` was invisible
+       to every prior trace fixture. This at-bid bucket is the divergent one. */
+    ok("[R59.7] on an ambiguous bucket the trace's `credited` carries the OPERATIVE reading and `full` the lenient one — the two diverge here, so a swap cannot hide",
+       Array.isArray(sbAt.buyTrace) && sbAt.buyTrace.some(x => x.credited === cons27 && x.full === tape27 && x.credited < x.full),
+       JSON.stringify(sbAt.buyTrace));
+    /* AT THE TERM (stage 1d — census probe:3701, probe:5976, probe:6052).
+       The arithmetic asserted on fillCredit's own return: relationships and
+       scaling, no probe-side re-derivation. The term takes no qty, so no
+       clamp exists to absorb these; the Math.max(1,…) floor is checked
+       non-binding by requiring oper > 1. */
+    ok("[R18.5] [R44.1] the ambiguous haircut is a relationship on the SAME call's return, and the volume weighting is a scaling",
+       (() => { const p = shadowPart();
+                const a = fillCredit(4000, 4000, 400, "buy", false, GATE.capture, p);
+                const b = fillCredit(4000, 4000, 800, "buy", false, GATE.capture, p);
+                const pr = fillCredit(3900, 4001, 400, "buy", false, GATE.capture, p);
+                return a.at === true && a.strict === 0
+                    && a.oper === Math.max(1, Math.floor(a.lenient * p)) && a.oper > 1
+                    && b.lenient === 2 * a.lenient
+                    && pr.strict === pr.lenient && pr.oper === pr.lenient && pr.strict > 0; })(),
+       "haircut from the same return, doubling volume doubles the cap, proven takes full credit on all three");
+    ok("[R18.2] the bracket holds AT THE TERM at a scale where the stored reading's qty clamp would have pinned it",
+       (() => { const p = shadowPart();
+                const amb = fillCredit(4000, 4000, 1e6, "buy", false, GATE.capture, p);
+                const bey = fillCredit(3900, 4000, 1e6, "buy", false, GATE.capture, p);
+                return amb.lenient >= amb.oper && amb.oper >= amb.strict && amb.lenient > amb.oper
+                    && bey.lenient === bey.oper && bey.oper === bey.strict && bey.strict > 0; })(),
+       "the term has no qty input, so nothing here can absorb the ordering");
+    ok("[R18.2] capture is an ARGUMENT of the term — credit orders by capture point, and reachCredit is the paper book's binding of it",
+       (() => { const c5 = fillCredit(3900, 4000, 1000, "buy", false, 0.05, shadowPart());
+                const c15 = fillCredit(3900, 4000, 1000, "buy", false, 0.15, shadowPart());
+                const c30 = fillCredit(3900, 4000, 1000, "buy", false, 0.3, shadowPart());
+                /* identity checked on the AT-PRICE branch, where both capture
+                   AND participation matter — a beyond-branch fixture would be
+                   participation-insensitive and let a wrapper defect hide */
+                return c5.lenient < c15.lenient && c15.lenient < c30.lenient
+                    && JSON.stringify(reachCredit(4000, 4000, 1000, "buy", false))
+                       === JSON.stringify(fillCredit(4000, 4000, 1000, "buy", false, GATE.capture, shadowPart())); })(),
+       "capture ordering, and the wrapper identity that keeps one implementation");
     ok("[R18.5] a print on the wrong side of my price credits nothing at all",
        (() => { DB.shadowBook = [{ id: 9703, fam: "above:9002", itemId: 9002, name: "Probe beta",
                   qty: 20, bid: 3900, ask: 4399, t: now27 - 60e3, buyQ: 0, sellQ: 0, buyQFull: 0,
@@ -5126,9 +5205,24 @@
        shadowByGate().size === 1 && !!shadowByGate().get("ROI floor"),
        JSON.stringify([...shadowByGate().keys()]));
     const pgs40 = paperGateSection();
-    ok("[R40.5] each row names its FILL MODEL and stamps the evidence grade behind it",
-       /fill model v1<\/span>/.test(pgs40) && /fill model v2<\/span>/.test(pgs40)
-       && /1 live, 1 reconstructed|1 reconstructed, 1 live/.test(pgs40),
+    /* ROW-SCOPED (stage 1d — census probe:4928): the label claims a PER-ROW
+       property and the old match ran against the whole section, which any
+       row's badge could satisfy for any other row. Each model's badge and
+       the grade note are matched inside that row's own fragment, located by
+       its drill key — the blendFrag idiom. The fixture's v1 and v2 rows are
+       each other's decoys: a section-wide match cannot tell them apart, the
+       scoped one must. */
+    ok("[R40.5] each row names its FILL MODEL and stamps the evidence grade behind it — inside that row's own fragment",
+       (() => { const d = document.createElement("div"); d.innerHTML = pgs40;
+                const frag = key => { const el = [...d.querySelectorAll("[data-drill]")]
+                    .find(x => (x.getAttribute("data-drill") || "").includes(key));
+                  const tr = el && el.closest("tr");
+                  return tr ? tr.innerHTML : ""; };
+                const v2 = frag("fill model v2"), v1 = frag("fill model v1");
+                return v1 !== "" && v2 !== "" && v1 !== v2
+                    && /fill model v2<\/span>/.test(v2) && !/fill model v1<\/span>/.test(v2)
+                    && /fill model v1<\/span>/.test(v1) && !/fill model v2<\/span>/.test(v1)
+                    && /1 live, 1 reconstructed|1 reconstructed, 1 live/.test(v2); })(),
        pgs40.slice(pgs40.indexOf("<tbody"), pgs40.indexOf("<tbody") + 500));
     ok("[R40.5] a finding resting ONLY on reconstructed evidence says so",
        /exists only in reconstructed evidence/.test(evidenceNote([mk40t(9.5, "reconstructed", 1)])),
@@ -5186,16 +5280,41 @@
                 reconReplay(late, pts40.slice(0, 12), from, Date.now());
                 return late.buyQ === 0 && late.state === "open"; })(),
        "pre-open buckets credit nothing");
-    const openTrip40 = { id: 41001, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 100,
+    /* PRODUCIBLE SHAPE (stage 1d — census probe:4991): hzH 9.5 is a real
+       schedule gap and the prices are ones the item's own band could carry —
+       the trip stays open because the tape reaches neither leg, not because
+       the fixture is impossible (bid below every low, ask above every high). */
+    const openTrip40 = { id: 41001, itemId: 9001, qty: 10, bid: 3000, ask: 4600, t: base40, hzH: 9.5,
       buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
     const cov2 = reconReplay(openTrip40, pts40, base40, Date.now());
     ok("[R40.7] observation credit is SERIES COVERAGE — every bucket with data, for a trip still open",
        cov2 === 24 * 5 * 60e3 && openTrip40.state === "open",
        "covered " + (cov2 / 60e3) + " min from 24 buckets");
-    ok("[R40.7] a bucket the series has no data for credits nothing",
-       reconReplay({ id: 1, itemId: 9001, qty: 10, bid: 1, ask: 9e9, t: base40, hzH: 9.5,
+    /* MIXED SERIES (stage 1d — census probe:4994): the old fixture was an
+       EMPTY array, which returns 0 whatever the credit rule does — zero
+       iterations produce zero credit regardless. A bucket the series has no
+       data for is a DIFFERENT input: present, prices null, volume 0. The
+       replay covers its span (an observed-empty bucket is data of absence)
+       and credits nothing from it — the credit half is the property, and it
+       is asserted against a fixture where data buckets sit beside empty ones
+       at a qty the clamp cannot pin. */
+    ok("[R40.7] a bucket the series has no data for credits nothing — while data buckets beside it credit, and the span stays covered",
+       (() => { const mixed = [
+                  { t: base40, lo: 3990, hi: 4500, lv: 5000, hv: 5000 },
+                  { t: base40 + 300e3, lo: null, hi: null, lv: 0, hv: 0 },
+                  { t: base40 + 600e3, lo: 3990, hi: 4500, lv: 5000, hv: 5000 },
+                  { t: base40 + 900e3, lo: null, hi: null, lv: 0, hv: 0 } ];
+                const tr = { id: 1, itemId: 9001, qty: 5000, bid: 4001, ask: 4600, t: base40, hzH: 9.5,
+                             buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, state: "open" };
+                const cov = reconReplay(tr, mixed, base40, Date.now());
+                return cov === 4 * 5 * 60e3
+                    && tr.buyQ === 2 * reachCredit(3990, 4001, 5000, "buy", false).oper
+                    && tr.buyQ > 0; })(),
+       "two data buckets credit, two empty ones do not, four buckets of span covered");
+    ok("[R40.7] an EMPTY series credits nothing and covers nothing — a different input from an empty bucket, named as such",
+       reconReplay({ id: 1, itemId: 9001, qty: 10, bid: 3000, ask: 4600, t: base40, hzH: 9.5,
                      buyQ: 0, sellQ: 0, buyDone: 0, state: "open" }, [], base40, Date.now()) === 0,
-       "no buckets, no credit");
+       "no buckets, no credit, no coverage");
     ok("[R40.7] the recovery log is an EVENT — WHAT CHANGED reports the outage",
        (() => { DB.reconLog = [{ at: Date.now(), trips: 3, spanH: 6.2, items: 2, closed: 1 }];
                 DB.prevOpenAt = Date.now() - 3600e3;
@@ -5619,6 +5738,9 @@
     DB.shadowBook = [
       mkTrip({ itemId: 9001, name: "Probe alpha" }),
       mkTrip({ itemId: 9002, name: "Probe beta", state: "unfilled", net: 0, buyQ: 10, buyQFull: 40,
+               /* strict distinct from oper and lenient, so the three readings
+                  are mutually distinguishable (census probe:5461) */
+               buyQStrict: 3,
                benchedBy: ["volume floor"], grade: "reconstructed", regimes: ["loose"] }),
       /* The thin one: closed inside a single observation window. It is
          excluded from every verdict and must still appear in the file. */
@@ -5659,10 +5781,13 @@
     /* THREE readings since the reachability ruling (Aug 12 2026): proven,
        operative and possible, so the export brackets the fill claim rather
        than asserting it. */
-    ok("[R42.2] the tape credit is reported at all THREE reachability readings",
+    ok("[R42.2] the tape credit is reported at all THREE reachability readings — each by VALUE, and an absent proven counter exports null, never 0",
        (() => { const b = P.closedTrips.find(t => t.item === "Probe beta");
+                const a2 = P.closedTrips.find(t => t.item === "Probe alpha" && t.outcome === "filled both legs");
                 return b && b.buyCreditOperative === 10 && b.buyCreditPossiblyReachable === 40
-                    && "buyCreditProvenReachable" in b && b.participationPct === shadowPartPct(); })(),
+                    && b.buyCreditProvenReachable === 3
+                    && a2 && a2.buyCreditProvenReachable === null
+                    && b.participationPct === shadowPartPct(); })(),
        JSON.stringify(P.closedTrips.find(t => t.item === "Probe beta")));
     ok("[R42.2] per-gate rollups and the three regime curves ship as series",
        P.perGateRollup.length >= 1 && P.perGateRollup.every(r => r.gate && r.horizonShape)
@@ -6709,10 +6834,13 @@
        /PAPER BOOK IS A DIFFERENT CONSTRUCT/.test(zBlob) && /SIMULATED bid that never traded/.test(zBlob)
        && /Do not carry a conclusion from one to the other/.test(zBlob),
        "construct separation in the export");
-    ok("[R47.5] the panel carries the same caveat where the lower bound is READ, not in a footnote",
-       /depressed here by SELF-COMPARISON/.test(zPanel) && /3 at-price buckets/.test(zPanel)
-       && /does NOT apply to the paper book/.test(zPanel)
-       && /Two different constructs/.test(zPanel),
+    ok("[R47.5] the panel carries the same caveat where the lower bound is READ — surviving with every teaching disclosure stripped",
+       (() => { const d47 = document.createElement("div"); d47.innerHTML = zPanel;
+                for (const det of [...d47.querySelectorAll("details.teach")]) det.remove();
+                const outside = d47.innerHTML;
+                return /depressed here by SELF-COMPARISON/.test(outside) && /3 at-price buckets/.test(outside)
+                    && /does NOT apply to the paper book/.test(outside)
+                    && /Two different constructs/.test(outside); })(),
        zPanel.slice(0, 200));
     // ---- R48.1 the sell leg is graded on its OWN anchor ----
     /* Through production: calibWindow gives the anchor, calibReplaySell the
@@ -6734,9 +6862,20 @@
     ok("[R48.1] a sell that really completed is graded SOLD when the tape reached its price after the buy finished",
        sRow.lenient.verdict === "sold" && sRow.strict.verdict === "sold",
        JSON.stringify({ s: sRow.strict, l: sRow.lenient }));
-    ok("[R48.1] the sell window opens where the BUY really finished — tape before that credits nothing",
-       sRow.trace.length > 0 && sRow.trace.every(x => x.minsIn >= 0),
-       JSON.stringify(sRow.trace[0]));
+    /* THE ANCHOR AT THE TERM (stage 1d — census probe:6536): the in-loop
+       filter and the minsIn arithmetic share `start`, so "no negative minsIn"
+       was an identity for ANY anchor. The anchor is now the named
+       sellWindowStart, and the credits-nothing half is driven by a reachable
+       print placed BEFORE it: with the right anchor the replay reads
+       never-sold; a window re-anchored at the buy's start would credit it. */
+    ok("[R48.1] the sell window opens where the BUY really finished — the named anchor, and reachable tape BEFORE it credits nothing",
+       (() => { if (sellWindowStart(sW) !== sW.buyDoneReal) return false;
+                const preOnly = [{ t: sW.buyDoneReal - 600e3, lo: 2000, hi: 1500, lv: 1, hv: 100000 }]
+                  .concat(sPts.map(x => Object.assign({}, x, { hi: 900 })));
+                const noPre = calibReplaySell(sW, preOnly);
+                return noPre.lenient.verdict === "never-sold" && noPre.lenient.creditedPct === 0
+                    && sRow.trace.length > 0 && sRow.trace.every(x => x.minsIn >= 0); })(),
+       "one reachable pre-anchor bucket, zero credit");
     ok("[R48.1] a sell the tape never reached reads FALSE NEVER-SOLD, with how much was credited",
        (() => { const bad = calibReplaySell(sW, sPts.map(x => Object.assign({}, x, { hi: 1 })));
                 return bad.lenient.verdict === "never-sold" && bad.lenient.creditedPct === 0; })(),
@@ -6914,10 +7053,22 @@
     /* ═══ §59 THE SELL DISCRIMINATOR (user ruling, Aug 12 2026) ═══
        Computed per case, never read off a trace. Thresholds proposed. */
     const mkB = (gapPct, hv, n) => Array.from({ length: n }, () => ({ hi: Math.round(1200 * (1 + gapPct / 100)), hv }));
-    ok("[R59.1] a small negative gap with volume classifies as DILUTION, and carries the figures that decided it",
+    /* STALE-ASSERTION REPAIR (stage 1d — census probe:6716/6749/6753): these
+       used to call the classifier WITHOUT a spread, so the retired absolute
+       band answered and the ratified spread-relative band was never on the
+       path. Spreads now travel as production sends them, the deciding figures
+       (relBandPct, spreadPct) are asserted by value, and the why-copy is
+       forbidden from rendering NaN or a zero-spread claim (eleventh face). */
+    ok("[R59.1] a small negative gap with volume classifies as DILUTION under the item's own spread band, and carries the figures that decided it",
+       (() => { const c = classifySellFailure(mkB(-0.5, 500, 10), 1200, 6);
+                return c.cls === "dilution" && c.medGapPct != null && c.relBandPct === 2 && c.spreadPct === 6
+                    && c.volShare === 1 && c.n === 10 && /prints above the ask are plausible/.test(c.why)
+                    && !/NaN/.test(c.why) && !/own 0% spread/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-0.5, 500, 10), 1200, 6)));
+    ok("[R59.1] the no-spread call is the FALLBACK path, named as its own case — the absolute band answers there and only there",
        (() => { const c = classifySellFailure(mkB(-0.5, 500, 10), 1200);
-                return c.cls === "dilution" && c.medGapPct != null && c.medGapPct >= -SELL_DILUTION_GAP_PCT
-                    && c.volShare === 1 && c.n === 10 && /prints above the ask are plausible/.test(c.why); })(),
+                return c.cls === "dilution" && c.spreadPct === null
+                    && c.relBandPct === SELL_DILUTION_GAP_PCT; })(),
        JSON.stringify(classifySellFailure(mkB(-0.5, 500, 10), 1200)));
     /* ═══ R69.3–4 A ZERO SPREAD IS NOT AN UNKNOWN SPREAD ═══
        (falsy-zero census, Aug 13 2026)
@@ -6947,15 +7098,24 @@
                 return c.cls === "mislocated-window" && c.sustainShare >= SELL_MISLOC_SUSTAIN
                     && /sustained gap, not noise/.test(c.why); })(),
        JSON.stringify(classifySellFailure(mkB(-12, 500, 10), 1200)));
-    ok("[R59.1] a large gap that is NOT sustained is not mislocation — a window containing a dip is not a wrong window",
+    ok("[R59.1] a large gap that is NOT sustained is not mislocation — the verdict is the SUSTAIN bar's, isolated from the dilution band",
        (() => { const mixed = mkB(-12, 500, 3).concat(mkB(-2.5, 500, 7));
-                return classifySellFailure(mixed, 1200).cls === "unclassified"; })(),
-       JSON.stringify(classifySellFailure(mkB(-12, 500, 3).concat(mkB(-2.5, 500, 7)), 1200)));
-    ok("[R59.1] NEITHER-FITS is a real outcome — a gap between the bands surfaces rather than being forced into a bucket",
-       (() => { const c = classifySellFailure(mkB(-3, 500, 10), 1200);
-                return c.cls === "unclassified" && /neither signature fits/.test(c.why)
-                    && /a finding rather than a residue/.test(c.why); })(),
-       JSON.stringify(classifySellFailure(mkB(-3, 500, 10), 1200)));
+                /* spread 3 → band 1%, so dilution cannot claim the −2.5
+                   median and the sustain requirement alone decides; the same
+                   buckets at spread 9 → band 3% move to dilution, which is
+                   the ratified proportionality, shown rather than assumed */
+                const low = classifySellFailure(mixed, 1200, 3);
+                const high = classifySellFailure(mixed, 1200, 9);
+                return low.cls === "unclassified" && low.sustainShare < SELL_MISLOC_SUSTAIN
+                    && high.cls === "dilution"; })(),
+       JSON.stringify(classifySellFailure(mkB(-12, 500, 3).concat(mkB(-2.5, 500, 7)), 1200, 3)));
+    ok("[R59.1] NEITHER-FITS is a real outcome — a gap between the bands surfaces rather than being forced into a bucket, and its copy names the band that decided it",
+       (() => { const c = classifySellFailure(mkB(-3, 500, 10), 1200, 6);
+                return c.cls === "unclassified" && c.relBandPct === 2
+                    && /neither signature fits/.test(c.why)
+                    && /a finding rather than a residue/.test(c.why)
+                    && /within 2%/.test(c.why) && !/within 1%/.test(c.why); })(),
+       JSON.stringify(classifySellFailure(mkB(-3, 500, 10), 1200, 6)));
     ok("[R59.1] and a third mechanism surfaces by name — prints with no volume is an ILLIQUIDITY finding, not dilution",
        /* Its OWN class, not a sub-label on "unclassified" (ruled Aug 12 2026):
           a third mechanism that is real gets a name, or it reads as residue. */
@@ -7009,38 +7169,50 @@
                 if (kL) S.latest[9002] = kL; if (kM) S.min5[9002] = kM;
                 return tr.length > 0 && tr.every(b => b.credited === 0) && tr[0].hi === 100; })(),
        "zero-credit buckets must be recorded by the tick");
-    /* AMENDMENT (a): the classifier must hold still to be an instrument. */
-    ok("[R59.5] the dilution threshold is FROZEN — it does not follow the ROI floor it was derived from",
+    /* AMENDMENT (a): the classifier must hold still to be an instrument —
+       and the band that must hold still since the ratification is the LIVE
+       spread-relative one (stage 1d — census probe:6812: the old form only
+       ever exercised the fallback constant). */
+    ok("[R59.5] the dilution band is FROZEN against the ROI floor — the live spread-relative band does not move when the floor does, and the absolute fallback stays 1.0",
        (() => { const kR = GATE.roi;
-                const a = classifySellFailure(mkB(-0.9, 500, 10), 1200).cls;
+                const a = classifySellFailure(mkB(-0.9, 500, 10), 1200, 6);
                 GATE.roi = 5.0;                       // move the floor materially
-                const b = classifySellFailure(mkB(-0.9, 500, 10), 1200).cls;
+                const b = classifySellFailure(mkB(-0.9, 500, 10), 1200, 6);
                 const drift = sellThresholdDrift();
                 GATE.roi = kR;
-                return a === "dilution" && b === "dilution" && SELL_DILUTION_GAP_PCT === 1.0
+                return a.cls === "dilution" && b.cls === a.cls && b.relBandPct === a.relBandPct
+                    && SELL_DILUTION_GAP_PCT === 1.0 && SELL_SPREAD_REL_FRACTION === 1 / 3
                     && drift.moved === true && /deliberately did NOT follow/.test(drift.note); })(),
        "a classifier that tracks a strategy parameter makes its own history incomparable");
-    /* AMENDMENT (b): report the shape question, do not act on it. */
-    ok("[R59.6] the spread-shape comparison reports INSUFFICIENT below the bar rather than estimating",
-       (() => { const r = sellShapeReport([{ spreadPct: 3, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }]);
+    /* AMENDMENT (b), DIRECTION FLIPPED WITH THE RATIFICATION (stage 1d —
+       census probe:6827): the live classifier IS spread-relative now, so the
+       report's counterfactual is the RETIRED absolute band, cases are built
+       through the classifier (hand-built `cls` values were states production
+       cannot produce), and the comparison reads the classifier's own absCls. */
+    ok("[R59.6] the band-transition report says INSUFFICIENT below the bar rather than estimating",
+       (() => { const one = Object.assign({ item: "x" }, classifySellFailure(mkB(-0.5, 500, 10), 1200, 3));
+                const r = sellShapeReport([one]);
                 return r.enough === false && /insufficient rather than estimated/.test(r.note); })(),
        JSON.stringify(sellShapeReport([])));
-    ok("[R59.6] and once the sample exists it reports the spread distribution and what WOULD reclassify — without changing anything",
-       (() => { const wide = Array.from({ length: 5 }, () => ({ spreadPct: 15, medGapPct: -3, cls: "unclassified", sustainShare: 0 }));
-                const tight = Array.from({ length: 5 }, () => ({ spreadPct: 1.5, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }));
+    ok("[R59.6] at the bar it reports what the RETIRED absolute band would have said, case by case through the classifier — the transition ledger, changing nothing",
+       (() => { const c59 = (item, gap, spread) => Object.assign({ item }, classifySellFailure(mkB(gap, 500, 10), 1200, spread));
+                /* wide: live band 5% → dilution, retired 1% → unclassified —
+                   the movers; tight: dilution under both — unmoved */
+                const wide = ["w1", "w2", "w3", "w4", "w5"].map(i => c59(i, -3, 15));
+                const tight = ["t1", "t2", "t3", "t4", "t5"].map(i => c59(i, -0.5, 1.5));
                 const r = sellShapeReport(wide.concat(tight));
-                /* on the wide-spread items a third of 15% is 5%, so a −3% gap
-                   reclassifies to dilution; the tight ones do not move */
-                return r.enough && r.n === 10 && r.wouldReclassify === 5 && r.wouldReclassifyPct === 50
-                    && r.spreadMedianPct > 0 && /doing different work at the two ends/.test(r.note)
-                    && SELL_DILUTION_GAP_PCT === 1.0; })(),
-       JSON.stringify(sellShapeReport(Array.from({ length: 5 }, () => ({ spreadPct: 15, medGapPct: -3, cls: "unclassified", sustainShare: 0 }))
-         .concat(Array.from({ length: 5 }, () => ({ spreadPct: 1.5, medGapPct: -0.5, cls: "dilution", sustainShare: 0 }))))));
-    ok("[R59.4] both populations render SEPARATELY with their own n — never pooled",
+                return r.enough && r.n === 10 && r.retiredBandWouldDiffer === 5 && r.retiredBandWouldDifferPct === 50
+                    && r.cases.length === 5
+                    && r.cases.every(m => m.live === "dilution" && m.underRetiredAbsolute === "unclassified" && m.spreadPct === 15)
+                    && r.spreadMedianPct > 0 && /transition ledger/.test(r.note)
+                    && !/not doing any harm/.test(r.note); })(),
+       "five movers named with their spreads, five unmoved, and the tautological zero is structurally gone");
+    ok("[R59.4] both populations render SEPARATELY with their own n — and no pooled combined count renders beside them",
        (() => { const h = sellDiscriminatorHTML(DB.calib);
                 return /Calibration — replayed real flips/.test(h) && /Live book — simulated sells/.test(h)
                     && /data-drill="sell:cls:calib"/.test(h) && /data-drill="sell:cls:live"/.test(h)
-                    && /has NO window to place|no window to place/.test(h); })(),
+                    && /has NO window to place|no window to place/.test(h)
+                    && !/across both populations|combined across|both populations combined/i.test(h); })(),
        sellDiscriminatorHTML(DB.calib).slice(0, 300));
     /* ── R48.2 SELL-LEG PARITY: the rollup ships with its rows ── */
     ok("[R48.2] the sell aggregate no longer ships alone — the export carries the per-flip sell leg",
@@ -7556,35 +7728,30 @@
        classifySellFailure([bkt(995, 5), bkt(996, 5)], 1000).cls === "dilution",
        JSON.stringify(classifySellFailure([bkt(995, 5), bkt(996, 5)], 1000)));
 
-    /* [R66.3] sellRelClassOf is ONE implementation, and the export's
-       per-case fields are computed from it. Asserted at the term. */
-    const cRel = { spreadPct: 18.2, medGapPct: -4.3, sustainShare: 0.5, cls: "unclassified", item: "probe" };
-    ok("[R66.3] the spread-relative band reclassifies a wide-spread case the absolute band could not",
-       sellRelClassOf(cRel) === "dilution" && cRel.cls === "unclassified",
-       JSON.stringify({ rel: sellRelClassOf(cRel), abs: cRel.cls, band: cRel.spreadPct * SELL_SPREAD_REL_FRACTION }));
-    ok("[R66.3] and a narrow-spread case with the same gap stays unclassified — the point of the shape",
-       sellRelClassOf({ spreadPct: 4.02, medGapPct: -2.98, sustainShare: 0.13 }) === "unclassified",
-       "narrow spread, same absolute gap");
+    /* [R66.3] ONE implementation since the direction flip (stage 1d — census
+       probe:6827): both classifications come from the classifier itself —
+       the live class and the retired absolute band it stamps beside it as
+       `absCls`. The probe-side sellRelClassOf re-derivation is gone with the
+       function it asserted. Cases are built THROUGH the classifier, because
+       hand-built `cls` values were states production cannot produce. */
+    const mkB66 = (gapPct, hv, n) => Array.from({ length: n }, () => ({ hi: Math.round(1000 * (1 + gapPct / 100)), hv }));
+    const case66 = (item, gap, spread) => Object.assign({ item }, classifySellFailure(mkB66(gap, 500, 10), 1000, spread));
     const shape = sellShapeReport([
-      cRel,
-      { spreadPct: 19.17, medGapPct: -3.92, sustainShare: 0.33, cls: "unclassified", item: "b" },
-      { spreadPct: 17.21, medGapPct: -2.17, sustainShare: 0.23, cls: "unclassified", item: "c" },
-      { spreadPct: 6.64, medGapPct: -3.56, sustainShare: 0.05, cls: "unclassified", item: "d" },
-      { spreadPct: 4.02, medGapPct: -2.98, sustainShare: 0.13, cls: "unclassified", item: "e" },
-      { spreadPct: 11.28, medGapPct: -16.73, sustainShare: 0.88, cls: "mislocated-window", item: "f" },
-      { spreadPct: 4.63, medGapPct: -0.94, sustainShare: 0, cls: "dilution", item: "g" },
-      { spreadPct: 8.39, medGapPct: -6.63, sustainShare: 0.8, cls: "mislocated-window", item: "h" }
+      case66("a", -3, 15), case66("b", -3, 15), case66("c", -3, 15),   // live dilution / retired unclassified — the movers
+      case66("f", -16, 11), case66("h", -16, 8.39),                    // mislocated under BOTH bands
+      case66("g", -0.9, 4.63), case66("g2", -0.9, 4.63),               // dilution under both
+      case66("e", -3, 6)                                               // unclassified under both
     ]);
-    ok("[R66.3] the reclassification count OPENS to the cases that move, by name and with their spreads",
-       shape.enough && shape.wouldReclassify === 3 && shape.cases.length === 3
-       && shape.cases.every(m => m.item && m.spreadPct > 0 && m.from && m.to),
-       JSON.stringify({ n: shape.wouldReclassify, cases: shape.cases }));
-    ok("[R66.3] and it reports what the relative form does to ALL THREE classes, not just the movers",
-       shape.classCountsUnderRelative
-       && shape.classCountsUnderRelative.dilution === 4
-       && shape.classCountsUnderRelative.mislocatedWindow === 2
-       && shape.classCountsUnderRelative.unclassified === 2,
-       JSON.stringify(shape.classCountsUnderRelative));
+    ok("[R66.3] the transition count OPENS to the cases that move, by name and with their spreads — both classes read from the ONE classifier",
+       shape.enough && shape.retiredBandWouldDiffer === 3 && shape.cases.length === 3
+       && shape.cases.every(m => m.item && m.spreadPct > 0 && m.live === "dilution" && m.underRetiredAbsolute === "unclassified"),
+       JSON.stringify({ n: shape.retiredBandWouldDiffer, cases: shape.cases }));
+    ok("[R66.3] and it reports what the retired band says about ALL the classes, not just the movers",
+       shape.classCountsUnderRetiredAbsolute
+       && shape.classCountsUnderRetiredAbsolute.dilution === 2
+       && shape.classCountsUnderRetiredAbsolute.mislocatedWindow === 2
+       && shape.classCountsUnderRetiredAbsolute.unclassified === 4,
+       JSON.stringify(shape.classCountsUnderRetiredAbsolute));
     /* RATIFIED Aug 13 2026 — this assertion previously claimed the absolute
        band was still live, and kept passing after the ratification only because
        it called the classifier WITHOUT a spread, so the fallback band answered.
@@ -7608,12 +7775,23 @@
     out.push("FAIL sell discriminator findings :: " + (e && e.stack || e));
   }
   try {
-    /* [R66.2] a falsified prediction reads as a result. Driven through the
-       real verdict builder by seeding the two populations' splits. */
+    /* [R66.2] a falsified prediction reads as a result — driven through the
+       NAMED verdict term with the two populations' splits actually seeded
+       (stage 1d — census probe:7402: the old form matched "falsification
+       test" against the whole panel, which an always-emitted dim span
+       satisfied whatever branch the verdict took, and never seeded the
+       splits it claimed to drive). */
     const keepBk = DB.shadowBook, keepCal = DB.calib;
     const html = sellDiscriminatorHTML(null);
-    ok("[R66.2] the panel names the falsification test rather than only its inputs",
-       /falsification test/i.test(html), html.slice(0, 200));
+    ok("[R66.2] the verdict is the named term's branch — disagreeing splits read FALSIFIED, insufficient ones say so, and the panel routes through the term",
+       (() => { const mkSplit = o => Object.assign({ n: 10, enough: true, dilution: 0, mislocated: 0,
+                  unclassified: 0, noLiquidity: 0, pct: () => 0 }, o);
+                const vFals = sellVerdictOf(mkSplit({ dilution: 8 }), mkSplit({ dilution: 2, mislocated: 5, unclassified: 3 }));
+                const vIns = sellVerdictOf(mkSplit({ enough: false }), mkSplit({ enough: false }));
+                return /prediction is FALSIFIED/.test(vFals) && /TWO DISTINCT DEFECTS/.test(vFals)
+                    && /Insufficient sample in both populations/.test(vIns)
+                    && /sellVerdictOf\(/.test(String(sellDiscriminatorHTML)); })(),
+       html.slice(0, 200));
     ok("[R66.5] the localisation renders in the ruled words, above the split",
        /Every real logged sell completed/.test(html)
        && /17 simulated sells with a complete buy and a fully observed horizon did not/.test(html)
@@ -7673,6 +7851,13 @@
        b.possibleVol === 725 && b.possibleBuckets === 2, JSON.stringify(b));
     ok("[R67.1] the pair is never averaged into a point estimate — both bounds are carried",
        b.provenVol < b.possibleVol && b.totalVol === 1125, JSON.stringify(b));
+    /* THE ABSENCE HALF (stage 1d — census probe:7461): "never averaged" is an
+       absence claim and needed an absence check — a midpoint field added to
+       the return, or midpoint copy on the surface, previously moved nothing. */
+    ok("[R67.1] and no averaged field or midpoint copy EXISTS to carry one — the absence asserted, per the eleventh face",
+       !("midpoint" in b) && !("estimate" in b) && !("pointEstimate" in b) && !("mid" in b)
+       && !/midpoint|point estimate|on average .{0,30}reach/i.test(sellBoundsHTML(sellBoundsOver([{ trace: tr, ask: 1000, spreadPct: 4.28 }]), "probe")),
+       JSON.stringify(Object.keys(b)));
     ok("[R67.2] with no spread known the two bounds COLLAPSE rather than guessing a width",
        (() => { const z = sellReachBounds(tr, 1000, 0);
                 return z.provenVol === z.possibleVol && z.provenVol === 100; })(),
@@ -8368,6 +8553,368 @@
     S.min5At = keep76.min5At; DB.filtersT1.vol = keep76.fT1vol; DB.tickFloor = keep76.tick;
   } catch(e){
     out.push("FAIL universe scorer :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §78 STAGE 1d — THE FILL SIM ON THE FRONTIER (build ruled Aug 14 2026)
+     Replaced-market fixture like §76's, plus the trip layer's own state. The
+     t1/t1open stores are probe-profile-only, so they are CLEARED at block
+     start (previous runs' fixture rows must not accumulate — M152) and
+     asserted empty at the end. Trips open through the production path
+     (scorerCycle → scorerTripOpen) and are then backdated where a horizon or
+     a sell window must be reachable inside a probe run — production-shaped
+     values on production-written records, the paper fixtures' own idiom. */
+  try {
+    /* The open-trip carry loads asynchronously at parse and fires a catch-up
+       on resolution; the fixture must not race it (fifth face). */
+    for (let i = 0; i < 100 && !t1Loaded; i++) await new Promise(r => setTimeout(r, 50));
+    S.t1Pending = null;
+    const keep78 = { t2: DB.scorerT2, bucket: S.scoredBucket, sets: S.scorerIdSets,
+      items: S.items, byId: S.byId, latest: S.latest, hour: S.hour, min5: S.min5, min5At: S.min5At,
+      latestAt: S.latestAt, pollSeq: S.pollSeq, fT1vol: DB.filtersT1.vol, tick: DB.tickFloor,
+      blk: DB.blacklist, watch: DB.watch, intel: DB.intel, vols: S.volumes,
+      trips: S.scorerTrips, t1b: S.t1Bucket, t1l: S.t1LastBucket,
+      planPicks: S.lastPlanPicks, planAt: S.lastPlanAt };
+    await (async () => { const d = await t0Open();
+      await t0Req(d.transaction("t1", "readwrite").objectStore("t1").clear());
+      await t0Req(d.transaction("t1open", "readwrite").objectStore("t1open").clear()); })();
+    DB.scorerT2 = {}; S.scoredBucket = 0; S.scorerIdSets = new Map();
+    S.scorerTrips = new Map(); S.t1Bucket = 0; S.t1LastBucket = 0;
+    DB.filtersT1.vol = 1000; DB.tickFloor = 15;
+    DB.blacklist = []; DB.watch = []; DB.intel = []; S.volumes = {};
+    S.lastPlanPicks = null; S.lastPlanAt = 0;
+    const bkts78 = [];   // every cycle bucket, for the rdiff keyed cleanup (R77.3 discipline)
+    const cyc78 = () => { bkts78.push(S.min5At); return scorerCycle(); };
+    const now78 = Math.floor(Date.now() / 1000);
+    const itX = { i: 9761, n: "Probe scorer X", l: 25000, m: 0, v: 0, a: 0 };
+    const itY = { i: 9762, n: "Probe scorer Y", l: 25000, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY]; S.byId = new Map([[9761, itX], [9762, itY]]);
+    S.latest = {
+      9761: { high: 4400, low: 4000, highTime: now78 - 60, lowTime: now78 - 120 },
+      9762: { high: 4160, low: 4100, highTime: now78 - 60, lowTime: now78 - 120 } };
+    S.hour = {
+      9761: { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 },
+      9762: { avgHighPrice: 4160, avgLowPrice: 4100, highPriceVolume: 50000, lowPriceVolume: 50000 } };
+    S.min5 = {}; S.latestAt = Date.now(); S.pollSeq = 7801;
+    const B0 = Math.floor(Date.now() / 300e3) * 300e3;
+    S.min5At = B0;
+    const cyc = cyc78();
+    const tp = (part, hz) => S.scorerTrips.get("9761|" + part + "|" + (hz || 6));
+    const ctl78 = cfgHash(liveMarketConfig());
+    ok("[R78.1] trips open at the funded edge — one per (item × participation × horizon in the RULED set {6, 9.5}), the funding cells and every provenance stamp at birth",
+       (() => { const a = tp(0.25), b = tp(0.5), c = tp(1);
+                const a9 = tp(0.25, 9.5), b9 = tp(0.5, 9.5), c9 = tp(1, 9.5);
+                return !!cyc && cyc.t1 && cyc.t1.opened === 6 && S.scorerTrips.size === 6
+                    && [a, b, c].every(p => p && p.cells.length === 16 && p.hzH === 6
+                        && p.fv === SCORER_FILL_V && p.v === SCORER_V && p.sz === "lim1"
+                        && p.openBkt === B0 && p.hour === new Date(B0).getUTCHours()
+                        && p.qty === 25000 && p.bid === 4001 && p.ask === 4399
+                        && p.pump === 0 && p.noChart === 1 && p.grade === "live"
+                        && p.vars.length === 3
+                        && p.vars.map(v => v.cap).join() === SCORER_CAPTURES.join())
+                    && [a9, b9, c9].every(p => p && p.hzH === 9.5 && p.cells.length === 16
+                        && p.vars.length === 3)
+                    && !S.scorerTrips.has("9762|0.5|6"); })(),
+       JSON.stringify({ t1: cyc && cyc.t1, keys: [...S.scorerTrips.keys()] }));
+    /* ═══ ROW 23c AT THE TRIP LAYER — the discriminating extension of the
+       R76.10/10b pair: the SAME blacklisted clean-passer gets no trip while
+       the canary counts it. A seed that leaks it into trips must leave the
+       canary pair green, and vice versa. */
+    const itZ = { i: 9763, n: "Probe scorer Z bl", l: 25000, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY, itZ]; S.byId.set(9763, itZ);
+    S.latest[9763] = { high: 4400, low: 4000, highTime: now78 - 60, lowTime: now78 - 120 };
+    S.hour[9763] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.blacklist = [9763];
+    S.min5At = B0 + 300e3; S.pollSeq++;
+    cyc78();
+    ok("[R78.2] a blacklisted clean-passer gets NO trip at any horizon while the canary still counts it — the veto's surviving core at the trip layer",
+       (() => { const cell = DB.scorerT2[ctl78];
+                return ![0.25, 0.5, 1].some(p => SCORER_HORIZONS.some(h => S.scorerTrips.has("9763|" + p + "|" + h)))
+                    && S.scorerTrips.size === 6
+                    && cell && cell.blFunded === 1 && JSON.stringify(cell.blIds) === "[9763]"; })(),
+       JSON.stringify({ keys: [...S.scorerTrips.keys()], bl: DB.scorerT2[ctl78] && DB.scorerT2[ctl78].blFunded }));
+    /* Mid-trip blacklisting voids at that cycle. */
+    DB.blacklist = [9763, 9761];
+    S.min5At = B0 + 600e3; S.pollSeq++;
+    const cycV = cyc78();
+    const pVoid = tp(0.5);
+    ok("[R78.2b] blacklisting an item MID-TRIP voids its open trips at that cycle — every participation, every horizon, no further accrual against the veto",
+       (() => { return cycV && cycV.t1 && cycV.t1.voided === 6
+                    && pVoid && pVoid.state === "closed" && pVoid.voidedBl === 1
+                    && pVoid.vars.every(v => v.state === "voided-bl" && v.net === null); })(),
+       JSON.stringify({ voided: cycV && cycV.t1 && cycV.t1.voided, st: pVoid && pVoid.state }));
+    scorerTripTick();   // rolls the voided trips
+    ok("[R78.2b] and the void rolls as `vbl` beside the counted figures, never inside them",
+       (() => { const e = (DB.scorerT2[ctl78].econ || {})[scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V)];
+                return e && e.vbl === 1 && e.n === 0 && e.net === 0 && S.scorerTrips.size === 0; })(),
+       JSON.stringify((DB.scorerT2[ctl78].econ || {})[scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V)]));
+    /* ═══ CAUSALITY, MINIMUM LIFE, ONCE-PER-BUCKET ═══ */
+    DB.blacklist = [];
+    S.min5At = B0 + 900e3; S.pollSeq++;
+    cyc78();   // reopens X's trips — the funded edge again after the void
+    const p3 = tp(0.5), pNeg = tp(0.25), pOne = tp(1);
+    S.min5[9761] = { avgHighPrice: 4500, avgLowPrice: 3900, highPriceVolume: 1000, lowPriceVolume: 1000 };
+    scorerTripTick();
+    ok("[R78.3] the opening cycle cannot observe, credit or resolve a trip — minimum life, transferred",
+       p3.vars.every(v => v.buyQ === 0 && v.state === "open") && !p3.pend,
+       JSON.stringify({ pend: !!p3.pend, buyQ: p3.vars.map(v => v.buyQ) }));
+    /* Backdate past the same-cycle guard; leave one trip's t in the future
+       of the current bucket as the causality control. */
+    for (const p of [p3, pOne]){ p.t = S.min5At - 60e3; p.openSeq = S.pollSeq - 1; }
+    pNeg.t = S.min5At + 10e3; pNeg.openSeq = S.pollSeq - 1;
+    scorerTripTick();   // observes the current bucket into pend
+    ok("[R78.3] a bucket that began before the trip was placed is not even observed for it — causality at the pend layer",
+       !pNeg.pend && p3.pend && p3.pend.bkt === S.min5At,
+       JSON.stringify({ neg: !!pNeg.pend, pos: p3.pend && p3.pend.bkt === S.min5At }));
+    S.min5At += 300e3; S.pollSeq++;
+    scorerTripTick();   // the observed bucket rolls and credits once
+    ok("[R78.3] one roll credits exactly one bucket's worth per capture lifecycle — at a scale the qty clamp cannot pin — and a re-presented bucket adds nothing",
+       (() => { const exp = SCORER_CAPTURES.map(c => fillCredit(3900, 4001, 1000, "buy", false, c, 0.5).oper);
+                const got = p3.vars.map(v => v.buyQ);
+                if (got.join() !== exp.join() || exp.some(x => !(x < p3.qty))) return false;
+                p3.pend = { bkt: S.min5At - 300e3, lo: 3900, lv: 1000, hi: null, hv: 0, touchBuy: 0, touchSell: 0 };
+                S.pollSeq++; scorerTripTick();
+                return p3.vars.map(v => v.buyQ).join() === exp.join(); })(),
+       JSON.stringify(p3.vars.map(v => v.buyQ)));
+    /* ═══ HORIZON OUTCOMES — three names, three rolls (run BEFORE any further
+       ticks so the credited quantities above are still exact) ═══ */
+    const p9 = tp(0.5, 9.5);
+    p3.obsMs = 5 * 3600e3; p3.t = Date.now() - 6 * 3600e3 - 60e3;
+    p9.obsMs = 5 * 3600e3; p9.t = p3.t; p9.openSeq = S.pollSeq - 1;   // the SAME tape and the same open moment, under the ruled 9.5h horizon
+    pNeg.t = Date.now() - 6 * 3600e3 - 60e3;                       // obsMs stays ~0 → insufficient observation
+    pOne.t = Date.now() - 6 * 3600e3 - SCORER_OBS_CAP - 60e3;      // expired while unwatched → hole
+    pOne.obsMs = 5 * 3600e3;
+    S.pollSeq++;
+    scorerTripTick();
+    /* ═══ THE RULED HORIZON SET (user ruling, Aug 14 2026) ═══ */
+    ok("[R78.16] the ruled set {6, 9.5} measures the same tape twice — six hours past the same open, the 6h lifecycle has closed while the 9.5h one is still accruing, and their econ can only land under different keys",
+       (() => { const e95 = DB.scorerT2[ctl78].econ && DB.scorerT2[ctl78].econ[scorerEconKey(9.5, 0.5, 0.15, SCORER_FILL_V)];
+                return SCORER_HORIZONS.join() === "6,9.5"
+                    && p3.state === "closed" && p3.vars.every(v => v.state !== "open")
+                    && p9.state === "open" && p9.vars.every(v => v.state === "open")
+                    && (!e95 || e95.n === 0); })(),
+       JSON.stringify({ h6: p3.state, h95: p9.state }));
+    ok("[R78.7] horizon outcomes carry their names — a watched partial prices at the last observed bucket value, an unwatched expiry is a HOLE, an unfilled horizon is data",
+       (() => { const v = p3.vars.find(x => x.cap === 0.15);
+                const exp = 150 * (3900 - geTax(3900, 9761)) - 150 * 4001;
+                return v.state === "partial" && v.exitPx === 3900 && v.net === exp
+                    && pOne.vars.every(x => x.state === "unobserved" && x.net === 0)
+                    && pNeg.vars.every(x => x.state === "unfilled" && x.net === 0); })(),
+       JSON.stringify({ pos: p3.vars.map(v => v.state), one: pOne.vars.map(v => v.state), neg: pNeg.vars.map(v => v.state) }));
+    ok("[R78.7] and each rolls under its own name — counted, insufficient observation, unobserved hole — never inside n",
+       (() => { const eC = DB.scorerT2[ctl78].econ;
+                const kPos = scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V);
+                const kNeg = scorerEconKey(6, 0.25, 0.15, SCORER_FILL_V);
+                const kOne = scorerEconKey(6, 1, 0.15, SCORER_FILL_V);
+                const exp = 150 * (3900 - geTax(3900, 9761)) - 150 * 4001;
+                return eC[kPos].n === 1 && eC[kPos].partial === 1 && eC[kPos].net === exp && eC[kPos].vbl === 1
+                    && eC[kNeg].insuf === 1 && eC[kNeg].n === 0
+                    && eC[kOne].unobs === 1 && eC[kOne].n === 0; })(),
+       JSON.stringify(DB.scorerT2[ctl78].econ && DB.scorerT2[ctl78].econ[scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V)]));
+    /* ═══ SEPARATE LIFECYCLES PER CAPTURE POINT, AND THE SELL WINDOW ═══ */
+    const itW = { i: 9764, n: "Probe scorer W", l: 200, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY, itW]; S.byId.set(9764, itW);
+    S.latest[9764] = { high: 4400, low: 4000, highTime: now78 - 60, lowTime: now78 - 120 };
+    S.hour[9764] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    S.min5At += 300e3; S.pollSeq++;
+    cyc78();
+    const w = S.scorerTrips.get("9764|0.5|6");
+    w.t = S.min5At - 60e3; w.openSeq = S.pollSeq - 1;
+    S.min5[9764] = { avgHighPrice: 4500, avgLowPrice: 3900, highPriceVolume: 1000, lowPriceVolume: 1000 };
+    scorerTripTick();                       // observe
+    S.min5At += 300e3; S.pollSeq++;
+    scorerTripTick();                       // roll → 0.30 completes the buy, the others do not
+    const v30 = w.vars.find(v => v.cap === 0.3);
+    ok("[R78.6] the capture points are SEPARATE LIFECYCLES — the same tape completes the buy at 0.30 while 0.15 and 0.05 are still accruing",
+       (() => { const v05 = w.vars.find(v => v.cap === 0.05), v15 = w.vars.find(v => v.cap === 0.15);
+                return v30.buyDone > 0 && v30.buyQ === 200
+                    && v15.buyDone === 0 && v15.buyQ === 150
+                    && v05.buyDone === 0 && v05.buyQ === 50; })(),
+       JSON.stringify(w.vars.map(v => ({ cap: v.cap, buyQ: v.buyQ, done: !!v.buyDone }))));
+    /* Fixture backdate: production stamps the wall clock at completion; the
+       sell window opens after it, so past-aligned fixture buckets need the
+       completion moved just past its own bucket — any ms is a valid value. */
+    v30.buyDone = v30.buyDoneBkt + 1;
+    S.min5[9764] = { avgHighPrice: 4400, avgLowPrice: 4300, highPriceVolume: 1000, lowPriceVolume: 0 };
+    scorerTripTick();                       // observe the sell bucket
+    S.min5At += 300e3; S.pollSeq++;
+    scorerTripTick();                       // roll → the sell credits and the lifecycle closes filled
+    ok("[R78.4] the sell leg accrues only from buckets after the buy finished, through the tick — and closes FILLED with tax netted at every bound",
+       (() => { const exp = 200 * (4399 - geTax(4399, 9764)) - 200 * 4001;
+                return v30.state === "filled" && v30.net === exp && v30.netS === exp && v30.netL === exp; })(),
+       JSON.stringify({ st: v30.state, net: v30.net, netS: v30.netS, netL: v30.netL }));
+    /* ═══ PUMP STAMPS — the opposite treatment from the blacklist ═══ */
+    const itP = { i: 9765, n: "Probe scorer P pump", l: 25000, m: 0, v: 0, a: 0 };
+    S.items = [itX, itY, itW, itP]; S.byId.set(9765, itP);
+    S.latest[9765] = { high: 4400, low: 4000, highTime: now78 - 60, lowTime: now78 - 120 };
+    S.hour[9765] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    DB.intel = [{ id: "p78", type: "promotion-warning", status: "pending", items: [9765],
+      community: "probe group", importedAt: Date.now() }];
+    S.volumes = { 9765: 1 };   // thin gp flow → the structural pump fingerprint
+    S.min5At += 300e3; S.pollSeq++;
+    cyc78();
+    const pp = S.scorerTrips.get("9765|0.25|6");
+    ok("[R78.9] a pump-flagged item's trips EXIST and carry the stamp from birth — stamped, never excluded",
+       !!pp && pp.pump === 1 && S.scorerTrips.has("9765|1|6") && S.scorerTrips.has("9765|1|9.5")
+       && suspectedPump(9765) != null,
+       JSON.stringify({ pump: pp && pp.pump }));
+    for (const part of [0.25, 0.5, 1]){ const q = S.scorerTrips.get("9765|" + part + "|6");
+      q.t = Date.now() - 6 * 3600e3 - 60e3; q.openSeq = S.pollSeq - 1; q.obsMs = 5 * 3600e3; }
+    S.pollSeq++;
+    scorerTripTick();
+    ok("[R78.9] and the econ bucket decomposes by the stamp — the pump-stamped trip is IN the counted figures and split out beside them",
+       (() => { const e = DB.scorerT2[ctl78].econ[scorerEconKey(6, 0.25, 0.15, SCORER_FILL_V)];
+                return e.n === 1 && e.pumpN === 1 && e.unfilled === 1 && e.pumpNet === e.net; })(),
+       JSON.stringify(DB.scorerT2[ctl78].econ[scorerEconKey(6, 0.25, 0.15, SCORER_FILL_V)]));
+    /* ═══ ROLL-ONCE, EVERY BIRTH CELL, EXACT ECON SCHEMA ═══ */
+    ok("[R78.10] a closed trip rolls ONCE into every birth cell, nets at all three bounds, and the econ schema admits no unstamped or averaged figure",
+       (() => { const cells = Object.keys(DB.scorerT2);
+                if (cells.length !== 16) return false;
+                const k = scorerEconKey(6, 0.5, 0.15, SCORER_FILL_V);
+                const ref = DB.scorerT2[ctl78].econ[k];
+                const SCHEMA = ["n","filled","partial","forced","unfilled","unobs","insuf","vbl",
+                                "net","netS","netL","gross","top","pumpN","pumpNet","ncN"].sort().join();
+                if (!cells.every(h => { const e = DB.scorerT2[h].econ && DB.scorerT2[h].econ[k];
+                      return e && e.n === ref.n && e.net === ref.net
+                          && Object.keys(e).sort().join() === SCHEMA; })) return false;
+                const nBefore = ref.n;
+                scorerTripTick();   // nothing left to roll — a second tick must not re-roll
+                return ref.n === nBefore && "netS" in ref && "netL" in ref; })(),
+       JSON.stringify(Object.keys(DB.scorerT2).length));
+    /* ═══ THE CAPTURE PROBE'S VERDICT TERMS — staged consumers (1e), asserted
+       directly; the concentration ceiling arrives as an ARGUMENT because it
+       is unruled (proposed in the 1d report), so no unruled constant is
+       applied anywhere. ═══ */
+    const keepT2v = DB.scorerT2;
+    /* Fixture econ per the RULED measurement: gross = Σ|net| terms, top = the
+       largest single |net| mover. cA spread and winning; cB LOSING with a
+       measurable, well-spread concentration (the gross ruling's point); cC
+       the control; cD winning but carried 80% by one mover. */
+    const mkEcon78 = (nets, grossMul, topMul) => { const econ = {}; SCORER_CAPTURES.forEach((c, i) => {
+        econ[scorerEconKey(6, 0.5, c, SCORER_FILL_V)] = { n: 4, filled: 2, partial: 1, forced: 1, unfilled: 0,
+          unobs: 0, insuf: 0, vbl: 0, net: nets[i], netS: nets[i], netL: nets[i],
+          gross: Math.abs(nets[i]) * (grossMul || 2), top: Math.abs(nets[i]) * (topMul || 0.6),
+          pumpN: 0, pumpNet: 0, ncN: 0 }; });
+      return econ; };
+    DB.scorerT2 = {
+      cA: { econ: mkEcon78([900, 900, 900]) },
+      cB: { econ: mkEcon78([-50, -50, -50]) },
+      cC: { econ: mkEcon78([100, 100, 100]) },
+      cD: { econ: mkEcon78([900, 900, 900], 1, 0.8) } };
+    const cvStable = scorerCaptureVerdict(6, 0.5, SCORER_FILL_V);
+    const gA = scorerRankGate("cA", "cC", 6, 0.5, SCORER_FILL_V);
+    const gB = scorerRankGate("cB", "cC", 6, 0.5, SCORER_FILL_V);
+    const gD = scorerRankGate("cD", "cC", 6, 0.5, SCORER_FILL_V);
+    ok("[R78.11] until capture is graded EVERY ranking renders 'cannot rank yet', in those words — an otherwise-clean cell under a stable ordering carries exactly that one reason",
+       cvStable.stable === true && cvStable.verdict === "capture-stable"
+       && gA.rank === false && gA.reasons.length === 1
+       && /cannot rank yet/.test(gA.reasons[0]) && /frontier-class/.test(gA.reasons[0]),
+       JSON.stringify({ cv: cvStable.verdict, gA }));
+    ok("[R78.11] a failing cell renders its FULL fail set — and concentration is the top mover's share of GROSS movement: measurable and clearing on a losing cell, disqualifying at 80% on a winning one",
+       gB.rank === false
+       && gB.reasons.filter(r => /does not beat the control at the PROVEN bound/.test(r)).length === 3
+       && !gB.reasons.some(r => /gross movement/.test(r))
+       && gD.rank === false
+       && gD.reasons.some(r => /top mover carries 80% of the cell's gross movement/.test(r))
+       && !gD.reasons.some(r => /does not beat the control/.test(r)),
+       JSON.stringify({ gB: gB.reasons, gD: gD.reasons }));
+    DB.scorerT2.cB.econ[scorerEconKey(6, 0.5, 0.3, SCORER_FILL_V)].netS = 2000;   // cB overtakes at 0.30 only
+    const cvFlip = scorerCaptureVerdict(6, 0.5, SCORER_FILL_V);
+    const gAFlip = scorerRankGate("cA", "cC", 6, 0.5, SCORER_FILL_V);
+    ok("[R78.11] rankings that flip across the capture probe make the VERDICT 'insufficient calibration to rank' — rendered as the verdict, and the rank gate repeats it as a disqualifier",
+       cvFlip.stable === false && cvFlip.verdict === "insufficient calibration to rank"
+       && cvFlip.flips.length > 0 && /stated as the verdict, not a caveat/.test(cvFlip.why || "")
+       && gAFlip.rank === false && gAFlip.reasons.some(r => /insufficient calibration to rank/.test(r)),
+       JSON.stringify({ v: cvFlip.verdict, flips: cvFlip.flips.length }));
+    ok("[R78.11] a cell's econ state has three names — counted, only-excluded with its split, never-fed — and none reads as another",
+       (() => { const never = scorerCellEconState(undefined);
+                const excl = scorerCellEconState({ n: 0, insuf: 3, unobs: 1, vbl: 0 });
+                const cnt = scorerCellEconState({ n: 5, insuf: 0, unobs: 0, vbl: 0 });
+                return never.state === "never-fed" && /nothing has fed/.test(never.why)
+                    && excl.state === "only-excluded" && /every one was excluded/.test(excl.why)
+                        && excl.excluded.insufficientObservation === 3
+                    && cnt.state === "counted" && cnt.n === 5; })(),
+       JSON.stringify(scorerCellEconState({ n: 0, insuf: 3, unobs: 1, vbl: 0 })));
+    DB.scorerT2 = keepT2v;
+    /* ═══ THE BOOT CARRY — held, never dropped; persisted, resumed ═══ */
+    S.scorerTrips = new Map();
+    t1Loaded = false;
+    const heldBkt = S.min5At + 300e3;
+    const held = scorerTripOpen([{ st: marketStatsFor(9761), cells: [ctl78] }], heldBkt, 3);
+    const heldOk = held === null && S.t1Bucket !== heldBkt && !!S.t1Pending;
+    t1Loaded = true;
+    t1RunPending();
+    ok("[R78.12] a frontier held while the carry loads does not consume its bucket, and runs the moment the carry lands — held, never dropped",
+       heldOk && S.t1Bucket === heldBkt && S.scorerTrips.size === 6 && S.t1Pending === null,
+       JSON.stringify({ heldOk, bkt: S.t1Bucket === heldBkt, n: S.scorerTrips.size }));
+    let carried = null, gotCarry = false;
+    t1PersistBusy = false; t1PersistOpen();
+    for (let i = 0; i < 20 && !gotCarry; i++){ await new Promise(r => setTimeout(r, 50));
+      carried = await t0Get("t1open", 0);
+      gotCarry = Array.isArray(carried) && carried.some(r => r && r.id === 9761 && r.part === 0.5 && r.hzH === 6 && r.state === "open"); }
+    S.scorerTrips = new Map(); t1Loaded = false;
+    await t1LoadOpen();
+    ok("[R78.12b] open trips persist in the carry and RESUME after a reload under their own horizon keys — their observations are not silently discarded",
+       gotCarry && t1Loaded && S.scorerTrips.has("9761|0.5|6") && S.scorerTrips.has("9761|0.5|9.5"),
+       JSON.stringify({ gotCarry, resumed: [...S.scorerTrips.keys()] }));
+    /* ═══ IMPORT CARRY FOR THE ECON BUCKETS ═══ */
+    const impCfg78 = Object.assign({}, scorerGrid()[0]);
+    const imp78 = validateImport({ scorerT2: { anyKey: { v: 1, cfg: impCfg78, cycles: 1, fundedItemCycles: 1,
+      cyclesByHour: [], fundedByHour: [], ids: [],
+      econ: { "h6|p50|c15|fv1": { n: "3", net: "100.5", junk: 9, netS: 80, gross: 42 },
+              "h9.5|p50|c15|fv1": { n: 1 },
+              "badkey": { n: 5 }, "h6|p50": { n: 2 } } } } });
+    const impCell78 = imp78.db.scorerT2[cfgHash(impCfg78)];
+    ok("[R78.13] econ buckets survive the import carry with all four stamps in the key — both ruled horizons carry, unstamped keys and unknown fields are dropped, so a hand-edited file cannot pool populations",
+       !!impCell78 && impCell78.econ && !!impCell78.econ["h6|p50|c15|fv1"]
+       && impCell78.econ["h6|p50|c15|fv1"].n === 3 && impCell78.econ["h6|p50|c15|fv1"].net === 100.5
+       && impCell78.econ["h6|p50|c15|fv1"].netS === 80 && impCell78.econ["h6|p50|c15|fv1"].gross === 42
+       && !("junk" in impCell78.econ["h6|p50|c15|fv1"])
+       && !!impCell78.econ["h9.5|p50|c15|fv1"]
+       && !impCell78.econ["badkey"] && !impCell78.econ["h6|p50"],
+       JSON.stringify(impCell78 && impCell78.econ));
+    ok("[R78.14] the fill sim's failure note is null below the threshold and names the gap's meaning — unobserved trip time, never evidence of no fill",
+       t1FailNote(T1_FAIL_WARN - 1, "probe") === null
+       && /unobserved trip time, never evidence of no fill/.test(t1FailNote(T1_FAIL_WARN, "probe"))
+       && /probe/.test(t1FailNote(T1_FAIL_WARN, "probe")),
+       String(t1FailNote(T1_FAIL_WARN, "probe")).slice(0, 160));
+    /* ═══ THE RULED CONSTANTS, PINNED (user ruling, Aug 14 2026 — the staging
+       practice's fourth rule: the ungraded-capture era fact is pinned so the
+       grading era cannot arrive without turning this red and forcing the
+       accounting; the horizon set and ceiling are pinned so a drift is a
+       ruling, never an edit). ═══ */
+    ok("[R78.17] the ruled constants are pinned — horizons {6, 9.5}, concentration ceiling 0.5, and the ungraded-capture era fact in its ruled words",
+       SCORER_HORIZONS.join() === "6,9.5" && SCORER_CONC_CEIL === 0.5
+       && SCORER_CAPTURE_GRADED === false && scorerRankReadiness().ready === false
+       && /cannot rank yet/.test(scorerRankReadiness().why) && /frontier-class/.test(scorerRankReadiness().why)
+       && /calibration flips inside the tape window/.test(scorerRankReadiness().why),
+       JSON.stringify({ hz: SCORER_HORIZONS, ceil: SCORER_CONC_CEIL, graded: SCORER_CAPTURE_GRADED }));
+    ok("[R78.17] and the ruling is decision-logged once, written by the tool, decided by the user",
+       (() => { const e = (DB.decisionLog || []).find(x => x.subject === SCORER_1D_RULINGS_KEY);
+                return !!e && e.auto === 1 && e.by === "user"
+                    && /gross/i.test(e.reason || "") && /cannot rank yet/.test(e.reason || ""); })(),
+       JSON.stringify((DB.decisionLog || []).find(x => x.subject === SCORER_1D_RULINGS_KEY)));
+    /* ═══ CLEANUP — keyed, asserted (M152/R77.3 discipline) ═══ */
+    await (async () => { const d = await t0Open();
+      await t0Req(d.transaction("t1", "readwrite").objectStore("t1").clear());
+      await t0Req(d.transaction("t1open", "readwrite").objectStore("t1open").clear()); })();
+    await (async () => { const d = await t0Open();
+      const os = d.transaction("rdiff", "readwrite").objectStore("rdiff");
+      for (const b of bkts78) os.delete(b); })();
+    const t1Left = await (async () => { const d = await t0Open();
+      return await t0Req(d.transaction("t1", "readonly").objectStore("t1").getAllKeys()); })();
+    ok("[R78.15] fixture trip rows, the carry record and this block's rdiff rows are cleaned by key, and the cleanup is asserted",
+       t1Left.length === 0 && (await t0Get("t1open", 0)) === undefined
+       && (await t0Get("rdiff", bkts78[bkts78.length - 1])) === undefined,
+       JSON.stringify({ t1: t1Left.length, cycles: bkts78.length }));
+    DB.scorerT2 = keep78.t2; S.scoredBucket = keep78.bucket; S.scorerIdSets = keep78.sets;
+    S.items = keep78.items; S.byId = keep78.byId; S.latest = keep78.latest; S.hour = keep78.hour;
+    S.min5 = keep78.min5; S.min5At = keep78.min5At; S.latestAt = keep78.latestAt; S.pollSeq = keep78.pollSeq;
+    DB.filtersT1.vol = keep78.fT1vol; DB.tickFloor = keep78.tick;
+    DB.blacklist = keep78.blk; DB.watch = keep78.watch; DB.intel = keep78.intel; S.volumes = keep78.vols;
+    S.scorerTrips = keep78.trips; S.t1Bucket = keep78.t1b; S.t1LastBucket = keep78.t1l;
+    S.lastPlanPicks = keep78.planPicks; S.lastPlanAt = keep78.planAt;
+  } catch(e){
+    out.push("FAIL fill sim on the frontier :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

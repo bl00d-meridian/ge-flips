@@ -75,6 +75,31 @@ qualifies.**
 
 ---
 
+# 2026-08-14
+
+### M155 · The caveat the rule required inline shipped inside a disclosure, and its assertion matched the whole panel
+2026-08-14 · found by: seeding (the stage-1d repair of census probe:6511 went red on real production output) · pattern: `TEST-SUITE`
+
+R47.5's own row says the self-comparison caveat renders **"named where the bound is read
+… not in a footnote"** — and from the day it shipped, the entire caveat lived inside a
+`teach()` disclosure, which is exactly the footnote form the rule forbids. The assertion
+policing it matched its four phrases against the WHOLE panel string, and a `teach()`
+body is part of that string, so the assertion was green over a live rule violation for
+two days — the ninth face (ran, on real output, passed for a reason other than the
+property it names), on a rule about POSITION that was tested with no position check.
+The census (probe:6511) had predicted precisely this could-pass; the stage-1d repair —
+stripping every `details.teach` subtree before matching — went red on the real panel the
+first time it ran, which converted the census's prediction into a live catch. Fix: the
+load-bearing sentence now renders inline beside the bounds table (with the at-price
+count computed in place), and the long explanation stays in the disclosure. The rule
+that would prevent a repeat is already law (the ninth face: match against the narrowest
+container that still contains the property); this entry is its instance count moving,
+and the second instance of a POSITION claim needing a position-aware container (after
+R66.2's verdict-vs-wallpaper, fixed the same day by extraction).
+Substantiated from: `audits/CENSUS-2026-08-13-jobA-verification.md` (probe:6511), the
+stage-1d report's first suite run (PROBE-FAIL 1 on the scoped form), `index.html`'s
+`calibSection` before/after.
+
 # 2026-08-13
 
 ### M154 · The scorer raced the fetch it depended on, and a short visit would have scored nothing

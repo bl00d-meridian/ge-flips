@@ -377,6 +377,34 @@ moves a constant without a ruling.
 
 ---
 
+## §9 Stage-1d ratifications (user rulings, Aug 14 2026 — recorded here so 1e renders without re-deriving the reasons)
+
+- **The capture probe is THREE LIFECYCLES per trip, ratified as an improvement over the
+  ruled minimum, for the causal reason:** §5 specified capture as a sensitivity probe
+  over the fills; the build implemented it as three independent lifecycles per trip
+  (`vars`), because **capture moves how fast the buy completes, buy completion anchors
+  the sell window, and the sell window decides the outcome** — a shared lifecycle with
+  three capture readings would have re-used one sell window for three buy speeds, which
+  is an information-horizon violation in miniature. 1e's surfaces render per-lifecycle
+  figures; nobody re-derives why three lifecycles exist — this paragraph is the reason.
+- **The horizon set is {6h, 9.5h}** (supersedes §4's "6h default, an overnight 9.5h
+  variant if ruled" — now ruled). Trips per (item × participation × horizon); horizon is
+  in the trip key and the econ key, so the overnight comparison that inverted twice
+  under duration thresholds is a stamped population against a stamped population.
+  Participation stays {25, 50, 100%}. Measured occupancy at ratification: 804 concurrent
+  trips (134 frontier items × 6), trivial.
+- **The concentration ceiling is 0.5, measured as the top mover's share of the cell's
+  GROSS movement** (|net| terms — a share of a negative net is not a proportion, and the
+  gross denominator keeps the reading on losing cells, where concentration matters
+  most). Rank-disqualifier only, never a data exclusion. Grounded in the 103% case law:
+  every retracted finding in this project was carried by one or two trips.
+- **Capture status is the rendered verdict:** the probe detects rank-instability from
+  birth; it validates no capture point until real flips exist on frontier-class items,
+  and until then the instrument says **"cannot rank yet"**, in those words, wherever a
+  ranking would render (`scorerRankReadiness()`, pinned by `[R78.17]` so the grading era
+  cannot arrive without a ruling). The dependency stays named: the operator's
+  calibration flips inside the tape window.
+
 ## Verification status
 
 The API facts are read from the code at cited lines this session. The funded-set table

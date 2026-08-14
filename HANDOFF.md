@@ -1,47 +1,80 @@
-# QUEUE — session close, 2026-08-14
+# QUEUE — session close, 2026-08-14 (second session: stage 1d + the §6 rulings)
 
 **Read this before starting anything.** Nothing here is committed; the working tree
-carries the session's changes. Suite state at close: **PROBE-PASS — 338 requirement ids
-asserted by the run against 353 rows, pairing clean both directions, seeding log complete
-with no unknown-status entries** (conformance map §4b).
+carries both Aug-14 sessions' changes. Suite state at close: **PROBE-PASS — 1,055
+assertions, 357 requirement ids asserted, pairing clean both directions, seeding log
+complete with no unknown-status entries** (31 seeds A–AJ plus one live catch, stage
+report §5/§9). Deployment (post-rulings): **DEPLOY-OK — 804 trips (134 frontier items ×
+3 participation × 2 ruled horizons, h6/h9.5 split exactly 402/402) opened on the first
+real bucket, 1 second after a real boot.**
 
-## NEXT SESSION OPENS WITH 1d — full scope as ruled, nothing else jumps ahead
+## STAGE 1d IS DONE — `audits/STAGE1D-2026-08-14-fill-sim.md` is the record
 
-1. **Fill simulation on the frontier** — trips per (item, participation-level {25, 50,
-   100%}), shared across cells; forward accrual primary under the causality rules;
-   reconstruction from T0 as graded backstop; **no trips ever on blacklisted items**
-   (row 23c — the veto's surviving core; seed the no-trip guarantee when trips exist).
-2. **The BINDING capture probe** — fills at capture {0.05, 0.15, 0.30}; if cell rankings
-   flip across them, the instrument's verdict IS "insufficient calibration to rank",
-   rendered as the verdict, not a caveat.
-3. **Pump stamps per row 15's pre-ruling** — stamp at trip birth, never exclude; cell
-   aggregates decompose by the stamp; proposals citing materially pump-exposed cells
-   carry the caveat inline (calibration-tripwire pattern, third instance).
-4. **The horizon-set proposal, for one ruling alongside participation** — 6h default;
-   the 9.5h overnight variant as its own question (stage 0: evening funds 13, morning 5;
-   hour bands are already in the schema).
-5. **Scan 11 (information horizon) at the stage boundary**, per the ratified map; stanza
-   in the report, checked against the map's deltas.
-6. **The 23 TRANSFER findings folded in** — `audits/TRIAGE-2026-08-14-fill-tier.md`:
-   census fixes on the shared fill core (obs-accrual cap extraction, at-bid brackets,
-   once-per-bucket, sell-window anchor, R59.x discriminator set, bounds pair, provenance
-   stamps), re-verified at fix time under the seeding discipline.
-7. **Chart wiring lands here or later — and trips the pinned era fact** when it does:
-   `marketStatsFor().tr === null` inside `[R76.9]` goes red, and clearing it means
-   accounting for the `fundedNoChart` transition in the stanza.
-8. **First thing on next app-open (user-profile deployment self-check):** the three
-   freshness streams — market archive, universe scorer, reconciliation diff — should all
-   show a first bucket within one poll. The desk's headless check already proved the
-   schedule end-to-end (DEPLOY-OK at 2s, map §4b); this confirms the USER's own profile.
+Built: the fill sim on the frontier (trips per item × participation at the ruled 6h
+horizon, shared across cells by birth-stamped membership; three capture LIFECYCLES per
+trip — 0.05/0.15/0.30 each run their own legs because capture moves the sell window);
+the pure shared core (`fillCredit` with capture/participation as arguments,
+`obsAccrual`, `sellBucketEligible`, `sellWindowStart` — both the paper book and the trip
+layer route through them); IDB v3 (`t1` closed-trip ledger, 30d, roll-then-prune;
+`t1open` boot carry — held-never-dropped at boot, the M154 property seeded in from
+birth); econ rollups under four-stamp keys (`h6|p50|c15|fv1` — pooling structurally
+impossible); the bl no-trip guarantee (discriminating seed pair vs the canary; mid-trip
+blacklisting VOIDS as `vbl`); pump stamps at birth, decomposed, never excluded; the
+capture-probe verdict terms (`scorerCaptureVerdict` / `scorerRankGate` /
+`scorerCellEconState` — "insufficient calibration to rank" IS the verdict; full fail
+sets; concentration ceiling is an ARGUMENT, unruled). All 23 TRANSFER findings
+dispositioned with proofs, the 3 in-scope SPLIT halves landed (4447/5908 restated as 1e
+obligations). Scan 11 at the boundary: 20 points, 0 findings. M155 recorded (the R47.5
+caveat lived in a footnote behind a green whole-panel assertion; live-caught by the
+scoped repair, fixed inline).
 
-**Then:** 1e (surfaces + exports, drill-decomposable; the scorer's state line; b=100
-stays deferred until capture calibration); **the cutover gate behind reconciliation
-history** (the `rdiff` ledger should be the longest-observed number in the instrument by
-cutover day — heaviest gate: verdict-level reconciliation, integration-audit walk,
-adversarial pass on cutover-critical assertions, `[R7.3]` standard); **retirements HELD**
-(regime race, slice's sampling role — until the scorer's first readable output);
-**sleeve addendum stages after capture calibration**, conformance gate applying
-identically, conviction-boundary detector with the first planner surface.
+## THE §6 RULINGS — RULED AND APPLIED SAME DAY (stage report §9)
+
+1. **Horizon set {6h, 9.5h} RATIFIED, participation {25, 50, 100%} confirmed** — built:
+   trips per (item × participation × horizon), horizon in the trip key and the econ key;
+   the overnight comparison is a stamped population against a stamped population.
+   `[R78.16]` demonstrates the set (same tape, 6h closed while 9.5h accrues).
+2. **Concentration ceiling RATIFIED at 0.5, measured on GROSS movement** — econ carries
+   `gross` (Σ|net|) and `top` (max |net| mover); the rank gate disqualifies at
+   top/gross > 0.5, measurable on losing cells, rank-disqualifier only. Seed AG proved
+   the ruled and pre-ruling measurements genuinely disagree.
+3. **Capture status RATIFIED as the rendered verdict** — `scorerRankReadiness()` says
+   **"cannot rank yet"** in the ruled words wherever a ranking would render;
+   `SCORER_CAPTURE_GRADED = false` is the pinned era fact (`[R78.17]`) so grading cannot
+   arrive without a ruling; the dependency stays named (calibration flips inside the
+   tape window). b=100 stays deferred on exactly this.
+4. **The three-lifecycle probe design recorded** in the design doc §9 with its causal
+   reason, so 1e renders per-lifecycle figures without re-deriving it.
+   The rulings are decision-logged in the tool (`auto: 1, by: "user"`, asserted).
+
+## NEXT SESSION OPENS WITH 1e — surfaces + exports, drill-decomposable
+
+Named obligations carried into 1e's gate (stage report §3/§4/§9): cells open → econ
+buckets → t1 trip rows with the 30d truncation declared and the hour split available
+(the one deliberate within-key pooling); **surfaces group by horizon {6, 9.5} and
+render per-capture-lifecycle figures, never pooled** (the ratified set and the
+three-lifecycle rationale, design doc §9); **wherever a ranking would render, the
+readiness verdict renders "cannot rank yet" in the ruled words until capture is
+graded**; excluded counts open to their trips (4447); a 100% rate renders its
+zero-counterexample claim (5908); the scorer's state line; the staged stores (`t1`
+rows, econ) come off the scan-2 re-report list only when 1e's readers consume them;
+glossary entries for the first scorer-facing terms land with the surfaces; b=100
+deferred. **Chart wiring still pending** ("here or later" — later): the
+pinned era fact `marketStatsFor().tr === null` in `[R76.9]` stays armed; when the wiring
+lands, `fundedNoChart` (cells) and `ncN` (econ) decompose the transition and the stanza
+accounts for it.
+
+**First thing on next app-open (user-profile self-check):** the freshness panel now has
+FOUR scorer-class streams — market archive, universe scorer, reconciliation diff, **fill
+sim (frontier trips)** — all should show a first bucket within one poll.
+
+**Then:** the cutover gate behind reconciliation history (the `rdiff` ledger should be
+the longest-observed number in the instrument by cutover day — heaviest gate:
+verdict-level reconciliation, integration-audit walk, adversarial pass on
+cutover-critical assertions, `[R7.3]` standard); **retirements HELD** (regime race,
+slice's sampling role — until the scorer's first readable output); **sleeve addendum
+stages after capture calibration**, conformance gate applying identically,
+conviction-boundary detector with the first planner surface.
 
 ## THE UNIVERSE SCORER — build ruled Aug 14 2026, staged
 
@@ -57,8 +90,8 @@ the six rulings recorded there and below. Stage status:
 | **conformance gate** — standing, every stage from 1d | **IN FORCE, mapping RATIFIED** | `audits/CONFORMANCE-2026-08-14-scorer-map.md`: 23 rows — row 12's widening ratified WITH the scan-2 re-report addition; row 15 pre-ruled (stamp, don't exclude); **row 23 added** (the blacklist canary, amended form); partition register ratified including the deliberate non-answer on ids stock; pinned-era-fact ratified as standing practice. Stages check deltas; stanza per report |
 | **row 23 + flag 3** (consolidated rulings) | **DONE, seeded, deployed** | The canary pair `blFunded`/`blIds` (`[R76.10]`/`[R76.10b]` — discriminating seeds both directions, B proven on the crashed run's own 09:06 report); the reconciliation diff in IDB `rdiff` (DB v2, 90d, `[R77.1–3]`); the boot race found by the deployment check and fixed (`[R76.11]`, **M154**); **DEPLOY-OK — first bucket archived, scored and diffed 2s after boot on the real API** |
 | **fill-tier triage** (mid-session order) | **DONE** | `audits/TRIAGE-2026-08-14-fill-tier.md`: the census's 45 fill-tier findings (the surviving superset of the 32-CONFIRMED roster, which died with the syntheses — M149): **23 TRANSFER** (fold into 1d), **17 EXPIRE-AT-RETIREMENT** (reason per finding; unfixed by design until the retirement ruling), **5 SPLIT** (property re-lands in 1d/1e, assertion dies with its surface) |
-| 1d — fill sim on the frontier + capture probe | NOT STARTED — **opens next session, scope at the top of this file** | — |
-| 1e — surfaces + exports, drill-decomposable | NOT STARTED | zero walk-up cost by construction; b=100 deferred until capture calibration; the scorer's state line belongs here (freshness streams carry it meanwhile) |
+| 1d — fill sim on the frontier + capture probe | **DONE** | `audits/STAGE1D-2026-08-14-fill-sim.md` — §78 (R78.1–R78.15), 26 discriminating seeds + 1 live catch (M155); trip layer + pure shared core + IDB v3 (`t1`/`t1open`) + four-stamp econ keys + verdict terms; 23 TRANSFERs dispositioned; scan 11 clean (20 points); DEPLOY-OK at 1s (804 trips on the first real bucket post-rulings); **the §6 rulings ruled and applied same day** (report §9: horizon set {6, 9.5}, gross-movement ceiling 0.5, cannot-rank-yet readiness pinned, three-lifecycle rationale recorded) |
+| 1e — surfaces + exports, drill-decomposable | NOT STARTED — **opens next session** | zero walk-up cost by construction; b=100 deferred until capture calibration; the scorer's state line belongs here (freshness streams carry it meanwhile); named 1e obligations listed at the top of this file |
 
 **The clock's fine print:** T0 accrues only while the app is open. The 7-day chart-gate
 cold start counts OBSERVED coverage, not wall days — `t0Coverage` reports the pair, and a
