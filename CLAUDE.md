@@ -608,11 +608,16 @@ The ≤7 walk-up bound is BINDING and probe-asserted. The rest of this section i
 
 Four tabs — Home, Trade, Sleeve, Review. Trade carries seven sub-views: **Plan & Watchlist**,
 **Scanner**, **Flip Log**, and the pull surfaces — **Paper Book**
-(regime curves, divergence ledger, the overnight-vs-daytime comparison added Aug 13 2026,
-per-gate outcomes), **Prospecting** (per-stratum map,
-gap band, hours ledger — the recipe basis was withdrawn Aug 11 2026 and the copy that
-still advertised it was removed Aug 13 2026), **Gate Health** (two streams per gate, die-off
-episodes, exception lane), and **Scorer** (stage 1e, Aug 14 2026 — the universe scorer's
+(the overnight-vs-daytime comparison added Aug 13 2026, per-gate outcomes, fill-model
+calibration, and the regime race's historical curves and divergence ledger — **the race
+retired to the dormancy lane Aug 14 2026** by user ruling, superseded by the scorer's
+config grid; its panels render historical data under a dormant banner and nothing new
+accrues), **Prospecting** (gap band, hours ledger, and the per-stratum map — **the
+discovery slice's sampling role retired to the dormancy lane Aug 14 2026** by user
+ruling, superseded by universe coverage; the map is the frozen historical ledger, the
+gap band still draws and accrues — the recipe basis was withdrawn Aug 11 2026 and the
+copy that still advertised it was removed Aug 13 2026), **Gate Health** (two streams per
+gate, die-off episodes, exception lane), and **Scorer** (stage 1e, Aug 14 2026 — the universe scorer's
 read surface: verdict-first first screen, the grid with hour bands and the blacklist
 canary, fill economics per horizon × participation × capture lifecycle, the "cannot rank
 yet" readiness verdict wherever a ranking would render). The pull surfaces present no

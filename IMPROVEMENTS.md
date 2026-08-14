@@ -267,7 +267,15 @@ Ratified Aug 10 2026 as a **starting value** for the pump fingerprint's structur
 at the first monthly read of the briefing scorecard, check it against the flagged items'
 actual books and propose a correction. The setting lives in the intel panel (`pumpThin`).
 
-### 6.7 Harden the stratum classifier with wiki categories — **deferred by ruling** · M · **3**
+### 6.7 Harden the stratum classifier with wiki categories — **CLOSED (mooted) 2026-08-14** · M · **3**
+
+> **CLOSED 2026-08-14, mooted by the slice retirement (user ruling):** the discovery
+> slice's sampling role retired to the dormancy lane — superseded by the universe
+> scorer, which scores every mapped item each 5m bucket. This entry's own trigger
+> ("the first time a per-stratum finding is cited in an actual ruling") can no longer
+> arrive: the map is a frozen historical ledger and steers nothing. The reasoning below
+> stays recorded as sound-but-moot (the row-6 pattern); if the slice's sampling role is
+> ever un-retired by ruling, this entry revives with it.
 Ratified Aug 11 2026, and deliberately **not built yet**. The pond-prospecting slice sorts the item
 universe into 21 structural strata, but the prices API's mapping carries only name, members, buy
 limit, value and high-alch — no categories. So 19 of the 21 strata are matched on item *names*

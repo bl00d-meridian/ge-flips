@@ -455,8 +455,8 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
       <button data-sub="watch" class="on">Plan &amp; Watchlist</button>
       <button data-sub="scan">Scanner</button>
       <button data-sub="log">Flip Log</button>
-      <button data-sub="paper" title="The paper book: three ROI-regime curves, the divergence ledger, the overnight-vs-daytime comparison per cohort, and per-gate simulated outcomes — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
-      <button data-sub="prospect" title="Where the edge lives: the per-stratum map, the gap band's verdict, the hours ledger's two streams — every number opens to its rows.">Prospecting</button>
+      <button data-sub="paper" title="The paper book: the overnight-vs-daytime comparison per cohort, per-gate simulated outcomes, fill-model calibration, and the regime race's historical curves and ledger (dormant since Aug 14 2026) — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
+      <button data-sub="prospect" title="Where the edge lives: the gap band's verdict, the hours ledger's two streams, and the per-stratum map (dormant since Aug 14 2026 — historical) — every number opens to its rows.">Prospecting</button>
       <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
       <button data-sub="scorer" title="The universe scorer: every mapped item against the 16-cell config grid each 5m bucket, fills simulated on the funded frontier at three capture points and two horizons. A measurement instrument — it admits, funds and caps nothing.">Scorer</button>
     </nav>
@@ -465,7 +465,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
        weekly read; the review keeps a one-line summary linking here) ── -->
   <div class="tsub" id="tab-paper">
     <div class="panel" id="paperRegimePanel">
-      <div class="ph"><h2>Paper book — ROI regimes</h2><span class="sub" id="paperRegimeSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="paper" title="Downloads analysis-paper-&lt;date&gt;.json: every closed trip with its provenance, the per-gate rollups and the three regime curves as series. A curated file for handing to an analyst � not the state backup.">⭳ export for analysis</button></span></div>
+      <div class="ph"><h2>Paper book</h2><span class="sub" id="paperRegimeSub"></span><span style="margin-left:auto"><button class="sm" data-analysis="paper" title="Downloads analysis-paper-&lt;date&gt;.json: every closed trip with its provenance, the per-gate rollups and the three regime curves as series. A curated file for handing to an analyst � not the state backup.">⭳ export for analysis</button></span></div>
       <div id="paperRegime"></div>
     </div>
     <div class="panel" id="paperShapePanel">
@@ -595,7 +595,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
     <div class="panel">
       <details id="beyondNet">
-        <summary title="Rotating discovery slice (ruled Aug 10 2026; stratified Aug 11 2026): each price cycle, 15 items drawn from ONE named structural stratum in rotation — equipment by slot, F2P-only, skilling outputs, quest-locked, holiday/rare-adjacent, sub-400gp bulk — plus 5 from the 250k–1m gap band nothing else watches. Sanity gates only: tradeable, priced in the stratum's band, nonzero volume. The filters encode what you believe works; this slice tests that belief against every corner of the universe on a clock. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
+        <summary title="The discovery slice's stratified rotation is DORMANT (your ruling, Aug 14 2026) — superseded by the universe scorer, which scores every mapped item each 5m bucket. What still renders here: the gap band's 10-item draw from 250k–1m, the band between the T2 scanner ceiling and the anomaly scan's floor, gate-tagged like watchlist rows. Sanity gates only: tradeable, priced in band, nonzero volume. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
         <div class="tw"><table>
           <thead><tr><th>Item</th><th title="The structural stratum this row was drawn from — strata rotate one per cycle so small corners get sampled monthly instead of never. Name-pattern classification (the mapping carries no categories): approximate by construction, and it steers sampling only.">Stratum</th><th title="The full plan gate chain, run on every slice item each cycle — the slice exists to gauge the universe beyond your filters, and untagged rows would defeat it.">Gates</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th><th>Limit</th><th>Vol (thin side)</th><th>Age</th><th></th></tr></thead>
           <tbody id="beyondNetBody"></tbody>
@@ -2653,6 +2653,8 @@ async function doRefresh(opts = {}){
     scorerCycleSafe();
     scorerTripTickSafe();   // fill sim observes every refresh — fills only accrue while watching (the paper book's own discipline, on the instrument's trips)
     try { mmBenchLog(); } catch(e){}   // the mm bench's one-time decision-log entry with its in-flight snapshot
+    try { raceRetiredLog(); } catch(e){}    // the race retirement's one-time entry with its at-retirement snapshot
+    try { sliceRetiredLog(); } catch(e){}   // the slice retirement's one-time entry with its at-retirement snapshot
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
@@ -3057,6 +3059,22 @@ function renderScan(){
    each price refresh (seeded by its timestamp, so re-renders within a cycle
    are stable). Pure exploration — the slice admits nothing and feeds
    nothing; anything interesting gets manually watched. */
+/* ═══ THE SLICE'S SAMPLING ROLE IS DORMANT (user ruling, Aug 14 2026) ═════
+   Retired to the dormancy lane, not deleted — superseded by universe
+   coverage: the scorer scores EVERY /mapping item against the config grid
+   each 5m bucket, so a rotating 15-item sample is a strict subset of
+   standing coverage and its coverage question no longer has a job. What
+   stops: the stratified draw, the rotation, new slice paper trips, new
+   stratum-ledger accrual. What stays: the GAP BAND's draw and verdict (it
+   serves the held T3 scanner proposal and the routing question — different
+   questions, still open), the durable historical map (readable, frozen),
+   and every historical slice trip and cohort row. The un-retire flips this
+   flag only by ruling; an assertion pins it so the change cannot land
+   silently (staging practice, fourth rule). */
+const SLICE_SAMPLING_RETIRED = true;
+const SLICE_RETIRED_WHY = "the discovery slice's sampling role is dormant (your ruling, Aug 14 2026) — superseded by "
+  + "the universe scorer, which scores every mapped item each 5m bucket. The gap band still draws and accrues; the "
+  + "per-stratum map below is the durable historical ledger, frozen at retirement.";
 const BEYOND_NET_N = 15;
 const GAP_BAND_N = 10;                      // gap-band slice size (ruled): the 250k–1m band nothing else watches
 const GAP_LO = 250_000, GAP_HI = 1_000_000; // between the tier-2 scanner ceiling and the anomaly scan's >1m floor
@@ -3208,10 +3226,16 @@ function strataSeen(k, id){
 function renderBeyondNet(watched){
   const body = $("#beyondNetBody"), sub = $("#beyondNetSub");
   if (!body) return;
-  const { pick, poolN, stratum, stratumLab } = beyondNetSample();
+  /* Slice dormancy (user ruling, Aug 14 2026): the stratified draw is off;
+     the gap band's draw continues and its rows keep rendering here. */
+  const { pick, poolN, stratum, stratumLab } = SLICE_SAMPLING_RETIRED
+    ? { pick: [], poolN: 0, stratum: null, stratumLab: null } : beyondNetSample();
   const gap = gapBandSample();
-  sub.textContent = "this cycle's stratum: " + stratumLab + " — " + pick.length + " of " + poolN
-    + " sanity-passing (rotates every cycle, every corner sampled on a clock) · gap band 250k–1m: "
+  sub.textContent = (SLICE_SAMPLING_RETIRED
+      ? "discovery slice dormant (retired Aug 14 2026 — the universe scorer covers every mapped item)"
+      : "this cycle's stratum: " + stratumLab + " — " + pick.length + " of " + poolN
+        + " sanity-passing (rotates every cycle, every corner sampled on a clock)")
+    + " · gap band 250k–1m: "
     + gap.pick.length + " of " + gap.poolN + " — the filters never saw any of these";
   const row = (c, sK, sLab) => '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span></td>'
@@ -5864,6 +5888,54 @@ function mmBenchLog(){
     + "handling. Per-item state persists frozen and re-keys as pinned-item state at cutover, or retires by ruling. "
     + "The un-bench flips MM_BENCHED only by your ruling; an assertion pins it so the change cannot land silently.", 1, "user");
 }
+/* ═══ THE TWO RETIREMENT ENTRIES (user ruling, Aug 14 2026) ═══════════════
+   Written by the tool, decided by the user (auto: 1, by: "user") — the mm
+   bench's shape: RATIFIED + basis + an in-browser snapshot at the retired
+   build's first poll, so a later un-retire ruling has its evidence base. */
+const RACE_RETIRED_KEY = "regime race → dormancy lane (2026-08-14)";
+function raceRetiredLog(){
+  if (!REGIME_RACE_RETIRED || S.raceRetiredLogged) return;
+  S.raceRetiredLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === RACE_RETIRED_KEY)) return;
+  const log = DB.shadowDivLog || [];
+  logDecision("settings", RACE_RETIRED_KEY,
+    "regime race retired to the dormancy lane — superseded by the universe scorer's config grid; historical data stays readable, nothing new accrues",
+    "RATIFIED. Basis: the comparator was broken by construction (adjacent-pair arithmetic reported an empty band as "
+    + "'identical' from the day it shipped — R68.6), and the loose \\ current band is unfeedable while the margin "
+    + "gate's effective ROI floor (" + effRoiFloorPct().toFixed(2) + "%) stands above the loose floor ("
+    + (GATE.roi * SHADOW_LOOSE).toFixed(2) + "%) — arithmetic between two constants, not a sampling shortfall, so "
+    + "more trading cannot feed it. The scorer's 16-cell grid varies the same constants directly. At retirement: "
+    + log.length + " divergence reading" + (log.length === 1 ? "" : "s")
+    + (log.length ? " (last " + log[log.length - 1].d + ")" : "") + ", "
+    + regimeFedN() + " of " + (DB.shadowBook || []).length + " trips in the book carrying a regime. "
+    + "Curves, separator bands and ledger stay rendered under a dormant banner; new trips carry no regimes key "
+    + "(absent = not evaluated, [] = evaluated-nothing, per R43.1); the divergence snapshot and proposals stop. "
+    + "The un-retire flips REGIME_RACE_RETIRED only by your ruling; an assertion pins it.", 1, "user");
+}
+const SLICE_RETIRED_KEY = "discovery slice sampling role → dormancy lane (2026-08-14)";
+function sliceRetiredLog(){
+  if (!SLICE_SAMPLING_RETIRED || S.sliceRetiredLogged) return;
+  S.sliceRetiredLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === SLICE_RETIRED_KEY)) return;
+  const keys = Object.keys(DB.strataStats || {}).filter(k => k !== "gap");
+  const tot = keys.reduce((a, k) => { const s = DB.strataStats[k] || {};
+    a.samp += s.samp || 0; a.pass += s.pass || 0; a.trips += s.trips || 0; a.net += s.net || 0; return a; },
+    { samp: 0, pass: 0, trips: 0, net: 0 });
+  logDecision("settings", SLICE_RETIRED_KEY,
+    "the discovery slice's sampling role retired to the dormancy lane — superseded by universe coverage; the gap band keeps drawing; historical ledger stays readable",
+    "RATIFIED. Basis: the universe scorer scores every /mapping item against the config grid each 5m bucket, so a "
+    + "rotating 15-item stratified sample is a strict subset of standing coverage and its coverage question no "
+    + "longer has a job. At retirement: " + tot.samp + " distinct items sampled across " + keys.length
+    + " stratum" + (keys.length === 1 ? "" : "a") + ", " + tot.pass + " clean gate-passer"
+    + (tot.pass === 1 ? "" : "s") + ", " + tot.trips + " closed slice trip" + (tot.trips === 1 ? "" : "s")
+    + ", net " + gp(Math.round(tot.net)) + " sim. What stops: the stratified draw and rotation, new slice paper "
+    + "trips, new stratum-ledger accrual. What stays: the GAP BAND's draw, register and verdict (they serve the "
+    + "held T3 scanner proposal and the routing question — the gap keeps its ruled share of the per-cycle budget, "
+    + "floor(" + SLICE_SHADOW_CAP + "/2) = " + Math.floor(SLICE_SHADOW_CAP / 2) + "; widening it is a strategy "
+    + "change and needs its own ruling), the durable per-stratum map (frozen, readable), and every historical "
+    + "slice trip and cohort row. Watchlist and scanner admission stand until cutover. The un-retire flips "
+    + "SLICE_SAMPLING_RETIRED only by your ruling; an assertion pins it.", 1, "user");
+}
 /* Credit a recorded fill against the standing leg; when both legs are done
    the cycle closes (bookkeeping of fills the user just recorded — not an
    action). Returns the credit applied. */
@@ -6574,6 +6646,26 @@ function depProposalFor(g, arr){
    unobserved window is unknown, not unfilled — every verdict carries its
    observed share of the horizon. */
 const SHADOW_LOOSE = 1 / 1.2, SHADOW_TIGHT = 1.2;   // ROI-floor one notch each way (1.2% → 1.0% / 1.44%); other gates unchanged, stated wherever regimes render
+/* ═══ THE REGIME RACE IS DORMANT (user ruling, Aug 14 2026) ═══════════════
+   Retired to the dormancy lane, not deleted — superseded by the universe
+   scorer's 16-cell config grid, which varies the constants the race was
+   built to test. Two independent grounds, both measured: the comparator was
+   broken by construction (the adjacent-pair arithmetic reported an empty
+   band as "identical" from the day it shipped — R68.6), and the band the
+   ROI question is about, loose \ current, is UNFEEDABLE while the margin
+   gate's effective 6.52% floor stands (bandUnreachable — arithmetic, not a
+   sampling shortfall). What stops: regime stamping on new trips, the daily
+   divergence snapshot, divergence evidence and proposals. What stays: the
+   historical curves, separator bands and ledger, rendered under a dormant
+   banner and readable through the same drills. ERA FACT: a trip opened
+   under the dormant race carries NO `regimes` key — absent means "not
+   evaluated (race dormant)"; `[]` keeps meaning "evaluated, nothing
+   computable" (R43.1). The un-retire flips this flag only by ruling; an
+   assertion pins it (staging practice, fourth rule). */
+const REGIME_RACE_RETIRED = true;
+const RACE_RETIRED_WHY = "the regime race is dormant (your ruling, Aug 14 2026) — superseded by the universe scorer's "
+  + "config grid. Its central band, loose \\ current, cannot be fed while the margin gate's effective ROI floor "
+  + "stands above the loose floor (arithmetic between GATE.roi and GATE.taxMult, not a sampling shortfall).";
 const SHADOW_MAX_OPEN = 40, SHADOW_OBS_CAP = 10 * 60e3;
 /* ═══ OBS ACCRUAL, EXTRACTED (stage 1d — census probe:2505, the shared fill
    core). The per-tick observation increment: elapsed-since-last-look, floored
@@ -7004,7 +7096,8 @@ const paperFamBlocked = () => {
        was about.
      SLICE + GAP BAND — a ROTATING pool. Every cycle draws fresh items from a
        universe of thousands, so the same family rarely recurs and the cooldown
-       almost never binds. The DRAW SIZE binds instead.
+       almost never binds. The DRAW SIZE binds instead. (Since Aug 14 2026 the
+       slice's draw is dormant — the term reports the gap band's share alone.)
      SCANNER — also rotating, and throttled to the scout cadence rather than
        the poll, so its own throttle binds.
 
@@ -7025,7 +7118,11 @@ function paperCapacity(P){
      The slice draws on the price cycle; the scanner on the scout cadence. */
   const cyclesPerDay = 24 * 3600e3 / POLL_MS;
   const scoutPerDay = 24 * 3600e3 / SCOUT_EVERY;
-  const sliceCeil = SLICE_SHADOW_CAP * cyclesPerDay;
+  /* Slice dormancy (Aug 14 2026): the rotating-cohort term reports what can
+     actually accrue — the gap band's ruled share of the shared budget. A
+     ceiling computed from a draw that no longer runs would be a claim the
+     computation cannot support. */
+  const sliceCeil = (SLICE_SAMPLING_RETIRED ? Math.floor(SLICE_SHADOW_CAP / 2) : SLICE_SHADOW_CAP) * cyclesPerDay;
   const scanCeil = SHADOW_SCAN_TOP * 2 * scoutPerDay;
   const watchCeil = watchFams * perFamPerDay;
   const byCap = SHADOW_MAX_OPEN * (24 / hz);
@@ -7046,7 +7143,9 @@ function paperCapacityLine(P){
     + ' — reported per cohort, because they are limited by different mechanisms and one number would answer neither.'
     + ' <b>Watchlist</b> ' + c.watchCeil + '/day: ' + c.watchFams + ' famil' + (c.watchFams === 1 ? 'y' : 'ies')
     + ' × ' + c.perFamPerDay + ' (24h ÷ [' + fmtHrs(c.hz) + ' horizon + ' + c.cooldownH + 'h cooldown]) — a FIXED pool, so'
-    + ' the cooldown binds. <b>Slice + gap band</b> ' + c.sliceCeil + '/day and <b>scanner</b> ' + c.scanCeil + '/day:'
+    + ' the cooldown binds. <b>' + (SLICE_SAMPLING_RETIRED ? 'Gap band' : 'Slice + gap band') + '</b> ' + c.sliceCeil
+    + '/day' + (SLICE_SAMPLING_RETIRED ? ' (the slice\'s draw is dormant, retired Aug 14 2026)' : '')
+    + ' and <b>scanner</b> ' + c.scanCeil + '/day:'
     + ' ROTATING pools drawing fresh items, so the draw size binds and the cooldown almost never does.'
     + ' Overall binding constraint: <b>' + esc(c.binding) + '</b> (the ' + SHADOW_MAX_OPEN + '-trip cap allows ~'
     + c.byCap + '/day; the cohorts together want ~' + c.wanted + ').'
@@ -7100,18 +7199,23 @@ function shadowScan(P){
     const c = x.c || calc(x.id);
     if (!c || c.buy == null || c.sell == null) return;
     const qty0 = shadowSizeFor(c);
-    DB.shadowBook.push(Object.assign(stampPrediction({}, qty0, c),
+    const rec = Object.assign(stampPrediction({}, qty0, c),
       { id: now + DB.shadowBook.length, fam, itemId: x.id,
       name: itemName(x.id), qty: qty0, bid: c.buy + 1, ask: c.sell - 1,
       t: now, hzH: PAPER_HORIZON_H, grade: "live", openSeq: S.pollSeq,
       /* Presence at open — an open-time fact, never reconstructable. */
       anchored: touchAnchoredAt(now),
-      /* Regimes are stamped CENTRALLY here, from the candidate's own effective
-         ROI, so no entry path can forget (defect fix, Aug 12 2026 — four of
-         the six paths used to hardcode an empty set, and in the epoch that
-         found this they were 96% of the book). */
-      regimes: regimesFor(c),
-      buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta));
+      buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now, state: "open" }, meta);
+    /* Regimes were stamped CENTRALLY here, from the candidate's own effective
+       ROI, so no entry path could forget (defect fix, Aug 12 2026 — four of
+       the six paths used to hardcode an empty set, and in the epoch that
+       found this they were 96% of the book). ERA FACT under the dormant race
+       (user ruling, Aug 14 2026): a trip opened while REGIME_RACE_RETIRED
+       carries NO `regimes` key — absent means "not evaluated (race
+       dormant)"; `[]` keeps meaning "evaluated, nothing computable" (R43.1).
+       The import carry preserves the distinction (R68.5's absent-is-not-null). */
+    if (!REGIME_RACE_RETIRED) rec.regimes = regimesFor(c);
+    DB.shadowBook.push(rec);
     recent.add(fam); room--;
   };
   for (const x of P.picks || []) add("regime:" + x.id, x, {});
@@ -7170,8 +7274,16 @@ function shadowScan(P){
   try {
     const gapBox = { n: Math.floor(SLICE_SHADOW_CAP / 2) };
     sliceScan(gapBandSample().pick, "gap", gapBox);
-    const bn = beyondNetSample();
-    sliceScan(bn.pick, bn.stratum, { n: SLICE_SHADOW_CAP - (Math.floor(SLICE_SHADOW_CAP / 2) - gapBox.n) });
+    /* SLICE DORMANCY (user ruling, Aug 14 2026): the stratified draw is
+       retired; the GAP BAND above keeps exactly its ruled share of the
+       shared budget — floor(SLICE_SHADOW_CAP / 2) per cycle, unchanged.
+       The slice's remainder lapses unused while dormant: widening the
+       gap's share would be a strategy-parameter change and needs its own
+       ruling. The un-gated call below is the un-retirement's re-entry. */
+    if (!SLICE_SAMPLING_RETIRED){
+      const bn = beyondNetSample();
+      sliceScan(bn.pick, bn.stratum, { n: SLICE_SHADOW_CAP - (Math.floor(SLICE_SHADOW_CAP / 2) - gapBox.n) });
+    }
   } catch(e){}
 }
 /* ═══ SCANNER SHADOW COHORT (user-directed, Aug 11 2026) ═══
@@ -7243,17 +7355,20 @@ async function scannerShadowScan(){
           DB.shadowBook.splice(DB.shadowBook.indexOf(evictable), 1);
         }
         const qtyS = shadowSizeFor(c);
-        DB.shadowBook.push(Object.assign(stampPrediction({}, qtyS, c),
+        const recS = Object.assign(stampPrediction({}, qtyS, c),
           { id: now + DB.shadowBook.length, fam: "scan:T" + t + ":" + x.id,
           itemId: x.id, name: itemName(x.id), qty: qtyS, bid: c.buy + 1, ask: c.sell - 1,
           t: now, hzH: PAPER_HORIZON_H, grade: "live", openSeq: S.pollSeq,
       /* Presence at open — an open-time fact, never reconstructable. */
       anchored: touchAnchoredAt(now),
-          regimes: regimesFor(c),
           buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
           benchedBy: nearMiss ? [fl[0].g] : undefined,
-          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" }));
+          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" });
+        /* Same era fact as shadowScan's add(): no `regimes` key under the
+           dormant race (user ruling, Aug 14 2026). */
+        if (!REGIME_RACE_RETIRED) recS.regimes = regimesFor(c);
+        DB.shadowBook.push(recS);
         taken.add(x.id); opened++; changed = true;
       }
     }
@@ -7738,16 +7853,22 @@ function shadowTick(){
   }
   DB.shadowBook = DB.shadowBook.filter(p => p.state === "open" || now - (p.closedAt || 0) < 30 * 86400e3).slice(-300);
   /* Daily regime snapshot: 30d cumulative simulated net per regime — the
-     divergence ledger the proposal engine's persistence rule reads. */
-  const d = today();
-  /* Observed-share floor (ruled Aug 11 2026): the regime curves are a
-     verdict about gate settings, so thin trips never enter them. */
-  const reg = r => DB.shadowBook.filter(p => shadowCounts(p) && (p.regimes || []).includes(r))
-    .reduce((a, p) => a + (p.net || 0), 0);
-  const snap = { d, cur: reg("current"), loose: reg("loose"), tight: reg("tight") };
-  const last = DB.shadowDivLog[DB.shadowDivLog.length - 1];
-  if (!last || last.d !== d) DB.shadowDivLog.push(snap); else Object.assign(last, snap);
-  DB.shadowDivLog = DB.shadowDivLog.slice(-31);
+     divergence ledger the proposal engine's persistence rule reads.
+     DORMANT (user ruling, Aug 14 2026): the race is retired, so the ledger
+     is frozen at its last pre-retirement reading — new rows would measure a
+     population whose new trips carry no membership. The gated block is the
+     un-retirement's re-entry. */
+  if (!REGIME_RACE_RETIRED){
+    const d = today();
+    /* Observed-share floor (ruled Aug 11 2026): the regime curves are a
+       verdict about gate settings, so thin trips never enter them. */
+    const reg = r => DB.shadowBook.filter(p => shadowCounts(p) && (p.regimes || []).includes(r))
+      .reduce((a, p) => a + (p.net || 0), 0);
+    const snap = { d, cur: reg("current"), loose: reg("loose"), tight: reg("tight") };
+    const last = DB.shadowDivLog[DB.shadowDivLog.length - 1];
+    if (!last || last.d !== d) DB.shadowDivLog.push(snap); else Object.assign(last, snap);
+    DB.shadowDivLog = DB.shadowDivLog.slice(-31);
+  }
   if (changed) save();
 }
 
@@ -8533,6 +8654,12 @@ function regimeTieReason(){
            dead, unreachable: dead, anyUnreachable: true };
 }
 function shadowRegimeEvidence(){
+  /* ONE OWNER for "no evidence can arise while the race is dormant" (user
+     ruling, Aug 14 2026): every reader — the review's proposal path, the
+     paper one-liner, the panel footer — tests this for truthiness, so the
+     gate lives here and nothing downstream re-derives it. The dormant
+     surfaces state the reason where they render. */
+  if (REGIME_RACE_RETIRED) return null;
   const log = DB.shadowDivLog.slice(-7);
   if (log.length < 7) return null;
   const looseWins = log.filter(x => x.loose > x.cur).length;
@@ -11437,12 +11564,24 @@ function paperRegimeSection(){
   const vals = regs.flatMap(r => log.map(x => Number(x[r.col]) || 0)).concat([0]);
   const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
   const bits = [];
+  /* THE DORMANT BANNER LEADS (user ruling, Aug 14 2026) — every automated
+     decision states its reason where the user reads it, and the decision
+     here is that nothing below accrues any more. */
+  if (REGIME_RACE_RETIRED)
+    bits.push('<div class="plan-note"><b>Retired to the dormancy lane (your ruling, Aug 14 2026)</b> — '
+      + esc(RACE_RETIRED_WHY) + ' Everything below is <b>historical</b>: the curves, separator bands and ledger '
+      + 'read the trips and readings that accrued before retirement, every drill still opens, and nothing new '
+      + 'accrues — trips opened since carry no regime membership at all. The un-retire is a ruling, pinned by '
+      + 'an assertion.</div>');
   if (shadowEpochNote()) bits.push(shadowEpochNote());
   bits.push(paperCaveat());
   /* Above the curves, not inside a disclosure: a reader who has already taken
      the number has not been warned by a note below it. */
   bits.push(paperModelNote(closed));
-  if (!fed && (DB.shadowBook || []).length)
+  /* The never-fed detector is superseded by the dormant banner while the race
+     is retired — on a store born after retirement, "not one trip carries a
+     regime" is the dormancy working, not the stamping defect it detects. */
+  if (!REGIME_RACE_RETIRED && !fed && (DB.shadowBook || []).length)
     bits.push(neverFedNote("The regime race",
       (DB.shadowBook || []).length + " paper trips exist and not one carries a regime, so the three curves below have "
       + "no membership at all — they are not flat, they are empty."));
@@ -11480,7 +11619,7 @@ function paperRegimeSection(){
       tight: gp(Math.round(x.tight || 0)), _tight: Math.round(x.tight || 0),
       lead: best[0], _txt: x.d + " " + best[0] };
   });
-  if (log.length && log.every(x => !Number(x.cur) && !Number(x.loose) && !Number(x.tight)))
+  if (!REGIME_RACE_RETIRED && log.length && log.every(x => !Number(x.cur) && !Number(x.loose) && !Number(x.tight)))
     bits.push(neverFedNote("The divergence ledger",
       log.length + " daily readings exist and every one is all-zero across all three regimes, which happens when no trip "
       + "has ever been assigned to a regime rather than when the regimes genuinely tie."));
@@ -11496,7 +11635,16 @@ function paperRegimeSection(){
       })
     + ' behind the 4-of-7 persistence rule.</div>');
   const evd = shadowRegimeEvidence();
-  const tie = regimeTieReason();
+  const tie = REGIME_RACE_RETIRED ? null : regimeTieReason();
+  /* The evidence footer's dormant form: the slot states the dormant reading
+     rather than vanishing — "no proposals" because the race is retired is a
+     different sentence from "no proposals" because nothing diverged. */
+  if (REGIME_RACE_RETIRED)
+    bits.push('<div class="dim" style="margin-top:4px">Dormant — the divergence ledger is frozen at '
+      + log.length + ' reading' + (log.length === 1 ? '' : 's')
+      + (log.length ? ' (last ' + esc(log[log.length - 1].d) + ')' : '')
+      + '; no divergence evidence accrues and no regime proposal can arise while the race is retired.</div>');
+  else
   bits.push(evd ? '<div class="plan-note" style="margin-top:4px">' + evd.html + '</div>'
     : (tie && tie.dead.length
         ? '<div class="dim" style="margin-top:4px">No divergence can be read for '
@@ -11630,15 +11778,23 @@ function paperCohortSection(){
   for (const c of cohorts){
     const arr = seen.get(c) || [];
     const net = arr.reduce((a, p) => a + (p.net || 0), 0);
+    /* Slice dormancy (Aug 14 2026): "trips accrue as cycles run" would be a
+       false promise on a cohort whose draw is retired — the empty state
+       names the true reason (the silent-state rule's shape (a)). */
+    const dormantCoh = SLICE_SAMPLING_RETIRED && (c === "slice" || c === "slice·clean");
     lines.push('<div data-drillrow="1">' + esc(c) + ' — '
       + drill("paper:coh:" + c, arr.length + ' closed trip' + (arr.length === 1 ? '' : 's'), {
           head: c + " — its closed paper trips", cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
-          empty: "This cohort has closed nothing yet. It is empty, not hidden — trips accrue as cycles run.",
+          empty: dormantCoh
+            ? "Nothing remains: this cohort's draw is dormant (the slice's sampling role retired Aug 14 2026), and its historical trips have pruned out of the 30-day book. The durable per-stratum ledger keeps its counts."
+            : "This cohort has closed nothing yet. It is empty, not hidden — trips accrue as cycles run.",
           note: PAPER_NOTE()
         })
       + (arr.length ? ', net <span class="' + sign(net) + '">' + gp(Math.round(net)) + '</span> sim' : '')
+      + (dormantCoh ? ' <span class="dim">[dormant since Aug 14 2026 — historical only]</span>' : '')
       + thinNote(thinByCoh.get(c) || 0, "coh:" + c, paperThin().filter(p => paperCohortOf(p) === c))
-      + (arr.length || (thinByCoh.get(c) || 0) ? '' : ' <span class="dim">— nothing has closed in this cohort yet</span>') + '</div>');
+      + (arr.length || (thinByCoh.get(c) || 0) ? '' : (dormantCoh ? ''
+        : ' <span class="dim">— nothing has closed in this cohort yet</span>')) + '</div>');
   }
   /* Holes are reported, never quietly excluded. */
   const holes = (DB.shadowBook || []).filter(p => p.state === "unobserved");
@@ -11684,9 +11840,13 @@ function paperSummaryLine(){
         + shSplit.map(e => esc(e[0])).join(", ") + ') · '
       : '')
     + paperRateFace(closed) + ' · '
-    + (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence')
+    + (REGIME_RACE_RETIRED
+        ? 'regime race dormant (retired Aug 14 2026)'
+        : (evd ? '<b>a persistent regime divergence is standing (' + esc(evd.dir) + ')</b>' : 'no persistent regime divergence'))
     + ' — <a href="#" data-goto="paper#paperRegimePanel">open the paper book →</a></div>'
-    + '<div class="dim">Screening evidence, never a verdict. The working surface carries the three regime curves, the divergence ledger, the per-gate table and every trip behind each number.</div>'
+    + '<div class="dim">Screening evidence, never a verdict. The working surface carries the overnight-vs-daytime comparison, the per-gate table, '
+    + (REGIME_RACE_RETIRED ? 'the regime race\'s historical curves and ledger (dormant)' : 'the three regime curves and the divergence ledger')
+    + ', and every trip behind each number.</div>'
     + '<div style="margin-top:5px"><button class="sm" data-analysis="all" title="Downloads analysis-all-&lt;date&gt;.json — the paper book, gate health and prospecting exports in one envelope, each keeping its own header so the three truncate independently and visibly. A curated file for handing to an analyst; the state backup on the Flip Log tab is a different thing and is for restoring this browser.">⭳ export all three for analysis</button>'
     + ' <span class="dim">evidence with its provenance, not just aggregates — capped, with the truncation stated in each header</span></div></div>';
 }
@@ -11882,12 +12042,20 @@ function freshnessRows(){
       6 * 3600e3, "scheduled", "observes every 60s refresh"
       + (shadowGaps() ? " · " + shadowGaps() + " trip" + (shadowGaps() === 1 ? "" : "s")
          + " resolved UNOBSERVED (horizon expired while the tab was closed) — held out of every aggregate, not scored" : ""));
+  /* Dormant streams (user ruling, Aug 14 2026) report as DORMANT, never as
+     stale — a retired stream flagged red forever is wallpaper, and wallpaper
+     is how a real stale stream gets missed. `kind: "dormant"` cannot trip
+     the stale test, and the note names the ruling. */
   add("Regime ledger (divergence)", dParse((DB.shadowDivLog || []).slice(-1)[0] && DB.shadowDivLog.slice(-1)[0].d),
-      2 * dayMs, "scheduled", "one snapshot per day");
+      2 * dayMs, REGIME_RACE_RETIRED ? "dormant" : "scheduled",
+      REGIME_RACE_RETIRED ? "DORMANT — the regime race retired Aug 14 2026; frozen at its last pre-retirement reading"
+                          : "one snapshot per day");
   add("Scanner cohort", maxOf(sb.filter(p => p.cohort === "scanner").map(p => p.t || 0)),
       12 * 3600e3, "scheduled", "opens on the scout's 10-min cadence");
   add("Stratum samples", maxOf(Object.values(DB.strataStats || {}).map(s => s.lastAt || 0)),
-      6 * 3600e3, "scheduled", "samples every render pass");
+      6 * 3600e3, "scheduled",
+      SLICE_SAMPLING_RETIRED ? "gap band only — the slice's stratum rotation is dormant (retired Aug 14 2026)"
+                             : "samples every render pass");
   add("Gate-health ledger", dParse(maxOf((DB.gateLog || []).map(e => dParse(e.d))) ? new Date(maxOf((DB.gateLog || []).map(e => dParse(e.d)))).toLocaleDateString("en-CA") : ""),
       2 * dayMs, "scheduled", "one row per item·gate·day");
   add("Deploy ledger (funnel)", maxOf((DB.deployLog || []).map(e => (e.h || 0) * 3600e3)),
@@ -14479,7 +14647,12 @@ function prospectingInline(){
     a.samp += s.samp || 0; a.nm += s.nm || 0; a.pass += s.pass || 0;
     a.trips += s.trips || 0; a.net += s.net || 0; return a;
   }, { samp: 0, nm: 0, pass: 0, trips: 0, net: 0 });
-  const secs = ['<div class="note">The discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&amp;L is <b>simulated</b> screening data, never evidence. Every number opens to its rows.</div>',
+  const secs = [(SLICE_SAMPLING_RETIRED
+      ? '<div class="plan-note"><b>Dormant — retired to the dormancy lane (your ruling, Aug 14 2026)</b>: '
+        + esc(SLICE_RETIRED_WHY) + ' Every count below is the durable historical ledger, still opening to its '
+        + 'rows; only the <b>gap band</b> row still accrues. The un-retire is a ruling, pinned by an assertion.</div>'
+      : ''),
+    '<div class="note">The discovery slice\'s yield, per structural stratum. Sampling counts are distinct items the gate chain actually ran on (a re-draw is not a second test); P&amp;L is <b>simulated</b> screening data, never evidence. Every number opens to its rows.</div>',
     shadowEpochNote(),
     '<div class="plan-note"><b>' + STRATUM_CAVEAT + '</b> The mapping API carries no category data, so every stratum except F2P (its own members flag) and the price bands is matched on item names. Wrong-bucket items skew which region a result is credited to; they never touch a trade. Anything that cites a per-stratum finding in a PROPOSAL carries that warning to the point of decision.</div>',
     /* Provenance, per stream rather than per panel — the two live side by side
@@ -14488,7 +14661,9 @@ function prospectingInline(){
     + ' — computed from ' + esc(paperHealthTxt()) + '. <b>Sampling counts</b> (distinct items the gate chain ran on) are '
     + provTag(false) + ': they count tests, not simulated outcomes, so a paper-book defect cannot reach them.</div>'];
   if (!tot.samp){
-    secs.push('<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
+    secs.push(SLICE_SAMPLING_RETIRED
+      ? '<div class="dim">Nothing ledgered — the slice\'s sampling role retired on Aug 14 2026; only the gap band accrues here now, and it has not sampled in this store yet.</div>'
+      : '<div class="dim">No slice samples ledgered yet — the rotation stamps them as cycles run with the scanner open.</div>');
     return secs.join("");
   }
   const allIds = keys.flatMap(k => stratumIdRows(k).map(r => Object.assign({ stratum: STRATUM_LAB(k), _cohort: STRATUM_LAB(k) }, r)));
@@ -14789,10 +14964,12 @@ function prospectSummaryLine(){
     + keys.length + ' stratum' + (keys.length === 1 ? '' : 'a') + ' · ' + tot.pass + ' clean gate-passer' + (tot.pass === 1 ? '' : 's')
     + ' · ' + tot.trips + ' closed trip' + (tot.trips === 1 ? '' : 's') + ', net <span class="' + sign(tot.net) + '">'
     + gp(Math.round(tot.net)) + '</span> sim'
+    + (SLICE_SAMPLING_RETIRED ? ' · <b>sampling dormant since Aug 14 2026</b> (historical ledger; gap band still accrues)' : '')
     + (best ? ' · best region so far: <b>' + esc(STRATUM_LAB(best.k)) + '</b>' + STRATUM_TRIPWIRE : ' · no region has enough closed trips to rank yet')
     + ' · gap band ' + ((g.trips || 0) >= 5 ? ((g.net || 0) > 0 ? '<b>prints</b>' : '<b>proven empty</b>') : 'still accruing')
     + ' — <a href="#" data-goto="prospect#prospectStrataPanel">open prospecting →</a></div>'
-    + '<div class="dim">The working surface carries the per-stratum map, the gap-band verdict and the hours ledger\'s two streams, each opening to its rows.</div></div>';
+    + '<div class="dim">The working surface carries the gap-band verdict, the hours ledger\'s two streams and the per-stratum map'
+    + (SLICE_SAMPLING_RETIRED ? ' (dormant — historical)' : '') + ', each opening to its rows.</div></div>';
 }
 
 function auditSeedAction(id, act){
@@ -15268,7 +15445,11 @@ document.addEventListener("click", e => {
     $("#slvFormTitle").textContent = "Edit — " + itemName(pos.itemId, pos.name);
     $("#slvCancel").classList.remove("hide");
     slvFormFill(slvPosToDraft(pos));
-    $("#slvFormPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    /* THE LANDING IS THE FORM'S, NOT THE BROWSER'S (sleeve-form fix, Aug 14
+       2026 — the same-class site the log-flip fix listed): a bare
+       scrollIntoView has no measured chrome pad, so the panel title parks
+       under the sticky header. One landing implementation (navLand). */
+    navLand("slvFormPanel");
     return;
   }
   const ph = t.closest("[data-slvphase]");
@@ -17965,7 +18146,8 @@ const GLOSSARY = [
   { id: "paper-book", term: "Paper book", aka: "paper screen, formerly the shadow book",
     what: "The counterfactual ledger. When an item is benched by exactly one gate, the tool opens a simulated position at "
         + "an honest entry (the instasell plus one tick) and runs it through the same fill horizon a real offer would face.",
-    from: "Opened by the poll from the plan's near-misses, the discovery slice, the gap band and the scanner cohort.",
+    from: "Opened by the poll from the plan's near-misses, the gap band and the scanner cohort — and, until Aug 14 2026, "
+        + "the discovery slice, whose draw is dormant (its historical trips remain).",
     do: "Read it to decide what deserves a LIVE half-size test through the exception lane, never to decide whether a gate "
         + "is wrong. A gate moves only on realized evidence with the screen concurring.",
     caveat: "Renamed from \"shadow book\" in Aug 2026 to stop it colliding with the Shadow Fund (real capital). Persisted "
@@ -18010,20 +18192,27 @@ const GLOSSARY = [
     from: "The lifecycle tick at horizon expiry.",
     do: "Nothing directly — context for reading net figures. A gate whose paper profit comes mostly from forced exits is "
         + "reporting price drift, not market-making." },
-  { id: "paper-regime", term: "ROI regimes and the divergence ledger", aka: "current / loose / tight",
-    what: "The same candidate set run at three ROI floors — yours, one notch looser, one notch tighter — with a daily "
-        + "cumulative net for each. The divergence ledger is one row per day the app was open.",
-    from: "The paper book, filtered by regime membership; snapshotted daily.",
-    do: "Only act when a divergence PERSISTS: 4 of the last 7 readings. Even then it reads \"this regime's candidates "
-        + "earned probation slots\", never \"this regime is right\" — the floor moves on your ruling alone.",
-    caveat: "Seven readings are seven days only if the app was open on seven days; the copy says so when it was not." },
+  { id: "paper-regime", term: "ROI regimes and the divergence ledger (dormant)", aka: "current / loose / tight — the regime race",
+    what: "DORMANT — retired to the dormancy lane Aug 14 2026 (your ruling), kept so the term stays readable in older "
+        + "exports and on the historical panel. It meant: the same candidate set run at three ROI floors — yours, one "
+        + "notch looser, one notch tighter — with a daily cumulative net for each; the divergence ledger was one row "
+        + "per day the app was open.",
+    from: "The paper book, filtered by regime membership; snapshotted daily until retirement. Both are frozen — new "
+        + "trips carry no regime membership and no new rows are written.",
+    do: "Nothing directly — it is context for reading the historical curves and ledger. The live successor is the "
+        + "universe scorer's config grid (Trade → Scorer), which varies the same constants directly.",
+    caveat: "Retired on two measured grounds: the comparator was broken by construction (R68.6), and the loose \\ "
+          + "current band is unfeedable while the margin gate's effective ROI floor stands above the loose floor — "
+          + "arithmetic, not a sampling shortfall. The un-retire is a ruling." },
   { id: "paper-cohort", term: "Cohorts", aka: "watchlist, slice, slice·clean, gap band, scanner·T1/T2",
     what: "Which population a paper trip came from. Watchlist trips answer \"are my gates too tight\"; scanner trips "
         + "answer a different question — \"are my FILTERS excluding money\"; slice and gap-band trips come from random "
         + "structural sampling.",
     from: "Stamped when the position opens.",
     do: "Never read a scanner-cohort result as a gate finding — it is a pipeline finding, and it can only nominate an "
-        + "item for the scout's attention at its unchanged admission bar. The funnel moves one stage per ruling." },
+        + "item for the scout's attention at its unchanged admission bar. The funnel moves one stage per ruling.",
+    caveat: "The slice cohorts stopped accruing on Aug 14 2026 (the slice's sampling role is dormant); their historical "
+          + "trips keep rendering in every cohort view. The gap band still accrues." },
   { id: "exc-span", term: "Observed span", aka: "≥7 observed days, the exception lane's span clause",
     what: "How many OBSERVED days an item's counted paper trips are spread across — first open to last close, counting "
         + "only days the tool was actually open and building a plan. Rendered as a duration, so it is directly comparable "
@@ -18184,23 +18373,29 @@ const GLOSSARY = [
 
 { g: "prospecting", title: "Prospecting — where the edge might be that you are not looking",
   note: "Everything else in the tool watches the items you chose. These surfaces sample the parts of the market and the "
-      + "parts of the day you did not.",
+      + "parts of the day you did not. (The slice's item-space sampling is dormant since Aug 14 2026 — the universe "
+      + "scorer covers every mapped item; the gap band and the hours ledger still accrue.)",
   entries: [
-  { id: "prosp-slice", term: "Discovery slice", aka: "clean gate-passer",
-    what: "A small random draw of unwatched items run through the full gate chain every cycle. An item that clears EVERY "
-        + "gate on a random draw is a clean gate-passer — the event the slice exists to catch.",
-    from: "A seeded shuffle of one stratum per price cycle, plus the gap band.",
-    do: "A clean gate-passer is worth a look on its own merits — it surfaces in WHAT CHANGED by name. The hit rate is "
-        + "worth more: it tells you what fraction of the whole market your filters would accept." },
-  { id: "prosp-stratum", term: "Stratum / per-stratum map",
-    what: "A named region of the item universe — equipment by slot, F2P-only, skilling outputs by skill, quest-locked, "
-        + "holiday/rare-adjacent, sub-400gp bulk, and the price bands. The slice rotates through them on the price cycle "
-        + "so small regions get sampled on a clock instead of never.",
-    from: "Item names matched against patterns, except F2P (the mapping's own members flag) and the price bands.",
-    do: "Read the map quarterly, not weekly: a region that \"prospects\" is an argument for building a scanner for it, "
-        + "which is a proposal for you to rule on.",
-    caveat: "19 of 21 strata are NAME-PATTERN approximations — directional, not a census. Any proposal citing a "
-          + "per-stratum finding carries that warning to the point of decision." },
+  { id: "prosp-slice", term: "Discovery slice (dormant)", aka: "clean gate-passer",
+    what: "DORMANT — the slice's sampling role retired to the dormancy lane Aug 14 2026 (your ruling), kept so the term "
+        + "stays readable in older exports and in the historical map. It meant: a small random draw of unwatched items "
+        + "run through the full gate chain every cycle; one that cleared EVERY gate was a clean gate-passer.",
+    from: "A seeded shuffle of one stratum per price cycle — frozen at retirement. The gap band's draw continues and "
+        + "can still produce clean gate-passers.",
+    do: "Nothing directly — context for the historical ledger. The live successor is the universe scorer (Trade → "
+        + "Scorer), which scores every mapped item each 5m bucket instead of sampling 15.",
+    caveat: "Superseded by coverage, not disproven: the slice's question — what does the rest of the market look like — "
+          + "is now answered exhaustively. The un-retire is a ruling." },
+  { id: "prosp-stratum", term: "Stratum / per-stratum map (dormant)",
+    what: "DORMANT since Aug 14 2026 — the map is the durable historical ledger of the retired slice's sampling, still "
+        + "opening to its rows. A stratum is a named region of the item universe — equipment by slot, F2P-only, "
+        + "skilling outputs by skill, quest-locked, holiday/rare-adjacent, sub-400gp bulk, and the price bands.",
+    from: "Item names matched against patterns, except F2P (the mapping's own members flag) and the price bands. "
+        + "Frozen at retirement; only the gap-band row still accrues.",
+    do: "Nothing directly — it is context for reading the historical map and older exports, and for any future "
+        + "un-retire ruling. The coverage question it steered now belongs to the universe scorer's grid and hour bands.",
+    caveat: "19 of 21 strata are NAME-PATTERN approximations — directional, not a census. That caveat still governs "
+          + "any reading of the historical map." },
   { id: "prosp-gap", term: "Gap band 250k–1m",
     what: "The price band between the T2 scanner's ceiling and the anomaly scan's floor — watched by nothing but slice "
         + "luck before it got its own sampler.",
@@ -18587,7 +18782,8 @@ const GLOSSARY = [
         + "advisory record, while ratifying arms one, and arming stays a press in the tool." },
   { id: "gov-neverfed", term: "Never been fed",
     what: "A warning that an aggregate's input population is EMPTY — not that its numbers came out zero. The regime "
-        + "race and the divergence ledger both carry one when no paper trip has been assigned to a regime.",
+        + "race and the divergence ledger both carried one when no paper trip had been assigned to a regime (the race "
+        + "is dormant since Aug 14 2026 — its dormant banner supersedes this note there; the rule itself is general).",
     from: "A count of the population behind the number, checked before the number renders.",
     do: "Treat it as a broken pipe, not a market reading. A zero that means \"nothing qualified\" and a zero that means "
         + "\"nothing was ever fed in\" look identical and mean opposite things, and this is the surface that tells you "
@@ -19259,7 +19455,10 @@ const catWinState = c => {
 function homeSnapNow(){
   const armed = [];
   try { for (const c of sleeveRungCards()) armed.push(c.pos.id + ":" + c.i); } catch(e){}
-  const dv = (DB.shadowDivLog || []).slice(-1)[0] || null;
+  /* Dormant race (Aug 14 2026): the ledger is frozen, its reader in the delta
+     block is gated, so the snapshot stops carrying the field — written-and-
+     never-read is the defect the orphan scan exists for. */
+  const dv = REGIME_RACE_RETIRED ? null : (DB.shadowDivLog || []).slice(-1)[0] || null;
   const catStates = {};
   for (const c of (DB.catalysts || [])) catStates[c.id] = catWinState(c);
   let brief = "fresh";
@@ -19314,7 +19513,11 @@ function homeDeltaLines(){
      to catch (user-directed Aug 11 2026) — it leads with the item's name. */
   const finds = (DB.shadowBook || []).filter(p => p.cleanFind && p.cleanFind > since);
   for (const p of finds.slice(0, 2))
-    line("🎣 discovery slice found a clean gate-passer: " + itemName(p.itemId, p.name)
+    /* The line names the arm that drew it — under the dormant slice (Aug 14
+       2026) only the gap band can produce one, and crediting it to "the
+       discovery slice" would claim a draw that no longer runs. */
+    line("🎣 " + (p.stratum === "gap" ? "gap band" : "discovery slice") + " found a clean gate-passer: "
+      + itemName(p.itemId, p.name)
       + " (" + STRATUM_LAB(p.stratum) + ") — unwatched, passed every gate on a random draw", "scan#beyondNet");
   const recs = (DB.reconLog || []).filter(r => r.at > since);
   if (recs.length){
@@ -19325,7 +19528,7 @@ function homeDeltaLines(){
       "paper#paperCohortPanel");
   }
   if (finds.length > 2)
-    line("🎣 +" + (finds.length - 2) + " more clean gate-passers from the slice", "scan#beyondNet");
+    line("🎣 +" + (finds.length - 2) + " more clean gate-passers from the rotating draws", "scan#beyondNet");
   if (snap){
     const prevArmed = new Set(snap.armed || []);
     try {
@@ -19333,7 +19536,10 @@ function homeDeltaLines(){
         if (!prevArmed.has(c.pos.id + ":" + c.i))
           line("⚑ sleeve rung armed: " + itemName(c.pos.itemId, c.pos.name) + " — rung " + (c.i + 1), "sleeve#sleevePanel");
     } catch(e){}
-    const dv = (DB.shadowDivLog || []).slice(-1)[0];
+    /* Dormant race (Aug 14 2026): the ledger is frozen, so no divergence can
+       MOVE between visits — the category goes quiet rather than repeating a
+       static delta forever. */
+    const dv = REGIME_RACE_RETIRED ? null : (DB.shadowDivLog || []).slice(-1)[0];
     if (dv && snap.div){
       const cur = { loose: Math.round(dv.loose - dv.cur), tight: Math.round(dv.tight - dv.cur) };
       const leadOf = d => Math.abs(d.loose || 0) >= Math.abs(d.tight || 0) ? "loose" : "tight";
@@ -19458,8 +19664,11 @@ function renderHomeVitals(){
   const sb = DB.shadowBook || [];
   const sbOpen = sb.filter(p => p.state === "open").length;
   const sbClosed = sb.length - sbOpen;
+  /* Dormant race (Aug 14 2026): the tile drops the regime-lead clause — a
+     frozen delta re-rendered daily would be a static claim posing as a
+     reading. Open/closed counts are the tile's live content. */
   const dv = (DB.shadowDivLog || []).slice(-1)[0];
-  const lead = paperDivLead(dv);
+  const lead = REGIME_RACE_RETIRED ? null : paperDivLead(dv);
   const open = sleeveOpenPositions();
   let rung = "no price rungs";
   let bestR = null;
@@ -19506,7 +19715,7 @@ function renderHomeVitals(){
   setHTML(box,
       vit("Funnel", esc(funnel), "watch#deployPanel",
         "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
-    + vit("Paper book", sbOpen + " open · " + sbClosed + " closed · " + esc(lead)
+    + vit("Paper book", sbOpen + " open · " + sbClosed + " closed" + (lead ? " · " + esc(lead) : "")
         + ' <span class="dim">(30d, simulated)</span>', "paper#paperRegimePanel",
         "Counterfactual book — all simulated, a screen ranking probation candidates, not evidence. Click for the Paper Book surface, where every number opens to its trips.")
     + vit("Sleeve", open.length + " position" + (open.length === 1 ? "" : "s") + " · " + esc(rung) + " · " + esc(cat),
@@ -19993,7 +20202,11 @@ function analysisTrip(p){
     wouldFillProvenReachable: p.strictFilled != null ? !!p.strictFilled : null,
     wouldFillPossiblyReachable: p.lenientFilled != null ? !!p.lenientFilled : null,
     netSimGp: Math.round(p.net || 0),
-    regimes: (p.regimes || []).slice(),
+    /* Era partition (race dormancy, Aug 14 2026): null = the trip opened
+       under the retired race (membership not evaluated); [] = evaluated,
+       nothing computable. Collapsing them would re-create the falsy merge
+       the R68.5 rule exists for, in the file instead of the store. */
+    regimes: Object.prototype.hasOwnProperty.call(p, "regimes") ? (p.regimes || []).slice() : null,
     benchedByGate: (p.benchedBy && p.benchedBy[0]) || null,
     benchDetail: p.gapTxt || null,
     clearedEveryGate: !!p.slicePass,
@@ -20170,9 +20383,12 @@ function analysisPaper(){
     /* NEVER-FED (ruled Aug 12 2026): a reader must be able to tell "zero
        because nothing qualified" from "zero because nothing was ever fed in".
        The flag says which, in the file, beside the zeros. */
-    regimeRace: { tripsCarryingAnyRegime: fedN, tripsInBook: (DB.shadowBook || []).length,
-      neverFed: fedN === 0 && (DB.shadowBook || []).length > 0,
-      note: fedN === 0 && (DB.shadowBook || []).length > 0
+    regimeRace: { retired: REGIME_RACE_RETIRED, retiredAt: REGIME_RACE_RETIRED ? "2026-08-14" : null,
+      tripsCarryingAnyRegime: fedN, tripsInBook: (DB.shadowBook || []).length,
+      neverFed: !REGIME_RACE_RETIRED && fedN === 0 && (DB.shadowBook || []).length > 0,
+      note: REGIME_RACE_RETIRED
+        ? "RETIRED to the dormancy lane (user ruling, 2026-08-14) — superseded by the universe scorer's config grid. The curves and ledger below are frozen historical series; trips opened after retirement export regimes: null (not evaluated), which is a different reading from [] (evaluated, nothing computable)."
+        : fedN === 0 && (DB.shadowBook || []).length > 0
         ? "NEVER FED: no trip in the book carries a regime, so the curves below are empty rather than flat. Their zeros are the absence of a reading, not a reading of zero."
         : "Regime membership is stamped at open from each candidate's own effective ROI against the three floors." },
     regimeCurves: curves,
@@ -20283,6 +20499,10 @@ function analysisProspecting(){
       note: "The 250k–1m band sits between the tier-2 scanner ceiling and the anomaly scan's floor — nothing else looks here. Deterministic draw, so the sample is reproducible." };
   } catch(e){ gap.note = "gap-band sample unavailable in this session (no live price snapshot)"; }
   return { header: analysisHeader("prospecting", trunc),
+    sliceSampling: SLICE_SAMPLING_RETIRED
+      ? { retired: true, retiredAt: "2026-08-14",
+          note: "DORMANT (user ruling, 2026-08-14): the slice's sampling role is superseded by the universe scorer, which scores every mapped item each 5m bucket. The strata below are the durable historical ledger, frozen at retirement; only the gap-band row still accrues, and the gapBand block below is live." }
+      : { retired: false },
     strata, gapBand: gap,
     hoursLedger: hoursLedger().map(r => ({
       hourOfDayLocal: r.h,
@@ -20735,6 +20955,16 @@ function prospectVerdict(){
   const keys = Object.keys(DB.strataStats || {});
   const tot = keys.reduce((a, k) => { const s = DB.strataStats[k]; a.samp += s.samp || 0; a.trips += s.trips || 0;
     a.net += s.net || 0; return a; }, { samp: 0, trips: 0, net: 0 });
+  /* The dormant answer leads (user ruling, Aug 14 2026): the surface's own
+     question is now held by the scorer, and saying so IS the verdict. */
+  if (SLICE_SAMPLING_RETIRED)
+    return verdictHead("Where in the market is there edge I'm not fishing?",
+      '<b>The universe scorer holds this question now</b> — every mapped item is scored against the config grid '
+      + 'each 5m bucket (Trade → Scorer). The slice\'s sampling role retired to the dormancy lane on Aug 14 2026; '
+      + 'the map below is its durable historical ledger (' + tot.samp + ' distinct item'
+      + (tot.samp === 1 ? '' : 's') + ' tested across ' + keys.length + ' stratum' + (keys.length === 1 ? '' : 'a')
+      + ', frozen), and only the gap band still accrues.',
+      "Historical, simulated screening data; stratum membership is name-matched except F2P and the price bands.");
   if (!tot.samp)
     return verdictHead("Where in the market is there edge I'm not fishing?",
       '<div class="vwait"><b>Not yet</b> — no strata sampled. The rotation stamps them as cycles run with the scanner open.</div>',
@@ -20768,7 +20998,9 @@ function renderPaperView(){
      below it. */
   setHTML("#paperRegime", paperVerdict() + shadowScanStateLine(null)
     + fold("The " + closed.length + " closed trips behind this, per cohort", paperHeadlineSection())
-    + fold("Regime curves — would a looser or tighter ROI floor have done better?", paperRegimeSection())
+    + fold(REGIME_RACE_RETIRED
+        ? "Regime race (dormant since Aug 14 2026) — the historical curves, bands and ledger"
+        : "Regime curves — would a looser or tighter ROI floor have done better?", paperRegimeSection())
     + fold("Fill-model calibration — is the model itself trustworthy?", calibSection()));
   /* The horizon split gets its own panel and opens by default (user-directed,
      Aug 13 2026): it is a first-class comparison rather than machinery behind
@@ -20784,9 +21016,12 @@ function renderPaperView(){
 function renderProspectView(){
   const keys = Object.keys(DB.strataStats || {});
   $("#prospectStrataSub").textContent = keys.length + " stratum" + (keys.length === 1 ? "" : "a") + " ledgered"
-    + " · durable counters, they outlive the paper book's 30-day pruning";
+    + " · durable counters, they outlive the paper book's 30-day pruning"
+    + (SLICE_SAMPLING_RETIRED ? " · sampling dormant since Aug 14 2026 (gap band still accrues)" : "");
   setHTML("#prospectStrata", prospectVerdict()
-    + fold("Per-stratum map — sampling, near-misses and simulated outcomes by region", prospectingInline()));
+    + fold(SLICE_SAMPLING_RETIRED
+        ? "Per-stratum map (dormant since Aug 14 2026) — the historical ledger by region"
+        : "Per-stratum map — sampling, near-misses and simulated outcomes by region", prospectingInline()));
   setHTML("#prospectGap", fold("Gap band 250k–1m — the standing verdict and its trips", gapBandInline()));
   setHTML("#prospectHours", fold("Hours ledger — which hours of the day carry the widest spreads", hoursLedgerInline()));
 }
@@ -21972,8 +22207,15 @@ function validateImport(d){
               name: String(p.name || itemName(itemId)), qty: Math.floor(qty), bid: Math.round(bid), ask: Math.round(ask),
               t: num(p.t) || Date.now(), buyQ: Math.max(0, num(p.buyQ) || 0), sellQ: Math.max(0, num(p.sellQ) || 0),
               buyDone: num(p.buyDone) || 0, obsMs: Math.max(0, num(p.obsMs) || 0), lastObs: num(p.lastObs) || 0,
-              state: ["open", "filled", "unfilled", "forced-exit", "partial", "unobserved"].includes(p.state) ? p.state : "open",
-              regimes: (Array.isArray(p.regimes) ? p.regimes : []).filter(r => ["current", "loose", "tight"].includes(r)) };
+              state: ["open", "filled", "unfilled", "forced-exit", "partial", "unobserved"].includes(p.state) ? p.state : "open" };
+            /* Era partition (race dormancy, Aug 14 2026): a trip with NO
+               `regimes` key was opened under the retired race — not
+               evaluated — while `[]` means evaluated, nothing computable
+               (R43.1). The carry preserves the distinction via hasOwnProperty
+               (R68.5's absent-is-not-null rule); the old unconditional line
+               collapsed absent to [] on every restore. */
+            if (Object.prototype.hasOwnProperty.call(p, "regimes"))
+              o2.regimes = (Array.isArray(p.regimes) ? p.regimes : []).filter(r => ["current", "loose", "tight"].includes(r));
             if (Array.isArray(p.benchedBy) && p.benchedBy.length) o2.benchedBy = p.benchedBy.map(g => String(g).slice(0, 60)).slice(0, 4);
             if (p.gapTxt) o2.gapTxt = String(p.gapTxt).slice(0, 160);
             if (num(p.closedAt) > 0) o2.closedAt = num(p.closedAt);

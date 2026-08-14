@@ -97,6 +97,26 @@ polish on a scheduled demolition.
 | 5908 | R43.3 | face2·med | a 100% rate renders its zero-counterexample claim → 1e copy obligation |
 | 7402 | R66.2 | face9·high | the panel names its falsification test → 1d discriminator surface obligation |
 
+## EXPIRY RECORD — the retirement ruling landed (Aug 14 2026, same day, later session)
+
+**The regime race and the discovery slice's sampling role retired to the dormancy lane**
+(user ruling, decision-logged `auto: 1, by: "user"` in the tool; the build is the
+RETIRE-2026-08-14 stage report). The EXPIRE-AT-RETIREMENT bucket said each finding dies
+with its surface — **6 of the 17 surfaces retired today; the other 11 stand until their
+own retirements at cutover.** Because the ruled form is DORMANCY rather than deletion,
+the historical renders survive, and two findings' assertions turned out to outlive their
+condemned machinery rather than dying with it — recorded per finding:
+
+| probe | req | expired? | disposition |
+|---|---|---|---|
+| 2481 | R29.1 | **EXPIRED** | the stratum rotation is frozen with no production caller; the defect can no longer express. Its live-form assertions are dormant-gated (not deleted) and re-arm on an un-retire ruling |
+| 5574 | R43.1 | **EXPIRED** | the regime-floor nesting machinery is dormant; the nesting property lives on as grid-cell nesting, asserted fresh at 1c as the triage anticipated |
+| 2575 | R18.3 | **EXPIRED** | race surface — but the historical render keeps its simulated labels and the `[R18.3]` label assertion still runs over it, so the label discipline outlives the retirement; the finding's own defect (a one-sided match) dies unfixed with the frozen surface |
+| 6127 | R44.4 | **EXPIRED** | same shape: the comparison-only label renders under the dormant banner and stays asserted; the finding dies unfixed |
+| 7300 / 7317 | R65.2 | **EXPIRED** | the separator assertions were repaired Aug 13 and — stronger than the triage anticipated — they do NOT die with the race: the separator renders historically and the repaired assertions continue to cover it |
+| 3500 | R53.2 | **NOT expired — reclassified** | the triage filed the clean-count register as "slice machinery"; the retirement build's code reading found it is paper-book-wide contamination plumbing with TWO consumers (the gap band's held-proposal bar AND the routing bar), and the gap band itself stays live serving the held T3 proposal. The finding stands conditional on the paper book's own retirement at cutover |
+| 3515, 3842, 5799, 5782, 6094, 6090, 6704, 6889, 6955, 6959 | — | conditional | their surfaces (paper surfaces, scanner-cohort eviction, capacity ceiling, paper headline, stall line, trip sizing, horizon-shape panel) stand until the cutover-era retirements |
+
 ## Cross-check
 
 23 + 17 + 5 = 45 = the census's fill tier, complete. Money-tier (6), gates (15) and

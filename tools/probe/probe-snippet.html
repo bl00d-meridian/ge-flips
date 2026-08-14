@@ -2091,6 +2091,11 @@
     };
     for (const [id, nm] of [[9401, "Probe ring alpha"], [9402, "Probe ring beta"], [9403, "Probe ring gamma"]]) mkItem(id, nm);
     pinStratum("equip:ring");
+    const pinnedAt = S.latestAt;
+    if (!SLICE_SAMPLING_RETIRED){
+    /* LIVE FORMS — preserved behind the dormancy flag (user ruling, Aug 14
+       2026) so the un-retire ruling re-arms them; the dormant forms render
+       below the gap-band segment. */
     ok("[R29.1] the rotation lands on the pinned stratum and the pool is stratum-filtered",
        currentStratum().k === "equip:ring"
        && beyondNetSample().pick.every(c => /ring/i.test(c.name)),
@@ -2107,7 +2112,6 @@
     renderBeyondNet(new Set());
     ok("[R11.2] sample is stable within one price cycle (seeded by the price stamp)",
        document.querySelector("#beyondNetBody").innerHTML === bnHTML1);
-    const pinnedAt = S.latestAt;
     let bnRotated = false, stratumRotated = false;
     for (let k = 1; k <= 3; k++){
       S.latestAt = pinnedAt + k * POLL_MS;
@@ -2119,6 +2123,7 @@
        "slice never changed across 3 cycles — pool=" + S.items.length);
     ok("[R29.1] the STRATUM itself rotates cycle to cycle — every corner sampled on a clock, not by luck",
        stratumRotated);
+    }
     // R29.2 — the gap band: its own 250k–1m sample, nothing else watches that range
     mkItem(9404, "Probe gapband");
     S.latest[9404] = { high: 520000, low: 500000, highTime: nowS - 60, lowTime: nowS - 120 };
@@ -2134,6 +2139,19 @@
        /gap band 250k–1m/.test(document.querySelector("#beyondNetBody").innerHTML)
        && /gap band 250k–1m: [1-9]/.test(document.querySelector("#beyondNetSub").textContent),
        document.querySelector("#beyondNetSub").textContent);
+    if (SLICE_SAMPLING_RETIRED){
+      /* DORMANT FORMS (user ruling, Aug 14 2026). The ring stratum is pinned
+         and populated above, so a silently revived draw WOULD render ring
+         rows here — the absence below discriminates, it is not vacuous. */
+      ok("[R29.1] the stratified draw is dormant — no stratum rows render even with the pinned stratum populated, and the header names the retirement",
+         /discovery slice dormant \(retired Aug 14 2026/.test(document.querySelector("#beyondNetSub").textContent)
+         && !/equipment · ring/.test(document.querySelector("#beyondNetBody").innerHTML),
+         document.querySelector("#beyondNetSub").textContent);
+      ok("[R11.2] the kept half under the dormant slice — gap rows still render with full stats and the manual +watch",
+         /gap band 250k–1m/.test(document.querySelector("#beyondNetBody").innerHTML)
+         && /data-add=/.test(document.querySelector("#beyondNetBody").innerHTML),
+         "rows=" + document.querySelectorAll("#beyondNetBody tr").length);
+    }
     S.latestAt = savedAt;
     /* Teardown: these fixtures exist only to populate a pinned stratum — left
        in the universe they would leak into every later scanner assertion. */
@@ -2614,9 +2632,18 @@
        !!sbBench && sbBench.benchedBy.join() === "ROI floor" && sbBench.bid === calc(9002).buy + 1
        && sbBench.gapTxt === "roi 1.1% vs 1.2%" && sbBench.qty >= 1,
        JSON.stringify(sbBench));
-    ok("[R18.1] funded pick joins the regime books (current + loose at least)",
-       !!sbPick && sbPick.regimes.includes("current") && sbPick.regimes.includes("loose"),
-       JSON.stringify(sbPick));
+    if (!REGIME_RACE_RETIRED)
+      ok("[R18.1] funded pick joins the regime books (current + loose at least)",
+         !!sbPick && (sbPick.regimes || []).includes("current") && (sbPick.regimes || []).includes("loose"),
+         JSON.stringify(sbPick));
+    else
+      /* Dormancy era fact (Aug 14 2026): membership is NOT evaluated — the
+         key is ABSENT, which is a different reading from [] (evaluated,
+         nothing computable — R43.1). The live form above re-arms when the
+         un-retire ruling flips REGIME_RACE_RETIRED. */
+      ok("[R18.1] funded pick opens under the dormant race with NO regimes key — absent is not-evaluated, never an empty set",
+         !!sbPick && !Object.prototype.hasOwnProperty.call(sbPick, "regimes"),
+         JSON.stringify(sbPick));
     /* ── DEDUP, ASSERTED CLOCK-INDEPENDENTLY (user ruling, Aug 11 2026) ──
        The original assertion compared the WHOLE book's length across a
        rescan, which folded two properties together: the dedup rule this
@@ -2642,7 +2669,11 @@
          dupes: openFams.filter((f, i) => openFams.indexOf(f) !== i) }));
     /* Rotation tested on its own, with the cycle INJECTED rather than read
        off the wall clock: stable within a price cycle, advancing across it,
-       and covering every stratum over a full lap. */
+       and covering every stratum over a full lap. GATED under the dormant
+       slice (Aug 14 2026): currentStratum has no production caller while the
+       draw is retired, and a direct-call assertion would hold dead code
+       alive (scan 13). Re-arms with the un-retire ruling. */
+    if (!SLICE_SAMPLING_RETIRED){
     const keepLatest18 = S.latestAt;
     const stratAt = c => { S.latestAt = c * POLL_MS; return currentStratum().k; };
     const lap18 = [];
@@ -2652,6 +2683,7 @@
        && new Set(lap18).size === STRATA.length,
        JSON.stringify({ lap: lap18.length, distinct: new Set(lap18).size }));
     S.latestAt = keepLatest18;
+    }
     /* R18.2 — honest fill sim on a controlled position.
        CAUSALITY (Aug 12 2026): a leg is credited only by a 5m bucket that
        began at or after the leg was placed, and each bucket counts once — so
@@ -2783,6 +2815,7 @@
     const dstr = n => new Date(Date.now() - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
     const evd18 = shadowRegimeEvidence();
+    if (!REGIME_RACE_RETIRED){
     ok("[R18.4] 5-of-7 loose wins with fill-reality = evidence, numbers cited, nothing applied",
        !!evd18 && evd18.dir === "loosen" && /out-earned current on 5 of the last 7 readings/.test(evd18.html)
        && /nothing changes without it/.test(evd18.html),
@@ -2790,6 +2823,13 @@
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dstr(n), cur: 100e3, loose: n === 1 ? 300e3 : 90e3, tight: 80e3 }));
     ok("[R18.4] one big day is a snapshot, not persistence — no evidence",
        shadowRegimeEvidence() === null);
+    } else
+      /* Dormancy (Aug 14 2026): the evidence source is gated at its ONE owner,
+         so even a perfect 5-of-7 fixture yields null and no regime proposal
+         can arise anywhere downstream. The live forms above re-arm with the
+         un-retire ruling. */
+      ok("[R18.4] the divergence evidence source is dormant — a perfect 5-of-7 fixture yields NO evidence and no proposal",
+         evd18 === null, JSON.stringify(evd18));
     // R19.1/19.2 — unified gate audit and combined verdict
     const seedBench = (id, days) => { for (let n = 1; n <= days; n++) DB.gateLog.push({ d: dstr(n), id, g: "ROI floor" }); };
     seedBench(9002, 5); seedBench(9003, 5); seedBench(9001, 5);
@@ -3030,6 +3070,7 @@
        test is the whole job here. */
     renderHomeDelta();
     const dls20 = Array.from(document.querySelectorAll("#homeDelta .dl"));
+    if (!REGIME_RACE_RETIRED){
     ok("[R20.5] delta block renders one line per nonzero category, truncated at 6 with +N more",
        dls20.length === 7 && /\+1 more/.test(dls20[6].textContent),
        JSON.stringify(dls20.map(d => d.textContent.slice(0, 60))));
@@ -3043,6 +3084,21 @@
     ok("[R20.5] +N more expands to the full list (briefing-state line included)",
        dlsAll20.length === 7 && /briefing state: fresh → tape-question/.test(dlsAll20[6].textContent),
        JSON.stringify(dlsAll20.map(d => d.textContent.slice(0, 60))));
+    } else {
+    /* DORMANT FORMS (Aug 14 2026). The fixture carries closed trips WITH
+       regime stamps and the renders above ran shadowTick — so if the frozen
+       ledger's writer were silently un-gated, DB.shadowDivLog would gain a
+       row and the regime line could fire. Both absences discriminate. */
+    ok("[R20.5] under the dormant race the delta block carries every live category and NO regime line — six lines, nothing truncated",
+       dls20.length === 6 && !dls20.some(d => /regime divergence/.test(d.textContent))
+       && /explained/.test(dls20[0].textContent) && /accumulation flag/.test(dls20[1].textContent)
+       && /paper book: 2 trips closed/.test(dls20[2].textContent) && /rung armed/.test(dls20[3].textContent)
+       && /catalyst "R20 window": window upcoming → live/.test(dls20[4].textContent)
+       && /briefing state: fresh → tape-question/.test(dls20[5].textContent),
+       JSON.stringify(dls20.map(d => d.textContent.slice(0, 70))));
+    ok("[R20.5] and the frozen ledger EARNED nothing from the renders — the divergence snapshot writer is gated, not merely quiet",
+       (DB.shadowDivLog || []).length === 0, JSON.stringify(DB.shadowDivLog));
+    }
     ok("[R20.4] the walk-up attention budget line renders on Home (≤7 still binds)",
        /walk-up attention: \d+ decisions? of ≤7 budgeted/.test(document.querySelector("#briefRemind").innerHTML),
        document.querySelector("#briefRemind").innerHTML.slice(0, 300));
@@ -3249,12 +3305,30 @@
     /* Pin the rotation to the stratum this fixture belongs to — otherwise the
        cycle's stratum decides whether the table has rows at all. */
     const at226 = S.latestAt, cyc226 = Math.floor(at226 / POLL_MS);
+    if (!SLICE_SAMPLING_RETIRED){
     S.latestAt = (cyc226 - (cyc226 % STRATA.length) + STRATA.findIndex(s => s.k === "equip:ring") + STRATA.length) * POLL_MS;
     renderBeyondNet(new Set());
     const bnRows226 = Array.from(document.querySelectorAll("#beyondNetBody tr"));
     ok("[R22.6] every slice row carries a gate tag and a one-tap +watch",
        bnRows226.length > 0 && bnRows226.every(r => r.querySelector(".badge") && r.querySelector("[data-add]")),
        "rows=" + bnRows226.length);
+    } else {
+    /* Dormant slice (Aug 14 2026): the table's remaining rows are the gap
+       band's, and the property — a gate tag and a one-tap +watch on every
+       rendered row — binds on them identically. Live form re-arms with the
+       un-retire ruling. */
+    const itG226 = { i: 9302, n: "Probe gapband row", l: 25000, m: 0, v: 0, a: 0 };
+    S.items.push(itG226); S.byId.set(9302, itG226);
+    S.latest[9302] = { high: 520000, low: 500000, highTime: nowS - 60, lowTime: nowS - 120 };
+    S.hour[9302] = { avgHighPrice: 520000, avgLowPrice: 500000, highPriceVolume: 5000, lowPriceVolume: 5000 };
+    renderBeyondNet(new Set());
+    const bnRows226 = Array.from(document.querySelectorAll("#beyondNetBody tr"));
+    ok("[R22.6] every rendered beyond-net row (the gap band's, under the dormant slice) carries a gate tag and a one-tap +watch",
+       bnRows226.length > 0 && bnRows226.every(r => r.querySelector(".badge") && r.querySelector("[data-add]")),
+       "rows=" + bnRows226.length);
+    S.items = S.items.filter(it => it.i !== 9302); S.byId.delete(9302);
+    delete S.latest[9302]; delete S.hour[9302];
+    }
     S.latestAt = at226;
     // R22.7 — four-slot rows: ≤4 indicators, chip expands, filter reaches collapsed states
     DB.clusters = [{ id: 1, name: "probe-cluster", members: [9001, 9002], capPct: null, story: "", src: "manual", confirmedAt: now22 }];
@@ -3646,6 +3720,9 @@
     DB.shadowBook = DB.shadowBook.filter(p => !p.slice);
     shadowScan(buildPlan());
     const slice25 = DB.shadowBook.filter(p => p.slice);
+    if (!SLICE_SAMPLING_RETIRED){
+    /* LIVE FORMS — preserved behind the dormancy flag (Aug 14 2026); the
+       dormant forms follow the else. */
     ok("[R25.5] slice near-misses accrue counterfactuals — single-gate stamped, blacklist excluded, ledger bound held",
        slice25.length && slice25.length <= SLICE_SHADOW_CAP
        && slice25.every(p => p.slicePass || (p.benchedBy && p.benchedBy.length === 1))
@@ -3708,6 +3785,38 @@
        /19 of 21 strata are name-pattern approximations — directional, not a census\./.test(prosp25)
        && STRATA_APPROX_N === STRATA.filter(s => !!s.rx).length && STRATA.length === 21,
        STRATUM_CAVEAT);
+    } else {
+    /* DORMANT FORMS (Aug 14 2026). The fixture above is a POPULATED pinned
+       stratum plus items 9310.. that clear every gate — a silently revived
+       draw WOULD open slice trips and stamp the ledger here, so every
+       absence below discriminates against an un-gating. Live forms re-arm
+       with the un-retire ruling. */
+    ok("[R25.5] the dormant slice opens NO stratum counterfactuals on a scan cycle — the draw is retired, not merely unlucky",
+       slice25.filter(p => p.stratum !== "gap").length === 0,
+       JSON.stringify(slice25.map(p => p.itemId + ":" + p.stratum)));
+    DB.blacklist = DB.blacklist.filter(x => x !== 9316);
+    for (let k = 0; k < 7; k++)   // healthy volume: these would clear every gate under a live draw
+      S.hour[9310 + k] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+    shadowScan(buildPlan());
+    DB.prevOpenAt = now25 - 3600e3;
+    ok("[R29.5] no clean gate-passer can arise from the dormant draw — items that WOULD pass every gate open nothing and WHAT CHANGED stays quiet",
+       DB.shadowBook.filter(p => p.slicePass).length === 0
+       && !Object.keys(DB.strataStats).some(k => k !== "gap")
+       && !(homeDeltaLines() || []).some(l => /clean gate-passer/.test(l.txt) && !/gap band/.test(l.txt)),
+       JSON.stringify({ strata: Object.keys(DB.strataStats), book: DB.shadowBook.filter(p => p.slice).length }));
+    /* The durable HISTORICAL ledger still renders and still opens — the
+       fixture constructs the record production wrote before retirement (the
+       mm-bench fixture pattern), because the writer is gated, not deleted. */
+    DB.strataStats = { "equip:ring": { ids: [9310, 9311, 9312], samp: 3, nm: 1, pass: 1, trips: 6,
+                                       filled: 5, net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
+    const prosp25d = prospectingInline();
+    ok("[R29.3] the historical per-stratum map renders durably under the dormant banner, region verdicts intact",
+       /Dormant — retired to the dormancy lane \(your ruling, Aug 14 2026\)/.test(prosp25d)
+       && /equipment · ring/.test(prosp25d) && /id="strataTable"/.test(prosp25d)
+       && /19 of 21 strata are name-pattern approximations — directional, not a census\./.test(prosp25d)
+       && /Gap band 250k–1m/.test(gapBandInline()),
+       prosp25d.slice(0, 400));
+    }
     ok("[R29.6] a per-stratum VERDICT carries the promotion tripwire to the point of decision",
        (() => { DB.strataStats = { "equip:ring": { ids: [1,2,3], samp: 3, nm: 1, pass: 1, trips: 6,
                                                    filled: 5, net: 9000, first: now25 - 9 * 86400e3, capped: 0 } };
@@ -4039,9 +4148,16 @@
     const dst27 = n => new Date(now27 - n * 86400e3).toLocaleDateString("en-CA");
     DB.shadowDivLog = [7, 6, 5, 4, 3, 2, 1].map(n => ({ d: dst27(n), cur: 100e3, loose: n <= 5 ? 180e3 : 90e3, tight: 80e3 }));
     const evd27 = shadowRegimeEvidence();
-    ok("[R27.3] regime divergence reads 'candidates earned probation slots', never 'the regime is right'",
-       !!evd27 && /earned probation slots/.test(evd27.html) && /not proof the regime is right/.test(evd27.html)
-       && /moves only on your ruling/.test(evd27.html), evd27 && evd27.html);
+    if (!REGIME_RACE_RETIRED)
+      ok("[R27.3] regime divergence reads 'candidates earned probation slots', never 'the regime is right'",
+         !!evd27 && /earned probation slots/.test(evd27.html) && /not proof the regime is right/.test(evd27.html)
+         && /moves only on your ruling/.test(evd27.html), evd27 && evd27.html);
+    else
+      /* Dormancy (Aug 14 2026): no divergence copy can render at all — the
+         probation-slots framing is moot while the source is gated. Live form
+         re-arms with the un-retire ruling. */
+      ok("[R27.3] no regime-divergence copy can render while the race is dormant — the evidence source is gated at its owner",
+         evd27 === null, JSON.stringify(evd27));
     DB.shadowDivLog = [];
     // R27.3 — exception proposals are a RANKED shortlist (conservative sim net, best first)
     DB.shadowExceptions = []; DB.shadowBook = [];
@@ -4310,7 +4426,9 @@
        junk33.length === 0, JSON.stringify(junk33));
     ok("[R33.2] empty streams say so in words rather than rendering an empty-but-broken panel",
        /never accrued|nothing yet/.test(surfaces33.freshness)
-       && /No slice samples ledgered yet/.test(surfaces33.prospecting)
+       /* Either era's empty copy satisfies the property — the words name the
+          true reason (live: rotation pending; dormant: sampling retired). */
+       && /No slice samples ledgered yet|Nothing ledgered — the slice/.test(surfaces33.prospecting)
        && /No hour-of-day data yet|no two-sided price/.test(surfaces33.hours + surfaces33.recipes),
        surfaces33.prospecting.slice(0, 200));
     ok("[R33.2] the plan and vitals survive a one-item watchlist with no bank, no flips and no history",
@@ -4769,13 +4887,27 @@
     DB.shadowDivLog = [];
     shadowTick();
     const snap37 = (DB.shadowDivLog || [])[0];
-    ok("[R37.4] the regime ledger's daily snapshot excludes thin trips — a fast fill cannot argue for a gate change",
-       !!snap37 && snap37.cur === 0, JSON.stringify(snap37));
+    if (!REGIME_RACE_RETIRED)
+      ok("[R37.4] the regime ledger's daily snapshot excludes thin trips — a fast fill cannot argue for a gate change",
+         !!snap37 && snap37.cur === 0, JSON.stringify(snap37));
+    else
+      /* Dormancy (Aug 14 2026): the stronger claim — the frozen ledger takes
+         NO row at all, so nothing can argue through it. A regime-stamped trip
+         is present, so an un-gated writer would produce a row here. */
+      ok("[R37.4] the dormant race's ledger takes no daily snapshot at all — frozen, so a fast fill cannot argue through it",
+         snap37 === undefined && (DB.shadowDivLog || []).length === 0, JSON.stringify(DB.shadowDivLog));
     DB.shadowBook = [mk37(9001, "filled", 7000, 0.9, null, { slice: 1, stratum: "equip:ring" }),
                      mk37(9002, "filled", 500000, 0.02, null, { slice: 1, stratum: "equip:ring" })];
     DB.strataStats = {};
     shadowTick();
     const st37 = DB.strataStats["equip:ring"];
+    /* Under the dormant slice (Aug 14 2026) the DRAW no longer stamps `samp`,
+       so the fixture constructs the historical sampling record production
+       wrote before retirement (the mm-bench fixture pattern) — the property
+       under test, exclusion opening on the map, is era-independent. Under a
+       live draw the renderAll below stamps samp itself and this is a no-op
+       in spirit (ids merge with whatever the draw sampled). */
+    if (SLICE_SAMPLING_RETIRED && st37){ st37.ids = [9001, 9002]; st37.samp = 2; }
     ok("[R37.4] the durable per-stratum ledger rolls thin trips into their own counter, never the region's verdict",
        !!st37 && st37.trips === 1 && st37.net === 7000 && st37.insuf === 1,
        JSON.stringify(st37 && { trips: st37.trips, net: st37.net, insuf: st37.insuf }));
@@ -5917,8 +6049,18 @@
        && regOf(GATE.roi * SHADOW_LOOSE + 0.001).join() === "loose"
        && regOf(GATE.roi * SHADOW_LOOSE - 0.1).length === 0,
        JSON.stringify({ loose: GATE.roi * SHADOW_LOOSE, cur: GATE.roi, tight: GATE.roi * SHADOW_TIGHT }));
-    /* The real thing: a live candidate stamped through regimesFor. The probe
-       fixture's item clears every floor comfortably. */
+    /* NEVER-FED: an empty regime population renders its own sentence. */
+    const keepBook43 = DB.shadowBook, keepDiv43 = DB.shadowDivLog;
+    DB.shadowBook = [{ id: 1, itemId: 9001, name: "Probe alpha", qty: 1, bid: 1, ask: 2,
+      t: Date.now() - 3600e3, closedAt: Date.now(), state: "filled", net: 5, obsMs: 4 * 3600e3,
+      hzH: 4, regimes: [] }];
+    DB.shadowDivLog = [{ d: "2026-08-11", cur: 0, loose: 0, tight: 0 },
+                       { d: "2026-08-12", cur: 0, loose: 0, tight: 0 }];
+    if (!REGIME_RACE_RETIRED){
+    /* LIVE FORMS — preserved behind the dormancy flag (Aug 14 2026): the
+       regimesFor term tests have no production caller while both write
+       sites carry the era gate, so running them dormant would hold dead
+       code alive (scan 13). They re-arm with the un-retire ruling. */
     const cAlpha = calc(9001);
     const rAlpha = regimesFor(cAlpha);
     ok("[R43.1] a candidate clearing all three floors is stamped with all three regimes",
@@ -5927,13 +6069,6 @@
        JSON.stringify({ roi: cAlpha && cAlpha.roi, regimes: rAlpha }));
     ok("[R43.1] a candidate with no computable margin is stamped with nothing, never guessed",
        regimesFor(null).length === 0 && regimesFor({ buy: 0 }).length === 0, "null-safe");
-    /* NEVER-FED: an empty regime population renders its own sentence. */
-    const keepBook43 = DB.shadowBook, keepDiv43 = DB.shadowDivLog;
-    DB.shadowBook = [{ id: 1, itemId: 9001, name: "Probe alpha", qty: 1, bid: 1, ask: 2,
-      t: Date.now() - 3600e3, closedAt: Date.now(), state: "filled", net: 5, obsMs: 4 * 3600e3,
-      hzH: 4, regimes: [] }];
-    DB.shadowDivLog = [{ d: "2026-08-11", cur: 0, loose: 0, tight: 0 },
-                       { d: "2026-08-12", cur: 0, loose: 0, tight: 0 }];
     const secNF = paperRegimeSection();
     ok("[R43.1] an unfed regime race says so — 'never been fed' is not the same sentence as 'flat'",
        regimeFedN() === 0 && /regime race has never been fed/i.test(secNF)
@@ -5950,10 +6085,30 @@
        regimeFedN() === 1 && !/regime race has never been fed/i.test(paperRegimeSection())
        && /divergence ledger has never been fed/i.test(paperRegimeSection()),
        "fed state clears only its own note");
+    } else {
+    /* DORMANT FORMS (Aug 14 2026). On this fixture the never-fed notes' own
+       predicates are TRUE — zero fed trips, a nonempty book, an all-zero
+       ledger — so their absence below is the dormancy gate working, not the
+       population changing: the banner is the stated cause and supersedes
+       both notes. */
+    const secD = paperRegimeSection();
+    ok("[R43.1] the dormant banner supersedes both never-fed notes — dormancy is the stated cause, not a stamping defect or a tie",
+       /Retired to the dormancy lane \(your ruling, Aug 14 2026\)/.test(secD)
+       && !/regime race has never been fed/i.test(secD)
+       && !/divergence ledger has never been fed/i.test(secD)
+       && /Dormant — the divergence ledger is frozen at 2 readings/.test(secD),
+       secD.slice(0, 400));
+    DB.shadowBook[0].regimes = ["current", "loose"];
+    }
     const P43 = analysisPayload("paper");
     ok("[R43.1] the export carries the never-fed flag beside the zeros",
        P43.regimeRace && P43.regimeRace.tripsCarryingAnyRegime === 1 && P43.regimeRace.neverFed === false,
        JSON.stringify(P43.regimeRace));
+    if (REGIME_RACE_RETIRED)
+      ok("[R43.1] the export names the retirement beside the frozen series — a reader of the file cannot mistake dormant for never-fed",
+         P43.regimeRace.retired === true && P43.regimeRace.retiredAt === "2026-08-14"
+         && /RETIRED to the dormancy lane/.test(P43.regimeRace.note),
+         JSON.stringify(P43.regimeRace));
     DB.shadowBook = keepBook43; DB.shadowDivLog = keepDiv43;
 
     /* ---- R43.2 the buy leg's own causality, and once-per-bucket ----
@@ -6130,9 +6285,13 @@
                 /* 2 watchlist families, 4h horizon + 5h cooldown = 9h cycle →
                    2.67/family/day → 5.3/day for that cohort. The rotating
                    cohorts are draw-limited and reported apart. */
+                /* The rotating-cohort term reports what can actually accrue:
+                   under the dormant slice (Aug 14 2026) that is the gap
+                   band's ruled share of the shared budget alone. */
                 return c.watchFams === 2 && c.cycleH === 11 && c.perFamPerDay === 2.18
                     && c.watchCeil === 4.4 && c.byCap === 160
-                    && c.sliceCeil === SLICE_SHADOW_CAP * (24 * 3600e3 / POLL_MS)
+                    && c.sliceCeil === (SLICE_SAMPLING_RETIRED ? Math.floor(SLICE_SHADOW_CAP / 2) : SLICE_SHADOW_CAP)
+                                      * (24 * 3600e3 / POLL_MS)
                     && c.scanCeil === SHADOW_SCAN_TOP * 2 * (24 * 3600e3 / SCOUT_EVERY); })(),
        JSON.stringify(paperCapacity(null)));
     ok("[R57.2] and the concurrency cap binds instead when families are plentiful",
@@ -6978,7 +7137,13 @@
     ok("[R61.3] NOTHING renders an empty shell — no headers, no zero-row table, no caveats about absent numbers",
        (() => { const kS = DB.strataStats; DB.strataStats = {};
                 const v = prospectVerdict(); DB.strataStats = kS;
-                return /Not yet/.test(v) && !/<table/.test(v) && !/<th/.test(v)
+                /* Either era's verdict must satisfy the property: live reads
+                   as accrual progress, dormant names the successor — and
+                   neither may render a shell. */
+                return (SLICE_SAMPLING_RETIRED
+                         ? /universe scorer holds this question/.test(v)
+                         : /Not yet/.test(v))
+                    && !/<table/.test(v) && !/<th/.test(v)
                     && !/classifier caveat/.test(v); })(),
        prospectVerdict().slice(0, 200));
     ok("[R61.4] contamination and stall states stay ABOVE the fold — the stated exception",
@@ -7286,9 +7451,19 @@
     ok("[R62.1] and the generator STAMPS the fixed horizon on every trip it opens, at any schedule",
        (() => { const kb = DB.shadowBook;
                 const stamps = [];
+                /* The plan input is CONSTRUCTED (the R18.1 fixture shape) so a
+                   near-miss and a funded pick are guaranteed to open in BOTH
+                   eras — under the dormant slice (Aug 14 2026) buildPlan's
+                   ambient output no longer reliably opens anything here. The
+                   generator (shadowScan) is still the one writing the stamp,
+                   which is what the R55.1 precedent requires. */
+                const plan62 = { all: [{ id: 9002, name: "Probe beta", c: calc(9002), failed: "sustained ROI too low",
+                    fails: [{ g: "ROI floor", short: "roi", detail: "d" }] }],
+                  bench: [], pass: [], picks: [{ id: 9001, c: calc(9001) }], nextUp: [], qualifying: [],
+                  t1Pool: 1e6, t2Pool: 0, deployed: 0 };
                 for (const sched of [[7, 12, 17, 21.5], [2, 5, 9, 14, 19, 23]]){
                   DB.touchWindows = sched; DB.shadowBook = []; S.famCoolLogged = 1;
-                  shadowScan(buildPlan());
+                  shadowScan(plan62);
                   for (const p of DB.shadowBook) stamps.push(p.hzH);
                 }
                 DB.touchWindows = [7, 12, 17, 21.5]; DB.shadowBook = kb;
@@ -7622,6 +7797,14 @@
        ledger — so a fixture seeded into DB.shadowDivLog is overwritten by
        production accrual before the copy is built, and an assertion against the
        tile would be testing the accrual. Found by this assertion failing. */
+    ok("[R65.1] deltaVs cannot emit a difference without its base",
+       /1m better under A than B; B itself is −2m/.test(deltaVs(-1000000, -2000000, "A", "B")),
+       deltaVs(-1000000, -2000000, "A", "B"));
+    if (!REGIME_RACE_RETIRED){
+    /* LIVE FORMS — preserved behind the dormancy flag (Aug 14 2026):
+       paperDivLead's one caller is gated while the race is dormant, so the
+       term tests would hold dead code alive (scan 13). deltaVs stays live
+       above — it is the sanctioned renderer for ANY delta, not the race's. */
     const dvReal = { d: today(), cur: -2404412, loose: -2404412, tight: 236129 };
     const leadTxt = paperDivLead(dvReal);
     ok("[R65.1] the delta renders and is labelled as a difference, not a level",
@@ -7633,9 +7816,6 @@
     const leadNeg = paperDivLead({ d: today(), cur: 236129, loose: 236129, tight: -2404412 });
     ok("[R65.1] a negative difference reads WORSE and still carries its base",
        /2\.64m worse under the tight/.test(leadNeg) && /current itself is \+236k/.test(leadNeg), leadNeg);
-    ok("[R65.1] deltaVs cannot emit a difference without its base",
-       /1m better under A than B; B itself is −2m/.test(deltaVs(-1000000, -2000000, "A", "B")),
-       deltaVs(-1000000, -2000000, "A", "B"));
     /* And the wiring: the tile renders whatever the term produced for the log
        it actually has, so the extraction cannot drift from its one caller. */
     setTab("home"); renderHomeVitals();
@@ -7644,6 +7824,19 @@
        tileTxt.indexOf(paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null)) >= 0,
        JSON.stringify({ term: paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null),
                         tile: tileTxt.slice(0, 240) }));
+    } else {
+    /* DORMANT FORM (Aug 14 2026): the tile's dormant half — open/closed
+       renders, and NO divergence clause appears even with a divergence-rich
+       ledger present, because the term has no caller. The ledger fixture
+       makes the absence discriminating: an un-gated tile would render
+       "better under" copy from it. */
+    DB.shadowDivLog = [{ d: today(), cur: -2404412, loose: -2404412, tight: 236129 }];
+    setTab("home"); renderHomeVitals();
+    const tileTxt = (document.querySelector("#homeVitals") || {}).textContent || "";
+    ok("[R65.1] the dormant race's vitals tile carries no divergence clause — the delta term has no caller and no copy",
+       /open · \d+ closed/.test(tileTxt) && !/better under|worse under|divergence/.test(tileTxt),
+       tileTxt.slice(0, 240));
+    }
     DB.shadowDivLog = keepDiv;
   } catch(e){
     out.push("FAIL delta operands :: " + (e && e.stack || e));
@@ -8967,6 +9160,36 @@
     out.push("FAIL log-flip landing :: " + (e && e.stack || e));
   }
 
+  /* ═══ R24.4 — the sleeve-form edit press LANDS on the form (fix, Aug 14
+     2026 — the same-class site the log-flip fix listed): the [data-slvedit]
+     press used a bare scrollIntoView with no measured chrome pad. Same
+     structural idiom as R24.3: the form panel is the landing target (carries
+     navLand's flash), the positions panel is NOT; the real press drives the
+     delegated click handler, not a helper. */
+  try {
+    const keep24b = { sleeve: DB.sleeve, tab: S.tab, sub: S.sub };
+    DB.sleeve = [{ id: 940, itemId: 9001, name: "Probe alpha", qty: 10, basis: 4000, enteredAt: Date.now(),
+      catalyst: { name: "R24 win", windowStart: "2026-08-01", windowEnd: "2026-12-31" }, thesis: "t", invalidation: "i",
+      ladder: [{ kind: "price", trigger: 4500, frac: 50 }, { kind: "price", trigger: 4800, frac: 50 }],
+      phase: null, legacy: 0, health: null, soldQty: 0, closedAt: null }];
+    setTab("sleeve"); renderSleeve();
+    window.scrollTo(0, 400);
+    const ed24 = document.querySelector('[data-slvedit="940"]');
+    ed24.click();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    ok("[R24.4] the sleeve edit press lands ON the form — the form panel is the landing target; the positions panel is not",
+       $("#slvFormPanel").classList.contains("landed")
+       && !$("#sleevePanel").classList.contains("landed")
+       && /^Edit — /.test($("#slvFormTitle").textContent),
+       JSON.stringify({ formLanded: $("#slvFormPanel").classList.contains("landed"),
+         posLanded: $("#sleevePanel").classList.contains("landed"),
+         title: $("#slvFormTitle").textContent }));
+    document.querySelector("#slvCancel").click();
+    DB.sleeve = keep24b.sleeve; S.tab = keep24b.tab; S.sub = keep24b.sub;
+  } catch(e){
+    out.push("FAIL sleeve-form landing :: " + (e && e.stack || e));
+  }
+
   /* ═══ §79 MM MODE BENCHED (user ruling, Aug 14 2026) — disabled, not
      deleted; the un-bench is pinned so it cannot land silently. ═══ */
   try {
@@ -9191,6 +9414,71 @@
     setTab(keep80.tab, keep80.sub);
   } catch(e){
     out.push("FAIL scorer surface :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §81 THE TWO RETIREMENTS — DORMANCY LANE (user ruling, Aug 14 2026) ═══
+     The pins: each retirement's flag is asserted true so the un-retire cannot
+     land silently (the staging practice's fourth rule — R76.9, R78.17 and
+     R79.1 are the prior uses), and the dormant-era surfaces are asserted to
+     state the retirement where the machinery used to speak. The per-surface
+     dormant behaviours (no accrual, no stamps, historical renders) are
+     asserted under their own original tags throughout the suite, gated on
+     the same flags production reads. */
+  try {
+    ok("[R81.1] the regime race is dormant, pinned — the freshness row reads DORMANT (never stale), the one-liner and the fold label state it",
+       REGIME_RACE_RETIRED === true
+       && freshnessRows().some(r => r.name === "Regime ledger (divergence)" && r.kind === "dormant"
+            && /retired Aug 14 2026/.test(r.note))
+       && /regime race dormant \(retired Aug 14 2026\)/.test(paperSummaryLine())
+       && !/a persistent regime divergence is standing/.test(paperSummaryLine()),
+       paperSummaryLine().slice(0, 300));
+    ok("[R81.2] the slice's sampling role is dormant, pinned — the gap band keeps exactly its ruled share of the shared budget, and the map's surfaces state the dormancy",
+       SLICE_SAMPLING_RETIRED === true
+       && freshnessRows().some(r => r.name === "Stratum samples" && /rotation is dormant \(retired Aug 14 2026\)/.test(r.note))
+       && paperCapacity(null).sliceCeil === Math.floor(SLICE_SHADOW_CAP / 2) * (24 * 3600e3 / POLL_MS)
+       && /sampling dormant since Aug 14 2026/.test(prospectSummaryLine()),
+       prospectSummaryLine().slice(0, 300));
+    /* Both entries land once per store — written by the tool, decided by the
+       user, with the at-retirement snapshot the un-retire ruling will need.
+       The second call proves the store guard, not the session flag, makes it
+       once (the mm-bench guard's own comment). */
+    const kL81 = DB.decisionLog;
+    DB.decisionLog = [];
+    S.raceRetiredLogged = 0; S.sliceRetiredLogged = 0;
+    raceRetiredLog(); sliceRetiredLog();
+    const r81 = DB.decisionLog.find(e => e.subject === RACE_RETIRED_KEY);
+    const s81 = DB.decisionLog.find(e => e.subject === SLICE_RETIRED_KEY);
+    const n81 = DB.decisionLog.length;
+    S.raceRetiredLogged = 0; S.sliceRetiredLogged = 0;
+    raceRetiredLog(); sliceRetiredLog();
+    ok("[R81.3] both retirements decision-log once per store — auto:1 by:\"user\", RATIFIED, with at-retirement snapshots and the un-retire pin named",
+       !!r81 && r81.auto === 1 && r81.by === "user" && /RATIFIED/.test(r81.reason)
+       && /effective ROI floor/.test(r81.reason) && /only by your ruling/.test(r81.reason)
+       && !!s81 && s81.auto === 1 && s81.by === "user" && /RATIFIED/.test(s81.reason)
+       && /gap band/i.test(s81.reason) && /only by your ruling/.test(s81.reason)
+       && DB.decisionLog.length === n81 && n81 === 2,
+       JSON.stringify({ race: r81 && r81.action, slice: s81 && s81.action, n: DB.decisionLog.length }));
+    DB.decisionLog = kL81;
+    /* THE CARRY PRESERVES THE ERA PARTITION (R68.5's absent-is-not-null, on
+       this field): a dormant-era trip has NO regimes key and must come back
+       without one; a pre-retirement trip's [] must come back as []. The old
+       sanitizer line collapsed absent to [] on every restore, which would
+       merge the two eras silently. */
+    const base81 = { fam: "probe:era", itemId: 9001, name: "Probe era", qty: 10, bid: 1000, ask: 1040,
+      t: 1786600000000, state: "filled" };
+    const era81 = validateImport(JSON.parse(JSON.stringify({ shadowBook: [
+      Object.assign({ id: 4301 }, base81),
+      Object.assign({ id: 4302, regimes: [] }, base81),
+      Object.assign({ id: 4303, regimes: ["current", "loose"] }, base81)
+    ] }))).db.shadowBook;
+    ok("[R81.1] the import carry preserves the era partition on `regimes` — absent stays absent, [] stays [], values stay values",
+       era81.length === 3
+       && !Object.prototype.hasOwnProperty.call(era81[0], "regimes")
+       && Array.isArray(era81[1].regimes) && era81[1].regimes.length === 0
+       && Array.isArray(era81[2].regimes) && era81[2].regimes.join() === "current,loose",
+       JSON.stringify(era81.map(p => p.regimes)));
+  } catch(e){
+    out.push("FAIL retirement pins :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

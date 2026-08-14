@@ -1,14 +1,47 @@
-# QUEUE — session close, 2026-08-14 (third session: stage 1e + two directives)
+# QUEUE — session close, 2026-08-14 (fourth session: the two retirements + the sleeve landing)
 
-**Read this before starting anything.** Stage 1d is committed and pushed (`c3fc572`);
-the working tree carries stage 1e plus the log-flip landing fix and the mm bench,
-uncommitted. Suite state at close: **PROBE-PASS — 1,073 assertions, BOTH viewports
-(1200×900 and 390×844), pairing clean both directions; 17 further seeds this session
-(12 §80, 4 §79, 1 R24.3), all bit, one at a time.** Deployment: **DEPLOY-OK at 1.0s on
-a phone-viewport real boot — 744 trips (124 frontier × 3 × 2, h6/h9.5 split 372/372) —
-with the Scorer's first screen captured as the walk-up-test artifact** (stage report
-§3; it reads as the dictated sentence-plus-four-lines, and it caught two live copy
-defects that were fixed and re-greened).
+**Read this before starting anything.** Stage 1e + the log-flip landing + the mm bench
+are committed and pushed (`8bf841e`). The working tree carries **the two retirements
+(dormancy lane) and the sleeve-form landing fix**, uncommitted — the record is
+`audits/RETIRE-2026-08-14-dormancy.md`. Suite at close: **PROBE-PASS — 1,061
+assertions, BOTH viewports, pairing clean both directions, 376 requirement ids; 15
+discriminating seeds this session (S1–S15), all bit, one at a time, restore-green
+between.** Deployment: **DEPLOY-OK at 1.0s on a phone-viewport real-network
+fresh-profile boot** — both retirement decision-log entries landed on first poll
+(`auto: 1, by: "user"`), the frozen divergence ledger took no row, only the gap band
+accrued, and every real trip opened under the dormant race carries no `regimes` key.
+
+## THE RETIREMENTS ARE DONE (dormancy lane, ruled at the 1e close, built this session)
+
+- **Regime race dormant** (`REGIME_RACE_RETIRED` pinned, `[R81.1]`): stamping, the
+  daily snapshot and divergence evidence/proposals stopped; historical curves, bands
+  and ledger render under the dormant banner; freshness reads DORMANT; export stamps
+  the era. Era fact: dormant-era trips carry NO `regimes` key (absent ≠ `[]`), carry
+  and export preserve it.
+- **Slice sampling role dormant** (`SLICE_SAMPLING_RETIRED` pinned, `[R81.2]`): the
+  stratified draw/rotation and stratum-ledger accrual stopped; the map is the frozen
+  historical ledger. **THE GAP BAND STAYS LIVE** at exactly its ruled
+  `floor(SLICE_SHADOW_CAP/2)` share — scope call recorded in the stage report §1: the
+  clean-count register is paper-book-wide plumbing (two consumers), the band serves the
+  held T3 proposal and the routing question, so triage finding 3500 stays conditional.
+- **6 of the 17 EXPIRE-AT-RETIREMENT findings expired** (2481, 5574, 2575, 6127,
+  7300, 7317 — expiry record in the triage file); the other 11 wait on cutover-era
+  retirements. IMPROVEMENTS 6.7 closed as mooted. Legacy assertions are dormant-gated,
+  never deleted (`[R81.4]`) — the un-retire re-arms them by flipping one constant.
+- **Sleeve-form landing fixed** (R24.4, seeded): `[data-slvedit]` now lands through
+  `navLand`, the one implementation.
+
+# PRIOR SESSION — 2026-08-14 (third session: stage 1e + two directives)
+
+Stage 1d is committed and pushed (`c3fc572`); stage 1e plus the log-flip landing fix
+and the mm bench went out in `8bf841e`. Suite state at that close: **PROBE-PASS — 1,073
+assertions, BOTH viewports (1200×900 and 390×844), pairing clean both directions; 17
+further seeds that session (12 §80, 4 §79, 1 R24.3), all bit, one at a time.**
+Deployment: **DEPLOY-OK at 1.0s on a phone-viewport real boot — 744 trips (124 frontier
+× 3 × 2, h6/h9.5 split 372/372) — with the Scorer's first screen captured as the
+walk-up-test artifact** (stage report §3; it reads as the dictated
+sentence-plus-four-lines, and it caught two live copy defects that were fixed and
+re-greened).
 
 ## STAGE 1e IS DONE — `audits/STAGE1E-2026-08-14-scorer-surface.md` is the record
 
@@ -84,11 +117,10 @@ scoped repair, fixed inline).
 
 ## WHAT 1e'S CLOSE UNLOCKS, AND WHAT STILL WAITS
 
-- **The retirements HELD "until the scorer's first readable output" are now
-  unlockable** — 1e IS the first readable output. The regime race and the discovery
-  slice's sampling role can now be RULED retired (a ruling, never automatic; the
-  17 EXPIRE-AT-RETIREMENT triage findings die with their surfaces when it lands, and
-  the removal-sweep discipline applies to every surface and copy mention).
+- ~~**The retirements HELD "until the scorer's first readable output" are now
+  unlockable**~~ — **DONE, fourth session of Aug 14 2026** (the block at the top of
+  this file; `audits/RETIRE-2026-08-14-dormancy.md`). Ruled, built in the dormancy
+  lane, seeded, deployed; 6 of the 17 triage findings expired with their surfaces.
 - **1e residual obligations, small:** the 4447/5908 SPLIT halves were restated for 1e
   and remain open — excluded counts opening to their trips on the SCORER surface
   (partially covered by the econ exclusions rendering; the drill-through for excluded
@@ -108,8 +140,8 @@ sim (frontier trips)** — all should show a first bucket within one poll.
 **Then:** the cutover gate behind reconciliation history (the `rdiff` ledger should be
 the longest-observed number in the instrument by cutover day — heaviest gate:
 verdict-level reconciliation, integration-audit walk, adversarial pass on
-cutover-critical assertions, `[R7.3]` standard); **retirements HELD** (regime race,
-slice's sampling role — until the scorer's first readable output); **sleeve addendum
+cutover-critical assertions, `[R7.3]` standard); ~~retirements HELD~~ **retirements
+DONE (fourth session, dormancy lane — top of this file)**; **sleeve addendum
 stages after capture calibration**, conformance gate applying identically,
 conviction-boundary detector with the first planner surface.
 
@@ -136,8 +168,9 @@ closed browser is an unobserved gap from the moment it starts (warn fires only o
 *failures*, not on absence — absence is the observed-time rule's territory).
 
 **Standing sub-rulings:** first-fail never enters the instrument's schema (full fail sets
-from birth); retirements (regime race, discovery slice's sampling role) HELD until the
-scorer's first readable output; minExpect at read time, never a dimension.
+from birth); retirements (regime race, discovery slice's sampling role) ~~HELD~~ **DONE
+Aug 14 2026, fourth session — dormancy lane** (top of this file); minExpect at read
+time, never a dimension.
 
 ## Ruled and NOT yet done (pre-scorer queue — nothing here jumps ahead)
 
