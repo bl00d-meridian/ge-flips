@@ -3046,14 +3046,36 @@
     ok("[R20.2] the walk-up checklist points at the digest instead of duplicating it",
        /digest sits at the top/i.test(document.querySelector("#ckList").innerHTML)
        && !/data-rulesnooze/.test(document.querySelector("#ckList").innerHTML));
-    // R20.3 — vitals strip: four tiles, each a click-through
+    // R20.3 — vitals strip: four tiles, each a click-through, in the RULED
+    // ORDER (transitional nav, Aug 14 2026): FUNNEL · SCORER · SLEEVE ·
+    // CAPITAL — the Paper Book tile yielded its slot to the Scorer.
     const vits20 = Array.from(document.querySelectorAll("#homeVitals .vit"));
-    ok("[R20.3] vitals strip renders funnel, paper book, sleeve, capital tiles",
-       vits20.length === 4 && vits20.every(v => v.dataset.goto),
+    ok("[R20.3] vitals strip renders funnel, scorer, sleeve, capital tiles in the ruled order",
+       JSON.stringify(vits20.map(v => v.dataset.goto))
+         === JSON.stringify(["watch#deployPanel", "scorer#scorerVerdictPanel", "sleeve#sleevePanel", "review#tab-shadow"]),
        JSON.stringify(vits20.map(v => v.dataset.goto)));
-    ok("[R20.3] paper-book results are one vitals click away — landing on the Paper Book surface itself",
-       vits20.some(v => v.dataset.goto === "paper#paperRegimePanel" && /simulated/.test(v.innerHTML)),
-       JSON.stringify(vits20.map(v => v.dataset.goto)));
+    /* The wiring, per the R65.1 extraction pattern: the tile renders its one
+       source term. The clock-varying frontier clause is PINNED to its
+       no-cycle state (the fifth face: never compare two reads of ago()
+       moments apart) and the archive snapshot is pinned to a DISTINCTIVE
+       observed-day figure a hand-rolled copy would not carry — so the
+       equality tests the wiring, not the clock, and a static string cannot
+       satisfy it (the decoy discipline from the tenth face). */
+    const keep20 = { bkt: S.scorerFrontierBkt, n: S.scorerFrontierN, surf: S.scorerSurf, busy: S.scorerSurfBusy };
+    S.scorerSurfBusy = true;   // no load can race the fixture
+    S.scorerSurf = { at: Date.now(), m5: { observed: 0, expected: 0 }, h1: { observed: 53, expected: 168 } };
+    S.scorerFrontierBkt = 0; S.scorerFrontierN = 0;
+    renderHomeVitals();
+    const vitsW20 = Array.from(document.querySelectorAll("#homeVitals .vit"));
+    ok("[R20.3] the scorer tile renders its source term (scorerTileLine) and is wired to the Scorer surface",
+       vitsW20.some(v => v.dataset.goto === "scorer#scorerVerdictPanel"
+         && v.textContent.indexOf(scorerTileLine()) >= 0)
+       && /chart gates 2\.2\/7 observed days/.test(scorerTileLine()),
+       JSON.stringify({ term: scorerTileLine(),
+                        tile: (vitsW20.find(v => v.dataset.goto === "scorer#scorerVerdictPanel") || {}).textContent }));
+    S.scorerFrontierBkt = keep20.bkt; S.scorerFrontierN = keep20.n;
+    S.scorerSurf = keep20.surf; S.scorerSurfBusy = keep20.busy;
+    renderHomeVitals();
     ok("[R20.3] funnel tile reads pass · funded · deployed",
        vits20.some(v => /pass · \d+ funded · \d+% deployed/.test(v.textContent)), vits20[0].textContent);
     /* R20.5 — the delta block: every category one line, cap 6 + overflow
@@ -3501,7 +3523,7 @@
         "sleeve#clusterPanel", "sleeve#sleevePanel", "sleeve#intelPanel", "sleeve#anomPanel", "sleeve#catPanel",
         "review#ckstep-audit", "review#tab-shadow",
         "paper#paperRegimePanel", "paper#paperGatePanel", "prospect#prospectStrataPanel",
-        "prospect#prospectHoursPanel", "gates#gateStreamPanel",
+        "prospect#prospectHoursPanel", "gates#gateStreamPanel", "scorer#scorerVerdictPanel",
         "home#ckPanel", "home#homeRulingsPanel"]){
       const v24 = await land24(dest);
       ok("[R24.2] deep link lands ON its section: " + dest, v24.pass, v24.why);
@@ -3511,11 +3533,14 @@
        discussion of the paper book rather than the paper book itself — a
        link that lands on commentary about a surface has not landed on the
        surface. Asserted as a NEGATIVE too, since "somewhere in the review"
-       is exactly the wrong destination this class of defect produces. */
+       is exactly the wrong destination this class of defect produces.
+       (Transitional nav, Aug 14 2026: the tile in that slot is now the
+       Scorer's; the property is unchanged — a tile lands on the surface it
+       names, never on commentary.) */
     setTab("home");
     const vitGotos = Array.from(document.querySelectorAll("#homeVitals .vit")).map(v => v.dataset.goto);
-    ok("[R24.2] the paper-book tile is wired to the Paper Book SURFACE, never the review's discussion of it",
-       vitGotos.includes("paper#paperRegimePanel") && !vitGotos.some(g => /^review#ckstep-/.test(g)),
+    ok("[R24.2] the scorer tile is wired to the Scorer SURFACE, never the review's discussion of it",
+       vitGotos.includes("scorer#scorerVerdictPanel") && !vitGotos.some(g => /^review#ckstep-/.test(g)),
        JSON.stringify(vitGotos));
     ok("[R24.2] no deep link anywhere points at a checklist step that stands in for a real surface",
        !/data-goto="review#ckstep-(shadowbook|recipes|hours|clusters|sleeve)"/.test(document.body.innerHTML)
@@ -7816,26 +7841,33 @@
     const leadNeg = paperDivLead({ d: today(), cur: 236129, loose: 236129, tight: -2404412 });
     ok("[R65.1] a negative difference reads WORSE and still carries its base",
        /2\.64m worse under the tight/.test(leadNeg) && /current itself is \+236k/.test(leadNeg), leadNeg);
-    /* And the wiring: the tile renders whatever the term produced for the log
-       it actually has, so the extraction cannot drift from its one caller. */
-    setTab("home"); renderHomeVitals();
-    const tileTxt = (document.querySelector("#homeVitals") || {}).textContent || "";
-    ok("[R65.1] the vitals tile renders the extracted term, not a second copy of it",
-       tileTxt.indexOf(paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null)) >= 0,
-       JSON.stringify({ term: paperDivLead((DB.shadowDivLog || []).slice(-1)[0] || null),
-                        tile: tileTxt.slice(0, 240) }));
+    /* UN-RETIRE TRIPWIRE (transitional nav, Aug 14 2026): the Paper Book
+       tile — this term's former render home — is gone; its slot is the
+       Scorer's. If the race is un-retired, the ruling must ALSO name where
+       the divergence lead renders now; this deliberate red is what forces
+       that accounting (the pinned-era-fact pattern), instead of the term
+       silently having no caller in a live era. */
+    ok("[R65.1] UN-RETIRE ACCOUNTING DUE: the race is live but paperDivLead has no render home — the Aug 14 2026 nav refresh removed the Paper Book tile; rule where the lead renders, wire it, then re-point this assertion",
+       false, "deliberate red — a live race with an uncalled divergence term must not ship green");
     } else {
-    /* DORMANT FORM (Aug 14 2026): the tile's dormant half — open/closed
-       renders, and NO divergence clause appears even with a divergence-rich
-       ledger present, because the term has no caller. The ledger fixture
-       makes the absence discriminating: an un-gated tile would render
-       "better under" copy from it. */
+    /* DORMANT FORM (amended Aug 14 2026 with the transitional nav refresh):
+       the Paper Book tile is GONE — its slot re-awarded to the Scorer — so
+       the open · closed read renders on the paper surface's OWN header, and
+       the vitals strip carries no divergence clause even over a
+       divergence-rich ledger. The ledger fixture keeps the absence
+       discriminating: a hand-rolled tile or a resurrected caller would
+       render "better under" copy from it. */
     DB.shadowDivLog = [{ d: today(), cur: -2404412, loose: -2404412, tight: 236129 }];
     setTab("home"); renderHomeVitals();
-    const tileTxt = (document.querySelector("#homeVitals") || {}).textContent || "";
-    ok("[R65.1] the dormant race's vitals tile carries no divergence clause — the delta term has no caller and no copy",
-       /open · \d+ closed/.test(tileTxt) && !/better under|worse under|divergence/.test(tileTxt),
-       tileTxt.slice(0, 240));
+    const stripTxt = (document.querySelector("#homeVitals") || {}).textContent || "";
+    ok("[R65.1] the vitals strip carries no divergence clause even over a divergence-rich ledger",
+       !/better under|worse under|divergence/.test(stripTxt),
+       stripTxt.slice(0, 240));
+    renderPaperView();
+    const subTxt65 = (document.querySelector("#paperRegimeSub") || {}).textContent || "";
+    ok("[R65.1] the paper book's open · closed read renders on its own surface header — the figures the tile used to carry",
+       /^\d+ open · \d+ closed trip/.test(subTxt65) && /simulated/.test(subTxt65),
+       subTxt65);
     }
     DB.shadowDivLog = keepDiv;
   } catch(e){
@@ -9479,6 +9511,306 @@
        JSON.stringify(era81.map(p => p.regimes)));
   } catch(e){
     out.push("FAIL retirement pins :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §82 TRANSITIONAL NAV + HEADER REFRESH (user ruling, Aug 14 2026) ═══
+     The chrome presents the ruled dichotomy: what would my rules find in the
+     market (Scorer) vs what is my actual trading doing. Structural: the
+     ruled sub-tab order, the subdued treatment on the two cutover-era
+     retirement candidates (and on nothing else), and the scorer tile's
+     source term with its honest states. */
+  try {
+    const subs82 = Array.from(document.querySelectorAll("#tradeSubs button"));
+    ok("[R82.1] the Trade sub-tab row is in the ruled order — my trading, then the instruments with the Scorer promoted, then the cutover-era retirement candidates last",
+       JSON.stringify(subs82.map(b => b.dataset.sub))
+         === JSON.stringify(["watch", "log", "scorer", "paper", "gates", "scan", "prospect"]),
+       JSON.stringify(subs82.map(b => b.dataset.sub)));
+    ok("[R82.1] the subdued class marks Scanner and Prospecting and nothing else",
+       JSON.stringify(subs82.filter(b => b.classList.contains("sunset")).map(b => b.dataset.sub))
+         === JSON.stringify(["scan", "prospect"]),
+       JSON.stringify(subs82.filter(b => b.classList.contains("sunset")).map(b => b.dataset.sub)));
+    /* The treatment is computed opacity, and it must NOT dim the open
+       surface: subdued at rest, full strength while active. Computed on the
+       painted button, not the class list, so a dead CSS rule cannot pass.
+       The global `button{transition:.12s}` animates opacity, so a
+       synchronous read after the class toggle sees the transition's STARTING
+       frame (the simultaneity lesson, on a render clock instead of the wall
+       clock) — each read waits out the 120ms transition first. */
+    const settle82 = () => new Promise(r => setTimeout(r, 300));
+    const keepTab82 = S.tab, keepSub82 = S.sub;
+    setTab("trade", "scan");
+    const scanBtn82 = subs82.find(b => b.dataset.sub === "scan");
+    const paperBtn82 = subs82.find(b => b.dataset.sub === "paper");
+    await settle82();
+    ok("[R82.1] an ACTIVE retirement candidate renders at full strength — subdued is for scanning the row, not for reading the surface",
+       getComputedStyle(scanBtn82).opacity === "1",
+       JSON.stringify({ opacity: getComputedStyle(scanBtn82).opacity, cls: scanBtn82.className }));
+    setTab("trade", "watch");
+    await settle82();
+    const rest82 = Object.fromEntries(subs82.map(b => [b.dataset.sub, getComputedStyle(b).opacity]));
+    ok("[R82.1] at rest BOTH candidates are visibly subdued and NONE of the promoted tabs is",
+       parseFloat(rest82.scan) < 0.9 && parseFloat(rest82.prospect) < 0.9
+       && ["log", "scorer", "paper", "gates"].every(s => rest82[s] === "1"),
+       JSON.stringify(rest82));
+    setTab(keepTab82, keepSub82);
+  } catch(e){
+    out.push("FAIL transitional nav :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R82.2] the scorer tile's source term, state by state. Direct calls on
+       the extracted term (its production caller is the tile render, named);
+       every fixture pins the async snapshot so no load can race the read. */
+    const keep82 = { surf: S.scorerSurf, busy: S.scorerSurfBusy, frN: S.scorerFrontierN, frBkt: S.scorerFrontierBkt };
+    S.scorerSurfBusy = true;   // belt: even a stray ensure() cannot start a load under the fixtures
+    S.scorerSurf = null; S.scorerFrontierBkt = 0; S.scorerFrontierN = 0;
+    const t82a = scorerTileLine();
+    ok("[R82.2] while capture is ungraded the tile says 'cannot rank yet' in the ruled words and never claims grading",
+       /measuring, cannot rank yet/.test(t82a) && !/capture graded/.test(t82a), t82a);
+    ok("[R82.2] a chart-gate figure the tile does not have renders as reading…, never as a number",
+       /chart gates reading…/.test(t82a) && !/\/7 observed days/.test(t82a), t82a);
+    ok("[R82.2] a session with no scored cycle says so instead of showing a stale frontier",
+       /frontier — no cycle yet this session/.test(t82a) && !/frontier \d/.test(t82a), t82a);
+    S.scorerSurf = { at: Date.now(), err: "probe: archive read failed" };
+    const t82b = scorerTileLine();
+    ok("[R82.2] a failed archive read renders could-not-check — never a number, never still-reading",
+       /chart gates could not check/.test(t82b) && !/\/7 observed days/.test(t82b) && !/reading…/.test(t82b), t82b);
+    S.scorerSurf = { at: Date.now(), m5: { observed: 1, expected: 864 }, h1: { observed: 74, expected: 168 } };
+    S.scorerFrontierN = 124; S.scorerFrontierBkt = Date.now() - 3 * 60e3;
+    const t82c = scorerTileLine();
+    ok("[R82.2] with the archive read the tile reports observed days toward the 7 and the frontier's size at its bucket",
+       /chart gates 3\.1\/7 observed days/.test(t82c) && /frontier 124 items \(bucket /.test(t82c), t82c);
+    S.scorerSurf = keep82.surf; S.scorerSurfBusy = keep82.busy;
+    S.scorerFrontierN = keep82.frN; S.scorerFrontierBkt = keep82.frBkt;
+  } catch(e){
+    out.push("FAIL scorer tile term :: " + (e && e.stack || e));
+  }
+  try {
+    /* [R82.3] the ratified Prospecting disposition is decision-logged once
+       per store — the store guard, not the session flag, makes it once (the
+       R81.3 shape). */
+    const kL82 = DB.decisionLog;
+    DB.decisionLog = [];
+    S.prospectHoldLogged = 0;
+    prospectHoldLog();
+    const p82 = DB.decisionLog.find(e => e.subject === PROSPECT_HOLD_KEY);
+    S.prospectHoldLogged = 0;
+    prospectHoldLog();
+    ok("[R82.3] the prospecting leave-until-cutover ruling is decision-logged once per store — auto:1 by:\"user\", RATIFIED, cutover named — so the consolidation inherits a decided item",
+       !!p82 && p82.auto === 1 && p82.by === "user" && /RATIFIED/.test(p82.reason)
+       && /cutover/.test(p82.reason) && DB.decisionLog.length === 1,
+       JSON.stringify({ found: !!p82, n: DB.decisionLog.length, by: p82 && p82.by }));
+    DB.decisionLog = kL82;
+    /* [R82.4] the ratified Paper Book era qualifier: on the surface HEADER
+       (tab label untouched), glossed from the plumb-line entry, and the
+       scorer verdict's same phrase marks from the same entry — one source,
+       two presentations. */
+    renderPaperView();
+    const sub82 = document.getElementById("paperRegimeSub");
+    ok("[R82.4] the paper surface header carries the ratified era qualifier, glossed — and the tab label does not",
+       /data-glt="plumb-line"/.test(sub82.innerHTML)
+       && sub82.textContent.indexOf("the cutover's plumb line") >= 0
+       && document.querySelector('#tradeSubs button[data-sub="paper"]').textContent === "Paper Book"
+       && GLOSSARY.some(g => (g.entries || []).some(en => en.id === "plumb-line" && en.what && en.from && en.do)),
+       JSON.stringify({ sub: sub82.textContent, tab: document.querySelector('#tradeSubs button[data-sub="paper"]').textContent }));
+    ok("[R82.4] the scorer verdict's plumb-line phrase marks from the same entry — one source, two presentations",
+       /data-glt="plumb-line"/.test(scorerVerdictInline()), "scorerVerdictInline checked for the mark");
+  } catch(e){
+    out.push("FAIL ratified chrome rulings :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §83 THE FRICTION EXPORT (user ruling, Aug 14 2026) ══════════════════
+     The missing leg of an existing loop: capture and the weekly reader were
+     already built; the only carry-out was a clipboard copy the phone cannot
+     reach. The export rides the analysis bus; carried is a MARK, never a
+     deletion; the state-backup carry preserves the lifecycle. */
+  try {
+    const keepFric = DB.frictionLog;
+    DB.frictionLog = [
+      { t: 1755100000000, d: "2026-08-10", ctx: "trade/watch", text: "carried already", exp: 1755100500000 },
+      { t: 1755200000000, d: "2026-08-11", ctx: "home", text: "fresh open note" },
+      { t: 1755300000000, d: "2026-08-12", ctx: "review/weekly", text: "handled but never carried", res: 1755300500000 }
+    ];
+    const pay83 = analysisPayload("friction");
+    ok("[R83.1] the export carries ONLY never-carried entries — open and resolved alike; the already-carried one is excluded",
+       pay83.entries.length === 2
+       && pay83.entries.some(e => e.text === "fresh open note")
+       && pay83.entries.some(e => e.text === "handled but never carried")
+       && !pay83.entries.some(e => e.text === "carried already"),
+       JSON.stringify(pay83.entries.map(e => e.text)));
+    ok("[R83.1] the header states its counts and that nothing was truncated, and every entry carries its capture timestamp and context stamp",
+       pay83.header.counts.total === 3 && pay83.header.counts.carriedBefore === 1
+       && pay83.header.counts.inFile === 2 && /none/.test(pay83.header.truncation)
+       && pay83.entries.every(e => e.at && e.t > 0 && e.ctx != null)
+       && pay83.entries.find(e => e.text === "handled but never carried").resolvedAt != null,
+       JSON.stringify(pay83.header.counts));
+    ok("[R83.2] building the payload stamps nothing — the carry stamp rides the export press, not the read",
+       DB.frictionLog.filter(f => !!f.exp).length === 1,
+       JSON.stringify(DB.frictionLog.map(f => !!f.exp)));
+    const n83 = frictionMarkCarried(1755400000000);
+    ok("[R83.2] the export stamp marks every un-carried entry and DELETES nothing — exported is a mark, not a removal",
+       n83 === 2 && DB.frictionLog.length === 3 && DB.frictionLog.every(f => !!f.exp),
+       JSON.stringify({ stamped: n83, len: DB.frictionLog.length }));
+    const pay83b = analysisPayload("friction");
+    ok("[R83.1] a re-export after the carry has no entries and says so in its counts — never a silent duplicate carry",
+       pay83b.entries.length === 0 && pay83b.header.counts.inFile === 0 && pay83b.header.counts.carriedBefore === 3,
+       JSON.stringify(pay83b.header.counts));
+    DB.frictionLog = keepFric;
+    /* The affordance: the export lives behind the SAME global ✎ button the
+       capture lives behind (zero standing elements added), and in the weekly
+       review's friction step. The global footer renders on every tab. */
+    ok("[R83.3] the friction export rides the analysis bus from inside the global ✎ disclosure",
+       !!document.querySelector('#fricRow [data-analysis="friction"]'),
+       (document.getElementById("fricRow") || {}).innerHTML);
+    for (const t83 of ["home", "trade", "sleeve", "review"]){
+      setTab(t83);
+      ok("[R83.3] the ✎ friction entry point is visible on tab: " + t83,
+         (document.getElementById("fricBtn") || {}).offsetParent !== null, t83);
+    }
+    S.tab = "review"; S.mode = "weekly"; renderRoutine();
+    ok("[R83.3] the weekly review's friction step renders the export button — scoped to the checklist, not satisfied by the footer's copy",
+       /data-analysis="friction"/.test(document.querySelector("#ckList").innerHTML),
+       (document.querySelector("#ckList").innerHTML.match(/data-analysis="friction"[^>]*/) || ["not found"])[0]);
+    /* [R83.4] the state-backup carry preserves the exported/resolved
+       lifecycle — the sanitizer used to rebuild rows without exp/res, so a
+       restore silently revived carried and handled notes as open. Absent
+       stays absent. */
+    const era83 = validateImport(JSON.parse(JSON.stringify({ frictionLog: [
+      { t: 100, d: "2026-08-01", ctx: "x", text: "carried and handled", exp: 200, res: 300 },
+      { t: 400, d: "2026-08-02", ctx: "y", text: "still open" }
+    ] }))).db.frictionLog;
+    ok("[R83.4] the state-backup carry preserves the exported/resolved lifecycle — and absent stays absent",
+       era83.length === 2 && era83[0].exp === 200 && era83[0].res === 300
+       && !Object.prototype.hasOwnProperty.call(era83[1], "exp")
+       && !Object.prototype.hasOwnProperty.call(era83[1], "res"),
+       JSON.stringify(era83));
+  } catch(e){
+    out.push("FAIL friction export :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §84 SCORER ITEM VISIBILITY (user ruling, Aug 14 2026) ═══════════════
+     The surface names what the instrument sees — population arithmetic only.
+     Fixtures pin the display readouts the cycle would have stamped; every
+     count-label is asserted against the rows inside it (headline reconciles
+     to rows), and the constraints are asserted as ABSENCES: no gp net where
+     the cannot-rank words belong, no blacklisted member, no action
+     affordance of any kind. */
+  try {
+    const keep84 = { fr: S.scorerFrontier, ctl: S.scorerCtlPass, bl: S.scorerBlCycle, hist: S.scorerItemHist,
+      bkt: S.scorerFrontierBkt, n: S.scorerFrontierN, rd: S.scorerRdiffLast, blk: DB.blacklist, intel: DB.intel,
+      t2: DB.scorerT2, sets: S.scorerIdSets, vol: DB.filtersT1 && DB.filtersT1.vol };
+    if (DB.filtersT1) DB.filtersT1.vol = 1000;   // pin the control's volBase so the ladder anchors are deterministic
+    const cfs84 = scorerConfigs();
+    const ctl84 = cfs84.find(c => c.control);
+    const cellA = cfs84.find(c => c.cfg.taxMult === 3 && c.cfg.volBase === 1000 && c.cfg.roi === 1.2);
+    const cellB = cfs84.find(c => c.cfg.taxMult === 2 && c.cfg.volBase === 1000 && c.cfg.roi === 1.2);
+    const st84 = (id, m, roi, vg) => ({ id, buy: 1000, sell: 1030, tax: 20, exempt: false,
+      eMargin: m, eRoi: roi, skewMin: 5, imbalance: 0.5, volGate: vg, tr: null, vt: null, moState: null });
+    keep84.anom = DB.anomalyFlags;
+    DB.intel = (DB.intel || []).concat([{ id: "probe84pump", type: "promotion-warning", status: "ratified",
+      items: [9103], importedAt: Date.now() }]);
+    DB.anomalyFlags = (DB.anomalyFlags || []).concat([{ id: 8401, itemId: 9103, name: "probe pump",
+      at: Date.now() - 2 * 86400e3, d: today(), strength: 3, rise14p: 40, rise14v: 300 }]);
+    DB.blacklist = (DB.blacklist || []).concat([9104]);
+    S.scorerFrontierBkt = Date.now() - 120e3; S.scorerFrontierN = 3;
+    S.scorerFrontier = [
+      { st: st84(9101, 300, 3, 1500), cells: [...new Set([ctl84.hash, cellA.hash, cellB.hash])] },
+      { st: st84(9102, 10000, 2, 1500), cells: [ctl84.hash] },
+      { st: st84(9103, 200, 2.5, 1500), cells: [cellB.hash] }
+    ];
+    S.scorerCtlPass = [9101, 9102];
+    S.scorerBlCycle = [9104];
+    S.scorerItemHist = new Map([[9101, { cyc: 4, hours: new Set([7, 12]), cells: new Set([ctl84.hash]) }]]);
+    S.scorerRdiffLast = { t: Date.now(), extra: [9101], missing: [{ id: 9102, fails: ["roi", "margin"] }],
+      planFresh: true, planWhy: null, wlN: 5, ctlPassN: 2 };
+    S.scorerIdSets = new Map();
+    DB.scorerT2 = {}; DB.scorerT2[ctl84.hash] = { ids: [9101, 9102] };
+    const ctlHtml = scorerCtlFundedSection();
+    const ctlN = +(ctlHtml.match(/fund right now — (\d+) item/) || [])[1];
+    const figSpec = DRILLS.get("sc:ctl:figs");
+    ok("[R84.1] the control list's label count equals the rows inside it — the headline reconciles to its rows",
+       ctlN === 2 && figSpec.rows.length === 2,
+       JSON.stringify({ label: ctlN, rows: figSpec.rows.length }));
+    ok("[R84.1] the display sort is by the STATED figure — post-tax margin, descending, named in the copy beside the cannot-rank distinction",
+       /Sorted by <b>post-tax margin<\/b>/.test(ctlHtml)
+       && /never a cell ranking/.test(ctlHtml)
+       && figSpec.rows.every((r, i, a) => i === 0 || a[i - 1].marginN >= r.marginN),
+       JSON.stringify(figSpec.rows.map(r => r.marginN)));
+    const gspec = DRILLS.get("sc:ctl:gates");
+    ok("[R84.1] the gate drill carries every gate with pass values, and a chart gate reads skipped-not-failing",
+       gspec.rows.length === 2
+       && MARKET_GATE_KEYS.every(g => gspec.rows[0][g] != null)
+       && /✓/.test(gspec.rows[0].roi) && /unknown — skipped, not failing/.test(gspec.rows[0].trend),
+       JSON.stringify(gspec.rows[0]));
+    const frHtml = scorerFrontierSection();
+    const frN = +(frHtml.match(/any cell would fund — (\d+) item/) || [])[1];
+    const frSpec = DRILLS.get("sc:frontier:rows");
+    const row9103 = frSpec.rows.find(r => r._txt.indexOf(itemName(9103)) === 0);
+    const row9101 = frSpec.rows.find(r => r._txt.indexOf(itemName(9101)) === 0);
+    ok("[R84.2] the browser's label count equals its rows; breadth reads M of the grid; stock reads the distinct-ever ledger",
+       frN === 3 && frSpec.rows.length === 3
+       && row9103.breadthN === 1 && row9103.breadth === "1 of " + cfs84.length
+       && row9101.stock === "1 cells",
+       JSON.stringify({ frN, rows: frSpec.rows.length, b: row9103 && row9103.breadth, s: row9101 && row9101.stock }));
+    ok("[R84.2] a blacklisted item is NEVER a member — it renders only in the ruled canary count line",
+       !frSpec.rows.some(r => r._txt.indexOf(itemName(9104)) >= 0)
+       && /1 blacklisted item would qualify/.test(frHtml),
+       JSON.stringify(frSpec.rows.map(r => r._txt)));
+    ok("[R84.2] a pump-stamped item carries its mark inline",
+       /⚑/.test(row9103.item), row9103.item);
+    const dHtml = scorerDeltaSection();
+    const dSpec = DRILLS.get("sc:delta:0");
+    ok("[R84.3] the taxMult 3→2 notch admits the fixture's item by name with its market figures — membership only",
+       /taxMult 3 → 2/.test(dHtml) && dSpec && dSpec.rows.length === 1
+       && dSpec.rows[0]._txt === itemName(9103) && /%/.test(dSpec.rows[0].roi),
+       JSON.stringify(dSpec && dSpec.rows));
+    ok("[R84.3] where a delta's net would render, the ruled cannot-rank words render instead — and NO gp net appears in the section",
+       /cannot rank yet/.test(dHtml) && !/net: ?[+\-−]?\d/.test(dHtml) && !/net [+\-−]\d/.test(dHtml),
+       dHtml.slice(dHtml.indexOf("net:"), dHtml.indexOf("net:") + 120));
+    const rdHtml = scorerRdiffCycleDrill();
+    const rdSpec = DRILLS.get("sc:rdiff:cycle");
+    ok("[R84.4] the rdiff window names both disagreement lists with FULL fail sets, labelled informational for the cutover gate",
+       /2 named disagreements/.test(rdHtml) && rdSpec.rows.length === 2
+       && rdSpec.rows.some(r => r._cohort === "plan-funded · control fails" && /roi, margin/.test(r.fails))
+       && rdSpec.rows.some(r => r._cohort === "control passes · watchlist lacks")
+       && /informational/i.test(rdSpec.head) && /cutover gate/.test(rdSpec.head),
+       JSON.stringify({ rows: rdSpec.rows.length, head: rdSpec.head.slice(0, 140) }));
+    const all84 = ctlHtml + frHtml + dHtml + rdHtml;
+    ok("[R84.5] the sections carry NO item actions — every button is a drill face, and no add/watch affordance exists; viewing is not proposing",
+       (all84.match(/<button/g) || []).length === (all84.match(/<button class="drillnum/g) || []).length
+       && !/data-add=|data-catwatch|data-goto=/.test(all84),
+       JSON.stringify({ buttons: (all84.match(/<button/g) || []).length,
+                        drills: (all84.match(/<button class="drillnum/g) || []).length }));
+    /* No-cycle states: absence said in words, never an empty table. */
+    S.scorerFrontier = null; S.scorerCtlPass = null; S.scorerRdiffLast = null;
+    ok("[R84.1] with no scored cycle this session, every section says so instead of rendering empty machinery",
+       /no cycle yet this session/.test(scorerCtlFundedSection())
+       && /no cycle yet this session/.test(scorerFrontierSection())
+       && /no cycle yet this session/.test(scorerDeltaSection())
+       && /no scored cycle yet/.test(scorerRdiffCycleDrill()),
+       "all four no-cycle states");
+    /* [R84.6] the one evaluator and its derived chain. */
+    const cfgE = ctl84.cfg;
+    const stU = st84(9105, null, null, null);
+    stU.skewMin = null; stU.imbalance = null;
+    const ev84 = marketGateEval(stU, cfgE);
+    ok("[R84.6] unknown is not failing — null inputs read unknown on every gate EXCEPT the ROI null limb, which fails (the live chain's own bench)",
+       ev84.find(e => e.g === "roi").state === "fail"
+       && ["margin", "skew", "imbalance", "trend", "volTrend", "volFloor", "momentum"]
+            .every(g => ev84.find(e => e.g === g).state === "unknown"),
+       JSON.stringify(ev84.map(e => e.g + ":" + e.state)));
+    const stK = st84(9106, 10000, 10, 1500); stK.moState = "knife";
+    const fk84 = marketGateFails(stK, cfgE);
+    ok("[R84.6] a momentum fail keeps the fails shape it has always had — have:null — and the derived chain reports exactly the failing gates",
+       fk84.some(f => f.g === "momentum" && f.have === null && f.need === null)
+       && !fk84.some(f => f.g === "roi") && !fk84.some(f => f.g === "margin"),
+       JSON.stringify(fk84));
+    S.scorerFrontier = keep84.fr; S.scorerCtlPass = keep84.ctl; S.scorerBlCycle = keep84.bl;
+    S.scorerItemHist = keep84.hist; S.scorerFrontierBkt = keep84.bkt; S.scorerFrontierN = keep84.n;
+    S.scorerRdiffLast = keep84.rd; DB.blacklist = keep84.blk; DB.intel = keep84.intel;
+    DB.anomalyFlags = keep84.anom; DB.scorerT2 = keep84.t2; S.scorerIdSets = keep84.sets;
+    if (DB.filtersT1) DB.filtersT1.vol = keep84.vol;
+  } catch(e){
+    out.push("FAIL scorer item visibility :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

@@ -158,12 +158,52 @@ sweep_class(){
     "$([ "$dropped" -gt 0 ] && printf ' · %d older duplicate(s) deleted' "$dropped")")"
 }
 
+# FRICTION IS AN ACCUMULATING CLASS (Aug 14 2026): successive exports carry
+# DISJOINT entries — each file holds only the notes never before carried out of
+# the app, and exporting stamps them, so an older member is NOT a copy of a
+# newer one and keep-newest would destroy notes the app believes are safely
+# out. Every member moves to the destination; nothing is deleted unless it is
+# byte-identical to a file already collected. Collected members stay in inbox/
+# until the desk folds them into FRICTION.md (the fold removes the file).
+sweep_accum(){
+  local label="$1" pat="$2" dest="$3"
+  local n=0 dup=0 f base tgt i
+  mkdir -p "$dest"
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    case "$f" in "$dest"/*) continue ;; esac
+    # Byte-identical to ANY already-collected member (the browser's " (N)"
+    # copy of a file the same run just moved) → a true duplicate, dropped.
+    # Content decides, not the name — names differ exactly when the browser
+    # made the copy.
+    local twin="" g2
+    for g2 in "$dest"/$pat; do
+      [ -f "$g2" ] || continue
+      if cmp -s "$f" "$g2"; then twin="$g2"; break; fi
+    done
+    if [ -n "$twin" ]; then rm -f -- "$f"; dup=$((dup+1)); MOVED=1; continue; fi
+    base="$(basename "$f" | sed 's/ (\([0-9]*\))\(\.json\)$/-\1\2/')"
+    tgt="$dest/$base"
+    i=1
+    while [ -f "$tgt" ]; do tgt="$dest/${base%.json}-c$i.json"; i=$((i+1)); done
+    mv -f -- "$f" "$tgt" 2>/dev/null || { say "$(printf '%-22s MOVE FAILED %s' "$label" "$base")"; MOVED=1; continue; }
+    n=$((n+1)); MOVED=1
+  done < <(find_class "$pat")
+  if [ "$n" -eq 0 ] && [ "$dup" -eq 0 ]; then
+    say "$(printf '%-22s none found to collect (accumulating class — collected members stay in %s/ until folded)' "$label" "$(basename "$dest")")"
+  else
+    say "$(printf '%-22s %d file(s) -> %s/ · accumulating class, nothing deleted%s' "$label" "$n" "$(basename "$dest")" \
+      "$([ "$dup" -gt 0 ] && printf ' · %d identical duplicate(s) dropped' "$dup")")"
+  fi
+}
+
 sweep_class "analysis-paper"       "analysis-paper-*.json"       "$INBOX"
 sweep_class "analysis-prospecting" "analysis-prospecting-*.json" "$INBOX"
 sweep_class "analysis-gates"       "analysis-gates-*.json"       "$INBOX"
 sweep_class "analysis-calibration" "analysis-calibration-*.json" "$INBOX"
 sweep_class "analysis-scorer"      "analysis-scorer-*.json"      "$INBOX"
 sweep_class "analysis-all"         "analysis-all-*.json"         "$INBOX"
+sweep_accum "analysis-friction"    "analysis-friction-*.json"    "$INBOX"
 sweep_class "state-backup"         "ge-flips-*.json"             "$INBOX"
 # flags-pending keeps its existing home: the briefing procedure reads it there
 # by name, and generalising the sweep must not move that target.

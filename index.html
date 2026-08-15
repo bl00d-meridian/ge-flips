@@ -71,6 +71,11 @@ section.tab.on{display:block}
 nav.subtabs{display:flex;gap:2px;margin:0 0 14px;flex-wrap:wrap}
 nav.subtabs button{background:#191510;color:var(--dim);border-radius:3px;padding:5px 12px;font-size:12.5px}
 nav.subtabs button.on{background:linear-gradient(#5a4620,#3d2f15);color:var(--gold);border-color:var(--gold-dim)}
+/* cutover-era retirement candidates (transitional nav, Aug 14 2026): subdued,
+   never hidden — both stay live until the cutover ruling retires them; full
+   strength while active so the open surface stays readable. */
+nav.subtabs button.sunset{opacity:.62}
+nav.subtabs button.sunset.on{opacity:1}
 .tsub{display:none}
 .tsub.on{display:block}
 /* ---- decomposition primitive (user ruling, Aug 11 2026) ----
@@ -451,14 +456,19 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
   <!-- ═══════════ TRADE — plan & watchlist, scanner, flip log ═══════════ -->
   <section class="tab" id="tab-trade">
+    <!-- RULED ORDER (transitional nav, Aug 14 2026): my-trading surfaces
+         first, then the measurement instruments with the Scorer promoted
+         ahead of the legacy ones, then the two cutover-era retirement
+         candidates last, subdued (.sunset) but live — the scanner cohort
+         still feeds the paper book and the gap band serves held rulings. -->
     <nav class="subtabs" id="tradeSubs">
       <button data-sub="watch" class="on">Plan &amp; Watchlist</button>
-      <button data-sub="scan">Scanner</button>
       <button data-sub="log">Flip Log</button>
-      <button data-sub="paper" title="The paper book: the overnight-vs-daytime comparison per cohort, per-gate simulated outcomes, fill-model calibration, and the regime race's historical curves and ledger (dormant since Aug 14 2026) — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
-      <button data-sub="prospect" title="Where the edge lives: the gap band's verdict, the hours ledger's two streams, and the per-stratum map (dormant since Aug 14 2026 — historical) — every number opens to its rows.">Prospecting</button>
-      <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
       <button data-sub="scorer" title="The universe scorer: every mapped item against the 16-cell config grid each 5m bucket, fills simulated on the funded frontier at three capture points and two horizons. A measurement instrument — it admits, funds and caps nothing.">Scorer</button>
+      <button data-sub="paper" title="The paper book: the overnight-vs-daytime comparison per cohort, per-gate simulated outcomes, fill-model calibration, and the regime race's historical curves and ledger (dormant since Aug 14 2026) — every cell opens to its trips. Screening evidence, never a verdict.">Paper Book</button>
+      <button data-sub="gates" title="Gate health: realized and paper streams per gate, die-off episodes, and the exception lane's standing — every count opens to its items.">Gate Health</button>
+      <button data-sub="scan" class="sunset" title="Cutover-era retirement candidate — retires only by ruling after the cutover proves out; until then its cohort still feeds the paper book and every scanner surface works unchanged.">Scanner</button>
+      <button data-sub="prospect" class="sunset" title="Cutover-era retirement candidate — retires only by ruling after the cutover proves out. The gap band's verdict and draw stay live and serve their held rulings; the hours ledger keeps both streams; the per-stratum map is dormant since Aug 14 2026 (historical). Every number opens to its rows.">Prospecting</button>
     </nav>
 
   <!-- ── paper book sub-view (ruled Aug 11 2026: a working surface, not a
@@ -1160,7 +1170,7 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
 
   <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
     <button class="sm ghost" id="fricBtn" title="One line about anything annoying, slow, or missing — timestamped with where you were. The weekly review collects them for the Sunday tooling session.">✎ note friction</button>
-    <span id="fricRow" class="hide"><input id="fricInput" placeholder="one line — Enter saves, Esc cancels" style="width:min(320px,80vw)"></span>
+    <span id="fricRow" class="hide"><input id="fricInput" placeholder="one line — Enter saves, Esc cancels" style="width:min(320px,70vw)"><button class="sm" data-analysis="friction" style="margin-left:6px" title="Downloads analysis-friction-&lt;date&gt;.json: every note never before carried out of the app — open and resolved alike — timestamped with where you were. Carried notes are stamped exported, never deleted; clear exported (weekly review) is the explicit sweep. The desk folds the file into FRICTION.md.">⭳ export</button></span>
   </div>
 </div>
 
@@ -2322,6 +2332,7 @@ function scorerCycle(){
      never enters the frontier, so the trip layer cannot see it — one owner,
      stated here, seeded at the trip layer. */
   const frontier = [];
+  const blCycle = new Set();   // display readout: bl items any cell would fund this bucket (the canary's cycle view)
   for (const it of S.items){
     const st = marketStatsFor(it.i);
     if (!st) continue;
@@ -2333,6 +2344,7 @@ function scorerCycle(){
         missing.push({ id: st.id, fails: fails.map(f => f.g) });
       if (fails.length) continue;
       if (bl){
+        blCycle.add(st.id);   // display readout for the frontier browser's ruled count line
         /* THE CANARY (row 23): counted, never funded — and never into the
            ids stock, the noChart split, the reconciliation pass set, or the
            frontier (no trips, no nets, ever — the veto's surviving core). A
@@ -2355,6 +2367,24 @@ function scorerCycle(){
       }
     }
     if (fundedBy) frontier.push({ st, cells: fundedBy });
+  }
+  /* Display readouts (transitional nav + item visibility, Aug 14 2026):
+     the frontier's size and SNAPSHOT at this scored bucket, the control's
+     pass set, the bl-cycle set, and a session per-item history (cycles
+     funded, hour bands seen, cells ever — session-scoped by design, and
+     labelled "this session" wherever it renders). Nothing gates on any of
+     these; the surface names what the instrument sees, that is all. */
+  S.scorerFrontierN = frontier.length;
+  S.scorerFrontierBkt = S.min5At;
+  S.scorerFrontier = frontier;
+  S.scorerCtlPass = ctlPass.slice();
+  S.scorerBlCycle = [...blCycle];
+  if (!S.scorerItemHist) S.scorerItemHist = new Map();
+  for (const f of frontier){
+    let hh = S.scorerItemHist.get(f.st.id);
+    if (!hh){ hh = { cyc: 0, hours: new Set(), cells: new Set() }; S.scorerItemHist.set(f.st.id, hh); }
+    hh.cyc++; hh.hours.add(hour);
+    for (const ch of f.cells) hh.cells.add(ch);
   }
   for (const c of cells){
     const r = scorerCell(c.hash, c.cfg);
@@ -2382,13 +2412,22 @@ function scorerCycle(){
      an empty watchlist, and the diff must not claim a comparison it could
      not make. */
   const watchIds = new Set((DB.watch || []).map(w => w.id));
+  const rdExtra = ctlPass.filter(id => !watchIds.has(id));
+  const rdPlanWhy = planFresh ? null : (planPicks == null ? "plan never built this session" : "last plan build is stale (>10m)");
   rdiffAccrueSafe({
     t: S.min5At, ch: ctl ? ctl.hash : null, v: SCORER_V,
-    extra: ctlPass.filter(id => !watchIds.has(id)),
+    extra: rdExtra,
     ctlPassN: ctlPass.length, wlN: watchIds.size,
     plan: planFresh ? { picksN: planPicks.length, missing } : null,
-    planWhy: planFresh ? null : (planPicks == null ? "plan never built this session" : "last plan build is stale (>10m)")
+    planWhy: rdPlanWhy
   });
+  /* Display readout (item visibility, Aug 14 2026): the SAME row the ledger
+     just took, held for the verdict line's informational window. The rdiff
+     store's reader is still the cutover gate; this is a view of the current
+     cycle, not a new consumer, and the staged status does not change. */
+  S.scorerRdiffLast = { t: S.min5At, extra: rdExtra.slice(),
+    missing: missing.map(m => ({ id: m.id, fails: m.fails.slice() })),
+    planFresh, planWhy: rdPlanWhy, wlN: watchIds.size, ctlPassN: ctlPass.length };
   /* STAGE 1d — the fill sim opens trips at the funded edge, same pass, same
      bucket. Safe-wrapped separately: a trip layer that dies must not take
      scoring down with it, and vice versa. */
@@ -2655,6 +2694,7 @@ async function doRefresh(opts = {}){
     try { mmBenchLog(); } catch(e){}   // the mm bench's one-time decision-log entry with its in-flight snapshot
     try { raceRetiredLog(); } catch(e){}    // the race retirement's one-time entry with its at-retirement snapshot
     try { sliceRetiredLog(); } catch(e){}   // the slice retirement's one-time entry with its at-retirement snapshot
+    try { prospectHoldLog(); } catch(e){}   // the ratified leave-until-cutover disposition, once per store
     S.err = null; failCount = 0; clearErr();
     rollChecklistDate();
     /* RECOVERY BEFORE THE LIVE TICK (ruled Aug 11 2026): a trip must be
@@ -3459,22 +3499,44 @@ const MARKET_GATE_LABEL = {
    Returns [{ g: KEY, have, need }] in chain order. A gate whose input is null
    is skipped (unknown is not failing) — except the ROI floor's null limb,
    which reproduces the live chain's "sustained ROI unknown" bench exactly. */
-function marketGateFails(st, cfg){
-  const fails = [];
-  const add = (g, have, need) => fails.push({ g, have: have == null ? null : have, need });
-  if (st.eRoi == null || st.eRoi < cfg.roi) add("roi", st.eRoi, cfg.roi);
+/* ═══ ONE EVALUATOR OWNS THE COMPARISONS (item visibility, Aug 14 2026) ════
+   `marketGateEval` returns ALL gates in chain order with three states —
+   pass / fail / unknown — and `marketGateFails` DERIVES from it, so a
+   display of pass values and the fail chain cannot disagree (the one-owner
+   rule; a second evaluator is the re-implementation trap in production).
+   Unknown is not failing, with the ruled exception preserved exactly: the
+   ROI null limb FAILS (the live chain's "sustained ROI unknown" bench), and
+   a momentum fail carries have:null in the fails shape, as it always has. */
+function marketGateEval(st, cfg){
+  const rows = [];
+  const add = (g, have, need, state) => rows.push({ g, have: have == null ? null : have, need, state });
+  add("roi", st.eRoi, cfg.roi, (st.eRoi == null || st.eRoi < cfg.roi) ? "fail" : "pass");
   const mn = marginNeedCfg(cfg, !!st.exempt, st.tax || 0);
-  if (st.eMargin != null && st.eMargin < mn.need) add("margin", st.eMargin, mn.need);
-  if (st.skewMin != null && st.skewMin > cfg.skewHard) add("skew", st.skewMin, cfg.skewHard);
-  if (st.imbalance != null && (st.imbalance < cfg.balHardLo || st.imbalance > cfg.balHardHi))
-    add("imbalance", st.imbalance, st.imbalance < cfg.balHardLo ? cfg.balHardLo : cfg.balHardHi);
-  if (st.tr != null && st.tr <= cfg.falling) add("trend", st.tr, cfg.falling);
-  else if (st.tr != null && st.tr <= cfg.trendSoft) add("trend", st.tr, cfg.trendSoft);
-  if (st.vt != null && st.vt <= cfg.volDecline) add("volTrend", st.vt, cfg.volDecline);
-  if (st.volGate != null && st.volGate < volFloorCfg(cfg.volBase, st.buy))
-    add("volFloor", st.volGate, volFloorCfg(cfg.volBase, st.buy));
-  if (st.moState === "knife") add("momentum", null, null);
-  return fails;
+  add("margin", st.eMargin, mn.need,
+      st.eMargin == null ? "unknown" : (st.eMargin < mn.need ? "fail" : "pass"));
+  add("skew", st.skewMin, cfg.skewHard,
+      st.skewMin == null ? "unknown" : (st.skewMin > cfg.skewHard ? "fail" : "pass"));
+  const imbLow = st.imbalance != null && st.imbalance < cfg.balHardLo;
+  const imbBad = st.imbalance != null && (imbLow || st.imbalance > cfg.balHardHi);
+  add("imbalance", st.imbalance, imbLow ? cfg.balHardLo : cfg.balHardHi,
+      st.imbalance == null ? "unknown" : (imbBad ? "fail" : "pass"));
+  add("trend", st.tr, st.tr != null && st.tr <= cfg.falling ? cfg.falling : cfg.trendSoft,
+      st.tr == null ? "unknown"
+        : ((st.tr <= cfg.falling || st.tr <= cfg.trendSoft) ? "fail" : "pass"));
+  add("volTrend", st.vt, cfg.volDecline,
+      st.vt == null ? "unknown" : (st.vt <= cfg.volDecline ? "fail" : "pass"));
+  const vf = volFloorCfg(cfg.volBase, st.buy);
+  add("volFloor", st.volGate, vf,
+      st.volGate == null ? "unknown" : (st.volGate < vf ? "fail" : "pass"));
+  /* have stays null on momentum — the fails shape has carried null since 1a
+     and the eval's display value is the state itself. */
+  add("momentum", null, null,
+      st.moState == null ? "unknown" : (st.moState === "knife" ? "fail" : "pass"));
+  return rows;
+}
+function marketGateFails(st, cfg){
+  return marketGateEval(st, cfg).filter(e => e.state === "fail")
+    .map(e => ({ g: e.g, have: e.have, need: e.need }));
 }
 /* The live plan's config, assembled from the same constants the chain read
    before the extraction — one source, read at call time so a ruled constant
@@ -5911,6 +5973,25 @@ function raceRetiredLog(){
     + "Curves, separator bands and ledger stay rendered under a dormant banner; new trips carry no regimes key "
     + "(absent = not evaluated, [] = evaluated-nothing, per R43.1); the divergence snapshot and proposals stop. "
     + "The un-retire flips REGIME_RACE_RETIRED only by your ruling; an assertion pins it.", 1, "user");
+}
+/* THE PROSPECTING DISPOSITION — RULED AND RECORDED (user ruling, Aug 14
+   2026, with the transitional nav refresh): leave until cutover. Logged so
+   the cutover consolidation inherits a DECIDED item, not an open question.
+   The sellRelBandLog pattern: written by the tool, decided by the user,
+   once per store. */
+const PROSPECT_HOLD_KEY = "prospecting disposition — leave until cutover (2026-08-14)";
+function prospectHoldLog(){
+  if (S.prospectHoldLogged) return;
+  S.prospectHoldLogged = 1;
+  if ((DB.decisionLog || []).some(e => e.subject === PROSPECT_HOLD_KEY)) return;
+  logDecision("settings", PROSPECT_HOLD_KEY,
+    "Prospecting stays as-is until the cutover ruling — no fold, no rename; subdued in the Trade row as the era signal",
+    "RATIFIED (transitional nav refresh). The gap band still accrues at its ruled share and serves two held rulings "
+    + "— the T3 scanner proposal's clean-trip bar renders on Prospecting, and the routing question reads the band's "
+    + "stamped populations on the Paper Book's overnight panel; folding or renaming now would pay a migration the "
+    + "cutover consolidation re-pays. The subdued tab treatment is the era signal; retirement lands with the "
+    + "cutover ruling where it belongs.",
+    1, "user");
 }
 const SLICE_RETIRED_KEY = "discovery slice sampling role → dormancy lane (2026-08-14)";
 function sliceRetiredLog(){
@@ -8407,7 +8488,22 @@ function scorerSurfLoad(){
     }
     S.scorerSurfBusy = false;
     if (S.tab === "trade" && S.sub === "scorer") renderScorerView();
+    else if (S.tab === "home"){
+      /* The header tile reads the same figures. TARGETED refresh — only the
+         tile's own text, never a full vitals render: renderHomeVitals runs
+         the plan, and re-running it from an async callback would stamp
+         ledgers at unpredictable moments (the R65.1 lesson, and how
+         intermittent assertions are born). */
+      const el = document.querySelector('#homeVitals .vit[data-goto="scorer#scorerVerdictPanel"] .v');
+      if (el) el.textContent = scorerTileLine();
+    }
   })();
+}
+/* One owner for "is the async surface snapshot fresh enough" — shared by the
+   Scorer view and the header tile so the two cannot disagree on staleness. */
+function scorerSurfEnsure(){
+  const ss = S.scorerSurf;
+  if (!ss || (!S.scorerSurfBusy && Date.now() - ss.at > 60e3)) scorerSurfLoad();
 }
 const scorerOpenItemsN = () => new Set([...(S.scorerTrips || new Map()).values()].map(p => p.id)).size;
 /* The generator renders its own state, whether or not anything is wrong —
@@ -8424,6 +8520,31 @@ function scorerStateLine(){
         ? ' · <span class="neg">consecutive failures — scorer ' + scorerFails + ', fill sim ' + t1Fails + ', diff ' + rdiffFails + '</span>'
         : ' · no failure streaks')
     + ' — this line renders whether or not anything is wrong.</div>';
+}
+/* ═══ THE HEADER TILE'S SOURCE TERM (transitional nav, Aug 14 2026) ════════
+   EXTRACTED so the assertion has a term to point at (the paperDivLead
+   pattern): the tile renders exactly this string, and the probe asserts the
+   term's states — reading… / could-not-check / N of 7 — without going
+   through a render something downstream could pin. The tile COMPRESSES the
+   ruled phrasing but never contradicts it: while capture is ungraded the
+   line says "cannot rank yet" in those words (the claim can flip only when
+   scorerRankReadiness() itself does), a chart-gate figure it does not have
+   renders as reading… or could-not-check, never as a number, and a session
+   with no scored cycle says so instead of showing a stale frontier. */
+function scorerTileLine(){
+  const ready = scorerRankReadiness();
+  const state = ready.ready ? "capture graded" : "measuring, cannot rank yet";
+  const ss = S.scorerSurf;
+  const charts = !ss
+    ? "chart gates reading…"
+    : ss.err != null
+      ? "chart gates could not check"
+      : "chart gates " + (Math.round(ss.h1.observed / 24 * 10) / 10) + "/7 observed days";
+  const fr = S.scorerFrontierBkt
+    ? "frontier " + S.scorerFrontierN + " item" + (S.scorerFrontierN === 1 ? "" : "s")
+      + " (bucket " + ago(S.scorerFrontierBkt) + ")"
+    : "frontier — no cycle yet this session";
+  return state + " · " + charts + " · " + fr;
 }
 /* THE FIRST SCREEN (the walk-up test, ruled with 1e): one sentence, then the
    four waiting-on lines, each a real number or an honest could-not-check. */
@@ -8460,8 +8581,9 @@ function scorerVerdictInline(){
       + line("ranking", '<b>cannot rank yet</b> — ' + esc((ready.why || "").replace(/^cannot rank yet — /, "")))
       + line("reconciliation diff", idb(s => s.rdiffN
           ? 'day ' + Math.max(1, Math.ceil((Date.now() - s.rdiffFirst) / 86400e3)) + ' — ' + s.rdiffN
-            + ' rows of control-vs-plan history (the cutover\'s plumb line; its reader is the cutover gate)'
-          : 'no rows yet — recording starts with the first scored bucket'))
+            + ' rows of control-vs-plan history (' + glTerm("plumb-line", "the cutover's plumb line")
+            + '; its reader is the cutover gate)'
+          : 'no rows yet — recording starts with the first scored bucket') + scorerRdiffCycleDrill())
       + '</div>',
     "A measurement instrument: it admits, funds and caps nothing. Every figure below opens to its rows.");
 }
@@ -8606,15 +8728,217 @@ function scorerEconSection(){
       + '(9.5h after theirs), and unfilled horizons and unobserved holes count too, each under its own name.</div>';
   return html;
 }
+/* §4 — the current cycle's rdiff disagreements, NAMED, riding the verdict
+   line. INFORMATIONAL window: the ledger's reader is still the cutover gate,
+   this is a view of the row the ledger just took, and the staged status does
+   not change. */
+function scorerRdiffCycleDrill(){
+  const r = S.scorerRdiffLast;
+  if (!r) return ' <span class="dim">· this session: no scored cycle yet, so no disagreements to name</span>';
+  const rows = r.extra.map(id => ({ _cohort: "control passes · watchlist lacks", item: scorerItemMark(id),
+      fails: '<span class="dim">passes the control config — the disagreement is admission, not gates</span>',
+      _txt: itemName(id) }))
+    .concat(r.missing.map(m => ({ _cohort: "plan-funded · control fails", item: scorerItemMark(m.id),
+      fails: esc(m.fails.join(", ")) || "—", _txt: itemName(m.id) + " " + m.fails.join(" ") })));
+  const n = rows.length;
+  return ' · this cycle: ' + drill("sc:rdiff:cycle", n + " named disagreement" + (n === 1 ? "" : "s"), {
+    head: "The current cycle's reconciliation diff, named — informational for the cutover gate (the ledger's reader is "
+      + "still the gate; this window is not a new consumer and the staged status does not change)"
+      + (r.planFresh ? "" : " · plan side unobserved this cycle: " + (r.planWhy || "unknown reason")),
+    cols: [{ k: "item", lab: "Item", html: 1 }, { k: "fails", lab: "Full fail set (config-free keys)", html: 1 }],
+    rows, empty: "No disagreements this cycle — the control's pass set and the watchlist/plan agree." });
+}
+/* ═══ ITEM VISIBILITY (user ruling, Aug 14 2026) ═══════════════════════════
+   The surface names what the instrument sees. "What would my rules find in
+   the market" is a list of ITEMS, and these sections render it — population
+   arithmetic that is honest pre-calibration: the cannot-rank verdict gates
+   CELL RANKINGS, never membership. NO ACTIONS: no watch, no pin, no size —
+   viewing is not proposing; admission changes are the cutover's. Names come
+   from the cached /mapping (itemName), no new API calls. Membership is the
+   LAST SCORED BUCKET's reading and says so; session figures say "this
+   session". Every list is a closed disclosure whose label carries the count
+   of the rows inside it (the headline-reconciles-to-rows property, probe-
+   asserted), and every table rides the drill primitive. */
+function scorerCellShortMap(){
+  const m = new Map();
+  for (const c of scorerConfigs())
+    m.set(c.hash, (c.control ? "CTL·" : "") + "m" + c.cfg.taxMult + "b" + c.cfg.volBase
+      + (c.cfg.roi !== 1.2 ? "r" + c.cfg.roi : ""));
+  return m;
+}
+/* One formatter for a gate evaluation cell — value, verdict, and the config's
+   own threshold (config-free keys; constants come from the cfg, never from
+   the ledger labels). */
+function scorerEvalCell(e, cfg){
+  const fmt = v => v == null ? "?" :
+    e.g === "roi" ? v.toFixed(2) + "%" :
+    e.g === "margin" ? Math.round(v) + "gp" :
+    e.g === "imbalance" ? v.toFixed(2) :
+    e.g === "skew" ? Math.round(v) + "m" :
+    e.g === "volFloor" ? full(v) + "/h" : String(Math.round(v * 100) / 100);
+  if (e.state === "unknown") return '<span class="dim">unknown — skipped, not failing</span>';
+  const need = e.g === "imbalance" ? cfg.balHardLo + "–" + cfg.balHardHi
+    : e.g === "momentum" ? "no knife"
+    : (e.g === "skew" ? "≤" : e.g === "roi" || e.g === "margin" || e.g === "volFloor" ? "≥" : ">") + fmt(e.need);
+  return (e.g === "momentum" ? (e.state === "fail" ? "knife" : "ok") : fmt(e.have))
+    + " <span class='" + (e.state === "fail" ? "neg" : "pos") + "'>" + (e.state === "fail" ? "✗" : "✓")
+    + "</span> <span class='dim'>" + esc(need) + "</span>";
+}
+const scorerItemMark = id => esc(itemName(id)) + (suspectedPump(id)
+  ? ' <span class="neg" title="Pump-stamped at this bucket (suspected accumulation) — stamped, never excluded.">⚑</span>' : '');
+function scorerNoCycleFold(label){
+  return fold(label + " — no cycle yet this session",
+    '<div class="dim">Membership is a per-bucket reading and no bucket has been scored this session — the first '
+    + '5m bucket after boot fills this. This is the no-cycle state, not an empty market.</div>');
+}
+/* §1 — the control cell's funded set, named, this cycle. */
+function scorerCtlFundedSection(){
+  const ids = S.scorerCtlPass;
+  if (!ids) return scorerNoCycleFold("What my current rules would fund right now");
+  const ctl = scorerConfigs().find(c => c.control);
+  const bySt = new Map((S.scorerFrontier || []).map(f => [f.st.id, f]));
+  const hist = S.scorerItemHist || new Map();
+  const items = ids.map(id => ({ id, st: (bySt.get(id) || {}).st, h: hist.get(id) }))
+    .sort((a, b) => ((b.st && b.st.eMargin) || 0) - ((a.st && a.st.eMargin) || 0));
+  const figRows = items.map(x => ({
+    item: scorerItemMark(x.id),
+    margin: x.st ? gp(Math.round(x.st.eMargin)) : "—", marginN: x.st ? x.st.eMargin : -1,
+    roi: x.st ? x.st.eRoi.toFixed(2) + "%" : "—", roiN: x.st ? x.st.eRoi : -1,
+    vol: x.st ? full(x.st.volGate) + "/h" : "—", volN: x.st ? x.st.volGate : -1,
+    hours: x.h && x.h.hours.size ? [...x.h.hours].sort((a, b) => a - b).map(n => String(n).padStart(2, "0")).join(" ") : "—",
+    _txt: itemName(x.id)
+  }));
+  const gateRows = items.filter(x => x.st).map(x => {
+    const row = { item: scorerItemMark(x.id), _txt: itemName(x.id) };
+    for (const e of marketGateEval(x.st, ctl.cfg)) row[e.g] = scorerEvalCell(e, ctl.cfg);
+    return row;
+  });
+  return fold("What my current rules would fund right now — " + items.length + " item" + (items.length === 1 ? "" : "s"),
+    '<div class="dim" style="white-space:normal">The control cell\'s pass set at the last scored bucket ('
+    + esc(ago(S.scorerFrontierBkt)) + '). Sorted by <b>post-tax margin</b>, descending — a display sort by a stated '
+    + 'market figure, never a cell ranking (' + glTerm("sc-cannotrank", "cannot rank yet") + ' gates rankings, not '
+    + 'membership). "Would fund" is conditional throughout: this is a measurement — nothing here deploys, admits or '
+    + 'proposes, and there are no item actions by design.</div>'
+    + '<div style="margin:4px 0">' + drill("sc:ctl:figs", items.length + " items with the figures that pass them", {
+        head: "The control cell's funded set — post-tax margin, ROI and the gate-side 1h volume (min of buy/sell sides), with UTC hour bands seen this session",
+        cols: [{ k: "item", lab: "Item", html: 1 }, { k: "margin", lab: "Post-tax margin", num: 1, sortk: "marginN" },
+               { k: "roi", lab: "ROI", num: 1, sortk: "roiN" }, { k: "vol", lab: "1h vol (gate side)", num: 1, sortk: "volN" },
+               { k: "hours", lab: "Hour bands seen (session)" }],
+        rows: figRows, empty: "The control cell funded nothing at this bucket — a real zero, not an unfed store." }) + '</div>'
+    + '<div style="margin:4px 0">' + drill("sc:ctl:gates", "full gate detail — all " + MARKET_GATE_KEYS.length + " gates, pass and unknown values", {
+        head: "Every gate's value against the control config's own threshold, per funded item — unknown gates are skipped by rule (chart inputs pending), not failing",
+        cols: [{ k: "item", lab: "Item", html: 1 }].concat(MARKET_GATE_KEYS.map(g => ({ k: g, lab: g, html: 1 }))),
+        rows: gateRows, empty: "No funded items at this bucket." }) + '</div>');
+}
+/* §2 — the frontier browser: union membership with breadth. */
+function scorerFrontierSection(){
+  const fr = S.scorerFrontier;
+  if (!fr) return scorerNoCycleFold("Everything any cell would fund");
+  const cellsAll = scorerConfigs();
+  const short = scorerCellShortMap();
+  const hist = S.scorerItemHist || new Map();
+  const t2 = DB.scorerT2 || {};
+  const anyCapped = cellsAll.some(c => t2[c.hash] && t2[c.hash].capped);
+  const rows = fr.slice().sort((a, b) => b.cells.length - a.cells.length).map(f => {
+    const h = hist.get(f.st.id);
+    const stock = cellsAll.filter(c => t2[c.hash] && scorerIdSet(c.hash, t2[c.hash]).has(f.st.id)).length;
+    return {
+      item: scorerItemMark(f.st.id),
+      breadth: f.cells.length + " of " + cellsAll.length, breadthN: f.cells.length,
+      cells: f.cells.map(ch => short.get(ch) || ch).join(" "),
+      hours: h && h.hours.size ? [...h.hours].sort((a, b) => a - b).map(n => String(n).padStart(2, "0")).join(" ") : "—",
+      flow: h ? h.cyc : 0, stock: stock + " cells",
+      stockN: stock, _txt: itemName(f.st.id) + " " + f.cells.map(ch => short.get(ch) || ch).join(" ")
+    };
+  });
+  const blN = (S.scorerBlCycle || []).length;
+  return fold("Everything any cell would fund — " + fr.length + " item" + (fr.length === 1 ? "" : "s"),
+    '<div class="dim" style="white-space:normal">The union frontier at the last scored bucket ('
+    + esc(ago(S.scorerFrontierBkt)) + '), sorted by ' + glTerm("sc-breadth", "funded-by breadth")
+    + ', descending — one cell is a curiosity, twelve is a finding about the item. Flow counts the cycles an item was '
+    + 'funded <b>this session</b>; stock counts the cells whose distinct-ever ledger carries it'
+    + (anyCapped ? ' — <b>a cell\'s ids stock is capped at ' + SCORER_ID_CAP + ' and at least one cell has hit the cap</b>, so stock reads low there (declared, never silent)' : '')
+    + '. Measurement only; no item actions exist here by design.</div>'
+    + '<div style="margin:4px 0">' + drill("sc:frontier:rows", fr.length + " items across the grid", {
+        head: "Union membership at the last scored bucket — which cells would fund each item, with session hour bands, session flow and distinct-ever stock",
+        cols: [{ k: "item", lab: "Item", html: 1 }, { k: "breadth", lab: "Funded by", num: 1, sortk: "breadthN" },
+               { k: "cells", lab: "Cells" }, { k: "hours", lab: "Hours (session)" },
+               { k: "flow", lab: "Cycles funded (session)", num: 1 }, { k: "stock", lab: "In stock of", num: 1, sortk: "stockN" }],
+        rows, empty: "No cell funded anything at this bucket — a real zero, not an unfed store." }) + '</div>'
+    + '<div class="dim" style="margin-top:4px">' + (blN
+      ? drill("sc:frontier:bl", blN + " blacklisted item" + (blN === 1 ? "" : "s") + " would qualify in ≥1 cell this bucket", {
+          head: "The canary's cycle view — counted as evidence against loose configs, NEVER members of the frontier, never funded, never simmed (your veto)",
+          cols: [{ k: "item", lab: "Item", html: 1 }],
+          rows: (S.scorerBlCycle || []).map(id => ({ item: scorerItemMark(id), _txt: itemName(id) })),
+          empty: "None." }) + ' — counted by the ' + glTerm("sc-canary", "canary") + ', never members here'
+      : 'No blacklisted item qualifies in any cell this bucket — the canary line, reporting its zero.') + '</div>');
+}
+/* §3 — delta memberships: the items one notch admits, names only; the
+   ECONOMICS of a delta stay behind the readiness verdict. */
+function scorerDeltaSection(){
+  const fr = S.scorerFrontier;
+  if (!fr) return scorerNoCycleFold("What one notch admits (delta memberships)");
+  const cellsAll = scorerConfigs();
+  const ctl = cellsAll.find(c => c.control);
+  const byCfg = (m, b) => cellsAll.find(c => !c.control && c.cfg.taxMult === m && c.cfg.volBase === b && c.cfg.roi === 1.2)
+    || cellsAll.find(c => c.cfg.taxMult === m && c.cfg.volBase === b && c.cfg.roi === 1.2);
+  const M = [3, 2, 1.5, 1, 0.5], B = [1000, 500, 250];
+  const anchorM = M.includes(ctl.cfg.taxMult) ? ctl.cfg.taxMult : 3;
+  const anchorB = B.includes(ctl.cfg.volBase) ? ctl.cfg.volBase : 1000;
+  const offAnchor = anchorM !== ctl.cfg.taxMult || anchorB !== ctl.cfg.volBase;
+  const memb = new Map(fr.map(f => [f.st.id, new Set(f.cells)]));
+  const admits = (tight, loose) => fr.filter(f => memb.get(f.st.id).has(loose.hash) && !memb.get(f.st.id).has(tight.hash));
+  const ready = scorerRankReadiness();
+  const pairs = [];
+  for (let i = 0; i < M.length - 1; i++){
+    const a = byCfg(M[i], anchorB), b = byCfg(M[i + 1], anchorB);
+    if (a && b) pairs.push({ lab: "taxMult " + M[i] + " → " + M[i + 1] + " (at b" + anchorB + ")", a, b });
+  }
+  for (let i = 0; i < B.length - 1; i++){
+    const a = byCfg(anchorM, B[i]), b = byCfg(anchorM, B[i + 1]);
+    if (a && b) pairs.push({ lab: "volume base " + B[i] + " → " + B[i + 1] + " (at m" + anchorM + ")", a, b });
+  }
+  const roiTight = cellsAll.find(c => c.cfg.taxMult === 0.5 && c.cfg.volBase === 250 && c.cfg.roi === 1.2);
+  const roiLoose = cellsAll.find(c => c.cfg.taxMult === 0.5 && c.cfg.volBase === 250 && c.cfg.roi === 1.0);
+  if (roiTight && roiLoose) pairs.push({ lab: "roi 1.2 → 1.0 (at m0.5 b250 — where the stated floor re-emerges)", a: roiTight, b: roiLoose });
+  const total = pairs.reduce((s, p) => s + admits(p.a, p.b).length, 0);
+  const lines = pairs.map((p, i) => {
+    const list = admits(p.a, p.b);
+    const rows = list.map(f => ({
+      item: scorerItemMark(f.st.id),
+      margin: gp(Math.round(f.st.eMargin)), marginN: f.st.eMargin,
+      roi: f.st.eRoi.toFixed(2) + "%", roiN: f.st.eRoi,
+      vol: full(f.st.volGate) + "/h", volN: f.st.volGate, _txt: itemName(f.st.id)
+    })).sort((a, b) => b.marginN - a.marginN);
+    return '<div style="margin:3px 0">' + esc(p.lab) + ' — '
+      + drill("sc:delta:" + i, "admits " + list.length + " item" + (list.length === 1 ? "" : "s"), {
+          head: "Items funded by the looser cell and not the tighter at the last scored bucket — membership only, names and market figures",
+          cols: [{ k: "item", lab: "Item", html: 1 }, { k: "margin", lab: "Post-tax margin", num: 1, sortk: "marginN" },
+                 { k: "roi", lab: "ROI", num: 1, sortk: "roiN" }, { k: "vol", lab: "1h vol (gate side)", num: 1, sortk: "volN" }],
+          rows, empty: "This notch admits nothing at this bucket — the two cells fund the same set." })
+      + ' · <span class="dim">net: ' + (ready.ready
+          ? 'delta economics not built — the econ panel below carries per-cell figures'
+          : '<b>cannot rank yet</b> — capture ungraded; the membership above is population arithmetic, not a return claim')
+      + '</span></div>';
+  });
+  return fold("What one notch admits — " + total + " delta membership" + (total === 1 ? "" : "s")
+      + " across " + pairs.length + " adjacent pairs",
+    '<div class="dim" style="white-space:normal">Ladders through the control\'s coordinates (taxMult at b' + anchorB
+    + ', volume base at m' + anchorM + ', plus the one ruled roi notch)'
+    + (offAnchor ? ' — the live control sits off these grid coordinates, so the ladders anchor at the nearest grid axis and say so' : '')
+    + '. ' + glTerm("sc-delta", "Delta membership") + ' is the ruled deliverable\'s membership half — available now; '
+    + 'its economics half waits behind the readiness verdict. At the last scored bucket ('
+    + esc(ago(S.scorerFrontierBkt)) + ').</div>' + lines.join(""));
+}
 function renderScorerView(){
-  const ss = S.scorerSurf;
-  if (!ss || (!S.scorerSurfBusy && Date.now() - ss.at > 60e3)) scorerSurfLoad();
+  scorerSurfEnsure();
   const cells = scorerConfigs();
   const ctl = DB.scorerT2[(cells.find(c => c.control) || {}).hash];
   const trips = S.scorerTrips ? S.scorerTrips.size : 0;
   $("#scorerVerdictSub").textContent = (ctl ? ctl.cycles : 0) + " cycles observed · " + trips
     + " open trips · measurement only";
-  setHTML("#scorerVerdict", scorerVerdictInline() + scorerStateLine());
+  setHTML("#scorerVerdict", scorerVerdictInline() + scorerStateLine()
+    + scorerCtlFundedSection() + scorerFrontierSection() + scorerDeltaSection());
   $("#scorerGridSub").textContent = cells.length + " cells (grid + control, deduped by hash) · flow and stock both first-class";
   setHTML("#scorerGrid", fold("Per-cell funded flow, stock, hour bands and the blacklist canary — every figure opens to its rows",
     scorerGridSection(), true));
@@ -9521,13 +9845,18 @@ function deltaVs(val, base, valLab, baseLab){
     + " under " + valLab + " than " + baseLab
     + "; " + baseLab + " itself is " + (b >= 0 ? "+" : "−") + gp(Math.abs(b));
 }
-/* EXTRACTED so the assertion has a term to point at. The tile that renders
-   this drives `buildPlan()` and `renderDeploy()` first, which re-stamps the
+/* EXTRACTED so the assertion has a term to point at. The tile that rendered
+   this drove `buildPlan()` and `renderDeploy()` first, which re-stamps the
    divergence ledger — so a fixture seeded into `DB.shadowDivLog` is overwritten
    by production accrual before the copy is built, and an assertion against the
    rendered tile tests the accrual rather than the sentence. Same reasoning as
    every other extraction here: assert the term, not the surface something
-   downstream can pin. */
+   downstream can pin.
+   NO PRODUCTION CALLER IN ANY ERA since the transitional nav refresh (Aug 14
+   2026) removed the Paper Book tile — its dormant-era caller was already gated
+   with the race (R81.4); an un-retire ruling must now also name this term's
+   render home, and the gated [R65.1] assertions keep it proven until then
+   (scan-13 status: direct-call, caller named as that pending ruling). */
 function paperDivLead(dv){
   if (!dv) return "no divergence data";
   const dl = Math.round((dv.loose || 0) - (dv.cur || 0)), dt = Math.round((dv.tight || 0) - (dv.cur || 0));
@@ -18080,6 +18409,23 @@ const GLOSSARY = [
     do: "Read a cell's funded-per-cycle average only WITH its hour extremes (rendered beside it) — the average pools "
         + "24 bands that answer different questions, and today's config funds ~3× more at the evening peak than the "
         + "morning trough." },
+  { id: "sc-breadth", term: "Funded-by breadth", aka: "funded by M of 16 cells",
+    what: "How many of the grid's cells would fund an item at one scored bucket. The ruled structure metric of the "
+        + "frontier browser: one cell is a curiosity, twelve is a finding about the item — breadth says whether an "
+        + "item's qualification is robust to the constants or an artifact of one corner of the grid.",
+    from: "The per-item cell memberships collected at each scoring cycle; the browser sorts by it and shows which "
+        + "cells beside the count.",
+    do: "Nothing directly — membership arithmetic, not a ranking (rankings wait on capture grading). It is context "
+        + "for the cutover ruling: a control-funded item with breadth 1 is fragile evidence; a broad item the control "
+        + "misses is the loosening conversation's raw material." },
+  { id: "sc-delta", term: "Delta membership", aka: "what one notch admits",
+    what: "For an adjacent pair of grid cells on one axis (taxMult step, volume-base step, the one roi notch): the "
+        + "named items the LOOSER cell would fund that the tighter one would not, at the last scored bucket. The "
+        + "membership half of the ruled delta-table deliverable — its economics half stays behind the readiness "
+        + "verdict and renders as the cannot-rank words until capture grades.",
+    from: "Per-item cell memberships at the scoring cycle, laddered through the control's grid coordinates.",
+    do: "Read it to see what a constant change would ADMIT — names and market figures, never a return claim. Any "
+        + "actual loosening is a strategy ruling and lands through the cutover machinery, not from this list." },
   { id: "sc-lifecycle", term: "Capture lifecycles",
     what: "Each trip runs THREE independent lifecycles, one per capture point {0.05, 0.15, 0.30} — not three readings "
         + "of one trip. Capture moves how fast the buy completes, buy completion anchors the sell window, and the sell "
@@ -18152,6 +18498,16 @@ const GLOSSARY = [
         + "is wrong. A gate moves only on realized evidence with the screen concurring.",
     caveat: "Renamed from \"shadow book\" in Aug 2026 to stop it colliding with the Shadow Fund (real capital). Persisted "
           + "keys still read <code>shadow*</code> in code and exports; that is the same thing." },
+  { id: "plumb-line", term: "Plumb line (cutover reference)", aka: "the cutover's plumb line",
+    what: "A measurement kept running not to trade from but to check the eventual pool cutover against. Two exist and "
+        + "the term covers both: the PAPER BOOK (the fill-model reference — does the edge survive honest fills, under "
+        + "the same shared fill core the scorer's sim uses) and the RECONCILIATION DIFF (control-vs-plan disagreement "
+        + "history, one row per scored bucket).",
+    from: "The paper book's ledger and the rdiff store — both accrue continuously; neither admits, funds or caps "
+        + "anything. The qualifier on the Paper Book header was ratified Aug 14 2026 with the transitional nav.",
+    do: "Nothing directly — context for the CUTOVER ruling: the pool switch is gated on reconciliation history being "
+        + "explained, and these are the records that history is read from. When either stops accruing, the cutover "
+        + "gate's evidence stops with it." },
   { id: "paper-participation", term: "Participation haircut", aka: "at 50% participation, the 100% reading",
     what: "A simulated buy is credited only when the tape actually printed at or below your bid, capture-capped, and then "
         + "cut to your participation setting (default 50%) — because you are one buyer among many, not the whole market. "
@@ -18733,11 +19089,14 @@ const GLOSSARY = [
     do: "Run it quarterly and ratify the demotions. It is the mechanism that catches surfaces you stopped using — "
         + "including, on its last run, several that had gone unread for a week." },
   { id: "gov-friction", term: "Friction note", aka: "open, exported, handled",
-    what: "A one-line complaint captured where it happened. Open notes render; copying them as markdown stamps them "
-        + "EXPORTED; handled or swept notes move to a collapsed disclosure.",
-    from: "The ✎ note friction button, timestamped with where you were.",
-    do: "Write them without editing yourself. A clean review leaves this section saying \"no open friction notes\" rather "
-        + "than re-showing history." },
+    what: "A one-line complaint captured where it happened. Open notes render; carrying them out of the app — the "
+        + "⭳ friction export (an <code>analysis-friction</code> file the desk folds into FRICTION.md) or the markdown "
+        + "copy — stamps them EXPORTED; handled or swept notes move to a collapsed disclosure. Exported is a mark, "
+        + "never a deletion: clear exported is the one explicit sweep.",
+    from: "The ✎ note friction button (global footer, every tab), timestamped with where you were. The export rides "
+        + "the same ⭳ analysis bus as every pull surface and lives behind the same ✎ button.",
+    do: "Write them without editing yourself, and export from the phone whenever the file is easier than the desk. A "
+        + "clean review leaves this section saying \"no open friction notes\" rather than re-showing history." },
   { id: "gov-handoff", term: "The human carries the file",
     what: "Where the browser and the repo cannot reach each other, you move the file: <code>intelligence.json</code> in, "
         + "<code>flags-pending.json</code> out.",
@@ -19320,14 +19679,15 @@ function renderRoutine(){
       const open = DB.frictionLog.filter(f => !f.res);
       const resolved = DB.frictionLog.filter(f => f.res);
       const noteLine = f => esc(f.d) + ' <span class="badge b-ok">' + esc(f.ctx) + '</span> ' + esc(f.text)
-        + (f.exp ? ' <span class="badge b-tax" title="Copied as markdown ' + ago(f.exp) + ' — carried to FRICTION.md. Clear exported sweeps it to resolved.">exported</span>' : '');
+        + (f.exp ? ' <span class="badge b-tax" title="Carried out of the app ' + ago(f.exp) + ' (markdown copy or friction export) — bound for FRICTION.md. Clear exported sweeps it to resolved.">exported</span>' : '');
       inline = '<div class="inline">' + (open.length
         ? open.map(f => '<div class="dim">' + noteLine(f)
             + ' <button class="sm ghost" data-fricdone="' + f.t + '" title="Mark handled — moves to the resolved disclosure.">✓ handled</button></div>').join("")
-          + '<div style="margin-top:4px"><button class="sm" data-fricopy="1" title="Copies every OPEN note as markdown for FRICTION.md and stamps them exported.">copy all as markdown</button>'
+        : '<div class="dim">No open friction notes.</div>')
+        + '<div style="margin-top:4px"><button class="sm" data-analysis="friction" title="Downloads analysis-friction-&lt;date&gt;.json: every note never before carried out of the app — open and resolved alike. Carried notes are stamped exported, never deleted; the desk folds the file into FRICTION.md.">⭳ export for FRICTION.md</button>'
+          + (open.length ? ' <button class="sm" data-fricopy="1" title="Copies every OPEN note as markdown for FRICTION.md and stamps them exported.">copy all as markdown</button>' : '')
           + (open.some(f => f.exp) ? ' <button class="sm" data-fricsweep="1" title="Sweeps every already-exported note to resolved in one tap.">clear exported</button>' : '')
           + '</div>'
-        : '<div class="dim">No open friction notes.</div>')
         + (resolved.length
           ? '<details style="margin-top:4px"><summary class="dim" style="cursor:pointer">resolved (' + resolved.length + ')</summary>'
             + resolved.slice(-20).reverse().map(f => '<div class="dim">' + noteLine(f) + '</div>').join("") + '</details>'
@@ -19661,14 +20021,13 @@ function renderHomeVitals(){
     ? P.pass.length + " pass · " + P.picks.length + " funded · "
       + (pool > 0 ? Math.round(P.deployed / pool * 100) : 0) + "% deployed"
     : "no data yet";
-  const sb = DB.shadowBook || [];
-  const sbOpen = sb.filter(p => p.state === "open").length;
-  const sbClosed = sb.length - sbOpen;
-  /* Dormant race (Aug 14 2026): the tile drops the regime-lead clause — a
-     frozen delta re-rendered daily would be a static claim posing as a
-     reading. Open/closed counts are the tile's live content. */
-  const dv = (DB.shadowDivLog || []).slice(-1)[0];
-  const lead = REGIME_RACE_RETIRED ? null : paperDivLead(dv);
+  /* TRANSITIONAL NAV (ruled Aug 14 2026): the Paper Book tile yielded its
+     slot to the Scorer — the chrome presents the ruled dichotomy, what would
+     my rules find in the market (Scorer) vs what is my actual trading doing.
+     The paper book's own figures render on its sub-tab surface header; the
+     scorer tile's copy comes from scorerTileLine(), its one source term, and
+     its chart-gate figure fills in when the async archive read lands. */
+  scorerSurfEnsure();
   const open = sleeveOpenPositions();
   let rung = "no price rungs";
   let bestR = null;
@@ -19714,10 +20073,9 @@ function renderHomeVitals(){
     + '</div><div class="v">' + v + '</div></div>';
   setHTML(box,
       vit("Funnel", esc(funnel), "watch#deployPanel",
-        "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel with first-fail attribution.")
-    + vit("Paper book", sbOpen + " open · " + sbClosed + " closed" + (lead ? " · " + esc(lead) : "")
-        + ' <span class="dim">(30d, simulated)</span>', "paper#paperRegimePanel",
-        "Counterfactual book — all simulated, a screen ranking probation candidates, not evidence. Click for the Paper Book surface, where every number opens to its trips.")
+        "Candidates → funded, and how much of the tier pools is deployed. Click for the full funnel — leave-one-out attribution leads (relax one gate alone and this many clear); its first-fail partition is labelled as ordering, not cause.")
+    + vit("Scorer", esc(scorerTileLine()), "scorer#scorerVerdictPanel",
+        "The universe scorer: rank-readiness, chart-gate observed-day accrual toward the 7 needed, and the funded frontier's size at the last scored bucket. A measurement instrument — it admits, funds and caps nothing. Click for the Scorer surface, where every figure opens to its rows.")
     + vit("Sleeve", open.length + " position" + (open.length === 1 ? "" : "s") + " · " + esc(rung) + " · " + esc(cat),
         "sleeve#sleevePanel",
         "Catalyst positions: nearest exit rung and nearest catalyst window. Click for the sleeve.")
@@ -20875,8 +21233,44 @@ function analysisScorer(){
       lifecycles: p.vars.map(v => ({ capture: v.cap, state: v.state, buyQ: v.buyQ, sellQ: v.sellQ })) })),
     closedTrips: ss && ss.t1Rows ? ss.t1Rows : "not loaded — see header.truncations.closedTrips" };
 }
+/* ═══ FRICTION EXPORT (ruled Aug 14 2026) — the missing leg of a loop that
+   already existed: capture (✎ note friction, global footer) and the weekly
+   reader were built Aug 10–11; the only path out of the app was a clipboard
+   copy buried in the review checklist, which a phone cannot usefully reach.
+   This rides the EXISTING analysis bus — no new infrastructure. The builder
+   is READ-ONLY (probes call it freely); the carry stamp rides the export
+   press via frictionMarkCarried, the same `exp` field the markdown copy path
+   stamps — one flag, one meaning: carried out of the app for FRICTION.md.
+   Carried is a MARK, never a deletion (M152): "clear exported" in the weekly
+   review remains the one explicit sweep. The desk folds the collected file
+   into FRICTION.md, entries dated from their capture timestamps. */
+function analysisFriction(){
+  const all = DB.frictionLog || [];
+  const rows = all.filter(f => !f.exp);
+  return {
+    header: {
+      view: "friction",
+      generatedAt: new Date().toISOString(),
+      generatedOn: today(),
+      counts: { total: all.length, carriedBefore: all.filter(f => !!f.exp).length,
+                resolvedInApp: all.filter(f => !!f.res).length, inFile: rows.length },
+      claims: "Entries never before carried out of the app (no exported stamp) — open and resolved alike, because a "
+        + "note handled in-app still belongs in the desk file's record. Exporting stamps them exported in the app; "
+        + "nothing is deleted. The desk folds this file into FRICTION.md dated from the capture timestamps below.",
+      truncation: "none — every un-carried entry is included"
+    },
+    entries: rows.map(f => ({ t: f.t, at: new Date(f.t).toISOString(), d: f.d, ctx: f.ctx, text: f.text,
+                              resolvedAt: f.res ? new Date(f.res).toISOString() : null }))
+  };
+}
+function frictionMarkCarried(now){
+  let n = 0;
+  for (const f of (DB.frictionLog || [])) if (!f.exp){ f.exp = now; n++; }
+  save();
+  return n;
+}
 const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting, scorer: analysisScorer,
-  calibration: analysisCalibration };
+  calibration: analysisCalibration, friction: analysisFriction };
 function analysisPayload(view){
   const build = ANALYSIS_BUILDERS[view];
   if (build) return build();
@@ -20888,7 +21282,12 @@ function analysisPayload(view){
 }
 function analysisExport(view){
   const name = ANALYSIS_BUILDERS[view] ? view : "all";
-  const file = "analysis-" + name + "-" + today() + ".json";
+  /* Friction files are time-suffixed: successive exports carry DISJOINT
+     entries (only never-before-carried notes), so two on one day are two
+     different files, never overwrite-equivalents — and the desk collector
+     treats the class as accumulating for the same reason. */
+  const hm = name === "friction" ? "-" + new Date().toISOString().slice(11, 19).replace(/:/g, "") : "";
+  const file = "analysis-" + name + "-" + today() + hm + ".json";
   const blob = new Blob([JSON.stringify(analysisPayload(view), null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -20896,6 +21295,15 @@ function analysisExport(view){
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   featTouchMark("analysis-export");
+  if (name === "friction"){
+    /* The stamp rides the press, AFTER the payload is built (the builder
+       filters on the same field). A mark, never a removal. */
+    const n = frictionMarkCarried(Date.now());
+    rerenderCk();
+    toast(file + " downloaded — " + n + " note" + (n === 1 ? "" : "s") + " stamped exported, none deleted. "
+      + "The desk folds it into FRICTION.md on the next sweep; clear exported (weekly review) is the explicit sweep here.");
+    return;
+  }
   toast(file + " downloaded — its header states what was in force and what was truncated. "
     + "Paste it to an analyst; this is the READ export, not the state backup.");
 }
@@ -20987,9 +21395,15 @@ function prospectVerdict(){
 }
 function renderPaperView(){
   const closed = paperClosed();
-  $("#paperRegimeSub").textContent = closed.length + " closed trip" + (closed.length === 1 ? "" : "s")
+  /* The open · closed read lived on the Home tile until the transitional nav
+     refresh (Aug 14 2026) re-awarded that slot to the Scorer; the paper
+     book's own figures render here, on its own surface header. The era
+     qualifier is RATIFIED (Aug 14 2026): header, not tab — the tab label and
+     persisted keys do not move. */
+  const openN = (DB.shadowBook || []).filter(p => p.state === "open").length;
+  setHTML("#paperRegimeSub", openN + " open · " + closed.length + " closed trip" + (closed.length === 1 ? "" : "s")
     + " · " + ((DB.shadowDivLog || []).length) + " daily reading" + ((DB.shadowDivLog || []).length === 1 ? "" : "s")
-    + " · simulated throughout";
+    + " · simulated throughout · " + glTerm("plumb-line", "the cutover's plumb line"));
   $("#paperGateSub").textContent = shadowByGate().size + " gate" + (shadowByGate().size === 1 ? "" : "s")
     + " with closed outcomes — every cell opens to its trips";
   /* Verdict first; the machinery folds behind labels that say what opening
@@ -21975,7 +22389,14 @@ function validateImport(d){
   const frictionLog = (Array.isArray(d.frictionLog) ? d.frictionLog : []).map(f => {
     const t = num(f && f.t), tx = String((f && f.text) || "").trim();
     if (!(t > 0) || !tx) return null;
-    return { t, d: String(f.d || "").slice(0, 10), ctx: String(f.ctx || ""), text: tx };
+    const o = { t, d: String(f.d || "").slice(0, 10), ctx: String(f.ctx || ""), text: tx };
+    /* THE CARRY PRESERVES THE LIFECYCLE (fix, Aug 14 2026 — found while
+       building the friction export): this sanitizer used to rebuild rows
+       without `exp`/`res`, so a state-backup restore silently revived
+       carried and handled notes as open. Absent stays absent. */
+    if (num(f.exp) > 0) o.exp = num(f.exp);
+    if (num(f.res) > 0) o.res = num(f.res);
+    return o;
   }).filter(Boolean).slice(-300);
   const tlSeen = new Set();
   const touchLog = (Array.isArray(d.touchLog) ? d.touchLog : []).map(t => {

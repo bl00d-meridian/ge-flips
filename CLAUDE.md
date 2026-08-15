@@ -604,10 +604,18 @@ The ≤7 walk-up bound is BINDING and probe-asserted. The rest of this section i
 
 ---
 
-## Surface map (Aug 11 2026; Scorer added Aug 14 2026)
+## Surface map (Aug 11 2026; Scorer added Aug 14 2026; transitional nav ruled Aug 14 2026)
 
-Four tabs — Home, Trade, Sleeve, Review. Trade carries seven sub-views: **Plan & Watchlist**,
-**Scanner**, **Flip Log**, and the pull surfaces — **Paper Book**
+Four tabs — Home, Trade, Sleeve, Review. **The transitional nav (ruled Aug 14 2026)
+presents the ruled dichotomy** — what would my rules find in the market (Scorer) versus
+what is my actual trading doing (plan, log, capital): Home's header tiles are FUNNEL ·
+SCORER · SLEEVE · CAPITAL (the Paper Book tile yielded its slot; its open · closed read
+lives on the paper surface header), and the Trade sub-tab row runs **Plan & Watchlist ·
+Flip Log · Scorer · Paper Book · Gate Health · Scanner · Prospecting** — my-trading
+first, the instruments with the Scorer promoted, and the two cutover-era retirement
+candidates last, subdued but fully live. The full consolidation to Scorer / Book /
+Sleeve is a cutover-era change, deliberately not built. Trade's seven sub-views: **Plan
+& Watchlist**, **Scanner**, **Flip Log**, and the pull surfaces — **Paper Book**
 (the overnight-vs-daytime comparison added Aug 13 2026, per-gate outcomes, fill-model
 calibration, and the regime race's historical curves and divergence ledger — **the race
 retired to the dormancy lane Aug 14 2026** by user ruling, superseded by the scorer's
@@ -1414,6 +1422,7 @@ it, and deletes that class's older members from Downloads:
 | Class | Lands in |
 |---|---|
 | `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-scorer-*` · `analysis-all-*` | `inbox/` |
+| `analysis-friction-*` | `inbox/` — **ACCUMULATING class** (Aug 14 2026): successive exports carry disjoint entries (only never-before-carried notes), so the sweep moves EVERY member and deletes nothing but byte-identical duplicates; keep-newest would destroy notes the app has already stamped exported |
 | `ge-flips-*` (state backup) | `inbox/` |
 | `flags-pending*` | `briefings/` — **unchanged**, because the briefing procedure reads it there by name |
 
@@ -1445,6 +1454,16 @@ the user presses export for while working, which is most of them.
 
 **Run it without being asked** whenever the user mentions exporting or dropping a file, and
 **before reading any export** — the copy in `inbox/` may be older than what is in Downloads.
+
+**Friction exports get folded, in the same pass that collects them** (standing
+instruction, Aug 14 2026): when the sweep lands an `analysis-friction-*` file in
+`inbox/`, fold its entries into `FRICTION.md` in that same session pass — into the live
+queue above the Resolved section (or the Resolved section, for entries carrying
+`resolvedAt`), **dated from their capture timestamps** (`at`/`d` in the file, never the
+collection time), in the file's existing entry format (`- YYYY-MM-DD HH:MM [ctx] text`).
+Report the fold (how many entries, from which file), then delete the folded file from
+`inbox/` — the fold is the record, and the in-app `exported` stamp already marks the
+notes as carried. An unfolded friction file left in `inbox/` is work owed, not archive.
 
 **The hooks are local and the script is tracked.** `.claude/*` is gitignored by standing
 rule, so the hooks live in `.claude/settings.json` on this machine only; the behaviour is

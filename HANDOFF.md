@@ -32,13 +32,102 @@ findings and the paper book's own retirement land there); MM un-bench decision; 
 label-claim scan, written into CLAUDE.md, never executed); the production-anchor
 `codeQuote` schema for future censuses.
 
+**Conditionally pre-approved (user ruling, Aug 14 2026 — trigger is the user's
+real-phone look, nothing else):** the **390px wrap-and-minmax display pass**, exactly
+as scoped in `audits/NAV-2026-08-14-transitional-chrome.md` §11 — ~a dozen CSS rules
+(header/controls flex-wrap, `.funrow` minmax, audited `min-width` reductions), an
+offender-walk assertion at true 390, the ~518 ruled runs unchanged. **IF the phone
+shows horizontal clipping → build it, no further ruling needed. IF the phone renders
+like the ruled runs (~518 effective) → skip it and close the observation as
+device-dependent, not-reproduced-on-target-hardware** — record the closure in the
+report and strike this trigger. Scope is the fence: anything beyond the scoped dozen
+rules is a new proposal, not this approval.
+
 **Queued behind capture calibration:** the sleeve integration stages — the conformance
 gate applies identically, and the conviction-boundary detector ships with the first
 planner surface. Only the 90d retention extension may ride early.
 
 ---
 
-# SESSION CLOSE — 2026-08-14 (fourth session: the two retirements + the sleeve landing)
+# SESSION CLOSE — 2026-08-14 (fifth session: transitional nav + friction export + item visibility)
+
+**Third pass (same day, ruled): SCORER ITEM VISIBILITY** — the surface names what the
+instrument sees (report part 3, §13–§17). Suite at final close: **PROBE-PASS — 1,100
+assertions, BOTH viewports, pairing clean, 390 requirement ids; 34 discriminating
+seeds this session (S1–S34), all bit, one at a time.** Deployment: **DEPLOY-CHECK3
+clean** — first real bucket at 0.5s, the control funding **8 named items** (Armadyl
+chaps, 20k margin), the frontier browser **129 named items** (Amethyst dart(p+) at
+16-of-16 breadth), 87 delta memberships across 7 notch pairs with the cannot-rank
+words standing where nets would render, 8 named rdiff disagreements.
+
+- Four sections under the verdict (all closed disclosures, counts on labels,
+  label-reconciles-to-rows asserted both directions): the **control cell's funded
+  set** (named, sorted by stated figure, full gate detail per item), the **frontier
+  browser** (`sc-breadth` — bl items only ever the canary line, pump ⚑ inline), the
+  **delta memberships** (`sc-delta` — membership now, economics behind the readiness
+  verdict), and the **rdiff named-disagreements window** (informational; rdiff stays
+  STAGED for the cutover gate).
+- **`marketGateEval` is the one gate evaluator; `marketGateFails` derives from it**
+  (§84.6) — behavior-identical, §74 still pins the chain, the ROI null limb still
+  fails, momentum fails still carry `have:null`.
+- Display readouts only; no persisted store added; session per-item history is S.*
+  and labelled "this session"; **no item actions anywhere** (button census asserted —
+  viewing is not proposing; admission is the cutover's).
+
+**Uncommitted — the user commits after the phone look, which now includes trying the
+✎ friction capture-and-export cold.** Record:
+`audits/NAV-2026-08-14-transitional-chrome.md` (both passes). Suite at close:
+**PROBE-PASS — 1,087 assertions, BOTH viewports, pairing clean both directions, 384
+requirement ids; 24 discriminating seeds (S1–S24), all bit, one at a time,
+restore-green between.** Deployments: **DEPLOY-OK at 0.5s** (chrome — 145-item
+frontier on the tile at the first real bucket) and **DEPLOY-CHECK2 clean** (a phone
+boot logging a friction note through the real UI and exporting it, cold).
+
+**Second pass (same day, both §3 proposals RATIFIED as recommended):**
+
+- **Prospecting: leave until cutover — decision-logged** (`prospectHoldLog`, once per
+  store, `auto:1, by:"user"`) so the cutover consolidation inherits a DECIDED item
+  (`[R82.3]`).
+- **Paper Book era qualifier applied: header, not tab** — `#paperRegimeSub` ends
+  "· the cutover's plumb line", glossed from the new `plumb-line` entry which covers
+  BOTH referents the phrase already had (paper book + rdiff) as one concept; the
+  scorer verdict's occurrence marks from the same entry (`[R82.4]`).
+- **The friction export shipped** (§83) — the missing leg of the Aug 10–11 loop:
+  `analysis-friction-<date>-<hhmmss>.json` on the existing analysis bus, read-only
+  builder, carry stamp (`exp`, the same field the markdown copy uses) rides the press,
+  never deletes; chips inside the global ✎ disclosure and in the weekly friction step.
+  **ACCUMULATING collector class** (`sweep_accum` in sweep.sh — disjoint contents,
+  keep-newest would destroy carried notes); **desk folds collected files into
+  FRICTION.md dated from capture timestamps** (standing instruction in CLAUDE.md).
+  Live defect fixed on the way: the import sanitizer dropped `exp`/`res`, reviving
+  carried notes on restore (`[R83.4]`). `frictionLog`'s partition-register row added
+  to the conformance map.
+- **The 390px overflow SCOPED, not built — and the pass is PRE-APPROVED as scoped,
+  conditional on the phone look** (report §11; trigger recorded in the waiting
+  posture at the top of this file): clipping on the real phone → build it as scoped,
+  no further ruling; ~518-like rendering → skip and close as device-dependent,
+  not-reproduced-on-target-hardware.
+
+- **Header tiles are FUNNEL · SCORER · SLEEVE · CAPITAL** — the Paper Book tile yielded
+  its slot; its open · closed read moved to the paper surface header (`[R65.1]` dormant
+  form). The scorer tile renders `scorerTileLine()`, its one source term (`[R82.2]`,
+  five seeded states); the funnel tooltip's stale first-fail claim was corrected.
+- **Trade sub-tab row**: Plan & Watchlist · Flip Log · Scorer · Paper Book · Gate
+  Health · Scanner · Prospecting, with `.sunset` subduing exactly the two cutover-era
+  retirement candidates (`[R82.1]`, computed-opacity both states).
+- **`paperDivLead` has no production caller in any era now** — the gated `[R65.1]` live
+  branch is an un-retire tripwire: a deliberate red forcing the un-retire ruling to name
+  the divergence lead's render home.
+- **Two proposals AWAITING RULING** (report §3, nothing applied): Prospecting's
+  disposition (recommend: leave until cutover) and the Paper Book era qualifier
+  (recommend: header sub gains "· the cutover's plumb line"; tab label unchanged).
+- **FRICTION.md queue was empty**; the two `_pending_` hashes resolved to `b9c8add`.
+- **Observation, pre-existing (baseline-verified):** at TRUE 390 CSS px
+  (`--force-device-scale-factor=1`) the page overflows horizontally; the ruled phone
+  runs render at ~518 CSS px where the layout fits. Not introduced here; a fix would be
+  its own display pass, if the real-phone look warrants one.
+
+# PRIOR SESSION — 2026-08-14 (fourth session: the two retirements + the sleeve landing)
 
 **Committed and pushed in `f0bf448`** — the record is
 `audits/RETIRE-2026-08-14-dormancy.md`. Suite at close: **PROBE-PASS — 1,061
