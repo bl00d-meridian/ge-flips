@@ -297,8 +297,11 @@ rulings, not six, if that is easier.
      thresholds a verdict that carries a caution that carries a haircut — three steps — and it is IN,
      with `pumpWindowD` and `pumpThinGp`, which are the same shape. They move together or not at all.
 
-   **THE DECIDED LIST — ruled Aug 20 2026. The build reads this; it does not re-derive it.** The
-   settings save table carries **29** keys. **25 material, 4 not.**
+   **THE DECIDED LIST — ruled Aug 20 2026, and RATIFIED IN FULL the same day. The build reads this;
+   it does not re-derive it.** The settings save table carries **29** keys. **25 material, 4 not.**
+   Nothing below is open. Where a line records who decided what, that is provenance rather than
+   hedging — the classification was arrived at two ways and a later pass should be able to tell
+   which entries were the user's own rulings and which were extensions the user then approved.
 
    *MATERIAL (25) — every one of these logs its before value:*
    `slots` · `reserve` · `shadowReserve` · `t1Budget` · `t2Budget` · `partCapPct` · `minExpectGp` ·
@@ -319,19 +322,23 @@ rulings, not six, if that is easier.
    threshold and the minimum history for `cohRecordAndPropose`, so they decide **whether a cluster
    exists at all** — and a confirmed cluster carries `clusterCapPct`, which changes the sized number.
    That is `markoutX`'s shape exactly, and leaving them out after ruling `markoutX` in would classify
-   by distance, which is the thing the ruling rejected. **One distinction, stated so it can be
-   overruled:** a cluster requires a user press to confirm, where a caution's haircut auto-applies.
-   If an intervening press breaks the chain, these two come out — and `markoutX` should be re-examined
-   on the same grounds.
+   by distance, which is the thing the ruling rejected. **RATIFIED — they are IN, and the intervening
+   press does not break the chain.** The distinction was raised and settled: a cluster requires a user
+   press to confirm where a caution's haircut auto-applies, and that difference was ruled not to
+   matter, which means **the test is the effect on the number and a press in the path is still
+   distance.** That is the same answer `markoutX` got, and it is now the settled reading of the test
+   rather than two rulings that happen to agree.
 
    *NOT MATERIAL (4), each with what was actually traced:*
    - `shadowPartPct` — paper book only; no real capital moves.
    - `sleeveExitLiqPct` — `exitLiqWarn` produces a badge and a message that ends *"saved anyway, your
      call"*. **It warns and does not block**, so it changes no number.
    - `catWinTightenD` → `activeCatalystWindow()`, `briefTightStaleD` → `briefReminderInfo()`. A
-     posture flag and a reminder. **Neither was traced to a sized number in this read**, which is the
-     honest limit of the check — if `activeCatalystWindow` reaches sizing, they come IN and this note
-     is where to overturn it.
+     posture flag and a reminder. **Neither was traced to a sized number in this read**, and that is
+     the honest limit of the check rather than a finding. **Ratified OUT on that basis** — so if the
+     build finds `activeCatalystWindow` reaching sizing, the ratification rested on a trace that was
+     incomplete and these come IN without needing a fresh ruling. **The one open thread in this
+     entry, and it is a thread in the evidence rather than in the decision.**
 
    **COVERAGE — five writers sit outside the settings table. Decided:**
    - **`DB.touchWindows` and `DB.scoutOn` are material and this mechanism CAN reach them — no separate
