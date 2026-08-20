@@ -63,6 +63,33 @@ Two structural consequences of the same audit:
   rule is widened, the audit scan that checks it is extended in the same commit, or the
   rule moves to DOCTRINE.
 
+## Reports are written in plain language (standing instruction, user ruling, Aug 19 2026)
+
+**This governs the chat report and the surfaces the user reads. It changes nothing about how the
+work is done:** the case law keeps its names in the code, in MISTAKES.md and in the audit files.
+
+**The problem it fixes.** Reports had become a private language. *"The ninth face bit on a never-fed
+aggregate downstream of a clamp"* is precise and decodable, and decoding it costs the attention that
+should go to the decision. Worse, **shorthand hides thin reasoning**: a phrase that names a category
+can stand in for the sentence that would have shown whether the category actually applies.
+
+1. **Say what happened before naming the class it belongs to.** *"The test passed even with the guard
+   deleted, because the test item never matched the pattern the guard checks"* — then, if it helps,
+   the label in parentheses. **Never the label alone.**
+2. **No numbered faces in prose.** Write the mechanism. If an entry needs a tag for MISTAKES.md, the
+   tag goes there, not in the sentence.
+3. **Requirement ids and constants are fine** — `[R76.9]` and `SCORER_CAPTURE_GRADED` are real names
+   for real things — but **say what the assertion checks the first time you cite it** in a report.
+4. **Assume the reader has not opened the audit file.** A report should be readable on a phone by
+   someone who has been away for a day.
+5. **Keep it short: what shipped, what it changes for me, what is owed.** If something needs a
+   ruling, state the decision and what each option costs, in one paragraph.
+6. **Where a term of art is the only short true statement, use it and gloss it in four words.**
+
+**What this does NOT license.** Do not simplify the work, the verification, or the honesty. **A
+caveat is content** — never drop one to shorten a sentence. Keep reporting what is owed, what is
+unverified, and what could not be checked. **Plain language means fewer labels, not fewer facts.**
+
 ## The two layers, and the bar between them (user ruling, Aug 13 2026)
 
 [MISTAKES.md](MISTAKES.md) is the **evidence layer**: every incident on record, newest
@@ -229,6 +256,58 @@ soften these in code or copy.
   the same shape as the restraint-lift and clamp scans; and mechanically for the
   render-coupling sub-class, `[R34.1]`, which drives accrual with every tab and sub-view
   active and with no render at all.
+- **One question, one term. Two pieces of code answering the same question with separate
+  arithmetic will drift, and the drift is invisible from either side** (BINDING Aug 19
+  2026, user ruling — **three instances in four adversarial passes**, which clears the
+  count limb, with **scan 17** as its detector). This is a named sub-class of *correct
+  parts do not compose*, separated because its instances have a single recognisable shape
+  and a single repeated fix. **The property: where two call sites decide the same thing,
+  exactly one of them owns the answer and the other reads it. A pair kept in agreement by
+  maintenance is a pair that will disagree**, and the disagreement surfaces as a region of
+  the input space where one side acts on a verdict the other side could not reach.
+  Each instance was found by a reader, not by a test, because **each side is individually
+  correct and each side's assertions pass**: the defect exists only in the relationship,
+  which is exactly the composition shape, and the count is what earned it its own entry.
+  - **The readiness mask and its four consumers** (`[R99.3]`, second pass). The
+    *"chart still loading"* mask fired on `tr == null` — the shallowest of four different
+    minima — while drift needed 24 points and volume-trend 48. A 20-point series therefore
+    **lifted the mask with drift unknown and nothing benching it**, which is the failure the
+    mask existed to prevent, arriving from the other side. Fixed by `SERIES_MIN` owning the
+    four thresholds, and `[R102.6]` checks each consumer at its own boundary and one below.
+  - **The two history gates stopped being a partition** (M164, third pass). One gate gained
+    `ser.src === "none"`; the other kept suppressing itself on `!(sp && sp.noData)`. The
+    region *empty `/timeseries` · archive has entries · series not ready* benched on
+    **neither**, so trend, volume trend, momentum and drift all passed unread. Fixed by
+    making the suppression the same named term the first gate fires on.
+  - **The scout's eviction guard and the gate chain** (`[R102.2]`, fourth pass). The guard
+    called an item judged at **3** finite points while the chain benched it unreadable until
+    **24**. An item in that window was evictable *and* benched on a verdict the chain could
+    not reach, so it never refreshed its pass timestamp and was removed after 48 hours for
+    *"no full-gate pass"* — a verdict with no trial behind it. Fixed by `historyVerdict`
+    owning all three answers, with `judged` the exact complement of the two benches.
+  **The fix is the same every time and it is the rule: extract the question into one named
+  term, and make every other site call it.** Not "keep them in sync", which is the state
+  that produced all three.
+  **A fourth instance, one step weaker, because the two sites were two WRITERS rather than
+  two readers:** `exceptionEvidence` and the import validator each decided what counts as a
+  valid gate name, and only one enforced it (`[R101.5]`). Recorded here because it is the
+  same property and the same fix — same test and same list at both — and because a writer
+  pair is where the constitution's own *pick one owner* rule was already pointing.
+  Detector: **scan 17** below, the two-owner scan, whose enumeration is the deliverable in
+  the same shape as the restraint-lift, clamp, seam and consumer-anchor scans.
+  **The mechanical half was MEASURED and rejected, and the measurement is why this rule is
+  an enumeration rather than a grep** (Aug 19 2026). The obvious candidate — *find every
+  expression compared against two different numeric literals* — runs over `index.html` in
+  one line and returns **84 groups from 1,141 numeric comparisons**. Read, they are almost
+  entirely legitimate: `pts.length` against 5 and against 24 is momentum and drift
+  **correctly** disagreeing, and the rest is noise from one-letter variable names. Worse,
+  its recall on the instances above is **zero for the two that can be checked** — the second
+  and third bullets' conditions contain no numeric literal at all (`ser.src === "none"`,
+  `!(sp && sp.noData)`, `tr == null`), so no literal-comparison scan could see them; the
+  first bullet's pre-fix expression is not recoverable, because the tree is uncommitted and
+  that intermediate state never reached `HEAD`. **The drift was between two differently
+  PHRASED predicates every time, not between two constants**, and no textual key joins
+  those. So the check is a read, and the enumeration is what makes the read auditable.
 - **A long-lived client detects and reports its own staleness** (BINDING Aug 13 2026 —
   four recorded instances, MISTAKES.md M004, M005, M057, M061). **The property: a freshness
   claim states the age of the thing it names, not of the fetch that carried it, and a
@@ -440,6 +519,43 @@ soften these in code or copy.
   into a named function and point the assertion at that.** Never reproduce it in the
   probe; the extraction is the fix, not a convenience.
   Detector: integration-audit scan 9 below.
+- **An assertion's subject is the BRANCH THAT READS a term, not the term itself** (BINDING
+  Aug 19 2026, user ruling — **three recorded instances**, MISTAKES.md M157, M158, M159, in
+  two consecutive adversarial passes, **and** a mechanical detector, so it clears both limbs
+  of the promotion bar at once). **The property: a helper can be perfectly correct while the
+  branch that consumes it is wrong, absent, or still reading the thing the helper replaced —
+  and an assertion pointed at the helper runs, on real production code, and passes anyway.**
+  It is a face of *a test that cannot fail* rather than a new root: the green means *it ran
+  and passed for a reason other than the property it names*. It graduates out of the faces
+  list for the same reason clamp absorption did — it acquired a detector.
+  The root cause the three instances share, in the words of the first: **the property was
+  awkward to reach, so I reached around it.** Reaching a branch costs a fixture; reaching a
+  term costs an object literal.
+  Three instances, each named because each escaped a check written for the others:
+  - **`[R89.1]`** claimed the pool path was exercised. `CUTOVER_POOL` was a `const` read
+    inside `planCandidates`, so the armed branch was dead code in every run of the suite,
+    and the assertion tested the term the flag guards. **If a branch cannot be reached from
+    a test, that is a design finding, not a reason to assert something adjacent** — the fix
+    was one parameter (`planCandidates(armed)`), and production is unchanged.
+  - **`[R94.2]`** tested `chartReady`/`chartPts`/`chartVols` — the plumbing — while the
+    ruling was about four CONSUMERS on the live chain, one of which was never wired at all.
+    An assertion over the source a consumer *should* read cannot see whether the consumer
+    reads it.
+  - **`[R99.3]`** tested `seriesReadiness` after the *"chart still loading"* mask was
+    re-keyed onto it. **Reverting the mask left the suite green**, because the extracted
+    term was still correct and nothing said the branch read it.
+  **The qualification, and it is the load-bearing half, because this project's own rule set
+  walks into the trap:** the standing remedy for the seventh face — *extract the logic into
+  a named function and point the assertion at that* — PRODUCES this defect when it stops
+  there. **Extraction fixes reachability; reachability is not coverage. An extraction owes
+  TWO assertions — the term for its arithmetic, the branch for its wiring** — and only the
+  second one can go red when the wiring is reverted. Where only one is affordable, it is the
+  branch: a wrong term with a right branch fails loudly, a right term with no branch fails
+  silently.
+  Detector: **scan 15** below, the consumer-anchor scan. It is adjacent to scan 13 and not
+  the same check — scan 13 asks whether a production caller could produce the probe's
+  ARGUMENTS, and clears a term the product really does call; scan 15 asks whether any
+  assertion's subject is the BRANCH, and is what catches a correct term nobody reads.
 
 ---
 
@@ -569,6 +685,31 @@ is not enforceable, and two of them read as though they were:
   something red, and the stanza that clears the red is where the partition gets checked.
   No detector exists for the first three; the fourth is the practice of *writing*
   detectors, and each pinned fact is itself mechanical.
+  **A FIFTH, ruled Aug 19 2026, and it is the LIMIT on the fourth: a pin is a
+  detector for a CONSTANT-FLIP era only.** An era that changes because a `const`
+  moves or a function body changes is read by the same run that reads the pin, so
+  the flip and the detector cannot separate. **An era that changes because DATA
+  ARRIVED cannot be pinned at all** — the suite runs on synthetic fixtures with the
+  network dead, and nothing it reads changes when the real world does. Describing
+  such a fact as armed reports a coverage that does not exist, which is the same
+  defect class as a rule with no detector: the slot is occupied and the property is
+  not. The founding instance is `[R76.9]`, which CLAUDE.md, two code comments and a
+  requirement row all said would force the accounting when the chart wiring landed
+  — the wiring landed on 2026-08-18 and nothing went red, because its subject is a
+  synthetic id absent from the real archive.
+  **What works for the runtime class instead, and both halves are needed:**
+  partition-at-birth, so the two populations can never pool however late anyone
+  notices; **and a first-OBSERVATION record**, so the accounting is owed rather than
+  hoped for — written when the new regime is first SEEN, never claiming the
+  transition instant, and unacknowledged until a human clears it. **The assertion
+  goes on the machinery that notices, which is code, and never on the transition,
+  which is not.** Full classification of every pin in the product, and the era-ledger
+  proposal: `audits/ERAFACTS-2026-08-19-pin-classification.md`.
+  **And a pin is armed only against the implementation its author imagined.**
+  `[R100.4]` forces a ready archive and asserts the resolver does not feed an hour
+  profile — which a future wiring INSIDE the resolver would redden, while a loader
+  synthesising spark records from the same archive keys would not. Naming the other
+  implementations is part of arming it.
 - **Arithmetic on the constants, not a pattern match on the code** (user ruling, Aug 13
   2026). **Every detector in this file reads code or copy against a STATED rule. A
   relationship between two constants that no rule ever stated is invisible to all of
@@ -1037,6 +1178,29 @@ substance.
     label nobody read against its subject is a claim nobody checked. On the current
     suite the four classes flag on the order of 100–200 of 958 labels, which is a
     bounded first pass and shrinks as they are cleared.
+15. **Consumer-anchor scan** (Aug 19 2026, the detector for *an assertion's subject is the
+    branch that reads a term, not the term itself*): enumerate every production term the
+    probe calls DIRECTLY — every named function invoked from an assertion with
+    probe-constructed arguments — and for each, list the production **branches** that read
+    it: the `if`, the `chk`, the ternary, the sort comparator, the `return` that consumes
+    its value. Then check that at least one assertion's subject is a branch. **A term with
+    full coverage and no branch coverage is a finding whatever colour its assertions are**,
+    and the test that settles it is one question: *if this branch were reverted to what it
+    read before, would anything go red?* Where the answer is no, the term is being proved
+    and the product is not.
+    Two remedies, and the choice is the same one the dead-safeguard rule makes: add the
+    branch-level assertion (the usual answer — the term's assertion stays, it is testing
+    arithmetic that is worth testing), or, where the branch is genuinely unreachable from a
+    test, treat that as the design finding it is and make it reachable — inject the flag,
+    pass the dependency, parameterise the const — before asserting anything.
+    **The enumeration is the deliverable**, the same shape as scans 6, 9, 10, 11, 13 and 14:
+    a term nobody traced to its branch is a term nobody knows is wired. Run it **after**
+    scan 13, which answers a different question about the same call sites — scan 13 asks
+    whether production could produce the probe's ARGUMENTS, scan 15 asks whether any
+    assertion's subject is the BRANCH; an assertion can pass 13 and fail 15, and `[R99.3]`
+    did.
+    *Slot 15 was empty from the Aug 13 renumbering — nothing anywhere cited a scan 15 — so
+    this fills the hole rather than renumbering 16 and 17, and no existing citation moves.*
 16. **Interaction-surface scan** (Aug 13 2026, the detector for *an ordered rule chain
     reports position in the ordering*): for every ordered chain that reports "the reason"
     — the gate chain, the funnel, `GATE_CHAIN_ORDER`, any first-match classifier added
@@ -1052,7 +1216,29 @@ substance.
     read: for every surface, export field and prior conclusion that consumes the chain's
     attribution, state whether it reads the FIRST match or the FULL match set — the two
     are different populations and must never be joined on rule name.
-17. **Output:** a findings report with proposed restructurings, ruled like everything
+17. **Two-owner scan** (Aug 19 2026, the detector for *one question, one term*): enumerate
+    every question the product answers in **more than one place** — is this item judged, is
+    this series readable, is this gate name valid, is this item charted, is this override
+    applied, is this trip filled — and for each, name the **one term that owns the answer**
+    and every site that reads it. A question with two independent implementations is a
+    finding whatever colour either side's assertions are, because both sides pass by
+    construction: each is individually correct and the defect lives only in the region where
+    they disagree. For each two-owner question found, state that region **in the variables
+    that define it** — *"judged at 3 points, unreadable until 24, so items with 3–23 points
+    are evictable on a verdict the chain cannot reach"* — because a pair that agrees today
+    is not a pair that is safe, and the region is what says how far apart they already are.
+    **The remedy is always extraction, never synchronisation:** pull the question into one
+    named term and make every other site call it. "Keep them in sync" is the state that
+    produced every recorded instance.
+    **This is a read, not a grep, and that was measured rather than assumed** — see the rule
+    above for the numbers: the literal-comparison scan returns 84 candidate groups of which
+    almost none are real, and would have caught none of the recorded instances, because the
+    drift was between differently *phrased* predicates rather than between constants.
+    **The enumeration is the deliverable**, the same shape as scans 6, 9, 10, 11, 13, 14 and
+    15: a question nobody traced to its owner is a question nobody knows has two.
+    Run it **alongside scan 10**, which walks the same joins from the other direction — scan
+    10 asks what crosses a seam, scan 17 asks what is *decided twice* on either side of one.
+18. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
 
 ## The scorer conformance gate (standing requirement — user ruling, Aug 14 2026)
@@ -1097,6 +1283,38 @@ surfaces; AND an adversarial pass over the cutover-critical assertions. The plan
 switch is the one deployment-class change in the migration, and it gets the `[R7.3]`
 standard: **prove the guard red before trusting it green.**
 
+**A FOURTH PREREQUISITE, ruled Aug 18 2026 — chart gates at 7 of 7 observed days.** Unlike
+the other three this one is a **clock, not a task**, and it is a prerequisite rather than a
+nicety: the control cell's verdicts are **six-gate verdicts** (99.5% of funded item-cycles
+carry `fundedNoChart`, because `marketStatsFor` returns `tr`/`vt`/`moState` null until the
+h1 archive matures, and sparks are a per-item `/timeseries` fetch scoped to the watchlist).
+Switching the pool before then leaves exactly two outcomes and both are wrong: every pool
+item benches on *"chart still loading"* and the plan funds nothing, or the chart gates are
+skipped for pool items — **which widens what the allocator may fund, by three gates,
+silently.** That second one is deployment-class on its own and may not ride along inside a
+pool switch. **The armed era tripwire was WEAKER THAN THIS SENTENCE CLAIMED — corrected Aug 19
+2026 by the adversarial pass.** `marketStatsFor().tr === null` inside `[R76.9]` reads a SYNTHETIC
+probe id that is not in the archive, so `chartPts` returns `[]` and `trendPct([])` returns null
+whatever `chartReady()` says. The proof is historical: the chart wiring LANDED on Aug 18 and the
+assertion did not go red. It has been strengthened to assert BOTH directions — the same id seeded
+into a ready cache must read a real trend — so the null is attributable to the gate rather than to
+the fixture, and it now catches a code change that feeds `tr` unconditionally. **But no in-page
+assertion can observe the runtime COVERAGE transition**: that is a clock, not a code shape. The
+forcing function for the clock is this prerequisite itself, plus `[R94.1]`/`[R94.2]`, which pin the
+readers inert below the threshold. A tripwire that cannot fire is the same defect class as a rule
+with no detector, and stating the limit is the correction.
+
+**The gate's internal ORDER is ruled (Aug 18 2026), because two of the four have
+dependencies:** the **integration audit runs now** — it is overdue on the standing cadence
+independently of the cutover, and only its new-surfaces walk is blocked on those surfaces
+existing; **scan 14 runs before the adversarial pass**, because `[R4.3]` is both one of
+scan 14's own founding examples and inside the cutover-critical set, so running the
+adversarial pass first would adversarially verify a scope the label scan is about to
+change; **then the adversarial pass**, scoped at **16 exact + 56 candidates** (the seam's
+own tags, and every assertion whose subject is a guard reading a watch row, the flip log or
+operator state — those are precisely the inputs a control-cell item does not have).
+Enumeration and method: `audits/READING-2026-08-18-scorer-grid.md` §1.3.
+
 ## Verification
 
 No Node on the dev machines. All verification runs as headless-Edge probes against the
@@ -1135,6 +1353,12 @@ does not match its own list cannot support a graduation argument, which is the w
 the count is put to). **A thirteenth shape, clamp absorption, left this list on Aug 13
 2026** and is a BINDING rule in its own right with scan 9 as its detector; it is not
 missing here, it graduated.
+**A FOURTEENTH shape left it on Aug 19 2026 the same way: the proxy assertion, whose
+subject is a TERM rather than the branch that reads it** — BINDING above, with scan 15 as its
+detector. Three instances in two adversarial passes, and the reason it is worth naming
+separately from the seventh face is that it is the seventh face’s own remedy applied halfway:
+extracting a term so the probe can reach it is right, and stopping there leaves the branch
+uncovered.
 
 - **The `|| true` assertion** — **first face** (Aug 11 2026): a probe line ending `… || true`, written
   to check the poll calls the accrual step. It passed unconditionally and asserted
@@ -1296,6 +1520,63 @@ missing here, it graduated.
   pattern: `reconWindowStart()` was extracted, the promise stated there, and the assertion
   re-pointed at it. Detector: **scan 13** below.
 
+### A repair pass ends staged; the next session reviews it cold (user ruling, Aug 19 2026)
+
+> **Stop fixing and sweeping in the same session.** A repair made under the pressure of a
+> just-delivered finding gets scoped to that finding's SPELLING rather than to its property.
+
+Three instances in one week, each the repair for the one before it (**M170**): a finding named
+`num(`, and the sweep missed five `>= 0` guards and two bare `+`; a finding named an exact
+expression, and the repair missed a third instance three lines below one of them; a finding named
+two settings keys, and the classification was drawn from the 23 keys sharing their object literal
+and missed two that bound funding just as hard. **Each time the finding supplied a search string and
+the search string was mistaken for the property**, which is this file's first rule failing at the
+moment it matters most.
+
+**Time alone does not separate the two** — the same agent an hour later still has the finding in
+front of it. **A cold reader does:** one shown the diff and *not* shown the finding, asked what
+property the repair is about rather than whether it fixes the reported case.
+
+The mechanics, and they are built rather than intended (`tools/stage/*.sh`, documented in
+[PROBE.md](PROBE.md)):
+
+1. **A repair pass writes to `staging/`, never to the tree.** `bash tools/stage/new.sh` copies
+   `index.html`, `probe-snippet.html` and `REQUIREMENTS.md` and records the tree's hashes.
+2. **The suite runs against the staged copy, seeds included**, via `PROBE_SRC` / `PROBE_SNIPPET` /
+   `PROBE_REQ` on `run.sh`. `REQUIREMENTS.md` is in that list because the pairing check is part of
+   the suite: a staged assertion needs its staged row, or the run fails on an orphan that is an
+   artefact of staging rather than a defect. **A staged run stamps its own header** —
+   `PROBE-PASS [STAGED: staging/index.html]` — because the header is the line that gets quoted as
+   the tree's status, and the caveat must travel with the claim.
+3. **The pass ends with four artefacts and no landing:** the staged files, the diff, the seed log,
+   and a written record naming, per repair, **the property it is about** — not the finding it
+   answers. `index.html` still hashes to what it did at the start and `tools/stage/check.sh` proves
+   it.
+4. **The next session reviews that diff cold**, asking one question per repair: *name the property
+   this repair is about; now find every site in the file with that property — not every site
+   matching the text of the finding.* A repair whose property-scoped search returns sites the repair
+   did not touch goes back, unshipped.
+5. **Both namings are recorded, in separate columns** (user ruling, and it is what makes the ledger
+   worth keeping): the repairer's and the cold reviewer's. If a later pass finds the same property
+   elsewhere, the pair says whether the **property was named too narrowly** or the **search was run
+   too narrowly** — different failures needing opposite fixes, and indistinguishable from one
+   answer alone. The durable record is [audits/REPAIR-LEDGER.md](audits/REPAIR-LEDGER.md);
+   `staging/` is gitignored.
+6. **`tools/stage/land.sh` refuses to land** without an intact freeze, a green `[STAGED:]` report
+   for both viewports, `Verdict: PASS` on every repair, and the reviewer's recorded property. The
+   guard is the rule; a landing check that could not refuse would be a detector that cannot fire.
+
+**The escape hatch, as scoped:** a **single-site fix with no generalisation available** may land in
+one session — the `flush()`/`save()` swap is the example on record. **The moment a repair implies
+"and everywhere else like it", it stages.**
+
+**What it does not fix:** the first defect. It is aimed squarely at the second one, introduced while
+fixing the first — which passes 2, 3, 5 and 6 each found.
+
+*This entry is a ruled practice with a mechanical detector and three recorded instances, so it
+clears both limbs of the promotion bar in the two-layer rule above. It is recorded here rather than
+in BINDING because **eligibility is not promotion** and that move is the user's.*
+
 ### A ratification that breaks no test is not evidence (user ruling, Aug 13 2026)
 
 > **A ratification that changes behaviour and breaks no test has either NO coverage or
@@ -1421,7 +1702,7 @@ it, and deletes that class's older members from Downloads:
 
 | Class | Lands in |
 |---|---|
-| `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-scorer-*` · `analysis-all-*` | `inbox/` |
+| `analysis-paper-*` · `analysis-prospecting-*` · `analysis-gates-*` · `analysis-calibration-*` · `analysis-scorer-*` · `analysis-rdiff-*` · `analysis-all-*` | `inbox/` |
 | `analysis-friction-*` | `inbox/` — **ACCUMULATING class** (Aug 14 2026): successive exports carry disjoint entries (only never-before-carried notes), so the sweep moves EVERY member and deletes nothing but byte-identical duplicates; keep-newest would destroy notes the app has already stamped exported |
 | `ge-flips-*` (state backup) | `inbox/` |
 | `flags-pending*` | `briefings/` — **unchanged**, because the briefing procedure reads it there by name |
@@ -1486,6 +1767,22 @@ Recreate the hooks with:
 - The site deploys via GitHub Pages from `main` — pushing `main` is publishing.
 - The flip log lives only in the user's browser localStorage; nothing in this repo ever
   contains user trading data.
+- **The working tree IS the deliverable, so `git checkout --`, `git restore` and `git stash`
+  are destructive commands here, not undo** (Aug 19 2026, MISTAKES.md M160). Building runs
+  for days against an uncommitted tree by standing ruling — committing and pushing are the
+  user's — so `HEAD` is not a backup of anything and a revert discards every uncommitted
+  entry in the file it touches. Copy the file aside before repairing it; there is no second
+  copy. **And a scripted edit to a UTF-8 file is made in ONE encoding domain**: decoding an
+  insert while reading the host as bytes double-encodes the host on output, which is the
+  defect that provoked the revert. One `grep -c 'Â'` immediately after any scripted edit
+  catches it while the fix is still one line.
+  **And a scripted edit to source is anchored on QUOTED TEXT, never on a line number**
+  (Aug 19 2026, M172 — a second instance of the same property, by a different mechanism).
+  A number that came out of a grep identifies where a FRAGMENT lives, not where the
+  construct begins: `grep -n 'stage: "'` returned the second line of a three-line object
+  literal, and an `awk` range starting there consumed the statement after it. A quoted-text
+  match fails visibly when the text is not what you expected; a line range succeeds against
+  the wrong lines. Line numbers are for reading, text is for editing.
 
 ## Cadence: four touches, per-touch horizons (user ruling, Aug 11 2026)
 

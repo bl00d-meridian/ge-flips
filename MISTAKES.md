@@ -33,6 +33,7 @@ newest-first, so a new incident takes the next unused number and goes at the top
 | `TEST-SUITE` | A green result meant the test never ran, or ran and passed for a reason other than the property it names |
 | `REIMPL` | An assertion carried a parallel implementation of the thing under test (a face of `TEST-SUITE`) |
 | `CLAMP` | An assertion's subject was computed downstream of a clamp that could absorb the defect (a face of `TEST-SUITE`) |
+| `PROXY-ASSERT` | An assertion's subject was a TERM rather than the branch that reads it (a face of `TEST-SUITE`) |
 | `SILENT-STATE` | A component reported nothing where it should have reported that it *has* nothing |
 | `POOLING` | A statistic pooled populations that answer different questions |
 | `UNOBSERVED` | A denominator counted time or occasions nothing had looked at |
@@ -48,6 +49,7 @@ newest-first, so a new incident takes the next unused number and goes at the top
 | `EVIDENCE-ROUTING` | A finding was read as evidence for a change it was not about |
 | `REMOVAL-SWEEP` | A deleted feature's mentions survived it |
 | `STALENESS` | A long-lived client judged fresh data against stale inputs, or could not see its own age |
+| `DESTRUCTIVE-UNDO` | A repair was applied to a whole artefact when the defect was in one edit, against a store with no second copy |
 
 ## Which patterns are now law
 
@@ -59,6 +61,18 @@ with detectors. `RESTRAINT-LIFT` (2) is BINDING on the detector limb (scan 6). `
 is a face of `TEST-SUITE`, not a separate law, and `CLAMP` is both a face and a law in its
 own right — counted once, in `TEST-SUITE`'s 34, and reported separately.
 
+**`PROXY-ASSERT` opened 2026-08-19 on the user's ruling, with three instances and a detector**
+— M157, M158 and M159, all inside two adversarial passes, all the same root: *the property was
+awkward to reach, so I reached around it.* It follows the `CLAMP` precedent exactly — a face of
+`TEST-SUITE` **and** a law in its own right, counted once inside `TEST-SUITE`'s total and
+reported separately — and it is BINDING in CLAUDE.md with **scan 15** as its detector, on both
+limbs of the promotion bar at once. **Two counts move with it and the arithmetic is stated
+rather than left to be re-derived:** M157 was already inside `TEST-SUITE`, so that total is
+unchanged; M158 came out of `CLAIMS-VS-CODE`, which goes **13 → 12**, and joins `TEST-SUITE`'s
+total, which goes **34 → 35** and then **36** with M159. Neither entry was split — both moved,
+which is what the prophylactic's second clause asks for when one property has been filed in
+two places.
+
 **A new tag was NOT opened for M150/M151.** *Attribution over an ordered chain* is now a
 BINDING rule in its own right, but as an incident shape both entries are instances of tags
 that already exist — M150 is copy claiming what the code does not compute, M151 is a
@@ -66,7 +80,9 @@ component reporting nothing where it should report that it has nothing. Splittin
 would give one property a second home and start its count at one, which the prophylactic's
 second clause exists to prevent.
 
-Still evidence, and why: `SCOPE-NAMING` (2) is the prophylactic at the top of CLAUDE.md,
+Still evidence, and why: `DESTRUCTIVE-UNDO` (1, M160) is one instance with no detector — its
+correction channel is a line in CLAUDE.md's repo hygiene section, which is guidance and not a
+check. `SCOPE-NAMING` (2) is the prophylactic at the top of CLAUDE.md,
 which governs how rules are written rather than what any rule says, so it sits above the
 split rather than inside it. `EVIDENCE-ROUTING` (1) and `CONSENT` (1) are one instance from
 the count limb and have no detector. `REMOVAL-SWEEP` (1 tagged, 2 in substance — M110 is
@@ -76,6 +92,790 @@ qualifies.**
 ---
 
 # 2026-08-14
+
+### M174 · An ordering assertion could not fail, because its fixture gave both sides the same value on the key that orders them
+2026-08-19 · found by: seeding (the seed came back GREEN) · pattern: `TEST-SUITE`
+
+`[R107.11]` was written to hold A1 — the ruling that the plan's funding walk splits two populations
+whose scores are not comparable, rather than splitting them only at render. It drove `buildPlan`
+with the flag set injected, read back `planOrder`'s output and the funded picks, and asserted that
+every pin precedes every pool item and that the single slot went to the pin.
+
+**Seed S174a replaced `planOrder` with a flat `pass.sort(planCmp)` — removing the population split
+entirely, which is the whole property — and the suite stayed GREEN.**
+
+**Root cause: the fixture built all three candidates from one price template.** The pin's score and
+the pool items' sort keys came out as the identical number, so the flat sort and the split sort
+produced the same sequence: every comparison tied, `Array.prototype.sort` is stable, and stability
+happened to preserve the order the split would have produced. The assertion was reading an ordering
+that no ordering rule had actually chosen.
+
+**A second, quieter instance in the same assertion, caught before the seed:** its first form left
+the tier budgets and the worth-a-slot floor at whatever the previous block had set, so `picks` came
+back **empty** — and the money limb (`the single slot goes to the pin`) would have passed over an
+empty list while the ordering limb carried the whole assertion.
+
+**Consequence: none realized.** Both were caught inside the same pass. Had the seed not been run,
+a deployment-class ruling would have shipped reporting its money property as covered.
+
+**The rule that would prevent a repeat, and it generalises past ordering:** **an assertion about a
+RELATION needs a fixture whose members differ on the term the relation is computed from.** For an
+ordering, the items must differ on the sort key — otherwise every candidate rule agrees and the test
+measures sort stability. For a threshold, they must straddle it. For a partition, at least one
+member on each side. The tell is available without running the seed: if the fixture builds its
+subjects from one template and then asserts they are treated differently, the difference has to come
+from somewhere, and if it does not it is coming from the harness rather than the product.
+
+**And this is the second green seed of the session** — M173 was the first, on a different face of the
+same root. Both were the seeding precondition doing exactly its job: *until the seed is confirmed to
+have changed something observable, the run's output carries no information.*
+
+Substantiated from: this session's own transcript (seed S174a green with the one-template fixture,
+S174a2 red alone after the pool item was given a strictly wider spread); the fixture comment
+recorded in place at `[R107.11]`; `staging/PASS.md` repair 7's seed table.
+
+### M173 · An assertion written for a repair could not fail for the property its own label claimed, because the flag it turns on cannot be reached from a test
+2026-08-19 · found by: seeding (the seed came back GREEN) · pattern: `TEST-SUITE`
+
+`[R107.5]` was written to hold the repair that routes the four watch-row controls through
+`opsWrite`, so that operator state has one writer in both regimes. It drove all three drivable
+controls through production's own delegated handlers — the quantity box through `change`, the tier
+badge and the tested-pair clear through `click` — and read the result back through `opsFor`, the one
+reader. Every part of that is right, and the label said the controls route through the writer.
+
+**Seed S173e reverted the quantity control to `w.qty = want; save();` — a direct row write, the exact
+defect the repair exists to remove — and the suite stayed GREEN.**
+
+**Root cause: with `ITEM_OPS` false, a routed write and a direct write land the same value.**
+`opsWrite`'s row branch writes the row; so did the old code. The two forms are indistinguishable at
+every reader until the flag is armed, and **nothing at runtime arms it** — it is a `const` that flips
+by source edit. So the assertion could observe the controls' effect and could never observe their
+routing, which is what its label claimed.
+
+**Consequence: none realized.** The seed caught it inside the same pass, before anything landed.
+Had the seed not been run, the suite would have reported a repair as covered while the property it
+names had no detector at all — the slot occupied and the feature reported as protected.
+
+**The repair, and it is the part worth carrying.** The behaviour drives were kept, because they do
+prove the controls work, and a source-level detector was added beside them for the half that can
+fail: the app's own script text is read and required to contain **zero** `w.<field> =` or
+`delete w.<field>` writes of the six operator-state fields. Every legitimate remaining writer uses a
+different receiver — `r[k]` in the migration and the reconciliation, `o.<field>` in the sanitiser,
+`w[k]` inside `opsWrite` itself — so the scan is precise rather than approximate, and it asserts its
+own precondition (exactly one script matched, of a plausible length) before reporting a count of
+zero. Re-seeding S173e reddened it alone. Its limit is stated where it lives: it cannot see a fifth
+control written with a different receiver name.
+
+**The rule that would prevent a repeat: where a repair's property is only observable on the far side
+of a flag that no runtime path flips, the behavioural assertion cannot be the proof — and the tell is
+available before the seed is run.** Ask, of every new assertion, which arm of the flag it exercises;
+if the answer is "the one that ships", the assertion is testing today's behaviour and not the change.
+The remedies are the two this file already knows: an injection parameter where the branch takes one
+(`[R107.4]` does exactly this and bites), or a source-level detector where it does not.
+
+**And this is the second time in one session that a seed returning green was the finding rather than
+the clean bill** — the first being the same repair's own reachability problem, where `testDot` and
+`scoutEvictable` were handed a row and then re-found it by id. The seeding precondition earned its
+place twice in one pass.
+
+Substantiated from: this session's own transcript (seed S173e green, the repaired form, seed S173e2
+red alone); `staging/PASS.md`'s seed table; `[R107.4]` and `[R107.5]` in
+`staging/probe-snippet.html`; the standing rule in CLAUDE.md's *A test that cannot fail is a
+liability* and *The seeding precondition*.
+
+### M172 · A scripted edit addressed by line number landed on the wrong three lines, because the line number came from a grep that matched a continuation line
+2026-08-19 · found by: inspection (immediately, by the agent that caused it, from the edit's own printed result) · pattern: `DESTRUCTIVE-UNDO`
+
+Repairing the `hzH` stamp on `partialPosition`'s two writers, the sites were located with
+`grep -n 'stage: "' index.html`, which returned `7189`. That line is the **second** line of a
+three-line object literal — the literal opens on 7188 — so an `awk` replacement of lines 7189–7191
+consumed `if (keep){ p.qty -= n; DB.positions.push(filled); }` on 7191 and dropped it entirely. The
+result was a `const filled = {` declaration followed by a duplicated literal and an orphaned `else`,
+which is a syntax error. Caught in the same command, from the printed after-state, and reverted by
+re-copying the source.
+
+**Root cause: a line number was treated as an anchor when it was a search RESULT.** The grep pattern
+`stage: "` is a fragment of the literal, not its head, so the number it returned identified where
+the fragment lives rather than where the construct begins. Every subsequent step — the range, the
+replacement text, the assumption that the range was self-contained — inherited that error, and none
+of them could detect it.
+
+**Consequence: none realized, and the reason is the mechanism this session shipped.** The edit was
+made to `staging/index.html`, which is a copy; `index.html` was untouched throughout and its
+hash was unchanged at the end of the pass. Under the old practice — repairs made directly to the
+tree — the recovery would have been a revert against an uncommitted working tree, which is exactly
+M160.
+
+**The rule that would prevent a repeat: a scripted edit to source is anchored on QUOTED TEXT, never
+on a line number.** The repair used `perl -0777` with the full literal quoted as the match, which
+fails visibly (`0 of 2 applied`) when the text is not what was expected, instead of succeeding
+against the wrong range. Line numbers are for reading; text is for editing. This is the same
+property as M160 rule 1 — the working tree is the deliverable, so an edit to it must fail loudly
+rather than quietly — reached by a different mechanism, and it is the second instance of that
+property.
+
+**And the near-miss is evidence for the staging rule itself, on its first use.** The mechanism was
+built this session to separate a repair from its review; it also, unplanned, absorbed a destructive
+edit on the day it shipped.
+
+Substantiated from: this session's own transcript (the `awk` range, its printed after-state, and
+the `perl -0777` rewrite that replaced it); `staging/BASELINE.sha256` and `tools/stage/check.sh`
+output showing `index.html` unchanged across the whole pass; M160 for the property this is a second
+instance of.
+
+### M171 · An assertion written for a fix was pointed at a different function, and passed because that function was already correct
+2026-08-19 · found by: seeding (the seed came back green) · pattern: `TEST-SUITE`
+
+`[R105.3]` was written to hold the repair of a bare unary plus on a record-level source tier, which
+lives in **`importIntelligence`** — the `intelligence.json` path. Its first form called
+**`validateImport`**, a different function whose own intel branch had been repaired in an earlier
+sweep and was already correct.
+
+Seed S171b reverted the real defect at the real site and **the suite stayed green.** The assertion
+had run, on real production code, and proved a property that was true for a reason unrelated to the
+fix it was named after.
+
+**Root cause: two functions sanitize intel records, and the one the probe already had a fixture for
+was not the one that changed.** The existing fixture was the path of least resistance, and it
+returned a plausible-looking green.
+
+**Consequence: none realized** — the seed caught it in the same sitting, and the corrected form is
+pointed at the admission gate that spends the coercion (a catalyst needs a T0/T1 primary, so a null
+tier reading as 0 admits a record the code says must be rejected). Re-seeded as S171b2 and red.
+
+**The rule this sharpens, and it is not a new one:** *an assertion's subject is the branch that
+reads the term.* The variant here is quieter than M157–M159, because the subject was a real branch
+in real production code — just **not the branch the repair touched**. The tell: an assertion whose
+fixture predates the fix it is named for.
+
+Substantiated from: `tools/probe/probe-snippet.html` §105 (`[R105.3]` and the comment recording the
+rewrite), `index.html` (`importIntelligence`'s tier resolution and its catalyst admission gate,
+`validateImport`'s intel branch), and seeds S171b (green, the finding) and S171b2 (red, the proof).
+
+### M170 · Three repairs in a row were scoped to the finding's spelling rather than to its property
+2026-08-19 · found by: adversarial passes 5 and 6 · pattern: `SCOPE-NAMING`
+
+**Three instances, all within four days, each one the repair for the instance before it.**
+
+1. Pass 4 named the item store's cleared tier override. The sweep that followed searched
+   `validateImport` for **`num(`** — the helper the finding mentioned — and missed five `>= 0`
+   guards (`null >= 0` is true) and two bare unary-plus coercions.
+2. Pass 5 named those two bare `+s.tier` sites. The repair ran
+   `grep -nE '\[0, ?1, ?2, ?3\]\.includes\(\+s\.tier\)'` — **the finding's exact expression** — and
+   missed a third instance **three lines below one of the two it fixed**.
+3. Pass 5 named `partCapPct` and `clusterCapPct` as caps resolving to a loose default. The
+   classification was drawn from **the 23 keys sharing the object literal those two sit in**, and
+   missed `slots` and `watchCap`, which bound funding just as hard and are declared elsewhere.
+
+**Root cause: a finding hands over a search string, and the search string gets mistaken for the
+property.** The specific instance is vivid and the generalisation costs effort that the urgency of a
+live defect actively discourages. This is the constitution's own first rule — *name the property, not
+the surface* — failing at the moment it is most needed, and instance 2 broke it inside the fix for a
+finding whose whole content was that the rule had been broken.
+
+**Consequence: real and repeated.** Each incomplete repair became the next pass's money-path finding.
+Pass 5 found three, pass 6 found eight.
+
+**The rule that would prevent a repeat is a process change, not a code one**, because all three
+repairs were correct at the sites they touched — the defect was in what was searched, and no
+detector reads a search. Proposed as the cold-repair-review mechanism in
+`audits/PROPOSAL-2026-08-19-cold-repair-review.md`: a repair pass ends with the repairs written and
+unshipped, and the next session reviews them **without having read the finding that provoked them**,
+asking one question — *name the property, then find every site with it.*
+
+Substantiated from: `audits/ADVERSARIAL-2026-08-19e-pass5.md` (the first instance),
+`audits/ADVERSARIAL-2026-08-19f-pass6.md` findings A1 and A3 (the second and third),
+`audits/SWEEP-2026-08-19-num-null.md`, and the greps recorded in this session's transcript.
+
+### M169 · The correct guard was written out twenty-one lines below, for a different field, and not applied to the one that needed it
+2026-08-19 · found by: user-directed sweep · pattern: `COMPOSITION`
+
+`num()` inside `validateImport` is `Number.isFinite(+v) ? +v : null`. `+null` is **0**, and 0 is
+finite — so an explicit `null` in an imported file comes back as the **value zero**. Every field
+whose null means *not measured* therefore restored as *a measurement of zero*, and the state backup
+is `JSON.stringify(DB)`, so a field the app itself writes as null makes that round trip in **one
+hop**: write null → export → restore → 0.
+
+**This had happened once before with the same helper** — the item store's cleared tier override,
+found by the fourth adversarial pass (`audits/ADVERSARIAL-2026-08-19d-pass4.md`). It was fixed **at
+the field**, and the class was left open.
+
+**THE OCCURRENCE COUNT IN THIS ENTRY WAS WRONG, AND THE CORRECTION IS THE ENTRY'S OWN SUBJECT
+MATTER** (pass 5, `audits/ADVERSARIAL-2026-08-19e-pass5.md`). It read *"the third occurrence of the
+same helper producing the same defect"* and cited three priors: the friction ledger's `exp`/`res`,
+the qual store's `src`, and the item store's cleared tier override. **Only the last is the same
+root.** The other two are the CARRY-COMPLETENESS defect — fields the sanitizer enumerated and then
+dropped entirely, so they restored as *absent* rather than as *zero* — and `src` is a **string**,
+which `num()` never touched. Filing them here made a coercion defect look like a three-time
+recurrence when it had happened once before.
+
+**This is exactly the error the drift rule was written about, committed in the entry that reports
+it:** two things that look alike from a distance were counted as one, and the count is the thing the
+evidence layer exists to keep honest. Recorded rather than quietly edited, because a count that was
+wrong and is now right teaches less than one that says where it went wrong.
+
+**The corrected standing:** the null-to-zero coercion has **two** recorded occurrences — the item
+store's cleared override (pass 4) and this sweep. The carry-completeness defect has its own,
+separate history and is where `exp`/`res` and `src` belong. Neither count reaches the three-instance
+bar on its own.
+
+**The failure worth naming is not the trap. It is that the correct guard was already written down.**
+The item-store branch and the `gateLog.v` branch sit twenty-one lines apart in the same object
+literal. `gateLog.v` carries this comment, in as many words:
+
+> *"NOT `num()`, which is `Number.isFinite(+v) ? +v : null` and therefore maps null → 0, since
+> `+null` is 0 and 0 is finite."*
+
+That comment was written **in the same session** that gave the item store a null-bearing third
+state, and the store landed with `num()`. The knowledge was present, correct, adjacent, and written
+in prose rather than in a term — so it did not travel the twenty lines to the field that grew the
+new state. **A rule that exists only as a comment protects the line it is attached to.**
+
+**The sweep then found a LIVE money-path instance the three earlier fixes had walked past.** Every
+watch row is created with `qty: null` — scout add, sibling add and manual add all write it
+explicitly — and null there means *size me automatically*. `num(null)` is 0, so a state-backup
+restore rewrote the entire watchlist as a **manual override of zero**: `opsPick` returns 0 because
+0 is not null, `planQty`'s `wanted` becomes 0, and `chk(!(qty > 0), "sizing", …)` benched every
+automatically-sized item — with a reason naming working capital or a missing buy limit, neither of
+which had happened. The plan would fund nothing but hand-sized rows, and every bench reason would be
+wrong about why. **This predates every cutover component**; it is old code that three field-level
+fixes had no reason to look at.
+
+Three more restored as zero on the same one hop, each a measurement that was never taken:
+`peakToFlagD` and `retracePct` (written null by the anomaly scan when the peak or the mid is
+unmeasurable, and `flagLagProfile` filters on `x != null`, so a restored zero enters the median lag
+as a flag that fired **on** the peak day); `runwayD` (null when a catalyst's window date will not
+parse, rendering as *"inside/past the window"*); and `rung` (null marks a **hand** exit, while rung
+0 is the **first** ladder rung, so every manual sleeve exit came back labelled as a ladder exit).
+
+**Consequence: the watch-row one is realized on any state-backup restore and is money-path** — it
+suppresses funding rather than widening it, so it errs safe, but it silently empties the plan. The
+other three corrupt attention-tuning measurements. Nothing on record says a restore was performed,
+so no incorrect trade is attributable.
+
+**The rule that would prevent a repeat is now a term rather than a comment.** `nz(v)` is
+`v === null ? null : num(v)` and owns the property *null is a state, 0 is a value*; 106 call sites across 52 lines
+moved onto it. Three `num(x) != null` survive on purpose and are named in the source. `[R103.6]`
+reads `validateImport`'s own text and goes red if any of the three guard idioms — `num(x) != null`,
+`num(x) >= 0`, `[0,…].includes(num(x))` — reappears, which is the check that makes the class closed
+rather than the instances fixed. **Its stated limit is real: it cannot catch a bare `num(x)`
+assignment**, because `num()` is correct at most of the 271 that remain, so
+`[R103.1]` and `[R103.5]` carry that half field by field.
+
+Substantiated from: `index.html` (`validateImport`'s `num`/`nz`, the `gateLog.v` comment, the three
+`DB.watch.push` sites, `opsPick`, `planQty`, the sizing `chk`), `tools/probe/probe-snippet.html`
+§103, `REQUIREMENTS.md` §103, `audits/SWEEP-2026-08-19-num-null.md` (the full field enumeration),
+and seeds S169a–S169f, one at a time, restore-green between.
+
+
+### M168 · I re-implemented a counter inside the assertion I wrote to protect it
+2026-08-19 · found by: seeding (the seed came back green) · pattern: `PROXY-ASSERT`
+
+`[R102.1]` was written to hold the repair described in M167 — the plan's "N charts still loading"
+count, re-keyed from a copy substring onto the gate's identity. Its first form did this:
+
+```
+const sub102 = planSubLine(plLoad, plLoad.bench.filter(b => b.fails && b.fails[0]
+  && b.fails[0].g === "chart still loading").length);
+```
+
+**The probe computed the count and handed it to the copy builder.** Production's own counter was
+never called, so reverting it changed nothing the assertion could see, and the seed came back
+**green**.
+
+**Root cause: the subject was one line away and the fixture was easier to build than the render.**
+`renderPlan` computes `loading` itself and puts the result in `#planSub`; reading that element reads
+production's number. Calling `planSubLine` directly with my own argument tested the copy builder,
+which was never in doubt.
+
+**Consequence: none realized** — caught by the seed, in the same sitting. It is recorded because of
+what it was an assertion *about*: a counter that had silently stopped counting. Writing an assertion
+to protect a counter, and re-deriving the count inside it, is the defect and its own subject matter
+arriving together.
+
+**The rule that would prevent a repeat is the one already on the books, with a sharper tell: if the
+probe passes a value INTO the thing under test, the thing that computes that value is untested.**
+The existing form of this rule warns about a probe line that *computes rather than calls*. The
+variant here is quieter — the probe did call production, and passed it a production-shaped
+argument, and the argument was the whole subject.
+
+Substantiated from: `tools/probe/probe-snippet.html` §102 (`[R102.1]` and the comment recording the
+rewrite), `index.html` (`renderPlan`'s `loading`, `planSubLine`), and seed S123, green against the
+first form and red against the second.
+
+### M167 · A counter keyed on rendered copy stopped counting when the copy improved
+2026-08-19 · found by: adversarial pass (`audits/ADVERSARIAL-2026-08-19d-pass4.md`) · pattern: `COMPOSITION`
+
+The plan's summary line renders *"N charts still loading — verdicts will improve"*. `N` came from:
+
+```
+const loading = bench.filter(b => /still loading/.test(b.failed)).length;
+```
+
+`b.failed` is the bench SENTENCE. When the per-consumer readiness repair rewrote that sentence to
+name the point counts and the thresholds, **the substring `still loading` left the file entirely** —
+so the filter matched nothing, `N` was permanently zero, and the note never rendered again.
+
+**It bit on every cold boot, which is exactly when it was the whole message.** Before price history
+arrives, every otherwise-clean watch item benches as unreadable, and the summary read *"0 pass the
+gates, of 43 scored"* with the sentence explaining why deleted. Degraded rather than silent — the
+bench rows still carried their own reasons — but the one line that turns a wall of benches into
+"wait a minute" was gone.
+
+**Root cause: a consumer keyed on the producer's COPY rather than on its IDENTITY.** The gate's name
+(`fails[0].g`) is stable and is what `failed` was derived from in the first place; the sentence is
+prose and is expected to improve. One of the two consumers of that sentence WAS swept in the same
+change — `gateName()`'s pattern still matches — so this is not an oversight about the existence of
+consumers, but about which of them were checked.
+
+**Consequence: realized, on a daily surface, for as long as the readiness repair has been in.**
+
+**The rule that would prevent a repeat: never key a counter, a filter or a branch on rendered copy
+when the thing being matched has a stable identity beside it.** And when copy is rewritten, the sweep
+covers every consumer that reads it — the removal-is-the-moment-to-sweep rule applied to a sentence
+rather than to a feature.
+
+Substantiated from: `index.html` (`renderPlan`'s `loading`, `candidateFor`'s two history `chk` calls,
+`gateName`), `audits/ADVERSARIAL-2026-08-19d-pass4.md`, and seed S123.
+
+### M166 · The suite was green partly on state left by its own previous runs
+2026-08-19 · found by: use (running the suite against a fresh browser profile, while debugging something else) · pattern: `TEST-SUITE`
+
+The probe launches headless Edge against a throwaway `--user-data-dir`. That directory is created
+once and **reused by every subsequent run**, so localStorage and IndexedDB persist across runs. On a
+machine where the suite has run before, every run starts warm.
+
+`[R82.4]` asserts that the scorer's verdict paragraph marks the phrase *"the cutover's plumb line"*
+from the glossary entry of the same name. That mark renders inside
+`idb(s => s.rdiffN ? … glTerm("plumb-line", …) …)` — **only when the archive read reports
+reconciliation rows.** The probe seeded none. It was reading rows that an *earlier run* had written
+into IndexedDB.
+
+**Deleting the profile and running reproduced it exactly: cold run FAILS, every run after PASSES.**
+Confirmed twice.
+
+**Consequence: the suite reported PROBE-PASS on the strength of its own history**, and had done so
+for as long as this assertion has existed. Nothing was wrong with the product; what was wrong is that
+a green result did not mean what it says. A fresh machine, a cleaned profile, or a CI runner would
+have gone red on a correct tree — and the natural reading of that red is "the tree is broken", which
+is the expensive direction to be wrong in.
+
+**Root cause: an assertion whose subject needs accumulated state, in a harness that quietly supplies
+it.** The block seeded the fixtures it knew about and inherited the one it did not, and inheritance
+is invisible: there is no line of code to read that says "this comes from last time".
+
+**Consequence of the near miss, worth stating:** it was found by accident, while debugging an
+unrelated harness, and only because a *second* incident had polluted the same profile with real
+market data and made two other assertions fail. Two artefacts of the same store, one masking the
+other.
+
+**The rule that would prevent a repeat: a suite that reuses a browser profile is warm, and warmth is
+a fixture nobody wrote.** Every assertion builds the state it reads, including state that lives in
+the browser rather than in a variable — localStorage, IndexedDB, caches. And the check is cheap and
+should be routine: **delete the profile and run once.** A green cold run and a green warm run are
+different claims, and only the first one is the claim the report makes.
+
+Substantiated from: `tools/probe/probe-snippet.html` §82 (the seeded `S.scorerSurf` and its comment),
+`index.html` (`scorerVerdictInline`'s `rdiffN` branch), and the reproduction: cold PROBE-FAIL 1 on
+`[R82.4]`, warm PROBE-PASS, twice, then PROBE-PASS cold after the fix.
+
+### M165 · A detector was written to close a finding and passed with itself deleted
+2026-08-19 · found by: adversarial pass (`audits/ADVERSARIAL-2026-08-19c-queue-pass.md`, consumer-repairs) · pattern: `TEST-SUITE`
+
+Re-pass finding 30 was that `GATE_CHAIN_ORDER` had quietly changed job — from a display ordering
+where an unlisted name merely sorted last, to the whitelist that the import validator and the grant
+writer both use to DROP an exception — with nothing pinning the correspondence. The repair added a
+self-check inside `chk`: a gate name the list does not carry is recorded on `S.gateNameOff`, and a
+warning bar renders it.
+
+`[R101.6]` was written to hold that. It drove the state **by hand**:
+
+```
+S.gateNameOff.clear(); candidateFor(row);
+const offEmpty = S.gateNameOff.size === 0;
+S.gateNameOff.add("a gate nobody listed");     // ← manufactured
+gateNameOffWarn();
+```
+
+**Delete the production line and every conjunct still holds.** `offEmpty` goes *vacuously* true,
+because nothing ever adds; the warning still fires off the hand-written entry; and the label's second
+half — *"and an unlisted one is said out loud"* — is exercised only from a state the probe
+constructs. The twelfth face, sitting inside the assertion written to close a finding, in the same
+session that made *assert at the consumer* a BINDING rule.
+
+**Root cause: the production path looked unreachable and was not.** `GATE_CHAIN_ORDER` is a `const`
+binding to a **mutable array**, so splicing a live gate name out of it, running `candidateFor`, and
+splicing it back drives the real writer. Reaching for `.add()` was the same reflex M157 records:
+*the property was awkward to reach, so I reached around it* — except here the property was not
+actually awkward, only unexamined.
+
+**Consequence: none realized**, and the entry exists for the timing. This assertion was written
+hours after the rule about this exact shape was promoted to BINDING, by the author of the rule.
+
+**The rule that would prevent a repeat: before writing an assertion that sets state the production
+code is supposed to set, establish that production cannot be made to set it.** A `const` binding to
+a mutable structure, a defaulted parameter, an injectable flag — the reachable path is usually one
+line away, and the test for whether you found it is whether deleting the production writer turns the
+assertion red.
+
+Substantiated from: `tools/probe/probe-snippet.html` §101 (`[R101.6]` and its comment),
+`index.html` (`chk`'s self-check, `gateNameOffWarn`), and seed S119, which is green against the first
+form and red against the second.
+
+### M164 · Closing a money-path finding opened a money-path hole on the same two lines
+2026-08-19 · found by: adversarial pass (`audits/ADVERSARIAL-2026-08-19c-queue-pass.md`, consumer-repairs) · pattern: `COMPOSITION`
+
+The chain's two history gates are a PARTITION: `no history` covers *nothing published anywhere* and
+`chart still loading` covers *not enough to read yet*, and between them they must cover every state
+in which the chain cannot judge. That property was never written down; it was simply true, because
+the second gate's suppression clause was the literal negation of the first gate's condition.
+
+Closing re-pass finding 11/17 — the `no history` bench was firing on a false premise, telling the
+operator no history is published for an item the archive had fully evaluated — added a conjunct to
+the first gate:
+
+```
+chk(!!(sp && sp.noData) && ser.src === "none", "no history", …);
+chk(!(sp && sp.noData)  && !rdy.allFed,        "chart still loading", …);
+```
+
+**The second gate's suppression was not updated, so the two stopped being a negation of each other.**
+The region *empty `/timeseries` · archive HAS entries · series not ready* now benched on **neither**.
+Every market gate treats a null reading as unknown rather than fail, so trend, volume trend, momentum
+and drift all passed **unread, with nothing standing in front of them** — which is exactly the
+"unmasking an inert restraint" failure the previous adversarial pass existed to prevent, reintroduced
+by the repair that closed one of its findings.
+
+**Consequence: none realized, and the margin was a clock.** `chartReady()` is false while the h1
+archive accrues, so `ser.src` is `"none"` and the first gate still fires. It would have armed at 7
+observed days — **the cutover's own prerequisite clock** — and nothing in the section would have gone
+red when it did.
+
+**Why the fixture could not see it.** `[R101.1]`'s archive series is 168 **finite** points, so
+`rdy.allFed` is true and the suppressed gate had nothing to say. That is the same
+fixture-prevents-expression shape caught on `[R101.3]` earlier in the same session, for the second
+time in one sitting: the fixture was built to make the repaired case work, not to sit where the two
+forms disagree.
+
+**The rule that would prevent a repeat: when two conditions PARTITION a space, they share one term,
+and the term is what the assertion names.** The suppression clause is now literally the same
+`const noHist` the first gate fires on, so they cannot drift apart again — a partition maintained by
+two independently-edited expressions is a partition waiting to be broken by the next edit to either.
+The assertion sits at 20 archive points, the length where the four consumers genuinely disagree
+(trend and momentum fed, drift and volume trend starved), because that asymmetry is the hole rather
+than a detail of it.
+
+Substantiated from: `index.html` (`candidateFor`'s two history `chk` calls, `seriesReadiness`,
+`marketGateEval`'s unknown-is-not-failing handling), `tools/probe/probe-snippet.html` §101,
+`audits/ADVERSARIAL-2026-08-19c-queue-pass.md`, and seed S116.
+
+### M163 · A fixture kept an empty-but-present spark, so two definitions of "charted" agreed and the repair could not be proved
+2026-08-19 · found by: seeding (the seed came back green) · pattern: `TEST-SUITE`
+
+`chartedNow()` was routed through the resolver so that an archive-fed item counts as judged
+(re-pass finding 10). `[R101.3]` was written to hold it, and its fixture gave the item a spark
+whose `/timeseries` had come back empty — `{ pts: [], noData: true }` — alongside a full archive
+series, because that is the state the *neighbouring* assertion in the same block needed.
+
+**Reverting `chartedNow` to spark presence left the suite GREEN.** A spark OBJECT existed, so
+`S.spark.get(id)` was truthy and the old definition agreed with the new one on this fixture. The
+two definitions disagree only where there is **no spark at all**, and the fixture never reached
+that state.
+
+**Root cause: one fixture serving two properties, and the second one narrowing it.** The block's
+earlier assertions genuinely need the empty-spark-plus-archive state; this one needs pure archive.
+Sharing the fixture is right — five fixtures are five chances to differ from production — but a
+shared fixture has to be *moved* into each property's state rather than assumed to cover all of
+them. Two lines (`S.spark.delete`, then restore) were the whole fix.
+
+**Consequence: none realized**, and the entry exists because of how it was found. The seed is the
+only thing that could have found it: the assertion ran, on real production code, over a real
+repair, and passed for a reason unrelated to the property in its name. A green suite after a
+behaviour change is not evidence, and this is the third of the three answers that green cannot
+distinguish — *the change did not take effect where the assertion looks*.
+
+**The rule that would prevent a repeat: a shared fixture is moved into each property's state
+before that property is asserted, and the seed is what proves it got there.** Where an assertion's
+subject is a DISAGREEMENT between two definitions, the fixture must sit where they disagree —
+anywhere else it is testing that they agree, which is a different claim.
+
+Substantiated from: `tools/probe/probe-snippet.html` §101 (the `sp101` save/delete/restore and its
+comment), `index.html` (`chartedNow`), and seed S99, which passed before the fixture was rebuilt
+and failed after.
+
+### M162 · I wrote the same short-circuit defect I was in the middle of fixing
+2026-08-19 · found by: inspection during seeding (the evidence string could not be read from a pass) · pattern: `TEST-SUITE`
+
+Re-pass finding 8 is a `[R94.1]` condition of the form `A || (B && C)` where `A` matched the
+shipped copy, so JavaScript never evaluated `C` — and `C` was the only test of the claim the
+assertion's own label leads with. In the same session, fixing it, I wrote `[R101.5]` as
+`(evReal === null || evReal.gate === "ROI floor") && evBlk === null && evJunk === null` — a
+disjunction whose first limb passes when the positive case does not happen at all.
+
+It did not happen. The fixture's paper trips carried no `obsMs`, so `shadowObsShare` was 0, every
+trip was `thin`, `shadowCounts` rejected all of them, and `exceptionEvidence` returned null. **The
+assertion proved the two refusals and nothing else, while its label said a real gate is KEPT.**
+
+**Root cause: a defensive disjunct written to absorb a fixture I had not verified.** The honest
+move on an unverified fixture is to assert the strict form and let it go red; the `|| null` was a
+way of not finding out. Tightening it to `evReal && evReal.gate === "ROI floor"` turned it red
+immediately, which is how the fixture gap was found — nine trips, none of them counted.
+
+**Consequence: none realized** — caught within minutes, in the same session, by reading my own
+condition against the rule I had just written up. It is recorded because the timing is the lesson:
+knowing a defect class in detail, and having just fixed an instance of it, did not stop me
+reproducing it thirty minutes later.
+
+**The rule that would prevent a repeat: a disjunct in an assertion condition is a claim that BOTH
+branches are acceptable outcomes.** Where one branch means *the case did not occur*, it is not an
+outcome, it is a hole — assert the strict form, and if it goes red, the fixture is what is wrong.
+A pass cannot be read for which limb satisfied it, so the disjunct is unfalsifiable after the fact.
+
+Substantiated from: `tools/probe/probe-snippet.html` §101 (`[R101.5]` and the `trip101` comment
+recording the rebuild), `index.html` (`shadowSlice`, `shadowObsShare`, `exceptionEvidence`), and
+the run that went red on the tightened form before the fixture was fixed.
+
+### M161 · An assertion compared six hours ago to now and called them the same calendar day
+2026-08-19 · found by: use (the suite went red at 05:00 with nothing wrong) · pattern: `TEST-SUITE`
+
+`[R40.4]` asserts that seasoning must span a CALENDAR DAY: four touches inside one day cannot buy
+qualification. Its fixture was
+`!qualSpanned({ firstAt: Date.now() - 6 * 3600e3, lastAt: Date.now() })` — six hours before now,
+against now.
+
+**Between midnight and 06:00 local, six hours before now is YESTERDAY.** The assertion failed at
+05:00 on a tree with nothing wrong with it, and it had been shipping that way since it was
+written: a test that fails by the clock rather than by the code, which is the fifth face. It fails
+for roughly a quarter of every day, and the only reason it had not been seen is that the suite is
+usually run in working hours.
+
+**Root cause: an ambient input read twice and assumed to be stable.** `Date.now()` is not a
+fixture; it is the machine's clock, and a rule about calendar boundaries is precisely the rule
+whose truth depends on where in the day the clock is.
+
+**Consequence: realized but contained** — one red run, correctly diagnosed as the assertion rather
+than the code, and it cost the time to establish that. The real cost of this class is the one the
+project already names: an intermittent failure teaches the operator to ignore failures.
+
+**The rule that would prevent a repeat is the standing one, applied: INJECT the varying input,
+never pin the ambient clock.** Both pairs now hang off today's local noon, so the same-day pair is
+06:00→12:00 and the rollover pair is yesterday-noon→noon at every hour of the day, and across a
+DST shift — which moves noon by an hour and never across a date boundary. Pinning the clock
+instead would have traded a flaky assertion for a silently-wrong one everywhere else `Date.now()`
+carries staleness meaning.
+
+Substantiated from: `tools/probe/probe-snippet.html` §40 (the anchored form and its comment),
+`index.html` (`qualSpanned`), the 05:00 red run, and seed S96, which reddens the anchored form.
+
+### M160 · An agent-side `git checkout --` destroyed three uncommitted entries in the file that records mistakes
+2026-08-19 · found by: use (immediately, by the agent that caused it) · pattern: `DESTRUCTIVE-UNDO`
+
+A perl one-liner used to insert M159 mixed a UTF-8-decoded insert with a byte-read host file and
+double-encoded every multi-byte character in `MISTAKES.md`. The reflex repair was
+`git checkout -- MISTAKES.md`. **The tree is deliberately uncommitted by standing ruling —
+committing and pushing are the user's — so `HEAD` is not a backup of anything, and the checkout
+discarded M156, M157 and M158 along with the damage.** Nothing else in the file had changed, so
+the loss was exactly the three newest entries: 6,955 bytes, all of it this week's evidence layer.
+
+**Recovery, and what made it possible.** M157 and M158 had been read in full earlier in the same
+session, so they were restored verbatim from the session's own transcript. M156 had been read only
+as far as its first sentence, and was **reconstructed from its cited sources** — the sweep section
+it was found by, the requirement row that cites it, the shipped glossary entry it produced — and is
+marked RECONSTRUCTED in place, per the file's standing convention that an inferred entry says so
+rather than being reported as found. **The original wording of M156 is not recoverable.**
+
+**Root cause: an undo reflex aimed at the wrong layer.** The damage was a formatting defect in one
+insertion; the remedy applied was a whole-file revert to a baseline that predated three days of
+work. Two things made it possible and both are the same shape as the assertion defects this file is
+full of: the repair was aimed at the artefact rather than at the edit, and the safety of the action
+was assumed from the tool's usual semantics rather than checked against this repo's actual state.
+
+**Consequence: realized, and permanent for one entry.** M156's text is reconstructed rather than
+restored. Everything downstream of it — the reworded `gov-propose` entry, R92.6, the sweep — is
+intact and is what the reconstruction rests on.
+
+**The rules that would prevent a repeat, and they are two.**
+1. **In a repo whose working tree is the deliverable, `git checkout --` / `git restore` / `git
+   stash` are destructive commands, not undo.** Copy the file aside first; there is no other copy.
+2. **A text edit to a UTF-8 file is made in one encoding domain or the other, never both.** Reading
+   an insert through `:encoding(UTF-8)` while reading the host file as bytes upgrades the host's
+   bytes to codepoints on concatenation and re-encodes them on output. The check is one grep for
+   `Â` immediately after any scripted edit, before anything else is done to the file.
+
+Substantiated from: this session's own transcript (the destroying command and the restored text),
+`git status` before and after, and the byte counts 145,588 → 138,633 → restored.
+
+### M159 · The mask's repair was asserted on the term it reads, and reverting the mask stayed green
+2026-08-19 · found by: seeding (the re-pass's own fix, caught before it shipped) · pattern: `PROXY-ASSERT`
+
+The re-pass's readiness finding was repaired the right way in production: `seriesReadiness(ser)`
+was extracted, the four per-consumer minima named in one place, and the *"chart still loading"*
+mask re-keyed from `tr == null` to `!rdy.allFed`. The assertion written to prove it, `[R99.3]`,
+called `seriesReadiness` directly with three hand-built `{ pts, vols }` objects and asserted the
+booleans it returns.
+
+**Reverting the mask to `chk(!(sp && sp.noData) && tr == null, …)` left the suite GREEN.** The
+extracted term was still perfectly correct — nothing in the suite said the branch read it. The
+assertion was proving arithmetic that was never in doubt, while the property actually under
+repair — *which branch keys the bench* — had no assertion at all.
+
+**Root cause: the one M157 and M158 name.** Reaching the branch needed a full `candidateFor`
+fixture carrying a deliberately thin series; reaching the term needed three object literals.
+*The property was awkward to reach, so I reached around it* — for the third time in two
+adversarial passes, which is what moves it from an incident to a habit.
+
+**The trap is specific, and the project's own rule set walks into it.** The standing remedy for
+the seventh face (an assertion that re-implements what it tests) is *extract the logic into a
+named function and point the assertion at that*. Applied without a second half, that remedy
+PRODUCES this defect: extraction fixes reachability, and reachability is not coverage. **An
+extraction owes two assertions — the term for its arithmetic, the branch for its wiring** — and
+only the second can survive a revert as a red.
+
+**Consequence: none realized.** Caught in the same session's seeding pass, by seeding the
+production revert rather than the term. Fixed by adding the chain-level half: a 20-point series
+(trend and momentum fed, drift starved) benches *"chart still loading"* on the real chain while a
+168-point one does not, with the bench copy's `drift needs 24` matched so a failure names the
+reason rather than a count.
+
+**The rule that would prevent a repeat is now BINDING** — *an assertion's subject is the branch
+that reads the term, not the term itself* — with integration-audit **scan 15** as its detector.
+
+Substantiated from: `index.html` (`seriesReadiness`, `candidateFor`'s mask `chk`),
+`tools/probe/probe-snippet.html` §99 (both halves of `[R99.3]` and the comment recording the
+revert), REQUIREMENTS.md §99, `audits/ADVERSARIAL-2026-08-19b-fixes-pass.md` finding 2.
+
+### M158 · A scope correction was implemented on the surface that did not have the problem
+2026-08-19 · found by: adversarial pass (`audits/ADVERSARIAL-2026-08-19-cutover-pass.md`, ring-b-chart-overlays) · pattern: `PROXY-ASSERT`
+*Retagged from `CLAIMS-VS-CODE` on 2026-08-19 by user ruling — see M159. The false
+REQUIREMENTS row is what shipped; the assertion aimed at the plumbing is why nothing caught
+it, and the tag records the root cause. Text restored verbatim after M160.*
+
+The chart-wiring build of Aug 18 2026 was ruled with an explicit scope correction: feed
+momentum and drift from the T0 hourly series **alongside** `tr`/`vt`, because the *"chart
+still loading"* bench currently MASKS two vacuous restraints, and wiring only the two named
+gates would remove the mask without feeding what it hides — turning two restraints
+live-and-off rather than fixing them. The correction was found before the build started,
+ratified, and reported as implemented.
+
+**It was implemented on the wrong surface.** `chartPts`/`chartVols` gained exactly three
+consumer lines, all inside `marketStatsFor` — the INSTRUMENT's stats builder. The **live
+chain**, which is where the mask actually sits (`chk(!(sp && sp.noData) && tr == null,
+"chart still loading", …)` lives in `candidateFor`), kept reading the per-item spark for
+`tr`, `vt` and momentum, and **drift was never wired at all** — `stabilityWeight` →
+`sitRisk` reads `sp.pts`, and `marketStatsFor` has no drift field to wire.
+
+So the requirement row and the report both claimed "ONE SERIES FEEDS FOUR CONSUMERS — tr, vt,
+MOMENTUM AND DRIFT" while production fed three fields on one surface and zero on the other.
+
+**Root cause: the assertion named the plumbing, not the consumers.** `[R94.2]`'s condition
+tests `chartReady`, `chartPts` and `chartVols` — it could not see the chain at all, so it was
+structurally incapable of noticing that the surface the ruling was about had not changed.
+That is the claims-vs-computation defect with the copy in a REQUIREMENTS row rather than on
+screen, and it survived a same-session seeding pass because every seed I wrote also aimed at
+the plumbing.
+
+**Consequence: none realized.** Chart coverage stands at 3.9 of 7 observed days, so the
+transition that would have unmasked the two restraints has not happened. Caught before the
+clock ran out, which is the only reason this is an entry and not an incident.
+
+**The rule that would prevent a repeat: when a ruling names CONSUMERS, the assertion names
+the consumers.** An assertion over the source a consumer *should* read cannot see whether the
+consumer reads it. The repair is the shape: `itemSeries` is now the one resolver and
+`[R96.1]` asserts, on an archive-only fixture, that **every** chart-derived reading on the
+chain is fed — with the discriminating half that on no source they all read unknown. Seeding
+any single consumer out of the wiring now turns it red naming which. That is structural: a
+new consumer inherits the resolved series rather than needing to be remembered.
+
+Substantiated from: `index.html` (`itemSeries`, `candidateFor`, `marketStatsFor`,
+`stabilityWeight`), REQUIREMENTS.md §94 and §96,
+`audits/ADVERSARIAL-2026-08-19-cutover-pass.md`, and seeds S79 (did not bite against the old
+assertions) / S79b–S82 (bite against `[R96.1]`).
+
+### M157 · A requirement row claimed a branch was exercised that the suite could never reach
+2026-08-19 · found by: adversarial pass (`audits/ADVERSARIAL-2026-08-19-cutover-pass.md`, new-session-assertions) · pattern: `PROXY-ASSERT`
+*Retagged from `TEST-SUITE` on 2026-08-19 by user ruling — see M159; still a face of
+`TEST-SUITE` and counted once inside it, reported separately, exactly as `CLAMP` is. Text
+restored verbatim after M160.*
+
+`[R89.1]` was written to say: *"Both paths assert: the watchlist path is bit-identical to
+today's while the flag is off, and the pool path is exercised by driving the flag under a
+fixture, so the branch that will carry the money is not first executed on the day it carries
+it."*
+
+**The pool path was never exercised.** `CUTOVER_POOL` is a `const`, `planCandidates` read it
+directly, and `if (!CUTOVER_POOL) return watch;` returned on every run of the suite — so
+`watch.concat(cutoverPoolRows().map(p => markSrc(candidateFor(p), QUAL_SRC_POOL)))` was dead
+code. The concat composition, the pool provenance stamp, and `candidateFor` on a synthesised
+one-key row were all unexercised. Every `QUAL_SRC_POOL`-stamped object anywhere in the suite
+was hand-written into a fixture; production never produced one.
+
+**The probe's own comment admitted it** — *"The ON path, exercised through the term the flag
+guards rather than by mutating a const"* — and I wrote the requirement row claiming the
+opposite in the same sitting. The comment is the more honest artefact of the two, which is
+the tell: I knew the flag could not be driven, chose to assert the term instead, and then
+wrote the row as though the branch had been covered.
+
+**Root cause: an untestable design accepted instead of fixed.** The flag was a `const` read
+inside the function, so the armed path was unreachable from a test. The fix was one
+parameter — `planCandidates(armed)`, defaulting to the const, so production is unchanged and
+a caller may drive the branch. **The choice to assert around the obstacle rather than remove
+it is the mistake**, and it is the same instinct that produced two probe-side
+re-implementations of flag-gated properties in the same session (`opsPick`, `opsTierOv`) and
+three too-broad `document.body` matches: *the property was awkward to reach, so I reached
+around it.*
+
+**Consequence: none realized** — the flag is still false. But the branch that will carry the
+money would have been first executed on the day it carried it, which is precisely what the
+row promised would not happen.
+
+**The rule that would prevent a repeat: if a branch cannot be reached from a test, that is a
+design finding, not a reason to assert something adjacent.** Make it reachable — inject the
+flag, extract the term, pass the dependency — and then assert the branch. And a requirement
+row must describe what the assertion DOES, never what the design intended; where the two
+differ the row is the thing that lies, because it is what the next reader trusts.
+
+Substantiated from: `index.html` (`planCandidates`), `tools/probe/probe-snippet.html` (§89
+block), REQUIREMENTS.md §89,
+`audits/ADVERSARIAL-2026-08-19-cutover-pass.md`, and seed S87.
+
+### M156 · The tool's own statement of its constitutional rule named the surface, not the property
+2026-08-18 · found by: audit scan (the prospective cutover-readiness sweep, `audits/SWEEP-2026-08-18-cutover-readiness.md` §2h) · pattern: `CLAIMS-VS-CODE`
+
+**RECONSTRUCTED 2026-08-19** from `audits/SWEEP-2026-08-18-cutover-readiness.md` §2h, HANDOFF.md's
+report of that pass, REQUIREMENTS.md R92.6 and the shipped `gov-propose` entry in `index.html`,
+after the original text was destroyed by an agent-side `git checkout --` against an uncommitted
+tree (**M160**). Every fact below is cited; the original wording is not recoverable.
+
+The `gov-propose` glossary entry — the tool's own rendering of the standing rule the whole
+product is built to — read *"no flip is logged, no offer placed, no **watchlist commitment**
+made without a press"*.
+
+**The property survives the cutover exactly; the noun does not.** After the plan's candidate pool
+switches from watchlist admission to the scorer's control cell, nothing is committed to a
+watchlist at all — so the tool's statement of its own constitution would have described a
+mechanism that no longer gates anything, while the rule it states is completely unchanged.
+
+**Root cause: the surface-not-property defect, in the one place it is most expensive.** The
+prophylactic at the top of CLAUDE.md — *name the property first; the surface is only the example
+that produced it* — governs how rulings are written, and the tool's own copy had committed exactly
+the error the prophylactic exists to prevent. A rule stated in terms of its current mechanism
+silently narrows to that mechanism and expires with it.
+
+**Consequence: none realized** — found prospectively by the cutover-readiness sweep, before the
+pool switch. Finding it there rather than after is the whole point of running a sweep against a
+change that has not happened yet.
+
+**The rule that would prevent a repeat: user-visible copy that states a RULE states the property,
+and demotes today's mechanism to a dated example.** The reworded entry leads with *NO CAPITAL IS
+COMMITTED WITHOUT AN EXPLICIT PRESS* and lists no-flip-logged / no-offer-placed / no-pin-added as
+"three examples of the property, not the property itself", with the `from` field recording the
+rewording and why. Four sibling entries found by the same scan (`paper-cohort`, the
+scanner-vs-watchlist net comparison, the promote-from-here line, and the cohort never-blend entry)
+name a population that is about to be renamed; they are on the retirement sweep rather than
+reworded now, because they describe machinery the cutover retires rather than a rule it preserves.
+
+Substantiated from: `audits/SWEEP-2026-08-18-cutover-readiness.md` §2h, `index.html` (`GLOSSARY`'s
+`gov-propose` entry, reworded), REQUIREMENTS.md R92.6, HANDOFF.md.
 
 ### M155 · The caveat the rule required inline shipped inside a disclosure, and its assertion matched the whole panel
 2026-08-14 · found by: seeding (the stage-1d repair of census probe:6511 went red on real production output) · pattern: `TEST-SUITE`

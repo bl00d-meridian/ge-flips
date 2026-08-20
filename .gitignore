@@ -26,3 +26,7 @@ gef-backup*.json
 # ANY depth, and it silently swallowed tools/inbox/sweep.sh — the collector
 # itself — which would have shipped the rule without the thing it describes.
 /inbox/
+# the cold-repair-review work area (tools/stage/*.sh). A pass in flight lives
+# here and lands by tools/stage/land.sh; the durable record is
+# audits/REPAIR-LEDGER.md. ANCHORED to the repo root, same reasoning as /inbox/.
+/staging/

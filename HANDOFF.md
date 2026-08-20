@@ -1,55 +1,1039 @@
-# WAITING POSTURE — everything is pushed; the next builds are clock- or ruling-triggered
+# FIVE RULINGS ACTED ON — A1 built, the boot merge's first two items built, `DB.qual` dropped
 
-**Baseline: `f0bf448` on main (Pages deploys from it), clean tree.** Nothing is
-mid-flight. Do not start speculative work — each item below starts from this baseline
-with its own conformance stanza when its trigger arrives.
+**`index.html` has not moved all session.** It hashes `3cf9a22d321892e5…`, the value it had when
+the session opened. **Everything is in `staging/` and nothing has landed** — by the user's own
+ruling, the cold review is the next session's first act.
+
+**Staged suite: `PROBE-PASS [STAGED: staging/index.html]`, both viewports, pairing clean both
+directions (507 tags / 520 rows / 507 cited).** Baseline at session start was 489 / 501 / 489.
+**Nine repairs are staged**, each with its property written down and its `Verdict: PENDING`.
+
+## THE COLD REVIEW IS THE FIRST THING THAT HAPPENS
+
+Read `staging/DIFF.patch` **without** reading `staging/PASS.md`'s "the finding that provoked it"
+lines, without `audits/ADVERSARIAL-2026-08-19g-pass7-cutover.md`, and without this section. For
+each of the **nine** repairs: name the property, run your own property-scoped search, record the
+answer in `PASS.md`. `tools/stage/land.sh` refuses without it. Then the pass over the repairs.
+
+## What the five rulings produced
+
+| ruling | built | assertions |
+|---|---|---|
+| **A1** — the funding walk splits the two populations | `planCmp` is the one comparator, read by the walk and every render; `planOrder` is the funding order; **promoted items are their own group** so an override still crosses every boundary; the NEXT UP disclaimer clause came out in the same commit; the "plan is full" blame now names how many candidates are ahead and how many are pins | `[R107.7]`, `[R107.11]`, `[R107.12]` |
+| **boot merge 1 + 2** | `CAP_KEYS` owns the nine keys, their tight ends and defaults; `capResolve` is the import's resolution; `clampCapKeysAtLoad` is the load path's, beside the existing shape guard. `impCap` deleted rather than left unused | `[R107.14]`, `[R104.9]` re-pointed |
+| **`DB.qual` is not carried** | the carry removed, the correction recorded **as the user's** at the site and in the requirement row; one dependent assertion inverted, one withdrawn with its row rewritten to cite the new one | `[R107.13]`, `[R87.5]` withdrawn |
+| **boot merge item 3** | **not built** — the unknown-key census needs its displacement answer first | — |
+| **pass 7's other twelve** | **queued**, untouched, and the two that A1's own property search returned (`applyFamilyRule` and its pre-sort) are named in the source so the omission reads as seen rather than missed | — |
+
+**Seeds S174a–S174e, one at a time, staged tree restored byte-identical between each.**
+
+## Two green seeds, and both were findings (M173, M174)
+
+- **`[R107.5]`** drove three controls through production's real handlers and still could not fail:
+  with `ITEM_OPS` off, a routed write and a direct row write land the same value. Repaired with a
+  source-level detector beside the drives.
+- **`[R107.11]`** built all three candidates from one price template, so the pin's score and the
+  pool items' sort keys were the same number and **every ordering agreed**. The seed measured sort
+  stability. Repaired by giving the pool item a strictly wider spread.
+
+**And `[R107.12]` caught a real defect in my own A1 before it shipped:** the first form made the
+funding order a concatenation of three groups, which left a manual promotion unable to cross out of
+its own group — an override that cannot cross the boundary it was pressed to cross is not one.
+
+## Behaviour on today's book
+
+**A1 changes nothing measurable today.** With the pool flag off every candidate is a watch row, so
+the split is tenured versus held, and the held block is empty on the current book (measured 0 of
+43). It bites during a `/timeseries` outage and after the cutover. The boot-merge clamp fires only
+on a stored capacity setting that is not a finite number, which no path in the app writes. The
+`DB.qual` change is restore-path only.
+
+## Owed
+
+- The cold review, `bash tools/stage/land.sh --yes`, the suite on the real files, and the
+  reviewer's property in `audits/REPAIR-LEDGER.md`.
+- **A pass over these nine repairs.** Every pass since 2 has found a defect inside the previous
+  one's, and this session's own assertions found two in mine.
+- Pass 7's remaining twelve money-path findings.
+- The displacement answer for the unknown-key census (boot-merge item 3).
+---
+
+# THE SIX DIRECTIVES ON PASS 7 (superseded above by the rulings that followed them)
+
+**`index.html` has not moved all session.** It hashes `3cf9a22d321892e5…`, the value it had when the
+session opened — verified by six independent agents at both ends of the adversarial pass and by
+`tools/stage/check.sh` at the close. **Everything built in the second half is in `staging/` and has
+not landed.**
+
+**Staged suite: `PROBE-PASS [STAGED: staging/index.html]`, both viewports, pairing clean both
+directions (504 tags / 516 rows / 504 cited).** Baseline at session start was 489 / 501 / 489.
+
+## THE NEXT SESSION'S FIRST TASK IS THE COLD REVIEW
+
+Read `staging/DIFF.patch` **without** reading `staging/PASS.md`'s "the finding that provoked it"
+lines and without reading `audits/ADVERSARIAL-2026-08-19g-pass7-cutover.md`. For each of the **six**
+repairs: name the property it is about, run your own property-scoped search, and record the answer
+in `PASS.md`. `tools/stage/land.sh` refuses to land without it.
+
+## What was built (directives 1, 2, 3b, 4, 5)
+
+| # | directive | what shipped, staged | assertions |
+|---|---|---|---|
+| 1 | flag pairing | `cutoverFault` + `cutoverPoolOn`; **`CUTOVER_POOL` without `VOL5_UNIVERSE` is REFUSED**, falls back to the watchlist, and raises a warning bar naming the missing flag. All six readers of the flag now read the effective term. The guard **refuses rather than repairs** — deriving one flag from another would arm deployment-class machinery on one press. `pool && !ops` is a stated warning and not a fault, with the reasoning recorded at the site | `[R107.1]`–`[R107.3]` |
+| 2 | ITEM_OPS must not discard operator state | `opsWrite` is the one writer in both regimes; `opsFor` the one reader for callers holding a row; `itemOpsReconcile` (`itemOpsV2`) makes the store agree with the row **before** the flag can arm. **The property search returned TEN sites where the finding named four — six of them READS** | `[R107.4]`–`[R107.6]` |
+| 3b | NEXT UP | grouped like the funded block, **and the header says what the grouping is not**: the funding sort does not yet split, so a group's position is not a queue position. That clause comes out when directive 3a is ruled | `[R107.7]` |
+| 4 | seasoning: absent ≠ failed | `scorerCycle` keeps `S.scorerCtlFail` beside its pass set; `updateQualStreaks` breaks a streak on a **scored** failure and leaves an unscored cycle alone. The `!inAll` guard keeps the scorer's verdict off the population the allocator evaluated itself | `[R107.8]`, `[R107.9]` |
+| 5 | `qualV1` ruled: do not carry | recorded at the migration site and asserted at the sanitiser | `[R107.10]` |
+
+**Seeds S173a–S173j, one at a time, staged tree restored byte-identical between each.** Every one
+reddened its own assertion; the two that cascaded were re-seeded individually.
+
+**One seed came back GREEN and that was the finding (MISTAKES M173).** `[R107.5]`'s first form drove
+all three drivable controls through production's own delegated handlers and still could not fail:
+with `ITEM_OPS` off, a routed write and a direct row write land the same value, and nothing at
+runtime flips the flag. Repaired with a source-level detector beside the drives — the app's own
+script text must carry **zero** direct `w.<field> =` writes of the six operator-state fields — and
+re-seeded red alone.
+
+## What was NOT built, and why
+
+- **Directive 3a — the funding sort.** Deployment-class, the user rules the proposal:
+  `audits/PROPOSAL-2026-08-19-funding-sort.md`. Three allocation rules costed;
+  **A1 (tenured-first, pool fills the remainder) is recommended** because it is the only option
+  strictly *narrower* than today, so it needs no measurement to justify it. Option B is costed and
+  shown to have no honest item-level form except changing the unfed default, which is a
+  strategy-constant change dressed as a bug fix.
+- **Directive 6 — the boot merge.** Scoping only:
+  `audits/BOOTMERGE-2026-08-19-load-path-scoping.md`. **The import's sanitiser does not serve at
+  load, for four reasons that are not cosmetic** — it drops rows (22 `filter(Boolean)` passes), it
+  mints ids on every boot, it applies sixteen retention caps, and its null→tight rule is written
+  against a foreign file rather than the user's own store. The recommendation is **not** a load-path
+  sanitiser: extract the clamp rule into one term applied on both paths, extend the existing shape
+  guard to the nine cap keys, and **report** unknown keys rather than deleting them.
+
+## Owed
+
+- The cold review, then `bash tools/stage/land.sh --yes`, then the suite on the real files, then the
+  reviewer's property in `audits/REPAIR-LEDGER.md`.
+- **A pass over these repairs.** Every pass since 2 has found a defect inside the previous one's.
+- Pass 7's remaining findings — 12 of the 17 money-path ones are untouched by these six directives.
+- Rulings: directive 3a; the `DB.qual` carry question raised by directive 5 (`DB.qual` **is**
+  carried, so a restored file's streaks travel with it, which the file-as-press argument reaches
+  the same way it reaches `qualV1`); the boot-merge clamp extraction.
+---
+
+# PASS 7 ITSELF — the cutover-scoped pass, 17 money-path findings (the directives above act on six of them)
+
+**Tree UNCOMMITTED and UNCHANGED this session.** `index.html` hashes
+`3cf9a22d321892e5…` — the same value it had when the session opened, verified by six independent
+agents at both ends of the adversarial pass and by `tools/stage/check.sh` at the close. **Suite on
+the tree: `PROBE-PASS`, cold, 489 tags / 501 rows / 489 cited, pairing clean both directions.**
+Committing and pushing are the user's.
+
+**Everything built this session lives in `staging/` and has not landed.** That is the new rule, not
+an accident — see *the staged repair pass* below.
+
+## 1. Pass 7 — the cutover surface, `audits/ADVERSARIAL-2026-08-19g-pass7-cutover.md`
+
+| pass | scope | money-path |
+|---|---|---|
+| 4 | cutover-critical assertions | 0 that bite today |
+| 5 · 6 | `validateImport` and its repairs | 3 · 8 |
+| **7** | **the cutover surface itself** | **17** |
+
+Five non-overlapping readers, adversarial refutation per finding, a completeness critic.
+**435 reader-minutes · 322 call sites · 147 assertion bodies read in full.** 34 findings,
+25 verified, **22 survived, 3 refuted**. No finding rests on a suite result. Verification was capped
+at 5 per reader and **the 5 it did not reach are named in the report** — all non-money-path.
+
+**Almost every finding is LATENT and armed by exactly the flags the ruling would flip**, which is
+why four earlier passes could not see them: the population they concern does not exist until
+`CUTOVER_POOL` is true.
+
+**The four that decide the ruling**, each re-verified against source by hand:
+
+- **The operator store and the watch row have different owners for reading and writing.** `opsPick`
+  prefers the store; `itemOpsMigrate` snapshotted once and never runs again; and of the writers of
+  those six fields **exactly one branches on the flag** (line 7869) while the four watch-row
+  controls write the row unconditionally. So flipping `ITEM_OPS` **discards every operator edit made
+  since the migration boot** — including a hand-set untiered override, which is a bench removed with
+  no press. `[R93.4]`'s fixture writes the store and never the row, so no assertion can see it.
+- **`CUTOVER_POOL` without `VOL5_UNIVERSE` is a widening.** The 5m die-off streak is kept for
+  `DB.watch` only and *deleted* for everyone else, so `volGateFor` falls through to the 1h branch for
+  a pool item. The 5m binding is a `Math.min`, so pool items would be sized **larger** and clear the
+  volume floor **more easily** than an identically-placed pin in a collapsing book. Three independent
+  `const`s; nothing enforces the pairing; only this ordering is dangerous.
+- **The plan's two-group split is applied AFTER funding.** `planGroups` is called once, on `picks`.
+  The sort that decides the seven slots and the per-slot budget is one list, on a score whose four
+  history terms are a neutral 1.0 for pool items — the exact condition the split's own design
+  comment calls *"the never-fed-aggregate rule inside a sort comparator"*. **This was scoped
+  deliberately** (the comment says display-only and calls the merge deployment-class), so it is a
+  decision for the ruling rather than a defect to fix. Its second half is not ambiguous: **NEXT UP —
+  the automatic funding queue — is not split at all**, so the surface shows a separation the money
+  never had.
+- **The seasoning reset cannot see a pool item's market-gate failure.** The reset fires on
+  `x.failed`, and a pool item that fails a market gate is simply *absent* from the candidate list
+  rather than failed. Three passes out of ~576 buckets would season a pool item; the same behaviour
+  never seasons a pin. **Seed result: nothing — uncovered.** Deleting the reset entirely turns no
+  assertion red.
+
+**What this does to the gate.** Three of the four ruled requirements were done; the adversarial pass
+was the fourth and it did not come back clean. **The position is not "one clean pass away" — it is
+"triage these, close the money-path ones, then a pass over the repairs".** Every pass since 2 has
+found a defect inside the previous pass's repairs; budget for it.
+
+## 2. The staged repair pass is built and proven — `tools/stage/`, PROBE.md, CLAUDE.md
+
+`run.sh` takes `PROBE_SRC` / `PROBE_SNIPPET` / `PROBE_REQ`; four scripts open a pass, run the full
+suite against it, prove the freeze and produce the diff, and land it under a guard. **A staged run
+stamps its own header** (`PROBE-PASS [STAGED: …]`) so it can never be quoted as a tree run.
+`staging/` is gitignored; the durable record is **`audits/REPAIR-LEDGER.md`**, which carries **both**
+namings of each property — the repairer's and the cold reviewer's — because only the pair says
+whether a later recurrence means the property was named too narrowly or the search was run too
+narrowly.
+
+**Proven by seeding, both overrides, one at a time:** a sign flip in `staging/index.html` alone took
+the suite to `PROBE-FAIL 8` with `index.html` hashing unchanged; an always-false `ok()` in the staged
+snippet alone took it to `PROBE-FAIL 1`. `land.sh` was proven to refuse and to pass.
+
+## 3. STAGED, AWAITING COLD REVIEW — the live-trading track
+
+**`staging/PASS.md` · `staging/DIFF.patch` · `staging/REPORT-staged-{1200,390}.txt`.**
+Staged suite green on both viewports, pairing clean (494 tags / 506 rows / 494 cited).
+**Seeds S172a–S172e each reddened their own assertion alone**, one at a time, restored between.
+
+**THE NEXT SESSION'S FIRST TASK IS THE COLD REVIEW OF THAT DIFF.** Read it *without* reading this
+section or `staging/PASS.md`'s finding line: name the property each repair is about, run your own
+property-scoped search, and record your answer in `PASS.md` before anything lands.
+
+The finding named two writers; the property returned **three**. Five assertions, anchored at
+`sellAgeInfo` and `staleBuyInfo` — the branches that render *undercut & exit* and *cancel — market
+moved* — plus one pinning the number of position-creation sites so a fifth cannot land silently.
+
+## 4. The restore track is enumerated and closed — `audits/DBKEYS-2026-08-19-restore-enumeration.md`
+
+**29 keys `validateImport` never writes: 17 WRONG, 6 HARMLESS, 6 DELIBERATE.** Twelve bite today.
+Sharpest: the **one-shot migration flags** (`shadowPurgeV1`, `paperEpoch2`) — restoring a
+pre-migration file into a browser that already ran the migration leaves the flag set, so the imported
+data **never migrates, permanently** — and **`poolSeen`**, which splits the pool-persistence ledger's
+numerator from its denominator across the restore boundary, corrupting the evidence base for the
+seasoning measurement the cutover ruling needs.
+
+Three findings the key-by-key question could not produce: **the boot merge at line 1363 has no
+sanitiser at all** (one question, two owners, in the largest store in the app); **five IndexedDB
+stores are outside the restore entirely**, including `rdiff`, the cutover gate's own evidence; and
+`shadowBook[].clrGen` is a row-level omission a key-level enumeration is structurally blind to.
+
+**Nothing here is repaired.** The remediation is not one commit — 14 keys want carrying, 6 want a
+comment at the site, 1 (`qualV1`) wants a ruling because carrying it grandfathers restored rows past
+the seasoning gate, and two structural findings are bigger than the import path.
+
+## 5. What is owed
+
+- **The cold review of `staging/`**, then `bash tools/stage/land.sh --yes`, then the suite on the
+  real files, then a row in `audits/REPAIR-LEDGER.md`.
+- **Triage of pass 7's 17 money-path findings**, staged under the new rule. Three of them are
+  decisions rather than repairs and belong to the user: whether the funding sort splits the two
+  populations; whether `CUTOVER_POOL` may flip without `VOL5_UNIVERSE` (on the evidence it may not);
+  and whether a pool item seasons on the same rule as a pin.
+- **A pass over those repairs**, because every pass since 2 has found a defect inside the last one's.
+- The restore-track remediation, at the user's pace — the backup is not being restored until it
+  closes.
+
+## The three clocks (unchanged, no code moves them)
+
+1. **Chart gates — N of 7 OBSERVED days.** Read the tripwire caveat in the section below before
+   trusting it: `[R76.9]` cannot observe a runtime coverage transition, and the correction is
+   recorded. Pass 7 adds that **`VOL5_UNIVERSE`'s armed branch is unreachable from any test at all** —
+   `planCandidates` and `opsOf` both took an injection parameter for this reason and
+   `vol5Population()` did not.
+2. **Capture grading — waits on the operator's real calibration flips.** `[R78.17]` pins
+   `SCORER_CAPTURE_GRADED = false`; every ranking surface says "cannot rank yet".
+3. **Reconciliation history — `rdiff` accrues every scored bucket.**
+---
+
+# PRIOR POSTURE (superseded by the section above — kept for the detail it carries)
+
+**Tree UNCOMMITTED. Suite: `PROBE-PASS — 1,262 assertions, COLD PROFILE, both viewports, pairing
+clean both directions (489 tags / 501 rows / 489 cited)`.** Cold and warm compared: identical,
+assertion for assertion. Committing and pushing are the user's.
+
+**THE SUITE NOW RUNS COLD BY DEFAULT** (user ruling, Aug 19 2026). `run.sh` deletes the browser
+profile before every run; `PROBE_WARM=1` keeps it, and exists only to produce a warm run to compare
+against. **If cold and warm ever differ, that difference is a finding** — some assertion is reading
+state nothing wrote, and the warm green is the one that was lying. This was not hypothetical:
+`[R82.4]` was passing on reconciliation rows an EARLIER RUN had left in IndexedDB (**M166**).
+
+**Full record: `audits/QUEUE-2026-08-19-repass-closure.md` (the queue) and
+`audits/ADVERSARIAL-2026-08-19c-queue-pass.md` (the third adversarial pass over it).** In one line
+each: **hourWeight** routed through the resolver with a third state and a hold-out (ordering change
+measured at **0 of 43** live watch items); **assert-at-the-consumer** is BINDING with **scan 15**
+as its detector and `PROXY-ASSERT` as its tag; **23 re-pass findings closed**, the two owed
+allocator assertions written, and `[R7.3]`'s owed limb paid.
+
+**One incident to know about before anything else:** an agent-side `git checkout --` destroyed
+three uncommitted `MISTAKES.md` entries. M157 and M158 were restored verbatim from the session
+transcript; **M156 is RECONSTRUCTED from its cited sources and marked as such — its original
+wording is not recoverable.** Recorded as M160; the rule is in CLAUDE.md's repo-hygiene section.
 
 **The three clocks (no code moves them):**
 
-1. **Chart gates — N of 7 OBSERVED days from 1b** (Razer uptime gates it). When day 7
-   lands, the chart-wiring build runs; the armed era-fact tripwire
-   (`marketStatsFor(id).tr === null` inside `[R76.9]`) goes red when the wiring lands,
-   and that stage's stanza must account for the `fundedNoChart`/`ncN` transition.
-2. **Capture grading — waits on the operator's real calibration flips** inside the 36h
-   tape window, on frontier-class items. `[R78.17]` pins
-   `SCORER_CAPTURE_GRADED = false` and forces the accounting when it flips. Until then
-   every ranking surface says "cannot rank yet" in the ruled words. b=100 stays
-   deferred on exactly this.
-3. **Reconciliation history — `rdiff` accrues every scored bucket**; its ruled reader
-   is the cutover gate, and scan 2 re-reports it as STAGED until that gate consumes it.
+1. **Chart gates — N of 7 OBSERVED days from 1b** (Razer uptime gates it). When day 7 lands, the
+   chart-wiring build runs. **READ THIS BEFORE TRUSTING THE TRIPWIRES.** `[R76.9]`'s era fact was
+   claimed, in CLAUDE.md and in two code comments, to fire when the wiring lands. **It does not,
+   and the third adversarial pass proved it historically: the wiring landed on Aug 18 and nothing
+   went red.** Its subject is a synthetic id absent from the real archive, so its `tr` is null
+   whatever the gate says. It has been strengthened to assert BOTH directions and the claim is
+   corrected everywhere — but **no in-page assertion can observe a runtime coverage transition**,
+   because that is a clock and not a code shape. The forcing function for the clock is the cutover
+   gate's fourth prerequisite, read by a person. `[R100.4]` — added Aug 19, asserting the archive
+   does NOT feed an hour-of-day profile — is a genuine armed fact by contrast: it forces its own
+   fixture's ready path, so wiring a profile out of the archive's hour-stamped keys turns it red. The second is armed
+   against a different transition: building `byHour` out of the archive's hour-stamped bucket keys
+   would feed a score weight for a whole population whose ordering was ruled on the assumption that
+   it was not fed. **That wiring is deployment-class in its own right and must turn `[R100.4]` red
+   before it lands.**
+2. **Capture grading — waits on the operator's real calibration flips** inside the 36h tape window,
+   on frontier-class items. `[R78.17]` pins `SCORER_CAPTURE_GRADED = false`. Until then every
+   ranking surface says "cannot rank yet" in the ruled words. b=100 stays deferred on exactly this.
+3. **Reconciliation history — `rdiff` accrues every scored bucket**; the reader is built and the
+   classification runs on the next app open, including the 7-row coverage gap. `rdiff` is a
+   CONSUMED store and scan 2 no longer re-reports it.
 
-**The cutover gate (deployment-class, the user rules when):** the plan's candidate pool
-switches from watchlist admission to the scorer's control cell only behind the three
-ruled requirements — reconciliation history explained (every rdiff disagreement
-resolved as extraction defect or understood difference), an integration-audit walk of
-the new surfaces, and an adversarial pass over cutover-critical assertions at the
-`[R7.3]` standard (prove guards red before trusting them green). After cutover proves
-out: scanner + admission machinery retire (the remaining 11 EXPIRE-AT-RETIREMENT
-findings and the paper book's own retirement land there); MM un-bench decision; frozen
-`invTarget` re-keys to pinned-item state or retires by ruling.
+**The cutover gate (deployment-class, the user rules when):** four ruled requirements —
+reconciliation history explained; an integration-audit walk of the new surfaces; an adversarial
+pass over cutover-critical assertions at the `[R7.3]` standard; and **chart gates at 7 of 7
+observed days**. The gate's internal order is ruled: integration audit → scan 14 → adversarial
+pass. **Three of the four are done. The clock is the one that is not.**
 
-**Anytime items (no clock, no ruling needed to start):** scan 14's first run (the
-label-claim scan, written into CLAUDE.md, never executed); the production-anchor
-`codeQuote` schema for future censuses.
+Plus three explicit decisions inside the ruling itself: the pool switch; seasoning's shape for pool
+items (bring the measurement — how often is a first-cycle entrant still in the pool one calendar
+day later); and the plan surface as approved.
 
-**Conditionally pre-approved (user ruling, Aug 14 2026 — trigger is the user's
-real-phone look, nothing else):** the **390px wrap-and-minmax display pass**, exactly
-as scoped in `audits/NAV-2026-08-14-transitional-chrome.md` §11 — ~a dozen CSS rules
-(header/controls flex-wrap, `.funrow` minmax, audited `min-width` reductions), an
-offender-walk assertion at true 390, the ~518 ruled runs unchanged. **IF the phone
-shows horizontal clipping → build it, no further ruling needed. IF the phone renders
-like the ruled runs (~518 effective) → skip it and close the observation as
-device-dependent, not-reproduced-on-target-hardware** — record the closure in the
-report and strike this trigger. Scope is the fence: anything beyond the scoped dozen
-rules is a new proposal, not this approval.
+**Every deployment-class component is built and flagged OFF:**
 
-**Queued behind capture calibration:** the sleeve integration stages — the conformance
-gate applies identically, and the conviction-boundary detector ships with the first
-planner surface. Only the 90d retention extension may ride early.
+| flag | what it arms | pinned by |
+|---|---|---|
+| `CUTOVER_POOL = false` | the plan's candidate pool reads the control cell | `[R89.1]` |
+| `ITEM_OPS = false` | operator state reads the item store instead of the watch row | `[R93.1]` |
+| `VOL5_UNIVERSE = false` | the 5m die-off streak counts universe-wide | `[R94.3]` |
+| *(coverage gate, not a flag)* | chart wiring activates at 7 of 7 observed days | `[R94.1]` |
+| *(era fact, not a flag)* | the archive does not feed an hour profile | `[R100.4]` |
+
+**Anytime items (no clock, no ruling needed to start):** the remaining **369 of 385 scan-14
+candidate labels**, unread; the production-anchor `codeQuote` schema for future censuses.
+
+**Conditionally pre-approved (trigger is the user's real-phone look, nothing else):** the 390px
+wrap-and-minmax display pass, exactly as scoped in `audits/NAV-2026-08-14-transitional-chrome.md`
+§11. IF the phone shows horizontal clipping → build it, no further ruling. IF it renders like the
+ruled runs → close the observation as device-dependent and strike this trigger.
+
+**Queued behind capture calibration:** the sleeve integration stages — the conformance gate applies
+identically, and the conviction-boundary detector ships with the first planner surface. Only the
+90d retention extension may ride early.
 
 ---
 
-# SESSION CLOSE — 2026-08-14 (fifth session: transitional nav + friction export + item visibility)
+
+
+
+# PASS 6 — EIGHT money-path findings, six inside pass 5's repairs. THE GATE IS NOW SPLIT.
+
+`audits/ADVERSARIAL-2026-08-19f-pass6.md` · `audits/GATESPLIT-2026-08-19-cutover-vs-restore.md`
+
+**THE GATE SPLIT (user ruling, Aug 19 2026).** The cutover's requirement is that the CUTOVER path is
+clean — the pool switch, the plan surface, the operator store, the gates, the scorer. **Restore is a
+different subsystem and has never been in the cutover's scope.** Of the 12 money-path findings across
+passes 5 and 6: **8 restore/import · 3 live-trading · 1 claim-level on the cutover surface · ZERO
+behaviour defects on the cutover path.**
+
+**Two things that follow, and the second is the one that matters:**
+- **It is a THREE-way split.** Findings 7, 8 and 12 are neither cutover nor restore — they bite today
+  on an ordinary trading day with no import involved. A two-track plan drops them.
+- **Passes 5 and 6 had the cutover surface nowhere in scope**, so their zero is evidence nobody
+  looked, not evidence the surface is clean — and equally, neither counts against the cutover.
+  **The cutover has one clean pass over its own surface (pass 4) and needs a second, scoped the same
+  way.** That pass has not been run. The cutover gate is one cutover-scoped pass away.
+
+---
+
+# SHIPPED 2026-08-19 (earlier session) — the three unambiguous pass-6 fixes, all seeded
+
+**Suite: `PROBE-PASS — 1,262 assertions, COLD PROFILE, both viewports, pairing clean both directions
+(489 tags / 501 rows / 489 cited)`.** Cold and warm identical. Seeds S171a–S171g, one at a time,
+tree restored byte-identical between each.
+
+- **A restore is now persisted.** `flush()` alone was a no-op — it returns early on `if (!dirty)`,
+  and `dirty` is set only inside `save()`, which `Object.assign` never calls. A whole-state restore
+  lived in memory until some unrelated save happened to fire. **`applyImport` was EXTRACTED** so the
+  branch could be asserted at all: it lived inside a `FileReader.onload` no test can drive.
+  `[R105.1]`, `[R105.2]`.
+- **The record-level source tier.** The third bare unary plus, three lines below one the previous
+  repair fixed. Asserted at the **admission gate** that spends it — a catalyst with no tiered
+  citation and a null record tier is now REJECTED. `[R105.3]`.
+- **Clearing the quantity box clears the override** instead of writing a manual size of zero. Live,
+  no import involved. Driven through production's own delegated `change` handler. `[R105.4]`,
+  `[R105.5]`.
+
+**CAPS RE-RULED, both halves separated (user ruling):** **null → TIGHT, absent → DEFAULT.** Absent
+was never misbehaving, and resolving it tight rewrote nine strategy constants on any backup
+predating a field. `impCap(o, k, tight, def)` replaces `impTight` and reads `hasOwnProperty`, so the
+two states are genuinely different answers. **`slots` and `watchCap` JOINED the cap set** — the
+classification now comes from what a key does (does it bound what may be funded, sized or admitted?)
+rather than from which object literal it sits in. Nine keys, **membership pinned by name** in
+`[R104.9]`, because the defect was a classification error rather than a coding one.
+
+**`[R104.8]` repaired twice over, from pass 6's own findings:** its allow-list is now checked in
+**both directions** (an entry that stops appearing is caught — four went stale within one revision),
+and its "absent" fixture now genuinely omits keys instead of setting them to `undefined`, which
+every `hasOwnProperty` branch had been reading as PRESENT.
+
+## Two incidents worth knowing
+
+- **M171** — `[R105.3]`'s first form was pointed at `validateImport` when the fix was in
+  `importIntelligence`. The seed reverted the real defect and **the suite stayed green**. Caught by
+  seeding, re-pointed at the admission gate, re-seeded red.
+- **M170** — **three repairs in a row were scoped to the finding's spelling rather than its
+  property**, each one the repair for the instance before it. This is the constitution's first rule
+  failing at the moment it is most needed.
+
+# OWED as of that session (superseded by "What is owed" at the top)
+
+- **The restore track:** `hzH` unstamped by two production writers, `planPriority`/`planDemoted`
+  surviving a restore, `clrGen` missing from the shadowBook carry, seven browser-scoped provenance
+  keys, the import repainting two settings inputs of ~30, `dieOffLog[].voidH` write-only, and the
+  **full `DB` key enumeration** the user queued (three buckets: deliberate, harmless, wrong).
+- **The live-trading track:** the two unstamped-position writers.
+- **The cutover track:** one pass scoped to the cutover surface.
+- **`[R104.8]`'s stated limits**, both from pass 6: it covers only the stores its fixture builds
+  (17 of ~36) and reads only `validateImport`.
+- **A ruling on the cold-repair-review mechanics**, proposed in
+  `audits/PROPOSAL-2026-08-19-cold-repair-review.md`.
+
+---
+# PASS 5 — THREE money-path findings. NOT the second clean pass.
+
+`audits/ADVERSARIAL-2026-08-19e-pass5.md`. Two non-overlapping readers (33 and 45 call sites),
+per-finding adversarial verification on three lenses, a completeness critic. Freeze held on all six
+hashes. **13 findings, 12 survived verification, 1 refuted. Neither reader ran the suite.**
+
+| pass | money-path | where |
+|---|---|---|
+| 2 | 7 | inside pass 1's fixes |
+| 3 | 1 | inside pass 2's fixes |
+| 4 | 0 that bite today | — |
+| **5** | **3** | two inside pass 5's own session; **one pre-existing and older than all of them** |
+
+**The one that bites today, on real money: `hzH` was dropped from real positions and standing
+quotes.** A leg stamps the horizon in force when it was placed; neither carry preserved it; and
+`legHorizonH` falls back to 4h. So after any state-backup restore a leg placed at the 21:30 touch
+under a 9.5h horizon read at 05:00 as past **2×** its horizon, `sellAgeInfo` returned rung 2, and
+the sell card said **UNDERCUT & EXIT** on a leg behaving exactly as placed. **The same function
+already enforced this for the paper book**, under a comment calling the loss forbidden in the
+cadence ruling's own words. Fixed.
+
+**The two that were mine:** the settings repair moved `partCapPct` and `clusterCapPct` off their
+restraining floor of 1% to their permissive defaults of 10% and 15% — for a cap the floor **is** the
+restraint — and the `bands` comment stated the withholding direction as a universal, which
+`tierOv: 0` falsifies. Both ruled and fixed.
+
+**The biggest finding was not money-path and it killed the sweep's central claim.** `null >= 0` is
+**true**, so five of the 106 conversions were renamed rather than repaired, and `[R103.6]` — the
+assertion certifying the class closed — greps for `num(x) >= 0` and found none **because they were
+now spelled `nz(x) >= 0`.** Green, reading live source, certifying a property that did not hold.
+Two bare `+s.tier` coercions survived for the same reason. **Root: the sweep was scoped to the
+helper's NAME rather than to the PROPERTY** — a coercion that maps null to zero — which is the
+first rule in CLAUDE.md, broken while writing a different rule into CLAUDE.md.
+
+---
+
+# THE REPAIRS — all six ruled items shipped, seeded S170a–S170g
+
+**Suite: `PROBE-PASS — 1,256 assertions, COLD PROFILE, both viewports, pairing clean both
+directions (483 tags / 495 rows / 483 cited)`.** Cold and warm identical, assertion for assertion.
+One seed at a time, tree restored byte-identical between each.
+
+- **`hzH` rides the carry for real legs**, asserted at `legHorizonH` — the branch that turns the
+  stamp into a sell instruction — as well as at the carry. Absent stays absent.
+- **`nz` is module-scope now**, beside `clampNum`, with the property stated in full. It had to move:
+  the second `+s.tier` lives on the intel import path, outside the sanitizer, and **a term that owns
+  a property cannot live inside one of its callers.**
+- **`[R104.8]` is the new detector and it tests BEHAVIOUR, not text.** All-null and all-absent
+  fixtures, one row per store; every output path that comes back as the number 0 must be in a stated
+  allow-list. **The allow-list is the deliverable — 54 paths in seven named groups.** Its seed was
+  `Math.round`, a spelling on no list anywhere, and **`[R104.8]` went red alone** out of 1,256
+  assertions.
+- **`[R103.6]` kept and relabelled** — it enumerates the three known `num`-spelled idioms and no
+  longer claims to close the class.
+- **CAPS RULED: an import may never loosen.** Seven cap-like keys resolve to their tight end for
+  null AND absent; budgets and reserves keep their defaults. `impTight` takes the tight end
+  **explicitly**, because the floor is not always the tight end — `[R104.5]` asserts the four
+  counterexamples (`pumpThinGp`, `seedTrips`, `pumpWindowD`, `clusterMinDays`) keep theirs, since
+  flooring them would have **loosened four settings in the name of a rule against loosening**.
+- **Numbers corrected: 271 `num()` sites, not 274.** And **M169's occurrence count was wrong** —
+  only one of its three cited priors is the same root; the other two are carry-completeness defects
+  and one is a string the helper never touched. The correction is recorded in the entry, not edited
+  over it. **This coercion has two recorded occurrences, not three.**
+- **The bands sentence fixed, the ruling kept.** It now rests on the argument that holds —
+  withholding is the *smaller* change — rather than on a false universal about direction.
+
+## Owed from pass 5, not fixed
+
+- **`dieOffLog[].voidH` is write-only.** Carried by the import, read nowhere; `voidHs` recomputes a
+  different quantity. Pre-existing, no assertion holds it alive, not a staged store.
+- **`[R103.2]`'s ambient dependence on working capital** — left uncertain by the reader, unresolved.
+- **The `DB` key enumeration (queued by the user).** `DB = Object.assign(DB, v.db)` means any key
+  the sanitizer does not write silently keeps the importing browser's current value. Three buckets:
+  deliberate, harmless, wrong. **Same restore path that dropped `hzH` and turned `qty: null` into
+  zero**, so it earns an enumeration rather than a spot check.
+
+---
+# THE `num()` NULL SWEEP — a live money-path defect, and a class closed rather than an instance
+
+`audits/SWEEP-2026-08-19-num-null.md` is the full enumeration; **M169** is the incident.
+
+`num()` in `validateImport` is `Number.isFinite(+v) ? +v : null`, and `+null` is **0**, which is
+finite — so an explicit null in an imported file returns as the **value zero**. The state backup is
+`JSON.stringify(DB)`, so any field the app writes as null corrupts in **one hop**.
+
+**THE LIVE ONE, AND IT PREDATES EVERY CUTOVER COMPONENT: `watch[].qty`.** All three creation paths
+write `qty: null`, and null there means *size me automatically*. After a state-backup restore the
+whole watchlist read as a **manual override of zero** — `opsPick` returns 0 because 0 is not null,
+`planQty`'s `wanted` becomes 0, and the sizing gate benched every automatically-sized item, **with
+a reason naming working capital or a missing buy limit, neither of which had happened**. The plan
+would fund nothing but hand-sized rows. It suppresses funding rather than widening it, so it errs
+safe, and the repair is behaviour-identical under uncorrupted data.
+
+Four more restored as measurements that were never taken: `peakToFlagD` and `retracePct` (into the
+anomaly scan's median lag and median retrace), `runwayD` (rendering *"inside/past the window"*), and
+`rung` (every hand sleeve exit relabelled as a ladder exit).
+
+**Closed as a class, not as five fixes.** `nz(v) = v === null ? null : num(v)` owns *null is a
+state, 0 is a value*; **101 call sites across 47 lines** use it, **271 `num()` sites remain
+and are correct**, and **three `num(x) != null` are retained on purpose and named in the source** —
+the two `itemOps.bands` edges (rejecting a malformed pair would move an override from WITHHELD to
+APPLIED, which is a ruling) and the econ nets (else-branch is already 0).
+
+**The settings block cuts BOTH ways, and one half is a widening — stated rather than buried.** Five
+of the 23 keys floor at 0 rather than at 1. `shadowReserve` and `reserve`: a null zeroed them, and a
+reserve going to zero **widens what the allocator may fund**, so the repair (fall back to the
+default) **narrows**. `t1Budget`, `t2Budget`, `sleeveBudget`: a null zeroed them too, which funds
+**nothing**, so the repair **widens** — from zero to 60m / 30m / 60m — for a file carrying an
+explicit null. The argument for taking it: an explicit null and an absent key both mean *this file
+carries no value here* and must behave identically, and the old behaviour was not conservative but
+**incoherent**, loosening the reserve and tightening the budgets on the same input. **No path in the
+app writes null to any of these keys** — every setting goes through `clampNum`, which always yields
+a number — so this is reachable only from a hand-edited or truncated file. If the wanted behaviour
+for a malformed settings block is *refuse the import* rather than *fall back to the default*, that
+is a ruling and is not made here.
+
+**`[R103.1]`–`[R103.6]`, seeds S169a–S169f, one at a time, restore-verified byte-identical between
+each.** `[R103.6]` reads `validateImport`'s own source and goes red if any of the three guard
+idioms reappears; **its limit is stated where it lives** — it cannot catch a bare `num(x)`
+assignment, and `[R103.1]`/`[R103.5]` carry that half field by field.
+
+Two things the seeding taught: `[R103.6]`'s first run went **red on its own documentation** (the
+`nz` comment quotes the idiom; block comments are now stripped, and only block comments, because a
+`//` stripper would eat the tail of `/^https?:\/\//`). And the first form of `[R103.5]` was written
+as a **fixed point** (`f(f(x)) === f(x)`) and **could not fail** — this defect converges after one
+hop, so both passes agree while both are wrong. Replaced with eight named fields, each of which a
+seed does redden.
+
+**The `nz` sweep broke no existing assertion.** That is the third of the three answers the standing
+rule allows — the change was genuinely uncovered, and §103 is that coverage.
+
+---
+
+# NEW BINDING RULE — one question, one term
+
+**Written into CLAUDE.md on the user's ruling, with scan 17 as its detector.** Three instances in
+four adversarial passes: the readiness mask vs its four consumers (`[R99.3]`), the two history gates
+that stopped being a partition (M164), and the scout's eviction guard vs the gate chain
+(`[R102.2]`); plus a weaker fourth where the two sites were two *writers* (`[R101.5]`).
+
+**The mechanical half was measured and rejected, and the measurement is the useful part.** The
+obvious candidate — find every expression compared against two different numeric literals — returns
+**84 groups from 1,141 numeric comparisons** in `index.html`, almost all legitimate (`pts.length`
+against 5 and 24 is momentum and drift **correctly** disagreeing) or noise from one-letter names.
+Worse, its recall on the recorded instances is **zero for the two that can be checked**: their
+conditions contain no numeric literal at all (`ser.src === "none"`, `!(sp && sp.noData)`,
+`tr == null`). The third instance's pre-fix expression is **not recoverable** — the tree is
+uncommitted and that intermediate state never reached `HEAD`, so it is reported unknown rather than
+guessed. **The drift was between differently *phrased* predicates every time, not between
+constants.** So scan 17 is a read with an enumeration as its deliverable, in the shape of scans 6,
+9, 10, 13, 14 and 15.
+
+**Also fixed in passing:** nine unexpanded `$EM` placeholders in MISTAKES.md M167/M168 — a prior
+session's shell variable that never interpolated inside a quoted heredoc.
+
+---
+# PASS 4 — ZERO money-path findings that bite today
+
+`audits/ADVERSARIAL-2026-08-19d-pass4.md`. Two readers, deliberately non-overlapping: one over the
+recent changes, one told NOT to read the diff and to read instead the code that did not change but
+now receives different values. 106 and 61 call sites read in full. Freeze held on both hashes.
+
+| pass | money-path findings |
+|---|---|
+| 2 | **7** (inside pass 1's fixes) |
+| 3 | **1** (inside pass 2's fixes) |
+| **4** | **0 that bite today** |
+
+**Neither reader used a suite result as evidence for any finding** — everything is traced from
+quoted source to its consumer. That matters because every green before the cold-profile fix was a
+warm green; nothing here rested on one, so nothing needed re-checking.
+
+**One finding was LIVE and is fixed:** the plan's *"N charts still loading"* count matched a phrase
+in the bench SENTENCE, the readiness repair rewrote that sentence, and the phrase left the file — so
+the count was permanently zero and the plan stopped explaining why nothing passes, on every cold
+boot (**M167**). The assertion written to protect it re-derived the count inside the probe and did
+not bite; caught by the seed and repaired (**M168**).
+
+**Two are money-path in SHAPE and latent behind `ITEM_OPS`, both fixed:** `provenLoser` added its
+own row fallback after `opsOf` and so resurrected a CLEARED test date, releasing a proven-loser
+bench; and the item-store import mapped a cleared override's `null` to the VALUE zero, which reads
+as a manual override to UNTIERED and benches the item, with copy claiming a decision the operator
+had removed. The same branch had no range check, so `tierOv: 7` produced a funded line with a NaN
+quantity. **Both arm at the `ITEM_OPS` ruling** — they are removed from that stanza's path now.
+
+**Structural repair worth knowing:** `historyVerdict` now owns the two history gates AND the scout's
+eviction guard, so `judged` is the exact complement of the two benches. They had drifted — the guard
+called an item judged at 3 finite points while the chain benched it unreadable until 24, so an item
+in that window was evictable on a verdict the chain could not reach. **Third time in four passes a
+paired condition drifted; the answer each time is to make it one term.**
+
+---
+
+# THE THIRD ADVERSARIAL PASS — 41 findings, and it found what the two before it found
+
+`audits/ADVERSARIAL-2026-08-19c-queue-pass.md`. Four read-only agents over a frozen tree; the
+freeze held on all four hashes. **Every one of the three passes has now found a money-path defect
+inside the previous pass's fixes, and this one found the defect introduced while closing the
+previous pass's money-path finding.** Assume a fourth would too.
+
+**The money-path finding: the two history gates stopped being a partition.** Adding
+`&& ser.src === "none"` to the `no history` bench — the fix for the re-pass's own finding 11/17 —
+left the OTHER gate still suppressing itself on `!(sp && sp.noData)`, so the region *empty
+/timeseries, archive has entries, series not ready* benched on **neither**, and trend, volume
+trend, momentum and drift all passed unread. Latent, and it would have armed at 7 observed days.
+Fixed by making the suppression the SAME named term the first gate fires on. **M164.**
+
+**Live today, and fixed:** the inert-restraint line and the pool-persistence drill were written to
+`#benchBody` and overwritten four lines later, so the persistence badge rendered on every funded
+row with its rows unreachable. And `[R101.6]` — the assertion written to close finding 30 —
+**passed with its own detector deleted**, because it drove the state by hand instead of through
+`chk`. **M165.**
+
+**Two claims corrected rather than defended:** `[R76.9]`'s tripwire (above), and the fact that
+routing `hourWeight` through the resolver is a **behavioural identity today** — `ser.byHour` IS
+`sp.byHour` on every branch, so no assertion can distinguish the two forms until something other
+than the spark feeds a profile. The routing is prospectively right; the report claimed more.
+
+Everything else fixed in the same pass: four union-rendered-as-universal defects in the plan copy,
+three merged absences (`hw.fed` was three facts wearing one answer), the residual anti-tripwire in
+`planInertLine`'s frame, two coverage clocks reported as one, `chartedNow` wrong in two directions,
+`excStanding` as an unenforced third reader of the gate-name promise, five assertions that could
+not fail, three fragile fixtures, and five records that outlived what they described.
+
+---
+
+# OWED, and each one is a decision rather than a task
+
+- **`reliability`'s total-absence silence.** It renders *"thin history (2/4 trips in 30d) —
+  reliability weight off"* for `n` of 1–3 and **says nothing at all for `n === 0`** — partial
+  absence disclosed, total absence silent, which is the inverse of what you would want. Measured:
+  **30 of 43 live watch items** have no flip history at all, so fixing it adds a string to 30 of 43
+  plan lines. A material change to a surface read daily, so it is reported rather than shipped.
+- **Finding 18 of the re-pass** — a pruned migrated item-ops row does not lose its value (it
+  resurrects from the watch row) while the prune's warning tells the operator to re-set it.
+  Deferred by the finding's own proposal to the stage that flips `ITEM_OPS`, where it needs an
+  assertion at the composition rather than on either side of it.
+- **Teardown assertions cannot discriminate set-or-delete from a blind key-delete.** The probe runs
+  with DNS dead, so `/mapping` never loads and every captured cache cell is `undefined` in every
+  run — the conditional's set branch is unreachable. They detect a MISSING restore, which is real
+  but narrower than `[R95.5]`/`[R97.2]`/`[R98.5]`'s labels claim. Remedy is the tenth-face decoy the
+  project already uses for `blendFrag`: plant a sentinel on each block's own ids before the capture.
+- **`chartWireState`'s could-not-check branch is unreachable from production** and the real producer
+  is the surrounding `catch`, carrying a SECOND copy of the same copy. `[R94.1]` asserts the
+  unreachable one. One owner, one string.
+- **The `sc-sixgate` glossary entry** says `marketStatsFor` carries no chart inputs yet; after step C
+  it does, gated. Stale constant, no landing path, nothing pinning it.
+- **`itemOpsPrune`'s 90-day drop of a manual `qty`.** Recorded by the previous pass as a question
+  for the arming stanza, not a finding against a dead path: dropping an `mq` smaller than the cap
+  WIDENS the funded size, which is an expiry that loosens, and the restraint-lift rule reserves
+  that for a press.
+
+---
+
+# SESSION CLOSE — 2026-08-19 (the re-pass queue)
+
+**Suite 1,207 → 1,228. 21 new assertions, 26 discriminating seeds (S90–S115), one at a time,
+restore-green between.** Two seeds came back GREEN and both were findings rather than clean bills —
+one ambiguous pattern caught by the harness's own match-count assertion, one fixture that could not
+express the defect (**M163**).
+
+## What changed for the operator
+
+**Nothing about what the plan funds or how it sizes.** Every change is a render grouping, a
+disclosure, a restraint that narrows, or a test.
+
+- **A new block may appear on the plan: *"Not ranked — price history not fed"*.** It holds picks
+  whose hour or stability weight came from a failed fetch rather than a measurement. They are
+  funded and sized exactly like any pick above; only their PLACE in the ranking is withheld.
+  **Measured at 0 of 43 items today** — it will render during a `/timeseries` outage and after the
+  cutover, and nothing else.
+- **The pool header now separates two claims** — *not applied* (a fact about the sort, true for
+  ever) from *not fed* (a fact about the data, computed and self-correcting).
+- **The inert-restraint line names only the restraints actually absent**, so it stops contradicting
+  its own day count at the chart transition.
+- **A watch row's FALLING chip and sparkline read the same series that benched the row.** An
+  archive-fed row used to show no chip and a dimmed "…" while the chain benched it *"falling chart"*.
+- **The `no history` bench stopped firing on a false premise** — it read the item's own
+  `/timeseries` flag alone and could claim no history exists for an item the archive had fully
+  evaluated.
+- **A new warning bar exists and should never appear:** *"Gate name not listed in
+  GATE_CHAIN_ORDER"*. If you ever see it, that is a build defect, not a market condition.
+
+## Still pending, not blocked
+
+rdiff classification (needs accrued verdicts) · the seasoning measurement (needs days of pool
+observation) · chart-gate verdict validation (needs 7 of 7 coverage) · capture grading (needs the
+operator's calibration flips) · the T2 ceiling ruling (evidence in
+`audits/CEILING-2026-08-18-above-t2.md`).
+
+---
+
+# SESSION CLOSE — 2026-08-18 (fourth pass: the frontload, A–E complete, TREE READY TO FREEZE)
+
+**Steps A → B → C → D → E of the ruled frontload are done. F is the freeze, and this is the
+report that precedes it.**
+
+**Suite: `PROBE-PASS — 1,181 assertions, BOTH viewports, pairing clean both directions
+(430 tags / 442 rows / 430 cited)`.** Baseline at the start of this pass was 1,121.
+**60 new assertions across §87–§94, 57 discriminating seeds (S22–S78c), one at a time,
+restore-green between.** **Tree UNCOMMITTED — committing and pushing are the user's.**
+
+## Every deployment-class component is built and flagged OFF
+
+| flag | what it arms | pinned by |
+|---|---|---|
+| `CUTOVER_POOL = false` | the plan's candidate pool reads the control cell | `[R89.1]` |
+| `ITEM_OPS = false` | operator state reads the item store instead of the watch row | `[R93.1]` |
+| `VOL5_UNIVERSE = false` | the 5m die-off streak counts universe-wide | `[R94.3]` |
+| *(coverage gate, not a flag)* | chart wiring activates at 7 of 7 observed days | `[R94.1]` |
+
+**Nothing changes what the plan proposes until those are ruled.** Each pin goes red on a
+silent flip, forcing the accounting.
+
+## What landed, by step
+
+**A — the plan surface (§92, display-only).** Two groups never interleaved, as a *render*
+grouping only; slot A persistence as a **pair** with the percentage only beside it; four
+no-history states plus an era closure; the inert-restraint line said **once** over the
+population as the archive's state; `#planSub` fixed at the source; `+pin`, **Plan & Pins**,
+`gov-propose`'s property-not-mechanism fix (M156), family and caution context.
+**Two corrections to my own design, both in the code:** the returning-item case does not
+exist (the scorer observes the whole universe every cycle, so a window opens at first pass
+and never closes — the one real return is a regime change), and the drill opens to what
+exists while naming the T0 replay path for per-cycle rows.
+
+**B — operator state re-keyed (§93).** One store, four fields migrating; scout provenance
+dies with the scanner; `invTarget` stays reserved. **`bands`** records which tier-band world
+an override was made in, in three states — and an override under different bands is
+**withheld**, because declining to apply narrows. Migration **copies, does not move**;
+originals stay until the admission machinery retires and `opsOf` is the single reader, so
+nothing is ever read twice. Controls render on the item for pool rows only, and render
+nothing while the flag is off.
+
+**C — chart wiring (§94), corrected scope.** One universe-wide series feeds **four**
+consumers — `tr`, `vt`, momentum, drift — because wiring only the two named gates would have
+removed the mask over two vacuous restraints. Every reader is inert below 7 observed days,
+asserted with a populated cache behind a not-ready gate. The 5m streak's universe feed and
+`dieOffLog`'s bound and `pop` partition ride here.
+
+**D — integration audit.** Six findings, all in this session's own build, all fixed: two
+write-only eviction counters, a term rendered four times with no glossary entry, two
+glossary entries nothing rendered, and E-F1/E-F2 below. **`rdiff` is no longer STAGED.**
+
+**E — scan 14, first run ever.** 385 candidate labels of 1,181. **`[R4.3]`, its own founding
+example, was already repaired** on Aug 13 — so it comes off the adversarial pass's list,
+which is exactly why E was ordered before F. Two new findings, and **they were masking each
+other**: `[R33.1]`'s sub-view loop missed `scorer`, and the cold-start fixture was not cold
+for `scorerT2`/`poolSeen`/`itemOps`. Fixed, re-seeded, and the seed now bites naming
+`trade/scorer`.
+
+## Owed before or at the freeze
+
+- **The deployment artifact — RESOLVED Aug 19 2026 as a TOOLING LIMITATION.** Six things
+  tried, all recorded in `tools/probe/deploy.sh`'s header; the decisive one is that a
+  MINIMAL page whose only content is the beacon POST also fails, while `run.sh` beacons
+  every run — so the failure is the invocation, not the app. Headless Edge here executes
+  reliably only under run.sh's flag set, which blocks the network on purpose.
+  **Substitute: the three-step operator checklist in PROBE.md,** run on the real phone at
+  CUTOVER (not per UI change). Rows that would cite a deployment artifact read
+  **operator-verified**, not owed. The gap is closed.
+- **369 of the 385 scan-14 candidates are unread.** The enumeration is the deliverable and
+  the remainder is named.
+
+## F — the adversarial pass, when the tree is frozen
+
+Scope, with E's result folded in: **16 exact + 56 candidates**, minus `[R4.3]` (clean), plus
+the named search pattern from the gate check — **every item-keyed cache populated by a
+`DB.watch` loop, and every gate reading one.** Three were found by reading (`S.spark` via
+`fillSparks`, `S.vol5Low` via `updateVol5Streaks`, and the `DB.qual` prune); the pass
+confirms there is no fourth.
+
+## Still pending, not blocked
+
+rdiff classification (needs accrued verdicts) · the seasoning measurement (needs the prune
+fix live plus days of pool observation) · chart-gate verdict validation (needs 7 of 7
+coverage) · capture grading (needs the operator's calibration flips) · the T2 ceiling ruling
+(evidence delivered in `audits/CEILING-2026-08-18-above-t2.md`).
+
+---
+
+# PRIOR PASS — 2026-08-18 (third pass: the frontload begins)
+
+**Suite: `PROBE-PASS — 1,149 assertions, BOTH viewports, pairing clean both directions
+(413 tags / 425 rows / 413 cited)`.** Baseline at the start of this pass was 1,121.
+**28 new assertions, 28 discriminating seeds (S22–S46), one at a time, restore-green
+between.** Tree **uncommitted**.
+
+## Built and verified
+
+| § | what | flag |
+|---|---|---|
+| **§87** | the `DB.qual` scoped retention fix, as ruled | live (no plan behaviour change) |
+| **§89** | the pool switch | **`CUTOVER_POOL = false`, pinned** |
+| **§90** | the ledger regime stamps — the cutover's one true prerequisite | live |
+| **§91** | the three vacuous restraints, made honest | live |
+
+**§87 — the prune scoped, not replaced.** Membership retention for `"watch"`, staleness
+(30d, a **storage** bound and the comment says so) plus a pool-only capped belt for
+`"pool"`; eviction flagged and warned because it costs an item its streak. `src` across
+three regimes, **absent = predates the field**, stamped centrally in `planCandidates`,
+carried through import in all three states with unrecognised values staying absent. The
+grandfathered census renders only while that population is non-empty. **S22/S23 are the
+discriminating pair:** restoring the unscoped prune reddens pool-survives; deleting the
+prune reddens watch-dies. The tempting one-liner fails exactly one of them.
+
+**§89 — the switch, off.** Both paths assert. `cutoverPoolRows` synthesises `{ id }` and
+nothing else, so every operator overlay is absent, which is the truth about a pool item
+rather than a gap to fill with defaults; a pinned item keeps its real row. **S33 flipped
+the flag and turned three assertions red** — that is what "forces the accounting" means.
+
+**§90 — the stamps.** `gateLogRow` is the single writer for all four push sites, stamping
+the **candidate's own** `src`; `deployLog` stamps `poolRegime` (`watch` / `mixed`) and
+**`n`, the candidate count `pass` is a count OF** — the readiness sweep's §2b finding fixed
+at the source rather than at the label. `mixed` is deliberate: an hourly row genuinely
+aggregates pins and pool items, so a per-candidate stamp there would be false precision.
+
+**§91 — the three vacuous restraints.** `momentumState(pts, buy)` is now the one term both
+callers route through (asserted as wiring, so a second interpreter cannot reappear
+silently) and returns **`null`, not `"flat"`**, on too few points; `stabilityWeight` carries
+**three states on `drifty`**; `volGateFor` reports **`streak: null` and says NOT COUNTED**
+rather than claiming a counter that is not running.
+
+> **Why the suite stayed green across §91 before its own assertions landed, stated rather
+> than trusted** (the ratification-that-breaks-no-test rule): all three fixes change a value
+> the GATE reads identically — unknown is not failing, `null && x` is falsy, and the
+> volGate label differs only for an item the streak never counted. Every candidate today is
+> a watch member, so the changed branches are reachable only through the pool, which is
+> behind the flag. **The change was genuinely uncovered**, which is one of the three
+> answers that rule permits; §91's assertions are that coverage and every one is seeded.
+
+**And these are honesty fixes, not restraint fixes** — the requirement rows say so in those
+words. Unknown is not failing, so nothing is newly benched. **The restraints return when
+the chart wiring feeds them**, which is why its scope correction (below) matters.
+
+## Ratified this pass, affecting work not yet started
+
+- **Chart wiring scope corrected** — momentum and drift inputs from the T0 hourly series
+  **alongside** `tr`/`vt`. Found because both read the per-item spark object while the spark
+  cache is filled by a `DB.watch` loop, so the wiring as originally scoped would have
+  **unmasked** two vacuous restraints rather than fixed them. `chartPts(id)` is the single
+  line that build changes.
+- **The plan surface gains a fourth requirement**: render which restraints are **INERT** on
+  a given item, as an honest state in the same class as the four no-history states.
+- **The adversarial pass gains a named scope item**: every item-keyed cache populated by a
+  `DB.watch` loop, and every gate reading one. Three found by reading; the pass confirms
+  there is no fourth.
+
+## Reports delivered
+
+`audits/SWEEP-2026-08-18-cutover-readiness.md` (prospective seam inventory: 7 BREAKS,
+11 READS WRONG, 5 BECOMES MEANINGLESS) · `audits/GATES-2026-08-18-operator-layer.md`
+(the operator-gate layer, per gate) · `audits/FIX-2026-08-18-qual-retention.md` ·
+**M156** recorded — `gov-propose` naming the mechanism instead of the property, in the
+tool's own statement of its constitutional rule, caught prospectively.
+
+## Still to build, in the ruled order
+
+**item 2** the plan surface (two groups · badge slots · four no-history states · the inert
+restraints · the first-seen stamp · `#planSub` · the must-land-with copy) → **operator
+re-key shape for ruling** → **chart wiring** (corrected scope) → **integration audit** →
+**scan 14** → **freeze** → **adversarial pass**.
+
+**Pending, not blocked** (cannot be frontloaded): rdiff classification (needs accrued
+verdicts), the seasoning measurement (needs the prune fix live plus days of pool
+observation), chart-gate verdict validation (needs coverage), capture grading (needs the
+operator's flips).
+
+---
+
+# PRIOR PASS — 2026-08-18 (second pass: the cutover rulings acted on)
+
+Rulings of 2026-08-18, items 1–5. **Suite: `PROBE-PASS — 1,121 assertions, BOTH viewports,
+pairing clean both directions (399 tags / 411 rows / 399 cited)`.** 13 new assertions, **13
+discriminating seeds (S9–S21), one at a time, restore-green between**; one seed (S17)
+aborted on precondition 3 — it added a key without changing the relative order it claimed
+to test — and was rebuilt as an actual move before any result was read. **Tree
+uncommitted.**
+
+### Item 1 — `DB.qual` prune: SHAPE REPORTED, nothing built
+
+`audits/FIX-2026-08-18-qual-retention.md`. **The prune is not wrong, it is UNSCOPED.**
+Membership retention is correct for a hand-curated list (departure is an explicit act with
+a meaning); staleness retention is correct for a machine-fed pool (departure there is only
+churn). Proposal keeps the membership prune for `"watch"` rows and adds staleness (30d, a
+**storage** bound and labelled as one) plus a capped belt for `"pool"` rows. Retargeting
+the membership test at the pool is rejected with its reason: an item absent from the pool
+was not necessarily evaluated, so it would delete on non-evaluation as well as on failure.
+Partition answer: `src` across **three** regimes — and the third, the Aug 10 grandfathering
+that wrote `n:3` from no observation at all, has never been distinguishable from three real
+passes. The import sanitizer must take `src` in the same commit or the third state starts
+lying on restore. **Behaviour for today's book is bit-identical** under the scoped form;
+the one difference the naive one-line fix would have introduced is named rather than
+absorbed.
+
+### Items 2 and 3 — recorded
+
+The **fourth prerequisite (chart gates 7/7)** and the **ruled gate order** are in CLAUDE.md's
+scorer conformance gate and in the waiting posture at the top of this file, with the
+reasoning, not just the list.
+
+### Item 4 — the rdiff READER: BUILT (§86, R86.1–R86.6)
+
+- **`t0All(store, lo, hi, cap)`** — a values reader whose cap takes the **NEWEST** rows.
+  Keys are read first and the bound derived from them, because `getAll(range, count)`
+  returns the FIRST count in key order. **Seed S20 reproduced the t1 defect exactly and the
+  assertion caught it**, which is the closest thing to a proof that the §5.1 finding was
+  real. *(The t1 call site is NOT changed — that finding is still awaiting its own ruling.)*
+- **`rdiffCoverage`** — the gap reconciled in **five** states: complete / explained (the
+  pre-diff window covers it) / partly explained (**with the remainder named**: accrual is
+  fire-and-forget while `r.cycles++` is synchronous) / not comparable (the cell is younger
+  than the diff — a closed population, so differencing is the pooling error) / cannot check.
+- **`rdiffPlanStates`** — the three states lead, tallied **by the writer's own words**
+  rather than parsed, and the missing side's denominator counts observed rows only.
+- **`rdiffRuns` + `rdiffClassOf`** — the **third class shipped**. Persistence is measured in
+  adjacent *observed* buckets; a run whose adjacency spans an unobserved bucket is
+  `cannot say`, never persistence. **`timing` exists on the missing side only** and its
+  absence from `extra` is asserted, not merely omitted.
+- **`analysisRdiff`** → `analysis-rdiff-*.json`, in the ruled order, rows riding with every
+  rollup, truncation stating its real window; collector class registered in `sweep.sh` and
+  the CLAUDE.md table. Surface section on Trade → Scorer with the same order and the same
+  three unread states. Two glossary entries shipped in the same commit.
+
+**What the reader cannot do from here, stated rather than faked:** produce the 7-row gap's
+verdict. That read needs `DB.scorerT2[control].firstAt` and the ledger itself, both of which
+live in the browser. **The machinery computes and renders the verdict; the first app open
+produces it.** Seeded tests prove the code; one real read proves the answer.
+
+**`rdiff` is a CONSUMED store from this commit** — scan 2 stops re-reporting it as staged.
+
+### Item 5 — plan surface: APPROVED, not yet built
+
+Approved as designed, display-only. Blocked behind item 1 by its own logic: the two ordered
+groups and the badge describe a pool that cannot season until the prune fix is ruled.
+
+### Found while building
+
+**The §86 fixture cleaned at block end but not at block start** — and seeding the cleanup
+assertion (S21) left two rows behind, which turned the capped-read assertion red on the
+next clean run with a total of 6 for a fixture of 4. Hardened to clean at both ends and the
+requirement row records how it was found. An end-only clean is not a clean.
+
+---
+
+# PRIOR PASS — 2026-08-18 (sixth session: the four-day grid reading, three closures, the plan-surface design)
+
+**Two reports and one build.** `audits/READING-2026-08-18-scorer-grid.md` answers the
+four-part ruling of 2026-08-18; `audits/DESIGN-2026-08-18-post-cutover-plan.md` proposes the
+post-cutover plan surface ahead of the cutover ruling. **No constant moved.**
+
+**Suite:** `PROBE-PASS — 1,108 assertions, BOTH viewports, pairing clean both directions
+(393 tags / 405 rows / 393 cited)`. Baseline was 1,100. **8 new assertions, 8 discriminating
+seeds (S1–S8), one at a time, restore-green between**; three of them aborted once on
+precondition 1 (the driver refused a substitution that had not applied) and the pattern was
+corrected before any result was read.
+
+**Tree is UNCOMMITTED — the user commits.**
+
+### Shipped (§85 — the one build)
+
+`scorerClosuresLog()` writes three `DB.decisionLog` rows, once per store, **guarded per
+subject** so a half-written store completes, each `auto: 1, by: "user"`:
+
+1. **taxMult loosening — CLOSED, monotone worse.** The ordering holds at 18 of 18 econ keys.
+   The blacklist canary rises monotonically with the loosening (290 → 379 would-fund
+   item-cycles at b1000), a second reading independent of the money.
+2. **ROI 1.2 → 1.0 at m0.5/b250 — CLOSED, last by proven net at 18 of 18 keys.** +30 distinct
+   items for −237.4m at `h6|p50|c15`. Retroactively vindicates the ROI-loosening bench.
+3. **Volume base 1000 → 50 — STAYS DENIED**, and the entry says this reading supersedes
+   nothing: 50 is outside the tested axis and no cell speaks to it.
+
+Three extracted terms carry the standing "every cited aggregate ships the three" rule —
+`scorerCountPair` (a distinct-item count beside every trip count, no way to write one
+without the other), `scorerConcNote` (concentration, with its NOT-DERIVABLE state as a
+disclosure rather than an omission), `scorerCitedCaveat` (the capture-grading status).
+`[R85.3]` asserts all three over **every** entry the writer produces, not one sampled string.
+**The general machinery — a proposal surface that REFUSES to render without the three — is
+NOT built and the requirement row says so.**
+
+### Readings that need carrying forward
+
+- **taxMult is monotone at 18 of 18 econ keys**, stronger than stated. **Volume base is
+  stable at h6 (all nine keys) and unstable at h9.5** — narrower than stated, and the split
+  is what forces the axis-stability verdict to be per (axis × horizon) rather than per axis.
+- **The b500 marginal population decomposes exactly** (containment verified, 195 of 195):
+  it is 37–39% of b500's trips, **2.7–11.7% of its gross movement**, fills *more* often
+  (10.4–19.1% vs 6.7–12.5%) and is net-**negative** at the proven bound in 15 of 18 keys.
+  The cell total looks near-control because the shared population dominates it.
+- **Only 34% of the control cell's trip-observed items (13 of 38) are reachable by the
+  allocator** — 55% under the 400gp minimum, 11% above the T2 ceiling. Extrapolated to the
+  measured flow that is ~3.1 fundable of 9.09 funded per cycle; the base is 38 items, not
+  the 292-item stock, because the export carries no id roster.
+
+### Proposed, awaiting ruling
+
+- **Axis-stability verdict** — three states, per (axis × horizon), four assertions, the
+  fourth forbidding the contradicting claim. Wording drafted verbatim.
+- **m4/m5 at volBase {1000, 500}** — **frontier growth is exactly zero** (the margin need is
+  monotone in taxMult, so tighter cells are subsets), fill-sim load zero, +25% scoring,
+  ≤ 27 KB. **The real cost is the breadth denominator moving 16 → 20**; recommendation is to
+  stamp it before growing the grid, as one ruling rather than two.
+- **A probation lane of five marginal items**, chosen to SPAN thinness (21/h to 1000/h) and
+  margin headroom (1.6× to 3.5×) rather than to be the five best — Dwarf weed seed,
+  Bananas(5), Warrior ring, Black d'hide chaps, Quetzal feed. Half size, separable stamp,
+  criteria before the trades. Opens at cutover; no constant moves.
+- **The whole plan-surface design**, display-only by construction so it can be ruled ahead
+  of the deployment gate.
+
+### Findings raised, none repaired
+
+- **The scorer export carries the OLDEST 500 trip rows, not the newest** —
+  `getAll(lowerBound, count)` returns the first N in key order. In this file that is 3.67 h
+  of a 168 h window (2.2%), of which **97.6% of lifecycles are `unobserved` holes**. The
+  truncation note declares a cap and not a selection rule. Scan 5 and scan 7 finding.
+- **A 7-row gap between the scorer's 1,024 cycles and rdiff's 1,017 rows**, unexplained.
+- **`sc-breadth`'s glossary `aka` hardcodes "16"** — a live copy defect the moment the grid
+  grows.
+- **`DB.qual` prunes to watchlist membership** — a one-line cutover blocker on the money
+  path (design §1.1a).
+
+---
+
+# PRIOR SESSION — 2026-08-14 (fifth session: transitional nav + friction export + item visibility)
 
 **Third pass (same day, ruled): SCORER ITEM VISIBILITY** — the surface names what the
 instrument sees (report part 3, §13–§17). Suite at final close: **PROBE-PASS — 1,100

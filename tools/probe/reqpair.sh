@@ -32,7 +32,7 @@
 set -u
 ROOT="$1"
 REPORT="$2"
-REQ="$ROOT/REQUIREMENTS.md"
+REQ="${3:-$ROOT/REQUIREMENTS.md}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

@@ -21,6 +21,29 @@ Prerequisites: Windows with Microsoft Edge installed (the script tries both stan
 install paths; edit `EDGE=` in `run.sh` if yours differs), Windows PowerShell 5.1
 (always present), Git Bash. No network needed — the suite deliberately runs with DNS dead.
 
+## The suite runs COLD (user ruling, Aug 19 2026)
+
+**`run.sh` deletes the browser profile before every run. There is nothing extra to remember.**
+
+The profile carries localStorage and IndexedDB between runs, so a reused one means the suite starts
+warm and an assertion needing accumulated state can pass on state an earlier run left behind — a
+green that does not mean what it says. `[R82.4]` did exactly that: it read reconciliation rows out
+of IndexedDB that no fixture ever seeded, so a fresh profile went red on a correct tree and every
+run after it passed (MISTAKES **M166**).
+
+```bash
+PROBE_WARM=1 bash tools/probe/run.sh   # keep the profile — only to compare
+```
+
+**The only reason to run warm is to compare against a cold run, and if the two ever differ, THAT
+DIFFERENCE IS A FINDING** — some assertion is reading state nothing wrote. Not a flake to re-run
+past: a defect to trace, because the warm green is the one that was lying.
+
+**And never point an instrumented variant at this profile.** Running a modified page through
+`run.sh` writes whatever that page loads into the same store — once, real market data leaked in
+this way and two unrelated assertions failed on the next run. Assemble experiments into their own
+output directory with their own profile.
+
 ## The requirements pairing check (`tools/probe/reqpair.sh`)
 
 Runs after the browser exits, appends a `===PAIRING===` section to the report, and
@@ -41,6 +64,68 @@ inspection, UI or documentation cite no probe tag and are exempt automatically.
 It lives outside the page because it reads `REQUIREMENTS.md`, which the in-page suite
 cannot. Run it alone against an existing report with
 `bash tools/probe/reqpair.sh . tools/probe/out/probe-report.txt`.
+
+## Running the suite against a STAGED copy (user ruling, Aug 19 2026)
+
+A repair pass writes to `staging/` and never to the tree, so that the **next** session can review
+the diff cold — shown what changed and not the finding that provoked it. That only works if the
+staged copy can be fully verified before it lands, seeds included, which is what three environment
+overrides are for:
+
+```bash
+bash tools/stage/new.sh          # copy the tree into staging/, record the tree's hashes
+# ...edit staging/index.html and staging/probe-snippet.html...
+bash tools/stage/run.sh          # the FULL suite against the staged copy
+PROBE_WINDOW=390,844 bash tools/stage/run.sh    # and the phone viewport
+bash tools/stage/check.sh        # freeze proof + the diff, written to staging/DIFF.patch
+bash tools/stage/land.sh --yes   # guarded landing, once the cold review has passed
+```
+
+`tools/stage/run.sh` is a wrapper, and it exists because the failure it prevents is the obvious
+one: setting the three variables by hand, forgetting one, and reading a **tree** run as proof that
+the staged repairs verify. Under the hood it is just:
+
+```bash
+PROBE_SRC=staging/index.html \
+PROBE_SNIPPET=staging/probe-snippet.html \
+PROBE_REQ=staging/REQUIREMENTS.md \
+bash tools/probe/run.sh
+```
+
+**`PROBE_REQ` is in that list because the pairing check is part of the suite.** A staged repair that
+adds an assertion needs its requirement row staged too, or the run fails on a pairing orphan that is
+an artefact of staging rather than a defect.
+
+**A staged run is stamped in the report header**, the same way a pairing failure rewrites it:
+
+```
+PROBE-PASS [STAGED: staging/index.html]
+===SOURCE=== STAGED RUN - this report does NOT describe the working tree
+SOURCE src=staging/index.html
+SOURCE snippet=staging/probe-snippet.html
+SOURCE requirements=staging/REQUIREMENTS.md
+```
+
+The header is the line that gets quoted into HANDOFF.md as the tree's status, so **the caveat
+travels with the claim**. Exit codes are unchanged: a staged pass *is* a pass of what it read.
+
+**`land.sh` refuses to land** unless the freeze is intact, a green staged report carrying the
+`[STAGED:]` stamp exists for **both** viewports, every repair in `staging/PASS.md` carries
+`Verdict: PASS`, and every repair carries the cold reviewer's own answer to *"name the property this
+repair is about"*. That last one is the point of the whole mechanism, so it is a hard gate rather
+than a note. `staging/` is gitignored; the durable record is `audits/REPAIR-LEDGER.md`.
+
+**The overrides were proven the way any new detector is proven**, by seeding a defect and watching
+the right thing go red:
+
+| seed | result |
+|---|---|
+| flip the sign of `pearson`'s return in `staging/index.html` only | `PROBE-FAIL 8 [STAGED: …]`, `pearson +1` and `pearson -1` red plus six cluster-detector consumers; `index.html` hashed unchanged |
+| add an always-false `ok()` to `staging/probe-snippet.html` only | `PROBE-FAIL 1 [STAGED: …]`, that assertion alone |
+
+The first proves `PROBE_SRC` is the file that ran — had the runner read the tree, the suite would
+have been green. The second proves `PROBE_SNIPPET` is too. Both were run one at a time with the
+staged copy restored between.
 
 ## Why a beacon instead of --dump-dom
 
@@ -217,4 +302,49 @@ tools/probe/
   probe-snippet.html  the test suite (injected AFTER the app, before </body>)
   out/                disposable run artifacts (gitignored): probe.html, edge-profile/,
                       probe-report.txt
+  reqpair.sh          the REQUIREMENTS.md cross-reference, both directions
+tools/stage/
+  new.sh              open a staged repair pass (copy the tree, record its hashes)
+  run.sh              the full suite against staging/, with the three PROBE_* overrides set
+  check.sh            the freeze proof and the diff (staging/DIFF.patch)
+  land.sh             the guarded landing — refuses without a recorded cold-review verdict
+staging/              a repair pass in flight (gitignored); the durable record is
+                      audits/REPAIR-LEDGER.md
 ```
+
+## Deployment check — OPERATOR-VERIFIED (tooling limitation, ruled Aug 19 2026)
+
+**M154's lesson stands: seeded tests prove the code, one real boot proves the schedule
+reaches it.** That detector cannot be automated in this environment, and the substitute is
+the operator running it on the real device. Diagnosis and the six things tried are in the
+header of `tools/probe/deploy.sh`, which is kept for exactly that reason; the short version
+is that headless Edge here executes reliably only under `run.sh`'s flag set, which blocks the
+network on purpose, and every real-network invocation either never terminates or never
+reports — including a minimal page whose only content is the beacon POST.
+
+**A requirement row that would have cited a deployment artifact reads `operator-verified`
+against this checklist, not `owed`.** The gap closes honestly rather than standing open
+across sessions.
+
+### The two-minute check, on the phone, at cutover
+
+Open the app cold (fully close it first — the point is the boot, not a resumed tab).
+
+1. **Does it boot and show live prices?** The plan sub-line should read
+   *"N pass the gates, of M scored (watchlist)"* with a prices age of seconds, not
+   "not yet". If M is 0 or the age says "not yet", the boot did not complete — stop and say so.
+2. **Did the instrument's clocks advance within one poll?** Trade → Scorer, top of the
+   screen: **market archive**, **universe scorer**, **reconciliation diff** and **fill sim**
+   should each show a bucket age in seconds or minutes — not *"not yet this session"*. Any
+   one still saying "not yet" a minute after boot is the finding, and it names which layer.
+3. **Does anything render broken?** Scan the plan and the Scorer for `NaN`, `undefined`,
+   `[object Object]` or an empty panel where a number belongs. The cold-start suite checks
+   this synthetically; you are checking it against real data.
+
+**Why these three and not more:** they are exactly what the automated artifact was for —
+(1) the boot completes, (2) the scheduled accrual actually fires under real timing rather
+than under a stub that resolves instantly and in order, and (3) real data does not produce
+copy the fixtures never generated. Nothing else in the app needs a real boot to be trusted.
+
+**Report format that closes the gap:** "booted, N of M, four clocks live, nothing broken" —
+or which of the three failed. That sentence is the artifact.

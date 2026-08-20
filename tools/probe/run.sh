@@ -6,6 +6,48 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$HERE/out"
+
+# ═══ STAGED-SOURCE OVERRIDES — the cold repair review (user ruling, Aug 19 2026)
+#
+# A repair pass writes to `staging/` and never to the tree, so that the NEXT
+# session can review the diff cold — without having been shown the finding that
+# provoked it. That only works if the staged copy can be fully verified before
+# it lands, seeds included, which is what these three overrides are for:
+#
+#   PROBE_SRC=staging/index.html PROBE_SNIPPET=staging/probe-snippet.html \
+#   PROBE_REQ=staging/REQUIREMENTS.md bash tools/probe/run.sh
+#
+# REQUIREMENTS.md is here because the pairing check is part of the suite: a
+# staged repair that adds an assertion needs its row staged too, or the run
+# fails on a pairing orphan that is an artefact of staging rather than a defect.
+#
+# A STAGED RUN IS STAMPED IN THE REPORT HEADER (step 6b). The header is the line
+# that gets quoted into HANDOFF.md, so a run that did not read the tree must not
+# be quotable as one that did.
+SRC="${PROBE_SRC:-$ROOT/index.html}"
+SNIP="${PROBE_SNIPPET:-$HERE/probe-snippet.html}"
+REQF="${PROBE_REQ:-$ROOT/REQUIREMENTS.md}"
+for f in "$SRC" "$SNIP" "$REQF"; do
+  [ -f "$f" ] || { echo "FATAL: source not found: $f"; exit 1; }
+done
+# COLD BY DEFAULT (user ruling, 2026-08-19). The browser profile carries
+# localStorage and IndexedDB between runs, so a reused profile means the suite
+# starts warm and an assertion can pass on state an EARLIER RUN left behind.
+# `[R82.4]` did exactly that: it read reconciliation rows out of IndexedDB that
+# no fixture ever seeded, so a fresh profile went red on a correct tree and every
+# run after passed (MISTAKES M166). A green cold run and a green warm run are
+# different claims; this makes the reported one the cold claim, always.
+#
+#   PROBE_WARM=1 bash tools/probe/run.sh   # keep the profile, on purpose
+#
+# The ONLY reason to run warm is to compare against a cold run. **If the two
+# ever differ, that difference is a finding** — some assertion is reading state
+# nothing wrote, and the suite's green does not mean what it says.
+if [ "${PROBE_WARM:-0}" = "1" ]; then
+  echo "PROBE_WARM=1 — reusing the browser profile; a cold/warm difference is a FINDING"
+else
+  rm -rf "$OUT/edge-profile"
+fi
 mkdir -p "$OUT/edge-profile"
 rm -f "$OUT/probe-report.txt"
 
@@ -15,12 +57,12 @@ rm -f "$OUT/probe-report.txt"
 #    The early stub MUST come before the app's script: it pre-stubs
 #    prompt/confirm (a boot-time prompt stalls headless parsing forever) and
 #    installs the error->beacon trap that reports parse errors.
-LN=$(grep -n '^<script>$' "$ROOT/index.html" | head -1 | cut -d: -f1)
-if [ -z "$LN" ]; then echo "FATAL: no '^<script>\$' line found in index.html"; exit 1; fi
-head -n $((LN-1)) "$ROOT/index.html" > "$OUT/probe.html"
+LN=$(grep -n '^<script>$' "$SRC" | head -1 | cut -d: -f1)
+if [ -z "$LN" ]; then echo "FATAL: no '^<script>\$' line found in $SRC"; exit 1; fi
+head -n $((LN-1)) "$SRC" > "$OUT/probe.html"
 cat "$HERE/early-stub.html" >> "$OUT/probe.html"
-tail -n +$LN "$ROOT/index.html" | head -n -2 >> "$OUT/probe.html"
-cat "$HERE/probe-snippet.html" >> "$OUT/probe.html"
+tail -n +$LN "$SRC" | head -n -2 >> "$OUT/probe.html"
+cat "$SNIP" >> "$OUT/probe.html"
 printf '</body>\n</html>\n' >> "$OUT/probe.html"
 grep -q "__probeErrs" "$OUT/probe.html" || { echo "FATAL: early stub missing from assembled probe"; exit 1; }
 
@@ -64,7 +106,7 @@ kill $LISTENPID 2>/dev/null
 #    are appended to the report and they rewrite the header, so `head -1` never
 #    says PASS while a pairing failure stands.
 if [ -s "$OUT/probe-report.txt" ]; then
-  PAIR="$(bash "$HERE/reqpair.sh" "$ROOT" "$OUT/probe-report.txt")"
+  PAIR="$(bash "$HERE/reqpair.sh" "$ROOT" "$OUT/probe-report.txt" "$REQF")"
   PAIRRC=$?
   # The beacon body ends without a trailing newline, so append one first or
   # the pairing section lands glued to ===END=== and greps miss it.
@@ -81,6 +123,25 @@ if [ -s "$OUT/probe-report.txt" ]; then
     { printf '%s\n' "$NEW"; tail -n +2 "$OUT/probe-report.txt"; } > "$OUT/probe-report.tmp"
     mv "$OUT/probe-report.tmp" "$OUT/probe-report.txt"
   fi
+fi
+
+# 6b. THE STAGED-RUN STAMP (the cold repair review, user ruling Aug 19 2026).
+#     A staged run is a real, complete pass — of the STAGED code. The header is
+#     the line that gets quoted into HANDOFF.md as the tree's status, so it says
+#     so inline: the caveat travels with the claim, the way the pairing check's
+#     header rewrite already does. Exit codes are unchanged, because a staged
+#     pass IS a pass of what it read.
+if [ -s "$OUT/probe-report.txt" ] && \
+   { [ "$SRC" != "$ROOT/index.html" ] || [ "$SNIP" != "$HERE/probe-snippet.html" ] || [ "$REQF" != "$ROOT/REQUIREMENTS.md" ]; }; then
+  {
+    printf '===SOURCE=== STAGED RUN - this report does NOT describe the working tree\n'
+    printf 'SOURCE src=%s\n'          "${SRC#$ROOT/}"
+    printf 'SOURCE snippet=%s\n'      "${SNIP#$ROOT/}"
+    printf 'SOURCE requirements=%s\n' "${REQF#$ROOT/}"
+  } >> "$OUT/probe-report.txt"
+  HDR=$(head -1 "$OUT/probe-report.txt")
+  { printf '%s [STAGED: %s]\n' "$HDR" "${SRC#$ROOT/}"; tail -n +2 "$OUT/probe-report.txt"; } > "$OUT/probe-report.tmp"
+  mv "$OUT/probe-report.tmp" "$OUT/probe-report.txt"
 fi
 
 # 7. Report.

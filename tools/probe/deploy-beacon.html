@@ -1,0 +1,40 @@
+<script>
+/* DEPLOY CHECK — beacons on a DETERMINISTIC EVENT, never on a timeout alone.
+   Prior attempt waited for S.scoredBucket and reported nothing when it never
+   arrived, so "no beacon" carried no information. This fires on whichever
+   comes first: the first scored bucket, or a hard deadline — and the deadline
+   report says exactly how far the boot got, so a failure is diagnostic. */
+(function(){
+  var t0 = Date.now(), sent = false;
+  function say(reason){
+    if (sent) return; sent = true;
+    var st = {};
+    try {
+      st = { reason: reason, secs: Math.round((Date.now()-t0)/1000),
+        items: (typeof S!=="undefined" && S.items) ? S.items.length : "S undefined",
+        latestAt: (typeof S!=="undefined") ? !!S.latestAt : null,
+        min5At: (typeof S!=="undefined") ? !!S.min5At : null,
+        scoredBucket: (typeof S!=="undefined") ? !!S.scoredBucket : null,
+        frontier: (typeof S!=="undefined") ? S.scorerFrontierN : null,
+        ctlPass: (typeof S!=="undefined" && S.scorerCtlPass) ? S.scorerCtlPass.length : null,
+        poolSeen: (typeof DB!=="undefined" && DB.poolSeen) ? Object.keys(DB.poolSeen).length : null,
+        cutoverPool: (typeof CUTOVER_POOL!=="undefined") ? CUTOVER_POOL : "undef",
+        itemOps: (typeof ITEM_OPS!=="undefined") ? ITEM_OPS : "undef",
+        vol5Universe: (typeof VOL5_UNIVERSE!=="undefined") ? VOL5_UNIVERSE : "undef",
+        planSub: (document.getElementById("planSub")||{}).textContent,
+        tabLabel: (document.querySelector('#tradeSubs button[data-sub="watch"]')||{}).textContent,
+        warnbox: (document.getElementById("warnbox")||{}).textContent,
+        vw: window.innerWidth, vh: window.innerHeight,
+        errs: (window.__probeErrs||[]).slice(0,4)
+      };
+    } catch(e){ st = { reason: reason, fatal: String(e && e.message || e) }; }
+    try { fetch("http://127.0.0.1:8347/report", { method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"text/plain"}, body:"DEPLOY-CHECK\n"+JSON.stringify(st,null,1) }); } catch(e){}
+  }
+  var iv = setInterval(function(){
+    if (typeof S !== "undefined" && S.scoredBucket){ clearInterval(iv); say("first scored bucket"); }
+  }, 500);
+  setTimeout(function(){ clearInterval(iv); say("deadline — reporting how far the boot got"); }, 75000);
+  window.addEventListener("error", function(ev){ say("uncaught error: " + (ev && ev.message)); });
+})();
+</script>
