@@ -1384,6 +1384,13 @@ function load(){
        not move: the originals stay until the admission machinery retires, and
        `opsOf` is the single reader so nothing is ever read from both. */
     try { itemOpsMigrate(); } catch(e){}
+    /* AND THE ONE-TIME CATCH-UP, IMMEDIATELY AFTER IT AND BEFORE ANY READER.
+       V1 handles a row the store has never seen; V2 reconciles a row it has
+       and has since fallen behind on. Both are inert while `ITEM_OPS` is
+       false, because `opsOf` does not consult the store at all until the flag
+       is armed — and from tonight nothing can fall behind again, because
+       `opsWrite` writes both sides on every press. */
+    try { itemOpsReconcile(); } catch(e){}
     /* SHADOW PURGE (user ruling, Aug 11 2026). Trips that closed before the
        force-exit fix were exited at the price on the day the tab reopened,
        booking days of price drift as simulated P&L. That baseline argues for
@@ -2078,7 +2085,52 @@ function applyMapping(items, at){
   } else clearWarn("exempt");
 }
 
-async function loadLatest(){ const d = await getJSON("/latest"); S.latest = d.data || {}; S.latestAt = Date.now(); }
+/* ═══ THE STAMP IS A CLAIM ABOUT THE PRICES, NOT ABOUT THE FETCH ══════════
+   (user ruling, Aug 20 2026 — pass 8 finding 4.1, the payload trigger.)
+
+   This read `S.latest = d.data || {}; S.latestAt = Date.now();`, so a 200
+   carrying no `data` key installed an EMPTY price map and stamped the clock
+   anyway. `S.latestAt` has twenty consumers and every one of them reads it as
+   *when we last had usable prices* — the freshness line, five early-return
+   guards, the poll-cycle salt, and `updateQualStreaks`' own stamp. All twenty
+   were being told a fetch had happened and were hearing that prices had
+   arrived. That is the freshness rule exactly: a freshness claim states the
+   age of the thing it names, never of the fetch that carried it.
+
+   WHAT IT COST, and it is why this is first on the fix list: with the map
+   empty every `calc()` returns null, every row leaves `candidateFor` as
+   `failed:"no live price in /latest"`, and the seasoning loop spent that as a
+   gate failure and deleted the whole book's streaks. The stamp MOVED, so the
+   loop's own guard could not suppress the pass. And `doRefresh`'s success
+   path then runs `S.err = null; clearErr();`, so nothing on screen said a
+   thing. Fires on an ordinary poll, mid-session, silently.
+
+   AN UNUSABLE PAYLOAD LEAVES THE LAST GOOD MAP STANDING rather than blanking
+   it. We have no NEW prices; we have not learned that the old ones are wrong.
+   Their age is then reported truthfully by the unchanged stamp, which is what
+   the amber/red dot in `paintStatus` already exists to do.
+
+   WHAT IT DELIBERATELY DOES NOT COVER, so the next reader does not read it as
+   wider than it is: a payload that is present and populated but simply has no
+   row for a given item. That is a PER-ITEM absence, it still leaves that row
+   `failed`, and it is answered by the other half of this fix —
+   `candidateUnevaluated` at the seasoning loop. Two fixes, not one. */
+async function loadLatest(){
+  const d = await getJSON("/latest");
+  const data = (d && d.data && typeof d.data === "object" && !Array.isArray(d.data)) ? d.data : null;
+  if (data && Object.keys(data).length){
+    S.latest = data; S.latestAt = Date.now();
+    clearWarn("latest-empty");
+    return;
+  }
+  /* NOT SILENT: an automated decision states its reason where the operator
+     reads it, and this one is invisible on every other surface — the fetch
+     succeeded, so the error bar stays clear. */
+  warn("latest-empty", "⚠ The price feed answered but carried NO PRICES ("
+    + (data ? "an empty set" : "no `data` field") + "). The clock was NOT stamped, so the prices on screen are the "
+    + "last usable ones and their age is honest. Seasoning streaks are held rather than reset — the book was not "
+    + "evaluated this cycle, which is a different thing from failing. Nothing is being funded on this reading.");
+}
 
 /* ═══ T0 MARKET ARCHIVE — stage 1b of the universe scorer ══════════════════
    (build ruled Aug 14 2026; the stage with the clock on it — the 7-day chart
@@ -4112,6 +4164,56 @@ const legHorizonH = rec => {
   const h = rec && Number(rec.hzH);
   return Number.isFinite(h) && h > 0 ? h : Math.max(1, DB.fillHorizonH || 4);
 };
+/* ═══ THE TWO WRITERS OF THAT STAMP — one question, one term ═══════════════
+   `legHorizonH` above is the READER. Every path that CREATES a leg answers the
+   other half, and there are exactly TWO answers, which is why there are two
+   terms here rather than one:
+
+   • A FRESH placement is placed NOW, so it stamps the gap in force now.
+     Callers: the plan's place button, the standing-quote writer, and the
+     repair path that re-tracks an offer the tracker lost.
+   • A leg SPLIT OFF an existing one is the SAME placement — one buy offer went
+     into the book at one moment and part of it filled — so it INHERITS the
+     original's stamp. Re-deriving it from the current schedule would
+     retro-apply a horizon change to an open leg, which the cadence ruling
+     forbids in as many words.
+
+   ABSENCE STAYS ABSENCE in the inheriting form: a record written before the
+   field existed was aged against the old global at the time, and inventing a
+   stamp for it would be a different defect. The fresh form has no such case —
+   it always knows the gap it is placing into.
+
+   ═══ AND THE FLOOR, WHICH THE FIRST FORM OF THIS REPAIR DID NOT HAVE ══════
+   (user ruling, Aug 20 2026 — pass 8 finding 1.1, a regression the repair
+   itself introduced and the cold review withdrew its objection to.)
+
+   `gapHoursAt` has no output floor: the 1-hour one was deliberately removed on
+   Aug 13 2026 because a NOMINAL touch minutes away was pricing SIZING against
+   an hour while the operator was actually hours out. That ruling's stated
+   replacement guard is session coalescing at `SESSION_COALESCE_MIN` — which
+   lives entirely inside `walkUpSessions()` and has no path to `gapHoursAt`.
+
+   A STAMP IS A DIFFERENT CONSUMER FROM A SIZING READ, and that is the whole
+   argument. Sizing reads the gap transiently and re-reads it next cycle; a
+   stamp is FROZEN onto a record and never re-derived. Walk up at 11:56 against
+   a 12:00 touch and the unfloored form stamps `hzH = 0.07`; `trackExistingOffer`
+   can land that record straight at `stage: "selling"` with no `stageAt`, so
+   `sellAgeInfo` ages it from now and reaches rung 1 at four minutes and rung 2
+   at eight — UNDERCUT & EXIT, which relists one tick under the instabuy and
+   gives up the whole quoted spread, before the walk-up is over. Arriving a few
+   minutes early is at least as likely as arriving a few minutes late.
+
+   The floor also RESTORES the status quo for the repair path specifically: it
+   previously left `hzH` absent and `legHorizonH`'s own fallback is
+   `Math.max(1, …)`, so an unstamped repaired leg already aged against at least
+   an hour. Without the floor this repair made that site strictly worse.
+   Direction is restraining everywhere it reaches — a longer stamp means a more
+   patient ladder, never a more aggressive one. */
+const placementHzH = () => Math.max(1, Math.round(planHorizonH() * 100) / 100);
+const inheritHzH = src => {
+  const h = Number(src && src.hzH);
+  return Number.isFinite(h) && h > 0 ? { hzH: h } : {};
+};
 /* THE LINE THIS FEATURE EXISTS FOR: an item the current gap has to bench,
    which the overnight sit would fund. Returns null when the current horizon
    already covers it, so the caller can say nothing. */
@@ -4215,9 +4317,19 @@ function volGateFor(c){
    change that makes them necessary. */
 const VOL5_UNIVERSE = false;   // pinned by [R94.3]; the flip is a ruling
 const DIEOFF_LOG_CAP = 1500;   // the die-off ledger's bound, needed the moment its population stops being a 43-item watchlist
-const vol5Population = () => VOL5_UNIVERSE ? S.items.map(it => it.i) : DB.watch.map(w => w.id);
-function updateVol5Streaks(){
-  const pop = vol5Population();
+/* THE FLAG IS A PARAMETER HERE TOO (user ruling, Aug 20 2026 — pass 8 finding
+   3.1, the hollow-injection half). `cutoverFault` decides *is the 5-minute
+   streak counted universe-wide?* by reading the flag set it is HANDED, while
+   this — the code that actually decides it — read the const and took no
+   argument. So a test could hand the guard `{vol5:true}`, be told the
+   combination was legal, and run the whole armed-pool path with the streak
+   counter still on the watchlist alone: the exact state the guard exists to
+   refuse, wearing the legal state's clothes. One question, one term — so the
+   term takes the flag and the guard reads the same one.
+   Production passes nothing and is bit-identical. */
+const vol5Population = a => (a === undefined ? VOL5_UNIVERSE : !!a) ? S.items.map(it => it.i) : DB.watch.map(w => w.id);
+function updateVol5Streaks(armed){
+  const pop = vol5Population(armed);
   const live = new Set(pop);
   /* An id that leaves the population loses its streak — otherwise a shrinking
      population leaves counters that nothing updates, which is a streak that
@@ -5565,13 +5677,43 @@ function reliability(id){
        + (medCyc != null ? ", median " + fmtHrs(medCyc) : "") + " → ×" + w.toFixed(2) };
 }
 
+/* ═══ UNEVALUATED IS NOT FAILED — THE ONE TERM ════════════════════════════
+   (user ruling, Aug 20 2026.) A candidate carrying `failed` has been told no
+   by one of two very different things: a RULE that looked at it and declined
+   it, or the ABSENCE of anything to look at. Every reader that spends a
+   `failed` as evidence about the item's edge must read this term first, and
+   there are exactly three: the seasoning loop (which was deleting streaks),
+   the gate ledger (which was logging a day the gate never ran), and the
+   deployment funnel's kill attribution (which was crediting a gate with a
+   candidate it never saw).
+
+   The rule was already ruled once, for the scorer's control cell, and did not
+   reach the live chain — same property, different reader. It is written as a
+   term this time so a fourth reader inherits it instead of re-earning it.
+
+   ABSENT MEANS EVALUATED. A candidate built anywhere else — the scout's
+   pseudo-entries, the paper book's screening rows — carries no `noEval`, and
+   reads as evaluated, which is the correct default: those paths only build a
+   candidate once they have a price. */
+const candidateUnevaluated = x => !!(x && x.noEval);
 /* The full gate chain for one entry. Shared by the plan (watch entries) and
    the scout pipeline, which runs it on pseudo-entries {id, qty:null} so
    admission means passing the SAME gates the allocator will apply. */
 function candidateFor(w){
     const c = calc(w.id);
+    /* THE THIRD STATE, STAMPED ON THE CANDIDATE (user ruling, Aug 20 2026 —
+       pass 8 finding 4.1, second half). This return is not a gate verdict.
+       Nothing was evaluated: there is no price to evaluate. It has carried a
+       `failed` string since the beginning and every reader of `failed` has
+       therefore counted it as a rule saying no.
+
+       `noEval` is stamped HERE, once, centrally, rather than left for each
+       reader to recognise the string — a membership that individual readers
+       remember to attach is the defect this file has recorded before. The
+       `failed` string stays, because the bench still has to render a reason
+       and *why* it is on the bench is exactly what the reader needs. */
     if (!c || c.buy == null || c.sell == null)
-      return { id:w.id, name: itemName(w.id), failed:"no live price in /latest" };
+      return { id:w.id, name: itemName(w.id), failed:"no live price in /latest", noEval: 1 };
 
     const { qty } = planQty(w, c);
     const sp = S.spark.get(w.id);
@@ -5813,7 +5955,7 @@ const planScoredN = P => (P && Array.isArray(P.all)) ? P.all.length : 0;
 function planSubLine(P, loadingN){
   const pass = (P && P.pass) ? P.pass.length : 0;
   return pass + " pass the gates, of " + planScoredN(P) + " scored"
-    + (CUTOVER_POOL ? " (pins + the control cell's pool)" : " (watchlist)")
+    + (cutoverPoolOn() ? " (pins + the control cell's pool)" : " (watchlist)")
     + " · prices " + ago(S.latestAt)
     + (loadingN ? " · ⏳ " + loadingN + " charts still loading — verdicts will improve" : "");
 }
@@ -6079,9 +6221,16 @@ const opsPick = (o, w, k) => (o && Object.prototype.hasOwnProperty.call(o, k))
    through the term. That is M157 exactly, and its remedy is one parameter:
    production calls `opsOf(id)` and is bit-identical, while a caller may drive
    the branch. `[R93.1]` still pins the const. */
-function opsOf(id, armed){
+/* THE ROW-TAKING FORM (Aug 19 2026). `opsOf(id)` resolves the row by id, which
+   is right for a control that has only an id from a `data-` attribute. A
+   per-row render or predicate ALREADY HOLDS the row, and re-finding it by id
+   is a second answer to "which row is this" — wrong the moment the caller's
+   row is not the one `DB.watch` returns for that id. The store is still keyed
+   by id, because the store is; only the row comes from the caller. */
+const opsFor = (w, armed) => opsOf(w && w.id, armed, w || null);
+function opsOf(id, armed, row){
   const on = armed === undefined ? ITEM_OPS : armed;
-  const w = DB.watch.find(x => x.id === id) || null;
+  const w = row !== undefined ? row : (DB.watch.find(x => x.id === id) || null);
   const o = on ? ((DB.itemOps || {})[id] || null) : null;
   const pick = k => opsPick(o, w, k);
   /* THE `bands` PARTITION, and its three states. An override made under one
@@ -6116,6 +6265,63 @@ function opsOf(id, armed){
            tierOv: ov.tierOv,
            tierOvRaw: rawOv, tierOvStale: ov.stale,
            bands, src: o ? o.src : null, setAt: o ? o.setAt : null, row: w };
+}
+/* ═══ THE OPERATOR-STATE WRITE PATH — ONE OWNER IN BOTH REGIMES ════════════
+   (Aug 19 2026, pass 7's first money-path finding.)
+   Reading was already single-owner: `opsOf` prefers the store and falls back
+   to the row. WRITING was not. Of the writers of the six fields, exactly one
+   branched on the flag; the four watch-row controls wrote the row
+   unconditionally. So arming `ITEM_OPS` answered every read from a migration
+   snapshot and discarded every press since it was taken — including a
+   hand-set `tierOv: 0`, which is a bench removed with no press.
+
+   ═══ AND IT WRITES BOTH SIDES WHILE THE FLAG IS OFF ═══════════════════════
+   (user ruling, Aug 20 2026 — pass 8 finding 2.1, a defect the repair itself
+   introduced.) The first form of this branched: store when armed, row when
+   not. That closes the gap at the reconciliation boot and RE-OPENS IT ON THE
+   NEXT PRESS — from then until the flip, every press lands on the row alone
+   while the snapshot ages, and `opsPick` prefers the store for any key the
+   store owns. The same defect the reconciliation exists to fix, one
+   generation later, with no third generation scheduled to fix it again.
+
+   So the off-flag branch writes the row AND mirrors into the store. The row
+   is what `opsPick` reads today, so behaviour is unchanged; the store is
+   simply kept current so the flip has nothing to discard. A press is a press
+   in both regimes and `opsSet`'s provenance rule is satisfied either way —
+   this is not an automated writer, it is the same press reaching both places.
+
+   THE RULE, STATED ONCE: **`ITEM_OPS` IS A READ-SIDE SWITCH, NOT A WRITE-SIDE
+   ONE.** A press writes wherever the value lives — the row when there is one,
+   the store always — and the flag decides only which of them `opsOf` believes.
+   That is what the migration already said it was doing ("the watch-row
+   originals STAY, untouched, until the admission machinery retires"); what it
+   stopped doing was keeping them in step. Writing both is one line and it
+   closes two findings rather than one:
+
+     • 2.1, above — no window can open between a reconciliation and a flip,
+       because nothing ever diverges to reconcile.
+     • 2.2 — `itemOpsPrune` deletes a store row at 90 days and `opsPick` then
+       falls through to the row. With the row stale that silently REVERTS an
+       override the operator set — a restraint lapsing on a clock, which
+       `ITEM_OPS_RET_MS`'s own comment says is the constitutional line. With
+       the row kept in step, the fall-through lands on the same value and the
+       storage bound stays a storage bound.
+
+   THE ROW BRANCH WRITES `null` RATHER THAN DELETING. Both forms read
+   identically at every consumer traced (`opsPick`'s `w[k] != null`,
+   `itemOpsMigrate`'s and `itemOpsReconcile`'s `w[k] != null`,
+   `validateImport`'s `num(w.tBuy) > 0` / `nz(w.qty)`), and `null` is what
+   every watch-row creation path already writes for `qty` — so one rule
+   produces one shape instead of two shapes for one state.
+
+   BEHAVIOUR TODAY IS UNCHANGED: with the flag off `opsPick` reads the row, and
+   the row gets exactly what the four controls used to write it. */
+function opsWrite(id, patch, armed){
+  const on = armed === undefined ? ITEM_OPS : armed;
+  const w = DB.watch.find(x => x.id === id);
+  if (!w && !on) return;                // no row, and nothing reads the store — nowhere anything would look
+  if (w) for (const k of Object.keys(patch)) w[k] = patch[k] == null ? null : patch[k];
+  opsSet(id, patch);                    // always: same press, both places, one stamping rule
 }
 /* The writer. Every control routes here, so a field cannot be set by three
    paths and stamped by two. The press IS the provenance — there is no
@@ -6163,12 +6369,16 @@ function itemOpsPrune(){
    measured from `tAt` and a migrated `tAt` is genuinely old — without the
    stamp a migrated pair and a fresh one are indistinguishable at exactly the
    moment a reader would most like to know. */
+/* THE SIX FIELDS, IN ONE PLACE. The migration, the reconciliation and the
+   assertions all read this list; three hand-kept copies of one membership is
+   the classification defect that produced M170's third instance. */
+const ITEM_OPS_FIELDS = ["tBuy", "tSell", "tAt", "qty", "tierOv", "t2Grad"];
 function itemOpsMigrate(){
   if (DB.itemOpsV1) return 0;
   if (!DB.itemOps || typeof DB.itemOps !== "object") DB.itemOps = {};
   let n = 0;
   for (const w of DB.watch || []){
-    const has = ["tBuy", "tSell", "tAt", "qty", "tierOv", "t2Grad"].filter(k => w[k] != null);
+    const has = ITEM_OPS_FIELDS.filter(k => w[k] != null);
     if (!has.length) continue;
     if (DB.itemOps[w.id]) continue;            // idempotent: never overwrite an existing row
     const r = { src: "migrated", setAt: w.tAt || w.addedAt || Date.now() };
@@ -6181,6 +6391,62 @@ function itemOpsMigrate(){
     n++;
   }
   DB.itemOpsV1 = 1;
+  save();
+  return n;
+}
+/* ═══ GENERATION 2 — THE ONE-TIME CATCH-UP THE FLIP NEEDS ══════════════════
+   (Aug 19 2026, pass 7's first money-path finding.) The V1 copy above is a
+   SNAPSHOT: it runs once ever and never overwrites an existing row. Meanwhile
+   every watch-row control wrote the ROW, so from the V1 boot until `opsWrite`
+   landed, each operator press widened the gap between the two — and `opsPick`
+   prefers the store for any key the store owns. Arming `ITEM_OPS` would
+   therefore have answered with the snapshot and discarded every edit since,
+   INCLUDING a hand-set `tierOv: 0`, which is a bench the operator applied
+   being removed with no press.
+
+   IT RUNS ONCE AND THAT IS NOW CORRECT, which it was not in the first form of
+   this repair. `opsWrite` writes both sides on every press, so nothing can
+   diverge after this pass — the window this closes is exactly the historical
+   one, between the V1 boot and tonight, and there is no second window for a
+   third generation to close.
+
+   THE ROW IS AUTHORITATIVE FOR THIS ONE PASS, and the reason is provable
+   rather than assumed: between V1 and this build, `opsSet` had no reachable
+   production caller at all — its call sites are the `ITEM_OPS`-gated t2Grad
+   line and the two pool controls, which render only when the flag is armed.
+   So every divergence was created by a row write, and the row carries the
+   later value by construction.
+
+   ABSENCE IS COPIED AS ABSENCE. A field the operator CLEARED on the row must
+   clear in the store too, or the clear is the edit that gets discarded.
+
+   `setAt` MOVES ONLY ON A REAL RECORDED TIME, never to now: reconciliation is
+   not a press, and stamping one would claim the operator did something at a
+   moment they did not. `tAt` is the only real press time a row carries, so a
+   row whose only edits were `qty` or `tierOv` keeps its migration `setAt` and
+   ages against the 90-day storage bound from there — stated because it is a
+   limit, not a design. */
+function itemOpsReconcile(){
+  if (DB.itemOpsV2) return 0;
+  const s = DB.itemOps;
+  let n = 0;
+  if (s && typeof s === "object"){
+    for (const w of DB.watch || []){
+      const r = s[w.id];
+      if (!r) continue;                        // nothing migrated for this row — V1 owns that case
+      let touched = false;
+      for (const k of ITEM_OPS_FIELDS){
+        if (w[k] != null){ if (r[k] !== w[k]){ r[k] = w[k]; touched = true; } }
+        else if (Object.prototype.hasOwnProperty.call(r, k)){ delete r[k]; touched = true; }
+      }
+      if (touched){
+        delete r.src;                          // an operator-set value is not a migrated one — `opsSet`'s own rule
+        if (Number.isFinite(w.tAt) && w.tAt > (r.setAt || 0)) r.setAt = w.tAt;
+        n++;
+      }
+    }
+  }
+  DB.itemOpsV2 = 1;
   save();
   return n;
 }
@@ -6319,7 +6585,10 @@ const gateLogRow = (d, x, g, v) => {
   if (x.src) row.src = x.src;   // absent = pre-stamp; never defaulted, for the same reason DB.qual's is not
   return row;
 };
-const deployPoolRegime = () => CUTOVER_POOL ? "mixed" : "watch";
+/* The ledger stamps the regime the plan ACTUALLY RAN IN, which is the
+   effective term and not the ruled const — a refused flip that recorded
+   "mixed" would put a whole day's rows in a population that never existed. */
+const deployPoolRegime = () => cutoverPoolOn() ? "mixed" : "watch";
 /* ═══ THE POOL SWITCH — BUILT, FLAGGED OFF (user ruling, Aug 18 2026) ══════
    The one deployment-class change in the migration, written now so the
    cutover ruling is a flag flip plus verification rather than a build.
@@ -6340,6 +6609,79 @@ const deployPoolRegime = () => CUTOVER_POOL ? "mixed" : "watch";
    inputs, seasoning history), and that is the plan surface's problem and the
    chart wiring's, not this function's. */
 const CUTOVER_POOL = false;
+/* ═══ THE THREE FLAGS ARE ONE QUESTION — the cutover's own switch ═══════════
+   (user ruling, Aug 19 2026, on pass 7's second money-path finding.)
+   `CUTOVER_POOL`, `ITEM_OPS` and `VOL5_UNIVERSE` were three independent
+   consts, so either ruling could land alone — and one of the six orderings
+   WIDENS what the allocator may fund:
+
+     CUTOVER_POOL armed while VOL5_UNIVERSE is off.
+     `updateVol5Streaks` writes `S.vol5Low` only for `vol5Population()`, which
+     is `DB.watch` while the second flag is off, and DELETES every id outside
+     it. A pool item is not a watch row, so its 5-minute die-off streak is not
+     zero — it is NOT COUNTED, and `volGateFor` falls through to the 1h
+     branch. The 5m binding is a `Math.min`, so it can only ever SHRINK the
+     sized quantity. Pool items would therefore be sized LARGER and clear the
+     volume floor MORE EASILY than an identically-placed pin in a collapsing
+     book, and they are the population with no operator history behind them.
+     The die-off tag goes with it: `dieOffTagged` requires `volBound === "5m"`,
+     which a pool item in that state can never reach.
+
+   THE GUARD REFUSES; IT DOES NOT REPAIR. Deriving `VOL5_UNIVERSE` from
+   `CUTOVER_POOL` would arm a second deployment-class mechanism on one press —
+   the population of a streak counter, a die-off ledger's `pop` stamp, and a
+   per-poll `calc()` over ~4,500 items instead of ~43. Restraint may auto-arm
+   and deployment may not; this combination changes both, so it refuses and
+   says which flag is missing. The refusal falls back to the WATCHLIST, which
+   is today's behaviour and the restraining side.
+
+   WHY `CUTOVER_POOL && !ITEM_OPS` IS A WARNING AND NOT A FAULT, recorded here
+   so the next reader does not "complete" the rule: with the store off, a pool
+   item's `opsOf` returns null on every field, so it sizes automatically, uses
+   live prices and takes its computed tier. Nothing loosens — what is missing
+   is the operator's per-item channel to RESTRAIN one (`poolControlsHTML`
+   returns "" unless armed), and `ignore` and the blacklist still reach it.
+   A missing restraint channel is a real gap and it is not a widening, and the
+   constitutional line is drawn at widening.
+   *(Read the pool controls' own comment before acting on that sentence: both
+   buttons only ever LOOSEN — the tier cycle cannot reach untiered and a
+   tested pair lifts three restraints. The verdict stands; the reason in this
+   paragraph is the weaker half of it.)* */
+function cutoverFault(set){
+  const s = set || { pool: CUTOVER_POOL, ops: ITEM_OPS, vol5: VOL5_UNIVERSE };
+  if (s.pool && !s.vol5)
+    return "the candidate pool is armed and the 5-minute die-off streak still counts the watchlist only, so a pool "
+         + "item's streak is NOT COUNTED and its volume gate falls back to the 1h book — which sizes it LARGER than "
+         + "an identically-placed pin in a market whose 5m flow has died. VOL5_UNIVERSE has to be ruled with it.";
+  return null;
+}
+/* The flag set as one value, so a test can drive the whole combination and
+   production reads exactly what was ruled.
+   A BARE BOOLEAN IS NO LONGER ACCEPTED (Aug 20 2026). It used to mean "the
+   pool flag alone", and under the guard above `cutoverSetFrom(true)` yields
+   `{pool:true, vol5:false}` — a FAULT — so the shorthand silently returned the
+   watchlist while reading as the pool test. A form that does the opposite of
+   what it says is worse than no form; pass the set. */
+const cutoverSetFrom = a => (a && typeof a === "object")
+  ? { pool: !!a.pool, ops: !!a.ops, vol5: !!a.vol5 }
+  : { pool: CUTOVER_POOL, ops: ITEM_OPS, vol5: VOL5_UNIVERSE };
+/* THE ONE TERM EVERY CONSUMER READS. `CUTOVER_POOL` is what was ruled;
+   `cutoverPoolOn` is what is in force, and they differ exactly when the
+   combination is illegal. Every reader below — the candidate pool, the
+   regime stamp on the deploy ledger, and all three copy lines — reads this,
+   because a ledger or a sentence describing the ruled flag rather than the
+   effective one would record a regime the plan never ran in. */
+const cutoverPoolOn = a => { const s = cutoverSetFrom(a); return s.pool && !cutoverFault(s); };
+/* THE REFUSAL IS RENDERED, NOT SILENT. A flag flipped and then declined is
+   the worst of both: the operator believes the pool is live and the plan is
+   the watchlist. This raises the same warning bar the gate-name check uses,
+   and it names the missing flag rather than "invalid configuration". */
+function cutoverFaultWarn(){
+  const why = cutoverFault();
+  if (why) warn("cutover-flags", "⚠ The candidate pool was armed and REFUSED — " + why);
+  else clearWarn("cutover-flags");
+  return why;
+}
 /* The pool's rows, shaped as the watch rows `candidateFor` expects. A control
    cell item has no watch row, so this SYNTHESISES the minimum one: the id and
    nothing else. Every operator overlay `candidateFor` reads off `w` —
@@ -6365,7 +6707,11 @@ function cutoverPoolRows(){
    money must not be first executed on the day it carries it, so the caller
    may drive it. Production passes nothing and reads the const. */
 function planCandidates(armed){
-  const on = armed === undefined ? CUTOVER_POOL : armed;
+  /* THE EFFECTIVE TERM, NOT THE RULED CONST. `cutoverPoolOn` refuses an
+     illegal flag combination and falls back to the watchlist, which is
+     today's behaviour and the restraining side. Pass the whole set —
+     `{ pool, ops, vol5 }` — to drive a combination. */
+  const on = cutoverPoolOn(armed);
   const watch = DB.watch.map(w => markSrc(candidateFor(w), QUAL_SRC_WATCH));
   if (!on) return watch;
   /* The watchlist does not stop existing at cutover — it becomes the PIN
@@ -6538,10 +6884,52 @@ const qualSpanned = q => scheduleOn()
   ? new Date(q.firstAt).toLocaleDateString("en-CA") !== new Date(q.lastAt).toLocaleDateString("en-CA")
   : (q.lastAt - q.firstAt) >= QUAL_SPAN_MS;
 const QUAL_GAP_MAX = 12 * 3600e3;   // beyond this the gap is a closed tab, not an observation interval — see updateQualStreaks
+/* ═══ THE TRADE'S DATE, NOT THE MOMENT IT WAS TYPED IN ════════════════════
+   (user ruling, Aug 20 2026 — pass 8 finding 4.4.)
+
+   This tested `f.id >= cut`, and `f.id` is `Date.now()` stamped when the row
+   was LOGGED. The record carries an honest `date` field, written from the log
+   form's own date input, and two other readers in this file already use it
+   (`String(f.date || "") >= d0`). So one question — *has this item traded
+   recently?* — had two implementations, and the one that lifts a gate was
+   reading the wrong clock.
+
+   THE ORDINARY ROUTE, and it needs no import and no corrupt state: `#lDate`
+   is a plain user-editable date input. Log a trade you actually did two
+   months ago with its honest date and `f.id` is today, so the exemption reads
+   *"logged round trip in 30d"* and the seasoning gate lifts. Everyday log-lag
+   does it in weaker form — a trade done on day 0 and logged on day 5 keeps
+   the waiver alive to day 35. The import edge is the loud version:
+   `id: id > 0 ? id : uid()` with `uid = () => Date.now() + (seq++)` stamps
+   every id-less row with the import instant, so a `flips` array from another
+   book waived seasoning for every item in its history at once.
+
+   THE DIRECTION IS ONE-WAY. In normal use `id >= date`, so the old test was
+   strictly LOOSER than this one: it over-granted the waiver and never wrongly
+   withheld it. That is why this is a restraint being restored rather than a
+   strategy change — the copy already claimed the trade window.
+
+   AN UNREADABLE DATE GRANTS NOTHING. Absence may not lift a restraint, so a
+   row whose `date` is missing or malformed is skipped rather than falling
+   back to `f.id`, which is the defect. Both writers in this file always write
+   one (`date: $("#lDate").value || today()` at the log form,
+   `date: String(f.date || today()).slice(0,10)` at the import), so this
+   branch is a floor rather than a live population.
+
+   NOT SWEPT TONIGHT, AND THE REASON IS RECORDED HERE so the next reader does
+   not "complete" it blindly: `f.id`-as-clock is a house convention with six
+   other readers — `itemWins`, `realizedSince`, `flipsSince`, the two
+   recent-flip eviction guards, and the mm/reliability windows. None of them
+   lifts a gate; several are restraints that the looser clock makes MORE
+   protective. The exception lane's `f.id > e.grantedAt` is correct BY
+   CONSTRUCTION and must not be changed: it asks "was this logged after the
+   grant", which is a question about the log instant. */
 function qualExemption(id, c){
   if (c && c.tested) return "margin-tested by you — your diligence outranks the clock";
-  const cut = Date.now() - 30 * 86400e3;
-  if (DB.flips.some(f => f.itemId === id && f.id >= cut)) return "logged round trip in 30d — measurement beats seasoning";
+  const cutD = new Date(Date.now() - 30 * 86400e3).toLocaleDateString("en-CA");
+  const traded = f => { const d = String((f && f.date) || "").slice(0, 10);
+                        return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= cutD; };
+  if (DB.flips.some(f => f.itemId === id && traded(f))) return "logged round trip in 30d — measurement beats seasoning";
   return null;
 }
 function qualState(id){
@@ -6559,6 +6947,20 @@ function qualState(id){
 /* Streak upkeep — advances at most once per data snapshot: buildPlan runs on
    every render and a re-render of the same prices is not new evidence. */
 function updateQualStreaks(all){
+  /* THE LIVE-DATA PRECONDITION ITS SIBLINGS ALL HAVE, AND IT DID NOT (user
+     ruling, Aug 20 2026 — pass 8 finding 4.1, the offline-boot trigger).
+     `scorerCycle` opens `if (!S.min5At || !S.latestAt || !S.items.length)
+     return null;` and `stampDeployLog` opens `if (!S.latestAt || !P) return;`
+     with the comment "an offline boot reads funded 0 and must not pollute the
+     series". This was the one accrual path in the file with no such guard.
+
+     At boot `S` is `latestAt: 0, hourAt: 0` and `S.qualStamp` is session
+     state that has never been set, so the stamp `"0|0"` differed from
+     `undefined` and the guard below PASSED — on a first refresh that failed,
+     every row came back `failed` and the whole book's streaks were deleted
+     and saved. The stamp guard could never have caught it: it exists to stop
+     a SECOND pass on the same data, not a first pass on none. */
+  if (!S.latestAt || !S.items.length) return;
   const stamp = S.latestAt + "|" + S.hourAt;
   if (S.qualStamp === stamp) return;
   S.qualStamp = stamp;
@@ -6567,6 +6969,12 @@ function updateQualStreaks(all){
   for (const x of all){
     if (!(x.id > 0)) continue;
     if (x.failed){
+      /* WE COULD NOT ASK. Neither breaks the streak nor credits it — the
+         cycle simply does not count, which is the same rule the observed-time
+         ruling applies to every denominator that counts occasions. Without
+         this, one item missing from an otherwise-good payload costs that item
+         its tenure and sends it back to the qualifying queue for a day. */
+      if (candidateUnevaluated(x)) continue;
       if (DB.qual[x.id]){ delete DB.qual[x.id]; dirty = true; }   // consecutive means consecutive
       continue;
     }
@@ -6624,9 +7032,15 @@ function updateQualStreaks(all){
   if (dirty) save();
 }
 
-function buildPlan(){
+/* `armed` IS THE INJECTION POINT FOR THE WHOLE CUTOVER PLAN PATH (Aug 19
+   2026). `planCandidates` already took one, but every consumer downstream of
+   it — the slot and budget ledger, NEXT UP, the render — could only ever be
+   exercised on the watchlist, so the pool's actual money properties had no
+   branch a test could reach. Production passes nothing and is bit-identical. */
+function buildPlan(armed){
+  try { cutoverFaultWarn(); } catch(e){}
   ensurePlanDate();
-  const all = planCandidates();
+  const all = planCandidates(armed);
   updateQualStreaks(all);
   /* PAPER-BACKED EXCEPTION LANE (ruled Aug 11 2026): adjudicate first —
      3 real round trips, judged on net P&L AND adverse markout (reweight
@@ -6942,6 +7356,14 @@ function buildPlan(){
     if (!DB.obsDays.includes(dToday)){ DB.obsDays.push(dToday); logDirty = true; }
     for (const b of bench){
       if (!(b.id > 0)) continue;
+      /* A DAY THE GATE NEVER RAN IS NOT A DAY THE GATE BENCHED (Aug 20 2026,
+         the same term the seasoning loop reads). `gateName("no live price in
+         /latest")` returns null, so an unevaluated row was logging as a bench
+         by "plan gate" — a gate-persistence row asserting evidence about an
+         edge that nothing measured. The observed-day stamp above is written
+         unconditionally and still is: the day WAS observed, this item just
+         was not readable in it. */
+      if (candidateUnevaluated(b)) continue;
       const g = gateName(b.failed) || "plan gate";
       const k = dToday + "|" + b.id + "|" + g;
       /* THE VALUE THE GATE SAW (user ruling, Aug 13 2026). The row recorded
@@ -7185,9 +7607,14 @@ function partialPosition(pid){
     const keep = confirm("Filled " + full(n) + " of " + full(p.qty) + ".\n\n" +
       "OK — the offer for the remaining " + full(p.qty - n) + " is still standing in-game (keep tracking it).\n" +
       "Cancel — you cancelled the remainder (stop tracking it).");
+    /* SAME PLACEMENT: the offer went into the book at `p.placedAt` under
+       `p.hzH` and half of it filled, so the filled half INHERITS that stamp.
+       Nothing here was placed now, and `sellAgeInfo` — which turns the stamp
+       into an UNDERCUT & EXIT instruction once this leg is listed — reads it. */
     const filled = { id: Date.now(), itemId: p.itemId, name: p.name, qty: n, buy: p.buy,
                      placedAt: p.placedAt, stage: "bought", stageAt: Date.now(),
-                     buyH: Math.round((Date.now() - p.placedAt) / 36e3) / 100 };
+                     buyH: Math.round((Date.now() - p.placedAt) / 36e3) / 100,
+                     ...inheritHzH(p) };
     if (keep){ p.qty -= n; DB.positions.push(filled); }
     else { Object.assign(p, { qty: n, stage: "bought", stageAt: Date.now(),
                               buyH: Math.round((Date.now() - p.placedAt) / 36e3) / 100 }); }
@@ -7215,8 +7642,13 @@ function partialPosition(pid){
       "OK — the offer for the remaining " + full(p.qty - n) + " is still standing in-game (track it as a pending buy).\n" +
       "Cancel — the remainder never filled and the offer is gone (drop it).");
     if (keep){
+      /* SAME PLACEMENT again: this is the part of that one buy offer that
+         never filled and is still standing in-game under the gap it was placed
+         into, so it inherits the stamp. `staleBuyInfo` reads it, and
+         re-deriving from the current schedule would retro-apply a horizon
+         change to an open leg. */
       DB.positions.push({ id: Date.now(), itemId: p.itemId, name: p.name, qty: p.qty - n, buy: p.buy,
-                          placedAt: p.placedAt, stage: "buying" });
+                          placedAt: p.placedAt, stage: "buying", ...inheritHzH(p) });
     }
     p.qty = n;
     save(); renderWatch();
@@ -7443,7 +7875,7 @@ function placeQuote(id){
   if (!w || !(w.invTarget > 0)) return null;
   const q = invQuote(w);
   if (q.err || (!(q.sellQty > 0) && !(q.buyQty > 0))) return null;
-  w.quotePlaced = { t: Date.now(), hzH: Math.round(planHorizonH() * 100) / 100, bid: q.bid, ask: q.ask,
+  w.quotePlaced = { t: Date.now(), hzH: placementHzH(), bid: q.bid, ask: q.ask,
                     sellQty: q.sellQty, buyQty: q.buyQty, sellFilled: 0, buyFilled: 0 };
   markTouch(); save();
   return w.quotePlaced;
@@ -7846,7 +8278,7 @@ function renderPlan(P0){
   /* The watchlist is the POOL only while CUTOVER_POOL is off; after the flip
      an empty watchlist is an empty PIN list and the pool still has items, so
      the early return must test the thing it actually means. */
-  if (!DB.watch.length && !CUTOVER_POOL){
+  if (!DB.watch.length && !cutoverPoolOn()){
     $("#planSub").textContent = "";
     list.innerHTML = '<li><span class="dim">Watchlist is empty — nothing to plan.</span></li>';
     foot.textContent = ""; $("#benchBody").innerHTML = ""; $("#benchSummary").textContent = "Benched — 0 items";
@@ -7866,7 +8298,15 @@ function renderPlan(P0){
        pool item does not have. */
     const O2 = opsOf(x.id), w = O2.row;
     if (x.tier && x.tier.t === 2 && x.tier.proven && !O2.t2Grad && (w || ITEM_OPS)){
-      if (ITEM_OPS) opsSet(x.id, { t2Grad: 1 }); else { w.t2Grad = 1; save(); }
+      /* THROUGH THE ONE WRITER, like every other caller. NOTE, and it is a
+         finding rather than a fix: this caller is NOT A PRESS — it fires from
+         a render when an item graduates — and `opsSet` states in as many words
+         that there is no automated writer and there must never be one without
+         rows gaining a `by` field first. Routing it here does not resolve
+         that; it makes the one contradiction visible at one site instead of
+         hiding it behind a second copy of the branch. The `by` question is a
+         ruling and is not made here. */
+      opsWrite(x.id, { t2Grad: 1 });
       toast(x.name + " graduated to full size — 2 clean logged round trips.");
     }
   }
@@ -12635,12 +13075,30 @@ function sellRelBandLog(){
     + "figure, which is the cross-check that made it rulable. The absolute band renders beside it until "
     + "2026-08-20 and is read for nothing.", 1, "user");
 }
-function sellAbsShadowHTML(cases){
-  if (Date.now() >= SELL_ABS_BAND_RETIRES) return "";
+/* ═══ THE CLOCK IS A PARAMETER (Aug 20 2026, and it fired the same day) ════
+   `SELL_ABS_BAND_RETIRES` is `Date.UTC(2026, 7, 20)`. On 2026-08-20 this
+   branch crossed sides for the first time and `[R66.4]`'s last limb went red —
+   correctly, because the panel it asserts had retired exactly as ruled.
+
+   The diagnostic of the same morning had reported that `grep -n
+   SELL_ABS_BAND_RETIRES tools/probe/probe-snippet.html` returns nothing, and
+   concluded there were zero assertions on either side of the flip. That was
+   wrong in the useful direction: one assertion depended on it IMPLICITLY, by
+   calling the function, and it is the only thing in the suite that noticed the
+   date arrive. The correction is recorded rather than quietly absorbed.
+
+   A WALL CLOCK IS THE ONE ERA CHANGE A PIN CANNOT WATCH — the suite runs on
+   synthetic fixtures and nothing it reads changes when the calendar does. So
+   the clock becomes an argument: production passes nothing and is
+   bit-identical, and the assertion drives BOTH sides, which is the only way
+   this branch was ever going to be verified on either. */
+function sellAbsShadowHTML(cases, now){
+  const t = now === undefined ? Date.now() : now;
+  if (t >= SELL_ABS_BAND_RETIRES) return "";
   const cs = (cases || []).filter(c => c && c.absCls && c.cls);
   if (!cs.length) return "";
   const differ = cs.filter(c => c.absCls !== c.cls);
-  const daysLeft = Math.max(0, Math.ceil((SELL_ABS_BAND_RETIRES - Date.now()) / 86400e3));
+  const daysLeft = Math.max(0, Math.ceil((SELL_ABS_BAND_RETIRES - t) / 86400e3));
   const face = differ.length + " of " + cs.length;
   return '<div class="note" style="margin-top:6px"><b>The retiring absolute band, for comparison</b> — the flat '
     + SELL_DILUTION_GAP_PCT + '% dilution threshold the spread-relative band replaced on Aug 13 2026. It is computed '
@@ -14339,7 +14797,7 @@ function accrueBackground(){
 
 function renderDeploy(plan){
   const box = $("#depBody"); if (!box) return;
-  if (!DB.watch.length && !CUTOVER_POOL){
+  if (!DB.watch.length && !cutoverPoolOn()){
     $("#depSub").textContent = "";
     box.innerHTML = '<span class="dim">Watchlist is empty — nothing to diagnose.</span>';
     return;
@@ -14379,7 +14837,13 @@ function renderDeploy(plan){
      by the same rule the near-miss pile uses, so the two can never disagree. */
   const firstGate = x => x.fails && x.fails.length ? x.fails[0].g : (gateName(x.failed) || "plan gate");
   const kills = new Map();
-  for (const x of all) if (x.failed) kills.set(firstGate(x), (kills.get(firstGate(x)) || 0) + 1);
+  /* UNEVALUATED ROWS ARE NOT KILLS (Aug 20 2026, the third reader of
+     `candidateUnevaluated`). Without this an unreadable row is attributed to
+     "plan gate" and inflates the very chain the funnel exists to measure —
+     and the funnel's own copy two lines above already promises "unknown is
+     not failing" for the chart case. This makes the promise true for the
+     price case as well. */
+  for (const x of all) if (x.failed && !candidateUnevaluated(x)) kills.set(firstGate(x), (kills.get(firstGate(x)) || 0) + 1);
   const cnt = rx => P.bench.filter(b => rx.test(b.failed || "")).length;
   const stages = [];
   for (const g of GATE_CHAIN_ORDER) if (kills.get(g)) stages.push({ label: g, kill: kills.get(g) });
@@ -14812,7 +15276,12 @@ function scoutEvictable(w, ctx){
   if (w.src !== "scout") return false;                              // yours — never touched
   if (w.sib != null) return false;                                  // siblings live on their own washout clock
   if (ctx.held.has(w.id) || ctx.recentFlip.has(w.id)) return false;  // open position / recent flip
-  if (Number.isFinite(w.tBuy)) return false;                        // you margin-tested it — yours now
+  /* THROUGH `opsOf`, NOT OFF THE ROW (pass 7, the critic's second two-owner
+     instance). `calc` and `provenLoser` already ask this question through the
+     store; these two eviction guards asked it of the row. Once `ITEM_OPS` is
+     armed the two answers separate, and this one decides whether the scout
+     may evict an item the operator has tested. Behaviour-identical today. */
+  if (Number.isFinite(opsFor(w).tBuy)) return false;              // you margin-tested it — yours now
   if (!ctx.charted.has(w.id)) return false;                         // never judged this pass — no evidence, no eviction
   return (ctx.now - (w.lastPass || w.addedAt || 0)) > SCOUT_EVICT_MS;
 }
@@ -14951,7 +15420,7 @@ function runSiblings(now){
 
   const held = new Set(DB.positions.map(p => p.itemId));
   const recentFlip = new Set(DB.flips.filter(f => now - f.id < 7 * 86400e3).map(f => f.itemId));
-  const protectedW = w => held.has(w.id) || recentFlip.has(w.id) || Number.isFinite(w.tBuy);
+  const protectedW = w => held.has(w.id) || recentFlip.has(w.id) || Number.isFinite(opsFor(w).tBuy);   // through the one reader — the second of the two eviction guards
 
   /* Seed decay: a seed 14d without a profitable trip takes its un-graduated
      siblings with it. */
@@ -15331,12 +15800,22 @@ function rowRiskFlags(w, c, sp, P){
    term, so "absent while off" and "present while on" are both proven against
    production code.
 
+   ═══ AND THE PARAMETER NOW REACHES THE BODY, WHICH IT DID NOT ═════════════
+   (user ruling, Aug 20 2026 — the hollow-injection finding.) This checked
+   `armed` at the guard and then called `opsOf(x.id)` with ONE argument, so
+   the store read fell back to the `ITEM_OPS` const and returned null on every
+   field. Both armed assertions therefore passed against an empty skeleton —
+   seeding a real store row for the fixture's id left them green — while the
+   paragraph above claimed the opposite in as many words. An injection point
+   that arms the gate and not the body reports a coverage it does not have,
+   which is the same defect class as a rule with no detector.
+
    WHILE THE FLAG IS OFF THEY RENDER NOTHING — a press that writes a store
    nothing reads is worse than an absent control, because it looks like it
    worked. */
 function poolControlsHTML(x, armed){
   if (!armed || !x || x.src !== QUAL_SRC_POOL) return "";
-  const o = opsOf(x.id);
+  const o = opsOf(x.id, armed);   // the SAME flag the guard just read — see the hollow-injection note above
   const tierTxt = o.tierOvStale
     ? "override set under different tier bands — NOT APPLIED"
     : o.tierOv != null ? "override: T" + o.tierOv : "no tier override";
@@ -15488,10 +15967,11 @@ function testDot(w, c){
   /* The slot is emitted whether or not there is a dot in it — a fixed
      position is what stops the paper dot sliding over here and being read
      as a test state (user ruling, Aug 11 2026). Tooltip names itself first. */
-  const inner = !(Number.isFinite(w.tBuy) && Number.isFinite(w.tSell)) ? ""
+  const O = opsFor(w);   // the tested pair through its one reader, never off the row
+  const inner = !(Number.isFinite(O.tBuy) && Number.isFinite(O.tSell)) ? ""
     : c.tested
-      ? '<span class="tdot on" title="Margin test: VERIFIED ' + ago(w.tAt) + ' — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Your own fills override live prices for 16h. (Steel, not green: verified vs stale is not good vs bad.)">' + glTerm("ind-testdot", "●", "glyph") + '</span>'
-      : '<span class="tdot" title="Margin test: EXPIRED (' + ago(w.tAt) + ') — buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell) + '. Live prices are back in charge; ↻ in the Tested column re-tests.">' + glTerm("ind-testdot", "○", "glyph") + '</span>';
+      ? '<span class="tdot on" title="Margin test: VERIFIED ' + ago(O.tAt) + ' — buy ' + full(O.tBuy) + ' / sell ' + full(O.tSell) + '. Your own fills override live prices for 16h. (Steel, not green: verified vs stale is not good vs bad.)">' + glTerm("ind-testdot", "●", "glyph") + '</span>'
+      : '<span class="tdot" title="Margin test: EXPIRED (' + ago(O.tAt) + ') — buy ' + full(O.tBuy) + ' / sell ' + full(O.tSell) + '. Live prices are back in charge; ↻ in the Tested column re-tests.">' + glTerm("ind-testdot", "○", "glyph") + '</span>';
   return '<span class="dslot">' + inner + '</span>';
 }
 
@@ -15537,8 +16017,11 @@ function watchDetailRow(w, c, sp, P, risks){
     : "not yet — " + esc(mv.lacks[0])) + '</div>');
   const hv = sp ? hourVerdict(sp.byHour) : null;
   if (hv) bits.push('<div class="dim">hour-of-day: this hour runs ' + hv.ratio.toFixed(2) + '× the item\'s daily average</div>');
-  if (Number.isFinite(w.tBuy)) bits.push('<div><b>Test:</b> buy ' + full(w.tBuy) + ' / sell ' + full(w.tSell)
-    + ' · ' + ago(w.tAt) + (c.tested ? ' <span class="pos">(ACTIVE — overrides live prices for 16h)</span>' : ' (expired)') + '</div>');
+  /* Through `opsOf` — the same reader `calc` uses to decide whether the tested
+     pair overrides live prices, so the panel and the price can never disagree. */
+  const OD = opsFor(w);
+  if (Number.isFinite(OD.tBuy)) bits.push('<div><b>Test:</b> buy ' + full(OD.tBuy) + ' / sell ' + full(OD.tSell)
+    + ' · ' + ago(OD.tAt) + (c.tested ? ' <span class="pos">(ACTIVE — overrides live prices for 16h)</span>' : ' (expired)') + '</div>');
   /* Shadow section (ruled Aug 11 2026): "what would have happened if I'd
      traded this" — answerable per row in one tap. All simulated. */
   const sh = shadowSlice(w.id);
@@ -15659,12 +16142,19 @@ function renderWatch(){
     /* Filter row reaches every collapsed state — aggregation costs no
        capability. Filtered rows still count in the totals (stated in foot). */
     const keys = [status.key, ...risks.map(f => f.k),
-      c.tested ? "tested" : (Number.isFinite(w.tBuy) ? "untested" : "untested"),
+      /* BOTH ARMS OF THE OLD TERNARY RETURNED "untested", so the `w.tBuy` read
+         was dead and the sort had two values where the column shows three.
+         It now sorts on the three states the column actually renders, read
+         through the one owner. */
+      c.tested ? "tested" : (Number.isFinite(opsFor(w).tBuy) ? "expired" : "untested"),
       clustersFor(w.id).length ? "basket" : null, intelTagText(w.id).length ? "intel" : null].filter(Boolean);
     if (S.wFilter && !keys.includes(S.wFilter)){ hiddenN++; return ""; }
     const detail = S.wDetail && S.wDetail.has(w.id) ? watchDetailRow(w, c, sp, P, risks) : "";
     const mv2 = w.invTarget > 0 ? null : mmVerdict(w.id);
-    const hasTest = Number.isFinite(w.tBuy) && Number.isFinite(w.tSell);
+    /* THE SAME QUESTION `calc` ASKS, THROUGH THE SAME TERM. This column and
+       `c.tested` disagreed on one screen the moment the store was armed: the
+       column keyed on the ROW and `c.tested` on the STORE. */
+    const hasTest = (() => { const O = opsFor(w); return Number.isFinite(O.tBuy) && Number.isFinite(O.tSell); })();
     /* Tested column is pure ACTIONS now — the state moved into the slot-4
        dot, whose tooltip carries the numbers. */
     const testCell = c.tested
@@ -19795,7 +20285,7 @@ document.addEventListener("click", e => {
   if (pov){
     const id = +pov.dataset.poolov, cur = opsOf(id).tierOvRaw;
     const next = cur == null ? 1 : cur === 1 ? 2 : null;
-    opsSet(id, { tierOv: next });
+    opsWrite(id, { tierOv: next });   // through the one writer, like every other control
     toast(itemName(id) + (next == null ? " — tier override cleared" : " — tier override set to T" + next
       + " under bands " + TIER1_MIN + "–" + TIER2_MAX + "; it stops applying if you move them"));
     renderPlan(); return;
@@ -19809,7 +20299,7 @@ document.addEventListener("click", e => {
     if (s == null) return;
     const nb = Number(b), ns = Number(s);
     if (!(nb > 0) || !(ns > 0)){ toast("Both prices must be positive — nothing recorded."); return; }
-    opsSet(id, { tBuy: nb, tSell: ns, tAt: Date.now() });
+    opsWrite(id, { tBuy: nb, tSell: ns, tAt: Date.now() });   // through the one writer
     toast(itemName(id) + " — tested pair recorded; it outranks live prices for the next " + Math.round(TESTED_TTL_MS / 3600e3) + "h.");
     renderPlan(); return;
   }
@@ -22128,7 +22618,7 @@ function renderHomeVitals(){
          first has a population that the cutover moves: `pass` is a count over
          planCandidates, `funded` is slot-capped, `% deployed` is capital.
          So `pass` names its pool and the other two do not need to. */
-      + " (" + (CUTOVER_POOL ? "pins + pool" : "watchlist") + ")"
+      + " (" + (cutoverPoolOn() ? "pins + pool" : "watchlist") + ")"
     : "no data yet";
   /* TRANSITIONAL NAV (ruled Aug 14 2026): the Paper Book tile yielded its
      slot to the Scorer — the chrome presents the ruled dichotomy, what would
@@ -23811,7 +24301,7 @@ document.addEventListener("click", e => {
        the leg ages against the gap it was placed into, so an evening leg is
        mid-sit at 05:00 rather than long stale. */
     const rec = { id: Date.now(), itemId: id, name: itemName(id), qty, buy, placedAt: Date.now(),
-                  hzH: Math.round(planHorizonH() * 100) / 100, stage: "buying" };
+                  hzH: placementHzH(), stage: "buying" };
     /* quoted spread at entry, for the capture-vs-drift decomposition later */
     const cq = calc(id);
     if (cq && cq.margin != null) rec.qm = cq.margin;
@@ -23875,10 +24365,16 @@ document.addEventListener("click", e => {
   if (test){ askTested(+test.dataset.test); return; }
   const untest = t.closest("[data-untest]");
   if (untest){
-    const w = DB.watch.find(x => x.id === +untest.dataset.untest);
-    if (w){ const old = {tBuy:w.tBuy, tSell:w.tSell, tAt:w.tAt};
-      delete w.tBuy; delete w.tSell; delete w.tAt; save(); renderWatch();
-      toast("Tested prices cleared.", () => { Object.assign(w, old); save(); renderWatch(); });
+    const id = +untest.dataset.untest;
+    const w = DB.watch.find(x => x.id === id);
+    if (w){
+      /* READ THE OLD VALUE THROUGH `opsOf`, WRITE IT BACK THROUGH `opsWrite`.
+         Reading the row directly would snapshot the wrong side of the store
+         once `ITEM_OPS` is armed, and the undo would then restore a value the
+         operator never had on screen. */
+      const o0 = opsOf(id), old = { tBuy: o0.tBuy, tSell: o0.tSell, tAt: o0.tAt };
+      opsWrite(id, { tBuy: null, tSell: null, tAt: null }); renderWatch();
+      toast("Tested prices cleared.", () => { opsWrite(id, old); renderWatch(); });
     }
     return;
   }
@@ -23943,9 +24439,13 @@ document.addEventListener("click", e => {
     if (!w) return;
     /* Cycle: auto → T1 → T2 → untiered → auto. Overrides only reclassify —
        sizing, gates and budgets still apply to whatever tier results. */
-    const next = w.tierOv == null ? 1 : w.tierOv === 1 ? 2 : w.tierOv === 2 ? 0 : null;
-    if (next == null) delete w.tierOv; else w.tierOv = next;
-    save(); renderWatch();
+    /* CURRENT STATE THROUGH `opsOf`, NEXT STATE THROUGH `opsWrite` — the raw
+       override, not the band-filtered one, because the cycle is over what the
+       operator set rather than over what is currently applied. */
+    const cur = opsOf(id).tierOvRaw;
+    const next = cur == null ? 1 : cur === 1 ? 2 : cur === 2 ? 0 : null;
+    opsWrite(id, { tierOv: next });
+    renderWatch();
     toast(itemName(id) + " tier: " + (next == null ? "auto (price band decides)"
       : next === 0 ? "untiered — excluded from the allocator"
       : "T" + next + " (manual override)") + ".");
@@ -24167,8 +24667,8 @@ function askTested(id){
       + "Save anyway?")) return;
   const w = DB.watch.find(x => x.id === id);
   if (!w) return;
-  w.tBuy = nb; w.tSell = ns; w.tAt = Date.now();
-  save(); renderWatch();
+  opsWrite(id, { tBuy: nb, tSell: ns, tAt: Date.now() });
+  renderWatch();
   toast("Tested spread saved — it overrides live prices for this item for the next 16h, then live data takes back over.");
 }
 
@@ -24227,12 +24727,14 @@ document.addEventListener("change", e => {
      exactly zero units of an item is a thing to ask for. */
   const typed = Math.max(0, clampNum(q.value, 0));
   const cap = c ? planCap(c) : null;
-  if (typed <= 0) w.qty = null;
+  let want;
+  if (typed <= 0) want = null;
   else if (cap != null && typed > cap){
-    w.qty = cap;
+    want = cap;
     toast("Clamped to " + full(cap) + " — capped by " + capReason(c, cap) + ".");
-  } else w.qty = typed;
-  save(); renderWatch();
+  } else want = typed;
+  opsWrite(w.id, { qty: want });
+  renderWatch();
 });
 
 function logFromWatch(id, qtyOverride, buyOverride, sellOverride){
@@ -24305,8 +24807,12 @@ const acTarget = makeAC("#acTarget", it => { if (!DB.targets.includes(it.n)) DB.
 /* Repair path: re-create a position the tracker lost (wrong button, expired
    undo). Walks the same lifecycle stages. Deliberately records NO timings —
    placedAt/stageAt would be guesses, and the fill-time telemetry must never
-   learn from guessed hours, so buyH/sellH stay unset for repaired positions. */
-const acPos = makeAC("#acPos", it => {
+   learn from guessed hours, so buyH/sellH stay unset for repaired positions.
+   EXTRACTED FROM THE AUTOCOMPLETE CALLBACK (Aug 19 2026) so that the branch is
+   reachable from a test at all: nothing can drive `makeAC`'s internal `pick`,
+   and the remedy for an unreachable branch is to make it reachable rather than
+   to point an assertion at a term standing beside it. */
+function trackExistingOffer(it){
   const q = prompt("Track existing offer — " + it.n + "\n\nQuantity?", "");
   if (q === null) return;
   const qty = Math.floor(clampNum(q, NaN));
@@ -24315,7 +24821,18 @@ const acPos = makeAC("#acPos", it => {
   if (b === null) return;
   const buy = Math.round(clampNum(b, NaN));
   if (!(buy > 0)){ toast("Buy price must be a positive number."); return; }
-  const p = { id: Date.now(), itemId: it.i, name: it.n, qty, buy, placedAt: Date.now(), repaired: 1 };
+  /* STAMPED AT THE CURRENT GAP, NOT LEFT ABSENT. This leg's real placement
+     moment is unknown — that is why it is being repaired — and
+     `placedAt: Date.now()` already states the approximation the whole path
+     rests on: it ages from now. Leaving `hzH` absent is NOT the honest
+     alternative, because `legHorizonH` then falls back to
+     `Math.max(1, DB.fillHorizonH || 4)` — a second approximation of the same
+     unknown, silent and worse. Stamping the gap in force now makes the pair
+     coherent: placed now, aged against the gap it was placed into. The floor
+     inside `placementHzH` is what makes that true near a touch boundary; see
+     its own comment for why a stamp needs one where a sizing read does not. */
+  const p = { id: Date.now(), itemId: it.i, name: it.n, qty, buy, placedAt: Date.now(),
+              hzH: placementHzH(), repaired: 1 };
   if (confirm("Has the BUY filled?\n\nOK — yes, I hold the items.\nCancel — no, the buy offer is still pending.")){
     if (confirm("Is a SELL offer already listed in-game?\n\nOK — yes.\nCancel — not yet.")){
       const a = prompt("Sell offer price each?", "");
@@ -24329,7 +24846,8 @@ const acPos = makeAC("#acPos", it => {
   save(); renderWatch();
   toast(it.n + " × " + full(qty) + " is being tracked again"
     + (p.stage === "selling" ? " — sell pending at " + full(p.ask) + "." : "."));
-});
+}
+const acPos = makeAC("#acPos", trackExistingOffer);
 
 const acHold = makeAC("#acHold", it => {
   if (DB.holds.some(h => h.itemId === it.i)){ toast("Already tracking " + it.n + "."); return; }

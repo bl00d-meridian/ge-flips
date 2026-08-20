@@ -93,6 +93,97 @@ qualifies.**
 
 # 2026-08-14
 
+### M177 · A fixture set two touch windows to one, and `touchWindows()` silently returned the real four-touch schedule
+2026-08-20 · found by: seeding (the seed came back GREEN, twice, for two different reasons) · pattern: `TEST-SUITE`
+
+`[R108.5]` was written to hold tonight's horizon floor: a leg placed minutes before a touch must not
+be told to UNDERCUT & EXIT minutes later. Seed **S175e** removed the floor from `placementHzH` and
+the suite stayed **green**.
+
+**First cause, and it is the clamp rule verbatim.** The fixture opened `DB.touchWindows = []` — copied
+from the shared setup, where it means "no cadence kept" — so `gapHoursAt` returned its
+`Math.max(1, DB.fillHorizonH || 4)` fallback of **4 hours**. The floor was present and **not
+binding**, and a seeded defect in the term it clamps changed nothing observable. I had chosen the
+empty schedule deliberately, to keep the assertion clock-independent, and that choice destroyed the
+property under test.
+
+**Second cause, found while fixing the first.** The repaired fixture set a single window four minutes
+ahead of now. `touchWindows()` ends `return ws.length >= 2 ? ws : TOUCH_DEFAULT.slice();` — **any
+array shorter than two silently becomes the real four-touch schedule** — so the gap came back at
+3.11h and the assertion failed even unseeded. Two windows fixed it.
+
+**The repair, and the part worth carrying:** the fixture now derives a touch four minutes out from
+the clock rather than pinning one, so it holds at every hour of the day, and it carries
+`rawGap < 1` as a **conjunct**. If the fixture ever stops producing the sub-hour case it goes RED
+rather than passing vacuously — which is the difference between a fixture that is discriminating
+today and one that is held to being discriminating. Re-seeded as **S175e2**: red alone.
+
+---
+
+### M176 · A repair closed a divergence at boot and its own write path re-opened it on the next press
+2026-08-20 · found by: an adversarial pass over the repair (pass 8 finding 2.1) · pattern: `COMPOSITION`
+
+The operator-state repair existed because `itemOpsMigrate` took a one-time snapshot of each watch row
+into `DB.itemOps`, and every control then wrote the **row**, so the two drifted — and `opsPick`
+prefers the store for any key the store owns. Arming `ITEM_OPS` would have answered every read from
+the snapshot and discarded every press since, including a hand-set `tierOv: 0`, **a bench the
+operator applied being removed with no press**.
+
+The repair added `itemOpsReconcile` to make the store agree with the row, and `opsWrite` to branch:
+store when armed, row when not. **That closes the gap at the reconciliation boot and re-opens it on
+the very next press.** From then until the flip every press lands on the row alone while the snapshot
+ages again — the same defect one generation later, with no third generation scheduled to fix it.
+
+**The fix is a sentence rather than a mechanism: `ITEM_OPS` is a READ-SIDE switch, not a write-side
+one.** A press writes wherever the value lives — the row when there is one, the store always — and
+the flag decides only which of them `opsOf` believes. That is what the migration's own comment
+already said it was doing (*"the watch-row originals STAY, untouched"*); what it stopped doing was
+keeping them in step. Writing both closes a second finding with it: `itemOpsPrune` deletes a store row
+at 90 days and `opsPick` then falls through to the row, so a stale row silently REVERTED an override —
+a restraint lapsing on a clock, which `ITEM_OPS_RET_MS`'s own comment calls the constitutional line.
+
+**Never landed, so the window never opened.** The staged repair sat unlanded for a day and shipped
+tonight in the corrected form, which is the one thing the staging discipline bought here.
+
+---
+
+### M175 · A seasoning gate spent "we could not ask" as "it failed", and a price feed that answered with nothing triggered it silently
+2026-08-20 · found by: an adversarial pass reading a subsystem the repairs had not touched (pass 8 finding 4.1) · pattern: `SILENT-STATE`
+
+`candidateFor` returns `failed:"no live price in /latest"` when there is no price to read. It has done
+so since the beginning, and **every reader of `failed` counted it as a rule saying no** — including
+`updateQualStreaks`, which deletes the item's seasoning streak, and the gate ledger, which recorded
+the day as a bench by "plan gate".
+
+**The trigger is an ordinary poll.** `loadLatest` read
+`S.latest = d.data || {}; S.latestAt = Date.now();` — so a 200 carrying no `data` key installed an
+**empty** price map and stamped the clock anyway. Every row then came back `failed`, the stamp had
+MOVED so the loop's own guard could not suppress the pass, and the whole book's tenure was deleted and
+saved. `doRefresh`'s success path then runs `S.err = null; clearErr();`, so **nothing on screen said
+anything had happened**. Cost: the plan funds nothing for roughly a calendar day, because recovery
+needs three counted passes spanning a date rollover.
+
+**A second trigger, at boot:** `updateQualStreaks` was the one accrual path in the file with no
+live-data precondition. `scorerCycle` opens `if (!S.min5At || !S.latestAt || !S.items.length)` and
+`stampDeployLog` opens `if (!S.latestAt || !P) return;` with the comment *"an offline boot reads
+funded 0 and must not pollute the series"*. At boot `S.latestAt` is 0 and `S.qualStamp` is unset, so
+the stamp `"0|0"` differed from `undefined` and the guard **passed**: a first refresh that failed
+deleted every streak. The stamp guard could never have caught it — it exists to stop a second pass on
+the same data, not a first pass on none.
+
+**Three fixes, because the property has three readers.** `S.latestAt` now means *when we last had
+usable prices* and is not stamped by an unusable payload (and warns when one arrives);
+`updateQualStreaks` gains the precondition its siblings have; and `candidateUnevaluated` is stamped
+once, centrally, on the candidate, so the seasoning loop, the gate ledger and the funnel's kill
+attribution all read one term instead of recognising a string.
+
+**Two things this says about the eight passes that preceded it.** It is **pre-existing** — no repair
+touched it, and it was found only because a reader was pointed at the seasoning subsystem. And it was
+the **highest-cost finding of a repair-scoped pass**, which is the single sharpest piece of evidence
+that the finding rate is a property of where we look rather than of what the repairs produce.
+
+---
+
 ### M174 · An ordering assertion could not fail, because its fixture gave both sides the same value on the key that orders them
 2026-08-19 · found by: seeding (the seed came back GREEN) · pattern: `TEST-SUITE`
 

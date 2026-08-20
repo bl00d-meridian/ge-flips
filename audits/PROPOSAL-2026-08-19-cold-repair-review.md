@@ -93,3 +93,33 @@ were made in the same sitting as the pass that found them, and two of the three 
 rewritten mid-flight — one because it was pointed at the wrong function entirely, which a cold
 reader would have caught before it shipped. That is the rule's own case, made against the session
 proposing it.
+
+---
+
+## Batch size: the three-per-batch ruling is ARGUMENT, not evidence (user ruling, Aug 20 2026)
+
+**The ruling stands as a working practice.** What changes is its epistemic status, and it is being
+labelled rather than weakened.
+
+`audits/DIAGNOSTIC-2026-08-20-repair-loop.md` tested the coupling hypothesis — that a batch spans
+more than one reader can hold — and it is **NOT SUPPORTED**. The coupling ranges of the three class
+misses and the six that passed **overlap**: misses 2–7, passes 1–3. No separating cut exists, because
+one would have to be ≤2 and >3 at once. Worse for the hypothesis, **repair 3 — a class miss — scores
+2, tied with two passes and strictly below two others**, so a rule reading *"above this coupling,
+review harder"* would have waved it through as one of the four simplest repairs in the batch.
+
+And **batch size itself is untestable from that data**: all nine repairs were in one pass, so repair
+count has zero variance and cannot separate anything. There is no measurement here either for or
+against three-per-batch.
+
+**The geometry points somewhere else.** The 51 hunks span 95.3% of the file's extent but form **8
+regions with a median inter-hunk gap of 75 lines** — each repair is locally clustered, and what spans
+the file is the *batch*, not any one repair. That is an argument for smaller batches on
+reviewability grounds, which is what the ruling actually rests on. It is not an argument that smaller
+batches would have caught these three, and **H1 says they would not have.**
+
+So: keep the practice, and when it is cited, cite it as a judgment about how much one cold reader can
+hold — never as a finding about what caused the class misses. The recorded cause of all three was a
+**question** that went unasked, not a **region** that went unread: all three missed sites were already
+inside the repairer's own field of view, one of them quoted by name in the repair's own comment
+twenty-eight lines above the guard that contradicts it.

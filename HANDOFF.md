@@ -1,4 +1,412 @@
-# FIVE RULINGS ACTED ON — A1 built, the boot merge's first two items built, `DB.qual` dropped
+# TOMORROW: THE FLIP. Read this section and execute it — everything you need is here.
+
+**Baseline commit `047cf6d`** (2026-08-14 → 2026-08-20, six days of work, committed *before* tonight's
+fixes so those land as their own diff). **Not pushed — pushing is the user's.** Tonight's fixes are
+uncommitted on top of it, so `git diff 047cf6d -- index.html` is exactly the pre-flip fix list and
+nothing else.
+
+**Suite: PROBE-PASS, both viewports (1200×900 and 390×844), cold, pairing clean both directions
+(496 tags / 508 rows / 496 cited).**
+
+---
+
+## a. THE FIX LIST — where each of the five stands
+
+All five landed in the tree tonight. Each carries a tagged assertion in **§108** and each assertion
+was proven by seeding the defect and watching it go red alone.
+
+| # | fix | state | assertion | seed |
+|---|---|---|---|---|
+| a | **4.1, the payload trigger** — `loadLatest` stamps `S.latestAt` only when the payload is USABLE, and warns when it is not; `updateQualStreaks` gains the live-data precondition its siblings have; and `candidateUnevaluated` makes an unevaluated row neither break nor credit a streak | **LANDED** | `[R108.1]` `[R108.2]` `[R108.3]` | S175a, S175b, S175c — each red alone |
+| b | **`qualExemption` reads the trade's date, not the log instant** | **LANDED** | `[R108.4]` ×2 | S175d — both limbs red, discriminating |
+| c | **horizon stamps on every position writer**, with `placementHzH` floored at 1h | **LANDED** | `[R108.5]` | S175e2 — red alone |
+| d | **the ITEM_OPS write-path gap** — `opsWrite` writes BOTH sides; `ITEM_OPS` is a read-side switch | **LANDED** | `[R108.6]` ×2 | S175f — red alone |
+| e | **the flag-pairing guard**, with `vol5Population` reading the same flag the guard reads | **LANDED** | `[R108.7]` ×2 | S175g — red alone |
+
+**Two fixes went beyond what was asked, and the reasons are recorded at the sites:**
+
+- **(a) has THREE readers, not one.** `candidateUnevaluated` is read by the seasoning loop, the gate
+  ledger and the deployment funnel's kill attribution. The gate ledger was logging an unreadable row
+  as a bench by *"plan gate"* — gate-persistence evidence about an edge nothing measured, feeding the
+  4-of-7-days bar that moves gate constants. The funnel's own copy already promised *"unknown is not
+  failing"* for the chart case; it is now true for the price case too.
+- **(d) writes both sides in BOTH regimes**, not just while the flag is off. That closes pass 8's
+  finding 2.2 as well: `itemOpsPrune` deletes a store row at 90 days and `opsPick` then falls through
+  to the row, so a stale row silently REVERTED an override — a restraint lapsing on a clock, which
+  `ITEM_OPS_RET_MS`'s own comment calls the constitutional line.
+
+**One seed came back GREEN and that was a finding, not a pass.** S175e (the horizon floor) changed
+nothing because the fixture set `DB.touchWindows = []`, which makes `gapHoursAt` return the 4h
+fallback — the floor was present and NOT BINDING. The fixture now derives a touch four minutes out
+from the clock, and carries `rawGap < 1` as a conjunct so it goes red rather than passing vacuously
+if it ever stops producing the sub-hour case. Second fixture defect found in the same assertion:
+`touchWindows()` returns `TOUCH_DEFAULT` for any array shorter than 2, so a one-element fixture
+silently became the real four-touch schedule.
+
+---
+
+## b. THE ANSWER TO THE QUESTION ASKED BEFORE THE FLIP
+
+**Pass 8's finding 3.1 was a FIXTURE limit, not a production one. The flip is not blocked.**
+
+`cutoverFault` decided *is the 5-minute streak counted universe-wide?* by reading the flag set it was
+handed, while `vol5Population()` — the code that actually decides it — read the const and took no
+argument. So a **test** could hand the guard `{vol5:true}`, be told the combination was legal, and run
+the armed-pool path with the streak counter still on the watchlist alone. **Production could never be
+in that state**: it passes no arguments, so both sides read the same consts. Flipping both consts puts
+production in the legal state genuinely. Fixed tonight anyway — `vol5Population(a)` takes the flag, so
+the guard and the machinery read one term.
+
+**BUT THERE IS A SEPARATE, PRODUCTION-SIDE FACT THE FLIP WALKS INTO, and it is the one that matters
+tomorrow: the archive is 2–3 days short of its coverage gate.** Nothing is wired wrong.
+
+**CORRECTED 2026-08-20, after the first version of this paragraph was traced and found wrong.** It
+said `fillSparks` is watchlist-scoped, therefore a pool item has no series, therefore it benches. The
+first step is true and the conclusion is not: **`itemSeries` is a RESOLVER with a fallback**, and the
+fallback is the whole-universe T0 hourly archive.
+
+```
+if (sp && Array.isArray(sp.pts) && sp.pts.length)  return { ..., src: "spark" };
+const p = chartPts(id);
+if (p.length)                                      return { ..., src: "archive" };
+return { pts: [], vols: [], src: "none", ... };
+```
+
+`chartPts` reads `S.chartCache.pts.get(id)`, and `chartCacheLoad` builds that map by walking every
+archive bucket and every id inside it (`for (let i = 0; i < b.n; i++){ const id = b.id[i]; … }`) —
+**universe-wide, keyed by nothing.** The writer is `t0Put("h1", hourStart, t0Pack(S.hour))` and
+`S.hour` is the bulk `/1h` response. `chartCacheEnsure()` is reached from `renderHomeVitals`, which
+runs on every tab, so it is not gated to the Scorer surface either. **Nothing between
+`planCandidates` and `itemSeries` touches `DB.watch`.**
+
+**A pool item also cannot get *"no history"*.** That gate is
+`noHist = !!(sp && sp.noData) && ser.src === "none"`, and `sp` is undefined without a `/timeseries`
+fetch — so it correctly refuses to claim no history exists for an item it never asked about. The only
+chart bench a pool item can take is *"chart still loading"*, on `!rdy.allFed`.
+
+**What actually gates it is a clock: `CHART_MIN_DAYS = 7` observed days, measured over
+`CHART_COV_WINDOW_MS = 8` — 168 observed hourly buckets inside a trailing 192.** The last sourced
+reading is `"chartGateObservedDays": "3.9 of 7"` from `inbox/analysis-scorer-2026-08-18.json`
+(generated 2026-08-18T17:58Z, so treat it as a projection). 3.9 days = 93.6 observed hours against an
+archive roughly 4.2 days old ≈ **93% of wall hours captured**. Hard floor even at 100% capture is 7
+days of archive age → **not before ~Aug 21 late**; at the observed rate, **~Aug 22, possibly Aug 23**.
+**Read the live figure on the Scorer surface before pressing — it renders as "N of 7 observed days".**
+
+**So the flip is SAFE, and until that clock lands it is visibly almost a no-op.** What it changes is
+the plan's population line (*"pins + the control cell's pool"*), the deploy ledger's regime stamp
+(`mixed`), and a bench list that grows by however many pool items the control cell passes.
+
+**What a pool item's verdict looks like the day the archive matures:** `src: "archive"`, up to 168
+hourly mid points and 168 volume points. `allFed` needs `p >= 24` finite price points and `v >= 48`
+volume points. Volume entries are pushed for every bucket the item appears in and are dropped by
+nothing, so 48 is trivial — **the price side is the binding one**, because an hour where neither side
+printed contributes `NaN` and every filter drops it. An item printing in ≥24 of 168 hours becomes
+fully judged on trend, volume trend, momentum and drift; one printing in fewer stays benched, which is
+the correct verdict for it, and the copy states the actual point counts rather than a category.
+
+**One weight stays unfed permanently and it does not matter.** `hourWeight` reads `byHour`, and only
+the item's own `/timeseries` carries that profile — the archive builds none. So `hw.fed` is false for
+every pool item forever, `histFed` reports `unfed: ["hour"]`, and the item sorts on `planPoolSortKey`,
+the unweighted core. **That is already the design**: pool items sort unweighted because their
+operator-history weights are absent, and this is one more absent weight inside a group built for
+exactly that. It is a score input; nothing benches on it.
+
+**A separate bench that is not the chart's problem:** the file's own note puts **66% of control-cell
+items as landing untiered**, benched by the tier bands. Unaffected by chart coverage, and still there
+on the day the archive matures.
+
+**WIDENING `fillSparks` TO POOL CANDIDATES WAS CONSIDERED AND IS THE WRONG ANSWER** — recorded here so
+it is not re-proposed. The duplication is near-total (the archive holds the same hourly shape; only
+`byHour` is unique, and it feeds a weight pool items do not use). The cost is not one-off:
+`SPARK_TTL` is 30 minutes and `fillSparks` is sequential with a 250ms delay per item, so ~130 pool
+items is ~65s of fetching every half hour on top of the watchlist's ~22s — **a spark loop longer than
+the 60s poll interval**. And the real hazard is not the call count but `TS_FAIL_TRIP = 8` consecutive
+failures pausing `/timeseries` for 30 minutes **for everything**: today a pool item falls through to
+the archive gracefully, and under this change a trip would degrade the pins as well.
+
+---
+
+## c. THE FLIP
+
+**`CUTOVER_POOL` and `VOL5_UNIVERSE` together. Never one without the other.**
+
+```
+index.html:  const VOL5_UNIVERSE = false;   →  true
+index.html:  const CUTOVER_POOL  = false;   →  true
+```
+
+The guard enforces the pairing: `cutoverFault` returns a fault string for `pool && !vol5`,
+`cutoverPoolOn` returns false, and `planCandidates` falls back to the watchlist — today's behaviour and
+the restraining side. `cutoverFaultWarn` renders the refusal on the warn bar naming the missing flag,
+so a half-flip is loud rather than silent.
+
+**`ITEM_OPS` is NOT part of this flip.** `pool && !ops` is a warning rather than a fault, and the
+reason is recorded at the site: with the store off a pool item's `opsOf` returns null on every field,
+so it sizes automatically and takes its computed tier. Nothing loosens. Read the pool controls' own
+comment before deciding otherwise — **both of their buttons only ever LOOSEN** (the tier cycle cannot
+reach untiered, and a tested pair lifts three restraints at once), so arming `ITEM_OPS` alongside the
+pool would add a bench-removal channel over the whole pool population in one press. That is
+deployment-class on its own.
+
+**Two assertions pin the consts** (`[R89.1]`, `[R93.1]`, `[R94.3]`). They will go red on the flip.
+**That redness is the flip working, not breaking** — re-point them at the new shipped values in the
+same edit, and say so in the commit.
+
+---
+
+## d. THE HALF-STACK SETTING
+
+**It is `reserve` — the "Reserve" input in the sizing row (`#szRes`), range 0–2e9. It is a PRESS the
+user makes, in the app. No code edit, no ruling, no constant moves.**
+
+```
+deployable = max(0, avail - DB.reserve)
+pools[1]   = min(t1Budget, deployable)
+pools[2]   = min(t2Budget, max(0, deployable - pools[1]))
+```
+
+Set `reserve` to half the current bank and the plan's deployable capital halves for as long as it
+stands. Reverting is setting it back — **write the pre-change value down first**, because nothing in
+the tool records it and the revert has to be exact.
+
+**What it does NOT halve, stated because it is a limit and not a design:** the per-item one-third cap
+and the cluster caps size off `workingStack()`, which is upstream of `reserve`. So individual lines
+stay their normal size and there are simply fewer of them, or less total deployed. If per-LINE halving
+is wanted as well, that is `partCapPct` — and `partCapPct` is a strategy constant, so it needs a
+ruling and does not ride along with this.
+
+Do not use `shadowReserve` for this. It is the Tumeken's Shadow savings target and it is real capital;
+borrowing it as a throttle would corrupt the Shadow Fund reading for the whole week.
+
+---
+
+## e. WHAT TO REPORT AT EACH WALK-UP — not saved up
+
+Three things, every touch, while the observation week runs:
+
+1. **What the plan proposed** — the funded lines and, for anything on NEXT UP, the reason it gives.
+2. **What was actually pressed** — including every place the press disagreed with the proposal.
+3. **Every place a surface said something that did not match what was seen.**
+
+**Watch two things hardest.** The **rdiff ledger** (the reconciliation diff — one row per scored
+bucket, where the scorer's verdict and the plan's disagree). And **bench reasons**: a bench reason
+that is wrong about *why* is the failure mode that costs trades, because it sends the operator to a
+control that cannot help. Two live examples to watch for, both unfixed and both in tomorrow's tree:
+a NEXT UP line saying *"plan is full"* when the plan is not full, and an untiered pool item told to
+*"override the tier on its watch row"* when a pool item has no watch row.
+
+---
+
+## f. NO BACKUP RESTORES
+
+**Not until the restore track closes.** `audits/DBKEYS-2026-08-19-restore-enumeration.md` enumerates
+17 keys a restore silently keeps from the importing browser; 12 bite today and none is repaired. If
+something goes wrong tomorrow, the fix is a diff against `047cf6d`, never a restore.
+
+---
+
+# UNRULED — the bites-today findings that did NOT land tonight
+
+The user asked for these listed, one line each, to rule which are in. **None was ruled before the
+session ended, so they are recorded here as UNRULED rather than assumed either way.** All six are in
+the tree today and all six are money-path.
+
+| # | what it is | what it costs |
+|---|---|---|
+| **1.2** | The sell leg is aged against the **buy** placement's horizon, and three sell-creation moments (listing, `advancePosition`, `repriceSell`) restart `stageAt` without restamping `hzH` | A buy placed at the 17:00 touch (4.5h) that fills late and is listed into the 9.5h overnight sit reaches rung 2 at 06:35 — **UNDERCUT & EXIT**, which relists one tick under the instabuy and gives up the whole quoted spread, on a leg doing exactly what the schedule priced it for |
+| **1.3** | `legHorizonH`'s fallback reads the live `DB.fillHorizonH` slider | Dragging that setting from 4h to 1h flips every open **stampless** leg older than 2h to rung 2 at once — a horizon change retro-applied to open legs, which the cadence ruling forbids, arriving through the fallback rather than the stamp |
+| **4.2** | A long gap **freezes** a streak instead of resetting it: the credit is withheld but `n` and `firstAt` survive and `lastAt` is re-stamped | An item at `n=2` from three weeks ago takes its third count at the very next touch and `qualSpanned` passes instantly on the calendar-day test — **a stale item funds ~3h after a reopen where a fresh one needs ~27h** |
+| **4.3** | `QUAL_GAP_MAX` is 12h of **observation** time, and the poll returns early on `document.hidden` | A once-a-day or backgrounded-tab user never reaches a second counted pass: the row sits at `n=1` forever while the surface renders *"qualifies at ~HH:MM if it holds"* — an ETA that cannot arrive. The margin-test and logged-trip exemptions still work; the automatic path does not |
+| **7.1** | The soft-fill NEXT UP push carries **no `whyKey`**, and its guard contains `!full_` | The picker's default branch says *"plan is full"* on a row that can only exist when it is not, and offers every funded pick as a remedy. The demote applies immediately and persists for the day, so a funded line is lost and the item still does not fund |
+| **7.2** | `whyKey` reports **position in an ordered ternary** — `full_` is tested before `tooSmall` | An item that is both reports *"full"*, the picker offers all seven picks, and on the rebuild after the demotion it lands in NEXT UP again, this time honestly labelled *"no demotion can fix this"*. The truthful verdict was available at the first render and was suppressed by ordering |
+
+**1.2 and 1.3 are one property** (a leg's horizon must track the leg, and the fallback is not a
+stamp). **7.1 and 7.2 are one property** (a reason-aware picker whose reason is positional). **4.2 and
+4.3 are one property** (a streak whose clock counts wall time rather than observations). Three
+rulings, not six, if that is easier.
+
+---
+
+# WHAT STAYS QUEUED — tomorrow must not pick these up
+
+1. **Pass 7's latent twelve.** `audits/ADVERSARIAL-2026-08-19g-pass7-cutover.md`.
+2. **The restore track.** 17 keys, 12 biting today, plus the IndexedDB stores outside the restore
+   entirely. `audits/DBKEYS-2026-08-19-restore-enumeration.md`.
+3. **The six failed cold-review repairs' non-money halves.**
+4. **The unknown-key census** (boot merge item 3) — still HELD pending its quota measurement.
+5. **The apparatus consolidation** — retire assertions with their features, cull the ones that cannot
+   be reddened, one assertion per property rather than per call site. Agreed, and explicitly AFTER the
+   cutover.
+6. **The five remaining staged repairs.** `staging/` still holds nine; repairs 1, 2 and 3 landed
+   tonight in modified form and **4, 5, 6, 7, 8 and 9 did not**. Repair 8 is SENT BACK by cold review;
+   the rest are unlanded and unruled. Probe sections **§106 and §107 are reserved for them** — tonight's
+   work deliberately used §108 so the numbering does not collide if they land later.
+7. **DETECTOR IMPROVEMENT, four items in order** (queued by the user, Aug 20 2026 — after the cutover,
+   and explicitly after **a week of real use first**, because that week will show which detectors
+   *should* have caught what actually mattered, which is better evidence for where to aim than
+   reasoning from here):
+   - **(a) Score the existing detectors from the record.** Every scan and review mechanism has a
+     history in `audits/` — findings it caught, and findings later found by something else inside its
+     own territory. Compute a per-detector hit rate retroactively. Known data points: scan 2 missed
+     105 untagged assertions and 32 that never execute; the cold review caught one of three class
+     misses. **The rates come before deciding which detectors to fix.**
+   - **(b) A standing rule for detector design: a detector must be seeded with a spelling its author
+     never enumerated.** Every detector that missed something this week missed it the same way — it
+     enumerated by name rather than by property, so it certified its own list. `[R103.6]` grepped
+     `num(x) >= 0` after the code became `nz(x) >= 0`; the `+s.tier` repair grepped the exact
+     expression. Propose the wording and whether the rule itself is mechanically checkable.
+   - **(c) Build a detector for UNASSERTED PATHS.** Every existing detector checks what EXISTS against
+     a rule; none looks for code with no assertion pointing at it — which is where pass 8's worst
+     finding lived and where the 32 never-executing assertions hid. Coverage by code path rather than
+     by assertion list. **The one genuinely new instrument on the list; scope it before building it.**
+   - **(d) A severity classifier the TOOL computes, not a reader's judgment after the fact.**
+     "Money-path" meant "touches funding code" and lumped a defect that silently deletes a seasoning
+     streak on an ordinary poll together with one needing a flag flipped AND a file restored. Pass 7
+     had 17 money-path findings and zero that could bite; that mislabelling is what made the loop look
+     like it was diverging. The inputs are mechanical, not judgmental — does this path run today, or
+     does it need a flag armed, an import performed, or a state that has never occurred? The code and
+     the flag states answer all four. Three required properties: graded by **expected cost** (what has
+     to happen before it bites) and never by which subsystem it touches; **reachability is part of the
+     classification, not a caveat on it** — a defect behind an off flag requiring a restore that has
+     been forbidden is near-zero expectation and must not file beside a live one; and the
+     classification **names its assumptions**, so it is checkable — *"bites today, assuming
+     CUTOVER_POOL false"* can be wrong in a way *"money-path"* cannot.
+8. **MATERIAL SETTINGS CHANGES RECORD THEIR BEFORE VALUE** (queued by the user, Aug 20 2026 — same
+   sequencing: after the cutover and after the observation week). **This is provenance-at-birth
+   applied to the one class that entry does not cover.** A settings edit overwrites the old value and
+   nothing anywhere records what it was; the decision log holds rulings, not edits. The live instance
+   is `reserve`, being halved for the observation week, where the only record of the pre-change value
+   is a note on a phone.
+
+   **SCOPE — material, defined by EFFECT and not by a list.** Log only settings that change **what
+   the allocator may FUND, how it SIZES, or how it EXITS** (the property as ruled, Aug 20 2026 —
+   *exit* is the third limb and it decides `sleeveRungPct`). Cosmetic and display settings are out.
+   Derive from what a key does, never from where it lives — the cap classification went wrong twice
+   exactly there, drawn from the 23 keys sharing one object literal and missing `slots` and
+   `watchCap`, which bound funding just as hard. Pin the membership by name so it can be asserted,
+   the `CAP_KEYS` pattern.
+
+   **TWO CLASSIFICATION RULES RULED WITH THE LIST, and they belong here rather than in the list,
+   because the list is an output and these are what produce it:**
+   - **A key inert by a FLAG is classified by its PROPERTY, never by today's behaviour.** `quoteTicks`
+     prices both legs of a quote and `MM_BENCHED` is true, so it does nothing today — and it is IN.
+     Classifying by behaviour would drop it now and let it **silently re-enter scope** the day mm
+     un-benches, with nothing red to mark the transition. *This generalises past this mechanism:
+     `CAP_KEYS` has the same hazard and the same answer.*
+   - **DISTANCE FROM THE DECISION IS NOT THE TEST; WHETHER IT CHANGES THE NUMBER IS.** `markoutX`
+     thresholds a verdict that carries a caution that carries a haircut — three steps — and it is IN,
+     with `pumpWindowD` and `pumpThinGp`, which are the same shape. They move together or not at all.
+
+   **THE DECIDED LIST — ruled Aug 20 2026. The build reads this; it does not re-derive it.** The
+   settings save table carries **29** keys. **25 material, 4 not.**
+
+   *MATERIAL (25) — every one of these logs its before value:*
+   `slots` · `reserve` · `shadowReserve` · `t1Budget` · `t2Budget` · `partCapPct` · `minExpectGp` ·
+   `tickFloor` · `clusterCapPct` · `scoutT1Cap` · `scoutT2Cap` · `sibPerSeed` · `sibTotal` ·
+   `seedTrips` · `sleeveBudget` · `sleeveMaxPos` · `fillHorizonH` · **`horizonH`** ·
+   **`quoteTicks`** · **`sleeveRungPct`** · **`markoutX`** · **`pumpWindowD`** · **`pumpThinGp`** ·
+   **`clusterCorr`** · **`clusterMinDays`**.
+
+   The eight in bold were the borderlines. Six were ruled directly:
+   - **`horizonH`** — read only at `scheduleOn() ? planHorizonH() : (DB.horizonH || 10)`, so it sizes
+     when no cadence is kept. Same shape as `fillHorizonH`; splitting them would classify by name.
+   - **`quoteTicks`** — `QUOTEW()` prices both legs. Inert under `MM_BENCHED`, IN by property.
+   - **`sleeveRungPct`** — arms an exit rung. IN because the property's third limb is *exit*.
+   - **`markoutX`, `pumpWindowD`, `pumpThinGp`** — threshold → caution → haircut. IN together.
+
+   **`clusterCorr` and `clusterMinDays` were NOT among the four raised, and they move IN by consistent
+   application of the ruled test rather than by a separate ruling.** They set the correlation
+   threshold and the minimum history for `cohRecordAndPropose`, so they decide **whether a cluster
+   exists at all** — and a confirmed cluster carries `clusterCapPct`, which changes the sized number.
+   That is `markoutX`'s shape exactly, and leaving them out after ruling `markoutX` in would classify
+   by distance, which is the thing the ruling rejected. **One distinction, stated so it can be
+   overruled:** a cluster requires a user press to confirm, where a caution's haircut auto-applies.
+   If an intervening press breaks the chain, these two come out — and `markoutX` should be re-examined
+   on the same grounds.
+
+   *NOT MATERIAL (4), each with what was actually traced:*
+   - `shadowPartPct` — paper book only; no real capital moves.
+   - `sleeveExitLiqPct` — `exitLiqWarn` produces a badge and a message that ends *"saved anyway, your
+     call"*. **It warns and does not block**, so it changes no number.
+   - `catWinTightenD` → `activeCatalystWindow()`, `briefTightStaleD` → `briefReminderInfo()`. A
+     posture flag and a reminder. **Neither was traced to a sized number in this read**, which is the
+     honest limit of the check — if `activeCatalystWindow` reaches sizing, they come IN and this note
+     is where to overturn it.
+
+   **COVERAGE — five writers sit outside the settings table. Decided:**
+   - **`DB.touchWindows` and `DB.scoutOn` are material and this mechanism CAN reach them — no separate
+     hook.** The recorder is written as a **term, not a listener**: `settingsLog(key, before, after)`,
+     called from the table's `change` handler once per changed key, and called directly from
+     `#szTouch`'s own handler and from the `DB.scoutOn = !DB.scoutOn` toggle. One question, one term,
+     three call sites — the `opsWrite` pattern. A hook on the table alone would have covered one
+     writer and reported that writer's population as the answer, which is the standing lesson.
+     Two shape notes: `touchWindows` is an **array**, so its before value stringifies as a touch list
+     (*"was 07:00 / 12:00 / 17:00 / 21:30"*); `scoutOn` is a **boolean** (*"was ON"*).
+   - **The scan filters** (`DB.filtersT1` / `DB.filtersT2` via `SF()`) — material, and they need a
+     shape decision before they can be logged at all, because they are objects rather than scalars.
+     **Ruled: propose the shape when the build starts, not now.**
+   - **`DB.blacklist` — OUT of this mechanism, ruled.** It goes to the decision log: a list rather
+     than a scalar, and every change is already an explicit press.
+   - **`watchCap` is material and has NO settings writer at all** — it is in `CAP_KEYS`, it bounds how
+     large the watchlist may grow, and there is no input for it. It therefore cannot be logged by a
+     settings recorder, because it cannot be set. **See the landing condition below.**
+
+   **A LANDING CONDITION ON REPAIR 8, recorded here because the code it corrects is NOT IN THE TREE.**
+   The clamp warning that tells the operator *"Re-set them in settings if the values are wrong"* lives
+   in `staging/index.html` only — repair 8 was SENT BACK by cold review and did not land. So there is
+   nothing to fix in shipped code today, and the fix must not be forgotten when repair 8 is repaired.
+   **Ruled: change the copy rather than adding an input** (a new element costs attention under the
+   zero-based complexity budget, and `watchCap` is not a setting the operator has ever needed to
+   reach). The warning already names which keys clamped; for any key with no input it must say what
+   can actually be done — the value is reachable only by editing stored state or by a restore — rather
+   than naming a control that does not exist. **Repair 8 does not land until that copy is correct.**
+
+   **SHAPE.** One row per changed KEY, never per save — a save touching three keys writes three rows,
+   because a pooled row cannot answer *what was `partCapPct` before*. Its own bounded log,
+   roll-then-prune, **not** the decision log (that is for rulings, and mixing edits in makes both
+   harder to read). **Proposed size: 400 rows**, roll-then-prune least-recent-first, sized against the
+   observed edit rate rather than a round number — and the number itself is a ruling. Carried through
+   import, with the **partition question answered at birth before it accrues anything**: what regime
+   writes it, what field records that, what happens when the regime changes.
+
+   **WHERE IT RENDERS.** Beside the setting itself, not on a separate surface: looking at `reserve`
+   should show it was 3m until Aug 20. **Smallest form that does that:** a dim inline suffix on the
+   input's own label — *"was 3,000,000 · Aug 20"* — rendered only when a previous value exists, so an
+   unchanged setting costs nothing. If that would push an element above a first disclosure, fold it
+   into the existing settings disclosure instead of adding one.
+
+   **WHAT IT IS NOT.** It records; the operator decides. Not an undo, not a revert control, not a
+   proposal to restore an old value. And **not** a defence against a malformed import — the clamp rule
+   already owns that.
+
+   **VERIFICATION — discriminating seeds, and asserted at the CONSUMER** (the surface that renders the
+   previous value), not only at the writer: a change writes a row with the correct before value; a
+   save touching two keys writes **two** rows and not one; a no-op save writes **nothing**; a
+   non-material key writes **nothing**; and the row survives an import in all three states.
+
+---
+
+# ALSO SHIPPED TONIGHT, outside the fix list
+
+- **A wall clock fired during the session.** `SELL_ABS_BAND_RETIRES = Date.UTC(2026, 7, 20)` crossed
+  sides on 2026-08-20 and `[R66.4]`'s last limb went red — correctly, because the comparison panel it
+  asserted had retired exactly as ruled. **This corrects the morning's diagnostic**, which reported
+  that a grep for the constant in the probe returns nothing and concluded there were zero assertions
+  on either side: one assertion depended on it *implicitly, through the call*, and it was the only
+  thing in the suite that noticed the date arrive. `sellAbsShadowHTML` now takes the clock as an
+  argument and the assertion drives **both** sides, so the retirement is verified in both directions
+  rather than on whichever side today happens to fall.
+- **Two hollow injections closed.** `poolControlsHTML(x, armed)` checked `armed` at its guard and then
+  called `opsOf(x.id)` with one argument, so the store read fell back to the const and both armed
+  assertions passed against an empty skeleton. And `cutoverSetFrom` no longer accepts a bare boolean:
+  `true` alone meant `{pool:true, vol5:false}`, the one combination the guard refuses, so the
+  shorthand silently returned the watchlist while reading as the pool test.
+- **The dead `&& CUTOVER_POOL` conjunct** in `cutoverFaultWarn` is gone. `why` truthy already implied
+  it, and any future fault clause not predicated on `pool` would have been silently suppressed *and*
+  actively cleared.
+
+---
+# PRIOR SESSION (superseded by the flip sequence above) — FIVE RULINGS ACTED ON — A1 built, the boot merge's first two items built, `DB.qual` dropped
 
 **`index.html` has not moved all session.** It hashes `3cf9a22d321892e5…`, the value it had when
 the session opened. **Everything is in `staging/` and nothing has landed** — by the user's own

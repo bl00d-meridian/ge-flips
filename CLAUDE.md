@@ -293,6 +293,23 @@ soften these in code or copy.
   valid gate name, and only one enforced it (`[R101.5]`). Recorded here because it is the
   same property and the same fix — same test and same list at both — and because a writer
   pair is where the constitution's own *pick one owner* rule was already pointing.
+  **WIDENED Aug 20 2026 (user ruling) TO INCLUDE ANYTHING RENDERED — the surface and the
+  mechanism must not be able to disagree, and that is this property and not a fifth one.**
+  It was proposed as its own principle and merged here rather than given a second home,
+  because the fix has been identical every time: **one term feeds both.** Four further
+  instances, which take the count from four to eight:
+  - **NEXT UP showed a separation the funding path did not have** — the render grouped by
+    population while `buildPlan` sorted one flat list, so the screen claimed an order the
+    money did not use.
+  - **The printed plan order diverged from the screen order**, same root, different pair.
+  - **A bench reason named a cause that had not happened** — the soft-fill row carries no
+    `whyKey`, so the picker's default branch says *"plan is full"* under a guard containing
+    `!full_`, which is the one state in which it cannot be true.
+  - **A counter keyed on rendered copy broke when the copy improved** — the reading was
+    taken from the sentence rather than from the term the sentence describes.
+  The render is not a second implementation that happens to be text: it is a second answer
+  to the same question, and it is the answer the operator acts on. A surface reading a term
+  the mechanism does not read is the two-owner defect with the more expensive owner.
   Detector: **scan 17** below, the two-owner scan, whose enumeration is the deliverable in
   the same shape as the restraint-lift, clamp, seam and consumer-anchor scans.
   **The mechanical half was MEASURED and rejected, and the measurement is why this rule is
@@ -449,6 +466,24 @@ soften these in code or copy.
   unbenching" (re-admission latency only — the gate eventually agreeing with itself is not
   the user being right against it). The response half of the protocol stands: see
   *Definitions protocol* below.
+  **WIDENED Aug 20 2026 (user ruling): A CAVEAT'S PLACEMENT IS PART OF ITS CONTENT.** Copy
+  claiming exactly what it computes is not satisfied by a qualification that exists
+  somewhere in the document — **a caveat one tap away from the number it qualifies does not
+  qualify it.** Two instances, and both were technically present the whole time: the
+  self-comparison caveat that lived inside a `teach()` disclosure for two days, behind a
+  green whole-panel assertion that could not tell where in the panel it sat; and the `num()`
+  warning written twenty-one lines from the store that needed it, which protected the line it
+  was attached to and nothing else. So: **where a caveat is load-bearing it renders WITH the
+  figure**, beside it, not inside an expansion — the same placement rule the never-pool entry
+  already states for a decomposition, generalised from pooling to every qualification. **And
+  where a hazard is known it becomes a TERM rather than a comment:** prose beside code
+  protects only that code, and the whole record of `num`/`nz`/`+x` sweeps is what a hazard
+  costs when it is written as a sentence instead of a function.
+  *A widening rather than a new entry, and specifically NOT a widening of "shipping a
+  correction ships its landing path" — that rule is about reaching an artefact the reader has
+  already seen; this one is about where a qualification sits the first time it renders.*
+  Detector: **scan 7**, extended to read a caveat's POSITION relative to the figure it
+  qualifies, not only its presence.
 - **Membership bookkeeping applies itself** (user ruling, Aug 11 2026 — **supersedes
   "membership never recomposes silently"**, R4.2b, which stood from Aug 10 2026; and see
   *Advisory layers stay advisory* under **Commitments without detectors** in DOCTRINE,
@@ -519,6 +554,35 @@ soften these in code or copy.
   into a named function and point the assertion at that.** Never reproduce it in the
   probe; the extraction is the fix, not a convenience.
   Detector: integration-audit scan 9 below.
+- **An unreachable rule is worse than an absent one** (BINDING Aug 20 2026, user ruling —
+  **consolidating two existing homes for one property**, which is the split the prophylactic
+  at the top of this file forbids). Not an *unenforced* rule: one the machinery structurally
+  prevents from ever applying, **while a surface reports its state confidently**. An absent
+  rule is a gap someone can see. An unreachable one occupies the slot, reports as covered,
+  and renders a state.
+  **The property: a rule with a precondition has that precondition's REACHABILITY asserted,
+  not only its behaviour given the precondition.** Behaviour-given-the-precondition is what
+  every assertion in this file already tests, and it is exactly the half that stays green
+  when the precondition can never occur.
+  Three instances, each of which rendered a confident state while unable to fire:
+  - **The seasoning gate no pool item could satisfy**, rendering *"qualifying"* with an ETA
+    that could never arrive — the surface promising a date the arithmetic forbade.
+  - **The regime race reporting current and loose as identical**, from a population that
+    could not contain a band trip at all: three zero curves and a two-day all-zero
+    divergence ledger, and nothing said the input set was empty.
+  - **The "0/N consecutive refreshes — not binding yet" line**, claiming a counter that was
+    not running. Not zero: NOT COUNTED, which is the third state and the opposite reading.
+  **The two homes this consolidates, both of which now defer here:** the dead-safeguard face
+  under *A test that cannot fail* (a guard whose trigger its own upstream limits forbid) is
+  this property inside the verification layer, and the *threshold out of reach* shape under
+  *a component reports nothing where it should report that it HAS nothing* is this property
+  at the render. Neither could accumulate the other's instances while they were separate.
+  Detector: **scan 18** below, the reachability scan — and it is mechanical for at least one
+  class already, which is why this is BINDING rather than DOCTRINE: **5 of 109 flag-gated
+  assertions can reach the armed state of the flag they are about**, a number derived twice
+  independently from the fact that the runner performs no source substitution, so the only
+  route to a non-shipped branch is a parameter. The same question asked of gate preconditions
+  is a read rather than a grep, and the enumeration is the deliverable.
 - **An assertion's subject is the BRANCH THAT READS a term, not the term itself** (BINDING
   Aug 19 2026, user ruling — **three recorded instances**, MISTAKES.md M157, M158, M159, in
   two consecutive adversarial passes, **and** a mechanical detector, so it clears both limbs
@@ -1075,6 +1139,19 @@ substance.
    prune, a rule change. Each one is checked for a user press. A lift with no press is a
    finding, and the enumeration itself is the deliverable: a path nobody listed is a path
    nobody checked.
+   **WIDENED Aug 20 2026 — the same enumeration, asked in the other direction, because
+   RESTRAINTS FAIL SILENTLY AND RELEASES FAIL LOUDLY.** For every restraint the scan lists,
+   also ask: **is there an assertion that it FIRES when it should?** Assertion effort is
+   asymmetric and the record says so. Every restraint that broke this week broke by NOT
+   firing — momentum passing on unknown; the drift bench never binding; a seasoning streak
+   surviving a failure; `qualExemption` waiving a whole imported history; the 5m die-off
+   binding unreachable for the population it was ruled for. **Not one was noticed by using
+   the tool**, because a restraint that fails to fire looks exactly like a market with
+   nothing to restrain. Every release that broke was visible inside a session, because a
+   release that fires wrongly *does something* and the operator sees it. So a restraint
+   needs the fires-when-it-should assertion, and a release can lean partly on being noticed.
+   **A restraint with only a does-not-fire-wrongly assertion is a finding**, and the
+   enumeration is the deliverable in the same shape as the lift-path half above.
 7. **Claims-vs-computation scan** (Aug 12 2026, for the widened metric-honesty rule):
    for every metric the tool renders, read the rendered copy against the code that
    produces it and check the copy claims exactly that — no more, no fewer caveats, the
@@ -1216,10 +1293,12 @@ substance.
     read: for every surface, export field and prior conclusion that consumes the chain's
     attribution, state whether it reads the FIRST match or the FULL match set — the two
     are different populations and must never be joined on rule name.
-17. **Two-owner scan** (Aug 19 2026, the detector for *one question, one term*): enumerate
+17. **Two-owner scan** (Aug 19 2026, the detector for *one question, one term*; **widened Aug
+    20 2026 to include anything RENDERED**): enumerate
     every question the product answers in **more than one place** — is this item judged, is
     this series readable, is this gate name valid, is this item charted, is this override
-    applied, is this trip filled — and for each, name the **one term that owns the answer**
+    applied, is this trip filled, **and what does the screen say about any of them** — and
+    for each, name the **one term that owns the answer**
     and every site that reads it. A question with two independent implementations is a
     finding whatever colour either side's assertions are, because both sides pass by
     construction: each is individually correct and the defect lives only in the region where
@@ -1238,8 +1317,61 @@ substance.
     15: a question nobody traced to its owner is a question nobody knows has two.
     Run it **alongside scan 10**, which walks the same joins from the other direction — scan
     10 asks what crosses a seam, scan 17 asks what is *decided twice* on either side of one.
-18. **Output:** a findings report with proposed restructurings, ruled like everything
+18. **Reachability scan** (Aug 20 2026, the detector for *an unreachable rule is worse than an
+    absent one*): for every rule with a PRECONDITION — a gate, a guard, a bench, a cap, a
+    streak requirement, a flag-gated branch — enumerate the precondition and state whether the
+    population it names can actually reach it. Three questions per rule, and the third is the one
+    nothing else asks: can the precondition be satisfied at all; can it be satisfied by the
+    population the rule is applied to; and **does any assertion drive it**, or is only the
+    behaviour-given-the-precondition asserted? **A rule whose precondition no member of its own
+    population can reach is a finding whatever its behaviour tests say**, and so is one whose
+    surface reports its state confidently while it cannot fire.
+    **This is mechanical for one class already and the measurement exists**: of 109 flag-gated
+    assertions, **5** can reach the armed state of the flag they are about — 4.7% — because the
+    runner performs no source substitution and the only route to a non-shipped branch is a
+    parameter, of which there are three in the file. The same question asked of gate preconditions
+    is a read rather than a grep, but it is the same question. **The enumeration is the
+    deliverable**, the same shape as scans 6, 9, 10, 11, 13, 14, 15 and 17.
+    Run it **alongside scan 15**: scan 15 asks whether an assertion's subject is the branch, this
+    one asks whether the branch's precondition can occur.
+19. **Output:** a findings report with proposed restructurings, ruled like everything
     else. No findings is a valid result and says so.
+
+## The exit condition is NOTHING IN THE BITES-TODAY BUCKET (user ruling, Aug 20 2026)
+
+**"Comes back clean" is abandoned.** It was never demonstrated for any subsystem, and the
+evidence that killed it is specific: a subsystem **no adversarial pass had ever scoped** —
+the thesis sleeve — was read cold at pass-8 depth over 313 call sites and still produced a
+surviving money-path finding after adversarial refutation. If a never-repaired region does
+not come back clean, "clean" is not a state this codebase reaches; it is a description of
+how hard someone looked.
+
+**The condition is: nothing in the BITES-TODAY bucket.** A finding bites today if it can
+change what is funded, sized or exited on an ordinary day **with no import, no flag flip,
+and no state that has never occurred**. The other three buckets — ARMED (needs a named
+flag), RESTORE-ONLY (needs an import), LATENT-CONDITIONAL (needs a state that has not
+happened) — are recorded, ranked and queued, and they do not block.
+
+**The evidence behind the change**, all from `audits/DIAGNOSTIC-2026-08-20-repair-loop.md`:
+
+- **Pass 7 filed 17 money-path findings and ZERO of them could bite** — every one was armed
+  by a flag that is false, because the pass was scoped to a surface that does not exist
+  until a flag flips. Pass 8 filed 25 and **7 to 9 bite today** by two independent
+  classifications. The same label carried both, which is what made the loop look like it
+  was diverging.
+- **The finding rate tracks reader count, not defect production**: 0, 3, 8, 17, 24
+  money-path findings across passes 4–8, against 2, 2, 2, 5, 7 readers — **flat at ~3.4 per
+  reader** for the last three. And all eight passes are the same calendar day, so there is
+  no time trend to read.
+- **At most 32% of what a repair-scoped pass finds is attributable to the repair** (9 of 28
+  pass-8 findings carry a NEW or AMPLIFIED label), and **pass 8's highest-cost finding was
+  pre-existing and outside every repair**.
+
+**"Money-path" is retired as a severity.** It meant *touches funding code*, which filed a
+defect that silently deletes a seasoning streak on an ordinary poll beside one needing a
+flag armed AND a file restored. Grade by **expected cost** — what has to happen before it
+bites — never by which subsystem it touches, and **name the assumption**, so *"bites today,
+assuming `CUTOVER_POOL` false"* can be wrong in a way *"money-path"* cannot.
 
 ## The scorer conformance gate (standing requirement — user ruling, Aug 14 2026)
 
@@ -1276,6 +1408,29 @@ regime changes. `fillModelV` and `configHash` are the precedents; the 1c coverag
 gap (six-gate cycles that would have pooled with full-chain cycles when the h1 archive
 matured) is the live instance that earned the rule. **No store accrues past a session
 without its partition answer on record** — the register lives in the conformance map file.
+
+**WIDENED Aug 20 2026 (user ruling): PROVENANCE IS CHEAPEST AT BIRTH, AND NOT ONLY FOR
+DATA.** The rule above is this property applied to stores; it applies to **anything that
+will later need attributing**, and every instance below is from one week in which the cost
+was paid retroactively and paid badly:
+
+- **Findings** record which pass, which reader, and **verified by what method or not at
+  all**. Pass 8 marked 13 of its 28 findings as never independently re-derived and severity
+  was assigned to them anyway; and the NEW-versus-pre-existing label was a hand judgment
+  applied to 12 of 28 because **the tree had no committed baseline to diff against**. With a
+  baseline that label is mechanical. Committing is cheap at birth and unrecoverable after.
+- **Repairs** record the property they are about and **whose naming it is** — which is what
+  `audits/REPAIR-LEDGER.md` already does with two columns, and the reason it has two.
+- **Figures quoted in reports** record which file and which timestamp. A 92-bucket figure
+  was quoted from a stale export with no stamp, and nothing downstream could tell.
+- **Freeze checks** record which algorithm. Pass 4's hashes are not comparable with pass 5's
+  because the algorithm was never written down, so two passes that both claim a frozen tree
+  cannot be joined.
+
+**The data half keeps its mechanical register** and stays as written above. **The rest is
+satisfied by inspection and is listed as inspection**, not dressed as a check — there is no
+detector for "a finding recorded its verifier", only the discipline of the template that
+asks for it.
 
 **The cutover stage gets the heaviest gate, distinct from the rest:** reconciliation
 history at the verdict level (already ruled); an integration-audit walk of the new
@@ -1664,6 +1819,32 @@ Ruled requirements live in
 and the report's `===REQS===` section cross-references them — when adding a gated
 feature, add its requirement row and a tagged assertion together, never one without
 the other.
+
+### Four suite-integrity facts on record, noted and not chased (Aug 20 2026)
+
+Recorded because a fact nobody wrote down is a fact the next reader re-derives. None is
+scheduled; all four are inputs to the apparatus consolidation queued after the cutover.
+
+- **105 assertions carry no `[R#]` tag** — 1,261 total, 1,156 tagged. `reqpair.sh` maps tags
+  to rows in both directions, so an untagged assertion is outside **both** maps by
+  construction: **8.3% of the suite is invisible to the ledger that exists to keep the suite
+  honest**, and invisible in the one direction the ledger was built to close.
+- **Scan 14's own figure in this file is stale by 2.3–4.6×.** The strong-claim grep flags
+  **458 of 1,261** labels today; the text says "on the order of 100–200 of 958". The suite
+  grew and the estimate did not — which is the same shape as a caveat that stopped tracking
+  the thing it qualifies.
+- **The two dormancy registers disagree about `R29.6`.** It declares itself *Dormant-gated*
+  in its own row and §81's citation list does not include it — **a row claiming membership
+  of a set that does not claim it back**, which is precisely the direction the pairing check
+  cannot see. One of its three assertions sits inside an `if (!SLICE_SAMPLING_RETIRED)`
+  block and therefore never executes.
+- **`SELL_ABS_BAND_RETIRES` flipped sides on 2026-08-20 with no assertion naming it** — the
+  wall clock the diagnostic reported as unwatched. It was half right: one assertion depended
+  on it *implicitly, through the call*, and went red the morning it fired, which is how it
+  was noticed at all. **So the unverifiable class is wider than flags**: a wall clock is an
+  era change no pin can watch, because the suite runs on synthetic fixtures and nothing it
+  reads changes when the calendar does. The remedy applied was the same one flags get — the
+  clock became a parameter, and the assertion now drives both sides.
 
 ### The pairing is checked in BOTH directions (user ruling, Aug 13 2026)
 

@@ -96,6 +96,17 @@
       S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData:false });
     };
     mkItem(9001, "Probe alpha"); mkItem(9002, "Probe beta"); mkItem(9003, "Probe gamma");
+    /* THE FIXTURE HONOURS PRODUCTION'S OWN INVARIANT (Aug 20 2026). `loadLatest`
+       stamps `S.latestAt` exactly when it installs a usable price map, and from
+       tonight that is the whole meaning of the field — "when we last had usable
+       prices", not "when a fetch returned". A fixture that populates `S.latest`
+       and leaves the stamp at 0 is a state production cannot be in, and it made
+       `updateQualStreaks`' new live-data precondition read as a defect when it
+       is the guard that stops an offline boot deleting the seasoning store.
+       Two later blocks deliberately drive the stamp to 0 to exercise the
+       never-fetched guard and restore it afterwards; both capture the value
+       first, so they keep working. */
+    S.latestAt = Date.now();
     DB.watch = [{id:9001, qty:null},{id:9002, qty:null},{id:9003, qty:null}];
     DB.clusters = [{ id:1, name:"probe-cluster", members:[9001,9002], capPct:null, story:"", src:"manual", confirmedAt: Date.now() }];
 
@@ -8026,10 +8037,22 @@
     ok("[R66.4] the retiring absolute band is carried ALONGSIDE and disagrees where expected",
        wide.absCls === "unclassified" && wide.cls === "dilution",
        JSON.stringify({ abs: wide.absCls, rel: wide.cls }));
-    ok("[R66.4] and the comparison panel names the disagreeing cases while it stands",
-       (() => { const h = sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)]);
-                return /retiring absolute band/.test(h) && /1 of 1/.test(h); })(),
-       sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)]).slice(0, 200));
+    /* BOTH SIDES OF THE WALL CLOCK, DRIVEN (Aug 20 2026). This limb read the
+       real `Date.now()` and went red the morning `SELL_ABS_BAND_RETIRES`
+       arrived — the panel had retired on schedule and the assertion was still
+       asserting it renders. It was also the ONLY thing in the suite that
+       noticed the date, which corrects the diagnostic's reading that nothing
+       depended on that constant: a grep for the name found nothing because the
+       dependency was through the call, not the name.
+       The clock is now an argument, so the retirement is asserted in both
+       directions instead of being asserted on whichever side today falls. */
+    const beforeRet = SELL_ABS_BAND_RETIRES - 86400e3, afterRet = SELL_ABS_BAND_RETIRES;
+    ok("[R66.4] and the comparison panel names the disagreeing cases while it stands, then renders NOTHING once the ruled retirement date arrives — asserted on both sides of the wall clock, because a synthetic suite cannot observe a calendar and the branch would otherwise be verified only on whichever side today happens to fall",
+       (() => { const h = sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)], beforeRet);
+                return /retiring absolute band/.test(h) && /1 of 1/.test(h)
+                       && sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)], afterRet) === ""; })(),
+       JSON.stringify({ before: sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)], beforeRet).slice(0, 120),
+                        after: sellAbsShadowHTML([Object.assign({ item: "probe wide" }, wide)], afterRet) }));
   } catch(e){
     out.push("FAIL sell discriminator findings :: " + (e && e.stack || e));
   }
@@ -10267,7 +10290,12 @@
        candidateFor(p), QUAL_SRC_POOL)))` — the concat composition, the pool
        stamping, and candidateFor on a synthesised one-key row. */
     S.scorerCtlPass = [9201, 9202, 9203];
-    const onPath = planCandidates(true);
+    /* THE FULL SET, NOT A BARE BOOLEAN (Aug 20 2026). `cutoverSetFrom` stopped
+       accepting a lone boolean when the flag-pairing guard landed: `true` alone
+       means `{pool:true, vol5:false}`, which is the ONE combination the guard
+       refuses, so the shorthand would have quietly returned the watchlist while
+       reading as the pool test. Naming all three is the point of the set. */
+    const onPath = planCandidates({ pool: true, ops: true, vol5: true });
     const poolCands = onPath.filter(c => c && c.src === QUAL_SRC_POOL);
     ok("[R89.1] the ARMED branch executes and stamps pool provenance — the concat, markSrc and candidateFor on a synthesised row all run, so the branch that will carry the money is not first executed on the day it carries it",
        onPath.length === 3 && poolCands.length === 2
@@ -12687,6 +12715,147 @@
 
   } catch(e){
     out.push("FAIL pass-6 fixes :: " + (e && e.stack || e));
+  }
+
+  /* ═══ §108 — THE PRE-FLIP FIX LIST (user ruling, Aug 20 2026) ═════════════
+     Six fixes ruled the night before the cutover, in the order they were
+     ruled. Every assertion here is anchored at the BRANCH that consumes the
+     term, not at the term beside it — the rule three consecutive passes
+     earned. Sections 106 and 107 are deliberately skipped and reserved for
+     the staged repairs that did NOT land tonight. */
+  try {
+    const k108 = { watch: DB.watch.slice(), qual: JSON.parse(JSON.stringify(DB.qual)),
+                   flips: DB.flips.slice(), ops: JSON.parse(JSON.stringify(DB.itemOps || {})),
+                   v1: DB.itemOpsV1, v2: DB.itemOpsV2, stamp: S.qualStamp, at: S.latestAt,
+                   gl: DB.gateLog.slice(), tw: DB.touchWindows.slice() };
+
+    /* ── 1. AN UNEVALUATED CYCLE NEITHER BREAKS A STREAK NOR CREDITS ONE.
+          Driven through `updateQualStreaks` itself, with the two rows differing
+          on exactly the term under test: both carry `failed`, one carries
+          `noEval` and the other a real gate verdict. If the fixture gave them
+          the same shape it would be measuring nothing. */
+    DB.watch = [{ id: 9001, qty: null }];
+    DB.qual = { 9001: { n: 2, firstAt: Date.now() - 6e5, lastAt: Date.now() - 6e5 },
+                9002: { n: 2, firstAt: Date.now() - 6e5, lastAt: Date.now() - 6e5 } };
+    S.qualStamp = null;
+    updateQualStreaks([{ id: 9001, failed: "no live price in /latest", noEval: 1 },
+                       { id: 9002, failed: "ROI floor — 0.4% under the 1.2% floor" }]);
+    ok("[R108.1] a candidate that could not be EVALUATED keeps its seasoning streak, and one a gate actually DECLINED loses it — both rows carry `failed` and the only difference between them is the `noEval` stamp, so the assertion cannot pass by accident. This is the money half of pass 8's finding 4.1: with a price feed that answered but carried no rows, every watch item came back `failed` for lack of anything to read and the loop spent that as a gate verdict, deleting the whole book's tenure and sending it back to the qualifying queue for a calendar day",
+       !!DB.qual[9001] && DB.qual[9001].n === 2 && DB.qual[9002] === undefined,
+       JSON.stringify({ unevaluated: DB.qual[9001], gateFailed: DB.qual[9002] }));
+
+    /* ── 2. AND THE GATE LEDGER DOES NOT RECORD A DAY THE GATE NEVER RAN.
+          The second reader of the same term. `gateName("no live price in
+          /latest")` is null, so an unevaluated row was logging as a bench by
+          "plan gate" — gate-persistence evidence about an edge nothing
+          measured. */
+    /* Item 9998 is not in `S.byId`, so `calc` returns null and `candidateFor`
+       takes its no-price return — the same shape an empty payload produces for
+       a real item, reached without touching the shared price fixture. */
+    DB.watch = [{ id: 9998, qty: null }];
+    DB.gateLog = []; DB.qual = {}; S.qualStamp = null;
+    const P108 = buildPlan();
+    const loggedUneval = DB.gateLog.filter(e => e.id === 9998).length;
+    const benchedUneval = (P108.bench || []).filter(b => b.id === 9998).length;
+    ok("[R108.2] an unevaluated row still BENCHES with its reason on screen, and writes NO gate-ledger row — the second reader of the same term. `gateName(\"no live price in /latest\")` is null, so this was logging as a bench by \"plan gate\": gate-persistence evidence about an edge that nothing measured, feeding the 4-of-7-days bar that moves gate constants. The observed-day stamp is still written unconditionally, because the day WAS observed — this item just was not readable in it",
+       benchedUneval === 1 && loggedUneval === 0,
+       JSON.stringify({ benched: benchedUneval, gateLogRows: loggedUneval }));
+
+    /* ── 3. THE SEASONING LOOP DOES NOT RUN AT ALL WITHOUT LIVE DATA.
+          The offline-boot half of 4.1, and a different branch from the one
+          above: this is the precondition, not the per-row test. */
+    DB.qual = { 9001: { n: 3, firstAt: Date.now() - 6e5, lastAt: Date.now() - 6e5 } };
+    S.qualStamp = null; S.latestAt = 0;
+    updateQualStreaks([{ id: 9001, failed: "no live price in /latest", noEval: 1 }]);
+    const survivedOffline = !!DB.qual[9001] && DB.qual[9001].n === 3;
+    S.latestAt = k108.at;
+    ok("[R108.3] with no usable prices ever received this session, the seasoning loop returns before touching anything — the live-data precondition its siblings `scorerCycle` and `stampDeployLog` both have and it did not. At boot `S.latestAt` is 0 and `S.qualStamp` is unset, so the stamp `\"0|0\"` differed from `undefined` and the guard PASSED: a first refresh that failed deleted every streak in the book and saved. The stamp guard could never have caught it, because it exists to stop a second pass on the same data rather than a first pass on none",
+       survivedOffline, JSON.stringify({ afterOfflinePass: DB.qual[9001] }));
+
+    /* ── 4. THE SEASONING WAIVER READS THE TRADE'S DATE, NOT THE LOG INSTANT.
+          Discriminating by construction: both rows are logged NOW and differ
+          only in `date`. Under the old `f.id >= cut` test both waived. */
+    const oldD = new Date(Date.now() - 90 * 86400e3).toLocaleDateString("en-CA");
+    const newD = new Date(Date.now() - 3 * 86400e3).toLocaleDateString("en-CA");
+    DB.flips = [{ id: Date.now(), itemId: 9001, qty: 1, buy: 1, sell: 2, date: oldD },
+                { id: Date.now(), itemId: 9002, qty: 1, buy: 1, sell: 2, date: newD }];
+    ok("[R108.4] the seasoning waiver reads the TRADE's date and not the moment the row was typed in — a flip logged today but dated ninety days ago no longer waives the gate, while one dated three days ago still does. Both fixture rows carry `id: Date.now()`, so the old `f.id >= cut` test waived BOTH and this fixture is what separates them. The ordinary route needs no import: `#lDate` is a plain editable date input, and everyday log-lag does it in weaker form; the import edge stamps every id-less row with the import instant and waived a whole foreign history at once",
+       qualExemption(9001, null) === null && /logged round trip/.test(qualExemption(9002, null) || ""),
+       JSON.stringify({ backDated: qualExemption(9001, null), recent: qualExemption(9002, null) }));
+    ok("[R108.4] and a row whose date is missing or malformed waives NOTHING — absence may not lift a restraint, so it is skipped rather than falling back to `f.id`, which is the defect",
+       (() => { DB.flips = [{ id: Date.now(), itemId: 9003, qty: 1, buy: 1, sell: 2 },
+                            { id: Date.now(), itemId: 9004, qty: 1, buy: 1, sell: 2, date: "not-a-date" }];
+                return qualExemption(9003, null) === null && qualExemption(9004, null) === null; })(),
+       "absent and malformed dates both grant nothing");
+    DB.flips = k108.flips;
+
+    /* ── 5. THE PLACEMENT STAMP HAS A FLOOR, AND THE CONSUMER IS THE SELL
+          LADDER. Asserted at `sellAgeInfo`, the branch that turns the stamp
+          into an UNDERCUT & EXIT instruction, never at the stamp alone. */
+    /* THE FIXTURE HAS TO PRODUCE A SUB-HOUR GAP OR IT TESTS NOTHING, and the
+       first form of it did not: with `DB.touchWindows = []` the schedule is off
+       and `gapHoursAt` returns `Math.max(1, DB.fillHorizonH || 4)` = 4, so the
+       floor was present and NOT BINDING and removing it changed no output. The
+       seed came back green and that was the finding, not a pass.
+       A touch four minutes out is derived from the clock rather than pinned to
+       one, so the assertion holds at every hour of the day; `rawGap < 1` is
+       carried as a CONJUNCT so a fixture that stops producing the sub-hour case
+       goes red instead of passing vacuously. */
+    const dNow = new Date();
+    const hNow = dNow.getHours() + dNow.getMinutes() / 60 + dNow.getSeconds() / 3600;
+    /* TWO windows, not one: `touchWindows()` returns `TOUCH_DEFAULT` for any
+       array shorter than 2, so a single-element fixture silently became the
+       real four-touch schedule and produced a 3.1h gap. The second window is
+       twelve hours out so the next touch is unambiguously the near one. */
+    DB.touchWindows = [(hNow + 4 / 60) % 24, (hNow + 12) % 24];
+    const rawGap = gapHoursAt(Date.now());
+    const floorH = placementHzH();
+    const nearTouch = { id: 1, itemId: 9001, qty: 1, buy: 100, ask: 120, placedAt: Date.now() - 10 * 60e3,
+                        stage: "selling", hzH: placementHzH() };
+    const rung = sellAgeInfo(nearTouch);
+    ok("[R108.5] a leg placed minutes before a touch is not told to UNDERCUT & EXIT minutes later — `placementHzH` floors at one hour, asserted at `sellAgeInfo`, the branch that renders the instruction. `gapHoursAt`'s own one-hour floor was deliberately removed on Aug 13 2026 because a nominal imminent touch was pricing SIZING against an hour; a stamp is a different consumer, because it is FROZEN onto a record and never re-derived. Unfloored, a repair logged at 11:56 against a 12:00 touch reached rung 2 in eight minutes and gave up the whole quoted spread. The floor also restores what the repair path had before it was stamped at all, since `legHorizonH`'s fallback is itself `Math.max(1, …)`",
+       rawGap < 1 && floorH === 1 && rung === null,
+       JSON.stringify({ unflooredGapH: rawGap, stamp: floorH, tenMinutesOld: rung }));
+    DB.touchWindows = k108.tw;
+
+    /* ── 6. THE OPERATOR WRITE PATH PUTS THE VALUE WHERE BOTH REGIMES LOOK.
+          Driven with the flag OFF, which is the shipped regime and the one the
+          defect lived in: the press must reach the store as well, or the flip
+          discards it. */
+    DB.watch = [{ id: 9001, qty: null }];
+    DB.itemOps = {}; DB.itemOpsV1 = 1; DB.itemOpsV2 = 1;
+    opsWrite(9001, { tierOv: 0 }, false);
+    const rowSide = DB.watch[0].tierOv, storeSide = (DB.itemOps[9001] || {}).tierOv;
+    ok("[R108.6] a press with the item store OFF writes the ROW and MIRRORS into the store, so arming `ITEM_OPS` later cannot discard it — `ITEM_OPS` is a read-side switch, not a write-side one. The first form of this repair branched, which closed the gap at the reconciliation boot and re-opened it on the very next press: from then until the flip every press landed on the row alone while the snapshot aged, and `opsPick` prefers the store for any key the store owns. The fixture uses `tierOv: 0` on purpose — untiered is a BENCH the operator applied, and the pre-repair failure mode was that bench silently lifting with no press",
+       rowSide === 0 && storeSide === 0,
+       JSON.stringify({ row: rowSide, store: storeSide }));
+    ok("[R108.6] and `opsOf` reads back the same value on BOTH sides of the flag, which is what makes the flip a no-op for a value the operator set tonight",
+       opsOf(9001, false).tierOvRaw === 0 && opsOf(9001, true).tierOvRaw === 0,
+       JSON.stringify({ off: opsOf(9001, false).tierOvRaw, on: opsOf(9001, true).tierOvRaw }));
+
+    /* ── 7. THE FLAG-PAIRING GUARD, AND THE TERM IT GOVERNS READING THE SAME
+          FLAG. The second half is pass 8 finding 3.1: the guard decided the
+          5m-streak question off the injected set while `vol5Population` decided
+          it off the const, so a test could be told a combination was legal and
+          run the armed path in exactly the state the guard refuses. */
+    ok("[R108.7] arming the candidate pool while the 5-minute die-off streak still counts the watchlist only is REFUSED, and the plan falls back to the watchlist — a pool item is not a watch row, so its streak is NOT COUNTED rather than zero, `volGateFor` falls through to the 1h branch, and the 5m binding is a `Math.min` that can only ever SHRINK a size. Pool items would be sized LARGER than an identically-placed pin in a book whose 5m flow has died, and they are the population with no operator history behind them",
+       typeof cutoverFault({ pool: true, ops: true, vol5: false }) === "string"
+       && cutoverFault({ pool: true, ops: true, vol5: true }) === null
+       && cutoverPoolOn({ pool: true, ops: true, vol5: false }) === false
+       && cutoverPoolOn({ pool: true, ops: true, vol5: true }) === true,
+       JSON.stringify({ refused: cutoverFault({ pool: true, ops: true, vol5: false }),
+                        legal: cutoverFault({ pool: true, ops: true, vol5: true }) }));
+    ok("[R108.7] and `vol5Population` — the code that ACTUALLY decides the streak's population — reads the same flag the guard reads, so the legal combination is legal in the machinery and not only in the guard's opinion. Before this, the guard read `s.vol5` off the injected set while the population read the const, so every exercise of the armed pool path ran in precisely the state the guard exists to refuse: the refused state wearing the legal state's clothes",
+       vol5Population(true).length === S.items.length
+       && vol5Population(false).length === DB.watch.length
+       && vol5Population(true).length !== vol5Population(false).length,
+       JSON.stringify({ universe: vol5Population(true).length, watch: vol5Population(false).length }));
+
+    DB.watch = k108.watch; DB.qual = k108.qual; DB.flips = k108.flips;
+    DB.itemOps = k108.ops; DB.itemOpsV1 = k108.v1; DB.itemOpsV2 = k108.v2;
+    S.qualStamp = k108.stamp; S.latestAt = k108.at; DB.gateLog = k108.gl; DB.touchWindows = k108.tw;
+  } catch(e){
+    out.push("FAIL pre-flip fix list :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
