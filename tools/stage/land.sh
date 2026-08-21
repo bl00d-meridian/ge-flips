@@ -46,6 +46,22 @@ if [ "${1:-}" != "--yes" ]; then echo; echo "All checks pass. Re-run with --yes 
 cp "$ST/index.html"         "$ROOT/index.html"
 cp "$ST/probe-snippet.html" "$ROOT/tools/probe/probe-snippet.html"
 cp "$ST/REQUIREMENTS.md"    "$ROOT/REQUIREMENTS.md"
-echo; echo "LANDED. Now run the suite on the REAL files (both viewports) to confirm the move was clean:"
+# THE LANDING IS VERIFIED, NOT ONLY PERFORMED (user ruling, 2026-08-21 — the
+# A1/planCmp incident, M184): a repair that passes cold review and never lands
+# reads as landed until something checks the tree. The tree must hash to the
+# staged content after the copy, or the landing did not happen whatever the
+# steps above printed.
+VFAIL=0
+for pair in "index.html:index.html" \
+            "tools/probe/probe-snippet.html:probe-snippet.html" \
+            "REQUIREMENTS.md:REQUIREMENTS.md"; do
+  T="${pair%%:*}"; S="${pair##*:}"
+  HT=$(sha256sum "$ROOT/$T" | cut -d' ' -f1)
+  HS=$(sha256sum "$ST/$S"  | cut -d' ' -f1)
+  if [ "$HT" != "$HS" ]; then echo "LANDING FAILED: $T does not hash to the staged content"; VFAIL=1; fi
+done
+[ $VFAIL -eq 0 ] || { echo "NOT LANDED — the tree does not match staging. Nothing below applies."; exit 1; }
+echo; echo "LANDED — verified: all three tree files hash to the staged content."
+echo "Now run the suite on the REAL files (both viewports) to confirm the move was clean:"
 echo "  bash tools/probe/run.sh  &&  PROBE_WINDOW=390,844 bash tools/probe/run.sh"
 echo "Then append this pass to audits/REPAIR-LEDGER.md and clear staging/."

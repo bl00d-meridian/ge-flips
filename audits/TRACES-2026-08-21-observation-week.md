@@ -4,6 +4,21 @@ The standing instruction for the observation week: walk-up reports every touch, 
 mismatch is traced to its term before anything is proposed. This file is the durable record of
 those traces and their ruled classifications. One entry per trace, newest last.
 
+**Method boundary (ruled 2026-08-21):** a trace may transcribe production arithmetic and run
+it outside the app — one-shot fetches, constants assumed at defaults, caveats stated — and
+that is fine FOR TRACES and never for assertions. An assertion that re-implements production
+is the re-implementation face of the test-suite rule: it tests the transcription twice and
+the product zero times. The trace's transcription is investigation; the moment a claim needs
+to be *verified*, it points at production code through the suite.
+
+**Watch item for the week (ruled 2026-08-21 — note only, build nothing):** Clockwork's
+imbalance leg sits on the 0.85 edge, so re-entry and oscillation are live. An edge item
+flickering in and out of the cell resets its seasoning streak on every scored failure —
+CORRECT per the ruling — but if the week shows an item cycling clear/fail/clear on one
+flickering gate, capture the trace here BEFORE anyone proposes hysteresis. A re-entering
+Clockwork inside one long session is exactly trace 3 finding 2's scenario; the ruled age
+disclosure is what makes it observable.
+
 ---
 
 ## Trace 1 (morning, user's walk-up) — bench copy renders the mechanism's internal zero instead of the governing cause
@@ -113,7 +128,19 @@ the pool-persistence drill carries departed items with pool history (state named
 ledger row), and the first-clear record renders its one line from `DB.poolFirstClear` wherever
 the drill renders.
 
-**Finding 2 (LATENT — proposed, not built): a session spark never goes stale for reads.**
+**Finding 2 — RULED 2026-08-21: DISCLOSE, DON'T TIGHTEN.** The spark stays authoritative and
+the surface states the series age wherever a spark-fed reading informs a verdict — the funded
+line, the bench reason, and the provenance copy extended to *"charted from its own fetch, 3h
+ago"*. A spark is real observed data; the defect is silence about its age, and the staleness
+rule asks for the age to be stated, not for the reading to be discarded. Tightening would
+re-decide the sparked-clears precedent on zero observed harm. **The re-open condition,
+recorded with the ruling:** if the observation week produces one clear or fund on a spark
+older than ~12h whose verdict the archive would have refused, that is the evidence a
+tightening ruling wants — and the age disclosure is precisely what makes it visible. Built
+display-only, seeds both directions (age renders when spark-fed; absent when archive-fed) —
+pass 2026-08-21·E. The original proposal follows as written:
+
+**(original finding text): a session spark never goes stale for reads.**
 `candidateFor` reads `S.spark.get(id)` with no age bound and `itemSeries` prefers any spark
 with points, so in a long-lived session a pool item that leaves the scanner/scout candidate
 stream keeps being judged on data frozen at its last fetch — trend, volume trend, momentum and

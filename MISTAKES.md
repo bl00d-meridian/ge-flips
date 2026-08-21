@@ -93,6 +93,38 @@ qualifies.**
 
 # 2026-08-14
 
+### M184 · A repair that passed cold review and never landed read as landed for two days
+2026-08-21 · found by: use (the restart session's 2f build — the ruled shape named a term that was in no shipped tree) · pattern: `LEDGER-ONE-WAY` (the review→landing direction was never checked against the tree)
+
+The A1 funding-order repair was ruled on Aug 19, built, staged, and PASSED cold review — and
+was then never landed, because an unrelated repair (row 8) blocked its batch's all-or-nothing
+landing. For two days every record was truthful and the sum of them was false: the ruling
+stood, the review verdict said PASS, the handoff listed what was built — and the tree carried
+none of it. The 2026-08-21 restart directive's family-winner ruling was then written assuming
+the code existed (*"planCmp — the one comparator that already owns display and funding"*), and
+only the build session's tree-level grep caught that `planCmp` appeared zero times in
+`index.html`.
+
+**Root cause:** the landing step performed the copy and printed instructions, but nothing ever
+VERIFIED the landing — no step read the tree and compared it to the staged content, and no
+record distinguished "review passed" from "landed". A review verdict is upstream of the tree;
+treating it as evidence about the tree is the one-way-ledger shape with the unchecked
+direction pointing at the deliverable itself.
+
+**Consequence:** a ruling was drafted against machinery that did not exist; the build had to
+land A1's substance fresh (with one deliberate design delta, recorded) before the ruled fix
+could be built at all.
+
+**The rule that would prevent a repeat (ruled 2026-08-21):** a step whose job is to land or
+apply work ends by VERIFYING the result state in the target — the tree files hash to the
+staged content — never by performing the action alone. `tools/stage/land.sh` now does the
+post-copy hash comparison and refuses to report LANDED on a mismatch.
+Substantiated from: `audits/REPAIR-LEDGER.md` rows 7 and 17, HANDOFF.md's flip-day queue item
+6 ("repairs … 4–9 did not [land]"), the 2026-08-21 restart directive's item 2f, and
+`tools/stage/land.sh` before and after the fix.
+
+---
+
 ### M183 · A trace record claimed a fix was "fixed in batch 2" while batch 2 had never been opened
 2026-08-21 · found by: use (the restart session's state check, reading the tree against the record) · pattern: `CLAIMS-VS-CODE`
 

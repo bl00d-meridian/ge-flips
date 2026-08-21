@@ -3589,7 +3589,8 @@
     const s25 = shadowSlice(9002);
     ok("[R25.2] the per-item slice aggregates trips, fills, net, and span from existing collection",
        s25.n === 5 && s25.bought === 5 && s25.net === 40000 && s25.fillRate === 1 && s25.spanD >= 7, JSON.stringify(s25));
-    ok("[R25.2] shadow dot: solid green when paper-profitable, hollow under 40% fill rate, quarantine-labeled",
+    if (!PAPER_DOT_RETIRED)
+    ok("[R25.2] shadow dot: solid green when paper-profitable, hollow under 40% fill rate, quarantine-labeled (DORMANT-GATED with the badge unification, 2026-08-21 — the renderer sleeps, the slice assertions above stay live)",
        /sdot pos/.test(shadowDot(9002)) && /◉/.test(shadowDot(9002)) && /simulated/.test(shadowDot(9002))
        && /◎/.test(shadowDot(9003)) && /margin exists, the fills don/.test(shadowDot(9003)), shadowDot(9003));
     ok("[R25.4] the citation puts the counterfactual in the bench sentence — probation candidate when profitable, agreeing when not",
@@ -3636,6 +3637,14 @@
     /* The live machinery opens its own paper positions for watched items on
        every render, so these assert the STATE the dot reports, not exact
        counts the suite does not control. */
+    /* ═══ DORMANT-GATED (the badge unification, 2026-08-21): the paper
+       circles retired from every row, behind the SAME flag production reads.
+       The shadow-specific limbs run only when the flag is off (the ruled
+       dormancy shape, as R18.4 — a given RUN executes only the shipped era;
+       the other era is driven by the flag-flip seed at pass time, and the
+       SE6 record is that drive); the family-generic limbs below run LIVE
+       against the persistence badge, which inherited the properties. */
+    if (!PAPER_DOT_RETIRED){
     DB.shadowBook = [mkShadow(9001, 500, "filled", 1200, now25 - 2 * 86400e3, "ROI floor")];
     const d1 = dotVisible(9001);
     ok("[R25.6] ONE closed paper trip renders a visibly-rendered accruing dot — not silence",
@@ -3676,21 +3685,6 @@
                         + testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: 0 }, { tested: false });
                 return /[◉◎◌]/.test(shadowGlyphs) && !/[●○]/.test(shadowGlyphs)
                     && /[●○]/.test(t) && !/[◉◎◌]/.test(t); })());
-    /* Computed colour, not stylesheet text: the requirement is that the two
-       families never LOOK like they share a state meaning. */
-    ok("[R25.7] no shared colour semantics: green/red belong to the shadow family, the test dot is neutral steel",
-       (() => { const lg = document.querySelector("#dotLegend");
-                if (!lg) return false;
-                const col = sel => { const el = lg.querySelector(sel); return el ? getComputedStyle(el).color : null; };
-                const sPos = col(".sdot.pos"), sNeg = col(".sdot.neg"), tOn = col(".tdot.on"), tOff = col(".tdot");
-                if (!sPos || !sNeg || !tOn) return false;
-                const rgb = c => (c.match(/\d+/g) || []).map(Number);
-                const isGreen = c => { const [r, g, b] = rgb(c); return g > r + 20 && g > b + 20; };
-                return isGreen(sPos) && !isGreen(tOn) && !isGreen(tOff)
-                    && tOn !== sPos && tOn !== sNeg && tOff !== sPos && tOff !== sNeg; })(),
-       (() => { const lg = document.querySelector("#dotLegend");
-                return lg ? JSON.stringify({ sPos: getComputedStyle(lg.querySelector(".sdot.pos")).color,
-                                             tOn: getComputedStyle(lg.querySelector(".tdot.on")).color }) : "no legend"; })());
     ok("[R25.7] tooltips name themselves first, so a hover resolves the ambiguity immediately",
        /^Paper screen:/.test((() => { const m = shadowDot(9001).match(/title="([^"]*)"/); return m ? m[1] : ""; })())
        && /^Margin test:/.test((() => { const m = testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: Date.now() }, { tested: true }).match(/title="([^"]*)"/); return m ? m[1] : ""; })()));
@@ -3699,19 +3693,62 @@
                 const empty = shadowDot(9001), noTest = testDot({ id: 9001 }, { tested: false });
                 return /class="dslot"/.test(empty) && !/sdot/.test(empty)
                     && /class="dslot"/.test(noTest) && !/tdot/.test(noTest); })());
-    ok("[R25.7] the legend shows both glyph families and all their states side by side",
+    } else {
+    /* THE DORMANT FORM: the circles render on no row, the retired renderer
+       stays callable for the lane, and the paper-trip history the circles
+       showed remains reachable on the Paper Book's surface (its glossary
+       entry says so). One assertion carries both tags so the pairing stays
+       two-way while the feature sleeps. */
+    DB.shadowBook = [mkShadow(9001, 500, "filled", 1200, now25 - 2 * 86400e3, "ROI floor")];
+    ok("[R25.6] [R25.7] DORMANT (badge unification, 2026-08-21): no row renders the paper circles — the watch and scanner rows carry the persistence badge instead — while the retired renderer stays callable (the dormancy lane keeps the code) and its glossary entry names the Paper Book as where the history lives",
+       (() => { renderWatch();
+                const rows = document.querySelectorAll("#watchBody .tags");
+                const rowHtml = Array.from(rows).map(r => r.innerHTML).join("");
+                const dormant = shadowDot(9001);
+                return rows.length > 0 && !/Paper screen:/.test(rowHtml)
+                    && /Pool persistence:|Persistence:/.test(rowHtml)
+                    && /Paper screen:/.test(dormant); })(),
+       "dormant form — rows carry the persistence badge, shadowDot still callable");
+    DB.shadowBook = [];
+    }
+    /* ── FAMILY-GENERIC LIMBS, LIVE against the persistence badge (the
+       properties survived the family change; the subjects moved) ── */
+    ok("[R25.7] no shared colour semantics: green belongs to the dot family, the test dot is neutral steel",
+       (() => { const lg = document.querySelector("#dotLegend");
+                if (!lg) return false;
+                const col = sel => { const el = lg.querySelector(sel); return el ? getComputedStyle(el).color : null; };
+                const sPos = col(".sdot.pos"), tOn = col(".tdot.on"), tOff = col(".tdot");
+                if (!sPos || !tOn) return false;
+                const rgb = c => (c.match(/\d+/g) || []).map(Number);
+                const isGreen = c => { const [r, g, b] = rgb(c); return g > r + 20 && g > b + 20; };
+                return isGreen(sPos) && !isGreen(tOn) && !isGreen(tOff)
+                    && tOn !== sPos && tOff !== sPos; })(),
+       (() => { const lg = document.querySelector("#dotLegend");
+                return lg ? JSON.stringify({ sPos: getComputedStyle(lg.querySelector(".sdot.pos")).color,
+                                             tOn: getComputedStyle(lg.querySelector(".tdot.on")).color }) : "no legend"; })());
+    ok("[R25.7] tooltips name themselves first on the live badge — a persistence dot opens with its family name, the test dot with Margin test",
+       (() => { const m = poolDot(999999).match(/title="([^"]*)"/);
+                const t = testDot({ id: 9001, tBuy: 4000, tSell: 4400, tAt: Date.now() }, { tested: true }).match(/title="([^"]*)"/);
+                return m && /^(Pool persistence|Persistence):/.test(m[1]) && t && /^Margin test:/.test(t[1]); })());
+    ok("[R25.7] the persistence badge NEVER leaves its slot empty — every state emits a dot with its own words (the not-funded state is information, not absence) — while the test dot keeps its empty-slot form",
+       (() => { const na = poolDot(999999), noTest = testDot({ id: 9001 }, { tested: false });
+                return /class="dslot"/.test(na) && /sdot na/.test(na)
+                    && /class="dslot"/.test(noTest) && !/tdot/.test(noTest); })(),
+       poolDot(999999));
+    ok("[R25.7] the legend shows the live glyph families and their states side by side, and no retired circle vocabulary",
        (() => { const lg = document.querySelector("#dotLegend");
                 if (!lg || lg.offsetParent === null) return false;
                 const t = lg.textContent;
-                return /◉/.test(t) && /◎/.test(t) && /◌/.test(t) && /●/.test(t) && /○/.test(t)
-                    && /paper-profitable/.test(t) && /margin test verified/i.test(t)
-                    && /not good-vs-bad/.test(t); })(),
+                return /◉/.test(t) && /◌/.test(t) && /●/.test(t) && /○/.test(t)
+                    && /persistence/i.test(t) && /not funded by current rules/.test(t)
+                    && /margin test verified/i.test(t) && /not good-vs-bad/.test(t)
+                    && !/paper-profitable/.test(t) && !/◎/.test(t); })(),
        (document.querySelector("#dotLegend") || {}).textContent);
     DB.shadowBook = [];
     for (let i = 0; i < 4; i++)
       DB.shadowBook.push(mkShadow(9001, 540 + i, "filled", 1200, now25 - (6 - i) * 86400e3, "ROI floor"));
     dotVisible(9001);
-    ok("[R25.6] the shadow dot leads the dot slot — it is the primary dot, never lost behind the test dot",
+    ok("[R25.6] the row's primary dot leads the dot slot — never lost behind the test dot (family-agnostic: the property covered the shadow dot and now covers the persistence badge, which emits the same .sdot slot)",
        (() => { const row = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet)"))
                   .find(r => r.textContent.includes("Probe alpha"));
                 const dots = row ? Array.from(row.querySelectorAll(".tags .sdot, .tags .tdot")) : [];
@@ -4172,6 +4209,7 @@
     // R27.1 — screening labels everywhere; standing self-impact caveat on the panel
     ok("[R27.1] a profitable slice reads probation candidate, never evidence accruing",
        /screening: probation candidate/.test(shadowCite(9002)) && !/evidence accruing/.test(shadowCite(9002)), shadowCite(9002));
+    if (!PAPER_DOT_RETIRED)   /* dormant-gated with the circles (badge unification, 2026-08-21) */
     ok("[R27.1] the row dot labels the screen, not evidence",
        /ranks probation candidates, not evidence/.test(shadowDot(9002)), shadowDot(9002));
     const shAud27 = paperRegimeSection();
@@ -5191,12 +5229,10 @@
     ok("[R39.7] gate names, row status, caution chips and the dot glyphs are glossed where they render",
        /data-glt="gate-/.test(gateChip("ROI floor"))
        && /data-glt="ind-status"/.test(planStatusBadge(9001, buildPlan()))
-       && /data-glt="ind-paperdot"/.test((() => {
-            DB.shadowBook = [{ id: 39001, fam: "f39", itemId: 9001, name: "Probe alpha", qty: 10, bid: 4001,
-              ask: 4399, t: Date.now() - 86400e3, buyQ: 10, sellQ: 10, buyQFull: 10, buyDone: 1,
-              obsMs: FILLH() * 3600e3, lastObs: Date.now(), state: "filled", closedAt: Date.now(),
-              net: 100, regimes: [] }];
-            const d = shadowDot(9001); DB.shadowBook = []; return d; })()),
+       /* re-pointed with the badge unification (2026-08-21): "glossed where
+          they render" now names the LIVE badge — the persistence dot glosses
+          through plan-persist; the retired circles render nowhere */
+       && /data-glt="plan-persist"/.test(poolDot(999999)),
        "gate/status/dot");
     /* Seeded, because the per-gate table only renders when a gate HAS closed
        outcomes — asserting the headers against an empty table would pass on
@@ -13924,8 +13960,8 @@
        spec120 ? JSON.stringify({ rows: spec120.rows.map(r => r._cohort), head: spec120.head.slice(-90) }) : "(no spec)");
     DB.poolSeen = k119.seen; DB.poolFirstClear = k119.pfc;
     const pick120 = P119.picks.find(p => p.id === 9822), pin120 = P119.picks.find(p => p.id === 9821);
-    ok("[R120.2] a sparked pool clear during the benched era says where its chart came from — \"charted from its own fetch, ahead of the archive\" rides the funded line's notes (the ruled provenance copy, trace 2), from the chain's own serSrc, and a pin's line never carries it",
-       !!pick120 && (pick120.sizeNotes || []).some(n => /charted from its own fetch, ahead of the archive/.test(n))
+    ok("[R120.2] a sparked pool clear during the benched era says where its chart came from AND how old the fetch is — \"charted from its own fetch, Xm ago — ahead of the archive\" rides the funded line's notes (the ruled provenance copy extended by the disclose ruling), from the chain's own serSrc/serAt, and a pin's line never carries it",
+       !!pick120 && (pick120.sizeNotes || []).some(n => /charted from its own fetch, \d+[smhd] ago — ahead of the archive/.test(n))
        && !!pin120 && !(pin120.sizeNotes || []).some(n => /charted from its own fetch/.test(n)),
        JSON.stringify({ pool: pick120 && pick120.sizeNotes, pin: pin120 && pin120.sizeNotes }));
 
@@ -14062,6 +14098,150 @@
     for (const id of [9821, 9822, 9823, 9824, 9829]){ S.byId.delete(id); delete S.latest[id]; delete S.hour[id]; delete S.min5[id]; S.spark.delete(id); S.items = S.items.filter(it => it.i !== id); }
   } catch(e){
     out.push("FAIL naming sweep / findable line / display batch :: " + (e && e.stack || e));
+  }
+
+  try {
+    /* ═══ §122–123 — THE SPARK-AGE DISCLOSURE (trace-3 finding 2, ruled
+       DISCLOSE) · THE UNIFIED PER-ITEM BADGE (ruled 2026-08-21) ═══════════ */
+    const k122 = { watch: DB.watch, qual: DB.qual, pos: DB.positions, inv: DB.invLots,
+      flips: DB.flips, slots: DB.slots, minE: DB.minExpectGp, bank: DB.bank, bAsOf: DB.bankAsOf,
+      sres: DB.shadowReserve, res: DB.reserve, t1: DB.t1Budget, t2: DB.t2Budget,
+      cl: DB.clusters, prio: DB.planPriority, dem: DB.planDemoted, ctl: S.scorerCtlPass,
+      latestAt: S.latestAt, cc: S.chartCache, ss: S.scorerSurf, tw: DB.touchWindows,
+      tl: DB.touchLog, gl: DB.gameLedger, seen: DB.poolSeen, book: DB.shadowBook };
+    DB.touchWindows = []; DB.clusters = []; DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
+    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
+    DB.bank = 500e6; DB.bankAsOf = Date.now(); DB.shadowReserve = 300e6; DB.reserve = 0;
+    DB.positions = []; DB.invLots = []; DB.gameLedger = [];
+    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
+    S.latestAt = Date.now(); S.qualStamp = S.latestAt + "|" + S.hourAt;
+    const nowS122 = Math.floor(Date.now() / 1000);
+    const mk122 = (id, n, hi, sparkOpts) => {
+      S.byId.set(id, { i: id, n, l: 25000, m: 0, v: 0, a: 0 });
+      S.latest[id] = { high: hi, low: 4000, highTime: nowS122 - 60, lowTime: nowS122 - 120 };
+      S.hour[id] = { avgHighPrice: hi, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
+      S.min5[id] = { avgHighPrice: hi, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
+      if (sparkOpts){
+        const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
+        for (let k = 0; k < 168; k++){
+          const mid = sparkOpts.falling ? 5000 - k * 6 : (4000 + hi) / 2 + ((k % 2) ? 1 : -1);
+          pts.push(mid); vols.push(1000); series.push({ t: nowS122 - (168 - k) * 3600, mid });
+        }
+        S.spark.set(id, { at: sparkOpts.at || Date.now(), pts, vols, byHour, series, noData: false });
+      }
+    };
+    /* 9841: a pin whose spark is THREE HOURS OLD and whose chart is falling —
+       the bench must say both the reading and the fetch age. 9842: a sparked
+       pool item that clears — the funded note carries the age. 9843: a pin
+       with a poolSeen row (the cell has funded it) — the badge shows the
+       pair. 9844: a pin the cell has never funded — the badge says NOT
+       FUNDED BY CURRENT RULES, visibly. */
+    mk122(9841, "Probe age falling pin", 4600, { falling: 1, at: Date.now() - 3 * 3600e3 });
+    mk122(9842, "Probe age sparked pool", 4800, { at: Date.now() - 3 * 3600e3 });
+    mk122(9843, "Probe badge funded pin", 4600, {});
+    mk122(9844, "Probe badge unfunded pin", 4500, {});
+    const q122 = src => ({ n: 3, firstAt: Date.now() - 26 * 3600e3, lastAt: Date.now() - 3600e3, src });
+    DB.qual = { 9841: q122(QUAL_SRC_WATCH), 9842: q122(QUAL_SRC_POOL), 9843: q122(QUAL_SRC_WATCH), 9844: q122(QUAL_SRC_WATCH) };
+    DB.watch = [{ id: 9841, qty: null }, { id: 9843, qty: null }, { id: 9844, qty: null }];
+    DB.flips = [{ id: Date.now() - 86400e3, itemId: 9843, name: "Probe badge funded pin", qty: 100, buy: 4000, sell: 4400, date: today() }];
+    /* the persistence row carries its ERA STAMPS and the cell carries a cycle
+       count ABOVE the settled threshold (20 observed ≥ POOL_SEEN_MIN_OBS), so
+       the pair reads genuinely SETTLED ("funded 4 of 20") — the settled
+       branch is exercised on a pin, not merely the accruing one (cold
+       review; at 20% the settled dot renders without the pos colour) */
+    const ctl122 = scorerConfigs().find(c => c.control);
+    const k122st2 = DB.scorerT2[ctl122.hash];
+    DB.scorerT2[ctl122.hash] = { cycles: 20 };
+    DB.poolSeen = { 9843: { ch: ctl122.hash, v: SCORER_V, cyc: 4, nc: 1, c0: 0, lastAt: Date.now() - 1800e3 } };
+    S.scorerCtlPass = [9841, 9842, 9843];
+    S.chartCache = { at: Date.now(), state: chartWireState({ observed: 108 }), pts: new Map(), vols: new Map() };
+    S.scorerSurf = { at: Date.now(), h1: { observed: 108 } };
+    S.tab = "watch"; S.promoteFor = null; renderWatch();
+    const P122 = buildPlan();
+
+    /* ── §122: the age disclosure, both directions ── */
+    const bench122 = P122.bench.find(b => b.id === 9841);
+    ok("[R122.1] a spark-fed chart bench states the series age beside the reading — \"(series from its own fetch, 3h ago)\" — because in a long session an item can leave the fetch population with its spark frozen, and the ruled fix is DISCLOSURE at the point of use, never discarding real data",
+       !!bench122 && /falling chart|downtrend/.test(bench122.failed)
+       && /\(series from its own fetch, 3h ago\)/.test(bench122.failed),
+       bench122 ? bench122.failed : "(9841 not benched)");
+    const pick122 = P122.picks.find(p => p.id === 9842);
+    ok("[R122.1] and the sparked pool clear's provenance note carries the same age — \"charted from its own fetch, 3h ago — ahead of the archive\", the ruled sentence",
+       !!pick122 && (pick122.sizeNotes || []).some(n => /charted from its own fetch, 3h ago — ahead of the archive/.test(n)),
+       JSON.stringify(pick122 && pick122.sizeNotes));
+    /* the disclosure reaches the SHORT gap string too (cold review: the
+       status-badge tooltip and the scanner's gateTag prefer short over
+       detail, and a caveat one surface away does not qualify the figure) */
+    const trFail122 = bench122 && (bench122.fails || []).find(f => f.g === "trend");
+    ok("[R122.1] the trend gap's SHORT string carries the same age clause — the status-badge tooltip and the scanner tag render short, and the caveat travels WITH the figure onto those surfaces rather than living one surface away",
+       !!trFail122 && trFail122.short && /\(series from its own fetch, 3h ago\)/.test(trFail122.short),
+       trFail122 ? trFail122.short : "(no trend fail)");
+    /* and the LOADING bench's spark branch — a frozen spark's point counts
+       never improve, so the age rides the promise */
+    mk122(9845, "Probe age thin spark pin", 4600, { at: Date.now() - 3 * 3600e3 });
+    const spThin = S.spark.get(9845); spThin.pts = spThin.pts.slice(0, 10); spThin.vols = spThin.vols.slice(0, 10);
+    DB.watch = DB.watch.concat([{ id: 9845, qty: null }]);
+    DB.qual[9845] = q122(QUAL_SRC_WATCH);
+    const cdThin = candidateFor({ id: 9845, qty: null }, QUAL_SRC_WATCH);
+    ok("[R122.1] the chart-still-loading bench on a SPARK-fed series carries the age — its point counts are the frozen spark's own, and \"still loading\" without the age promises an improvement a frozen spark never delivers",
+       !!cdThin.failed && /no chart yet — the series feeds/.test(cdThin.failed)
+       && /\(series from its own fetch, 3h ago\)/.test(cdThin.failed),
+       cdThin.failed || "(9845 not benched)");
+    DB.watch = DB.watch.filter(w => w.id !== 9845); delete DB.qual[9845];
+
+    /* the ABSENT direction: an archive-fed reading carries no fetch clause —
+       ready era, declining archive points, no spark at all */
+    S.spark.delete(9841);
+    const arcPts = []; for (let k = 0; k < 30; k++) arcPts.push(5000 - k * 8);
+    S.chartCache = { at: Date.now(), state: chartWireState({ observed: 170 }),
+                     pts: new Map([[9841, arcPts]]), vols: new Map([[9841, new Array(60).fill(1000)]]) };
+    const cd122 = candidateFor({ id: 9841, qty: null }, QUAL_SRC_WATCH);
+    ok("[R122.1] an ARCHIVE-fed reading carries no fetch clause — the age is a property of a session fetch, and stamping it on the archive path would claim a provenance the reading does not have. Presence and absence both ways",
+       !!cd122.failed && /falling chart|downtrend|falling knife|volume dying|drifty pick/.test(cd122.failed)
+       && !/series from its own fetch/.test(cd122.failed)
+       && cd122.serSrc === "archive" && cd122.serAt == null,
+       JSON.stringify({ failed: cd122.failed, serSrc: cd122.serSrc, serAt: cd122.serAt }));
+    S.chartCache = { at: Date.now(), state: chartWireState({ observed: 108 }), pts: new Map(), vols: new Map() };
+
+    /* ── §123: one badge for both populations ── */
+    const rowsHtml122 = Array.from(document.querySelectorAll("#watchBody tr:not(.wdet) .tags")).map(r => r.innerHTML).join("\n");
+    ok("[R123.1] pin rows render the SAME persistence badge as pool rows — the rendered dot is byte-identical to poolDot's output (one renderer for one question, never two), the funded pin shows its pair, and no row carries the retired paper circles",
+       rowsHtml122.indexOf(poolDot(9843)) >= 0
+       && /funded 4 of 20/.test(poolDot(9843))
+       && !/first-cycle|ACCRUING|COULD NOT CHECK/i.test(poolDot(9843))
+       && !/Paper screen:/.test(rowsHtml122),
+       poolDot(9843).replace(/<[^>]*>/g, " ").slice(0, 120));
+    ok("[R123.1] a pin the cell has never funded says NOT FUNDED BY CURRENT RULES — visibly, in the badge, because that verdict is information the operator wants, never an empty slot; the pool wording (NOT APPLICABLE) stays on non-pins",
+       rowsHtml122.indexOf(poolDot(9844)) >= 0
+       && /NOT FUNDED BY CURRENT RULES/.test(poolDot(9844))
+       && /no funded cycle on record/.test(poolDot(9844))
+       && !/never funded/.test(poolDot(9844))
+       && /NOT APPLICABLE/.test(poolDot(999999)) && !/NOT FUNDED BY CURRENT RULES/.test(poolDot(999999))
+       /* the new status string ships with its glossary entry, same commit */
+       && (() => { const g = (GLOSSARY.flatMap ? GLOSSARY.flatMap(x => x.entries || []) : []).find(e => e.id === "plan-persist");
+            return g && /NOT FUNDED BY CURRENT RULES/.test(g.what) && /PINS and pool/i.test(g.what); })(),
+       poolDot(9844).replace(/<[^>]*>/g, " ").slice(0, 140));
+    poolDrill(P122);
+    const spec122 = DRILLS.get("plan:persist");
+    ok("[R123.2] behind the drill a pin's REAL trading history renders in its own labelled column — realized and simulated never visually pool: the count is from the flip log, the column label says whose it is, and a row with none shows a dash",
+       !!spec122 && spec122.cols.some(c => /Realized trips \(YOUR log/.test(c.lab))
+       && spec122.rows.some(r => /Probe badge funded pin/.test(r.item) && r.real === "1 real")
+       && spec122.rows.every(r => r.real === "—" || / real$/.test(r.real)),
+       JSON.stringify(spec122 && spec122.rows.map(r => ({ i: r.item.slice(0, 30), real: r.real }))));
+
+    S.promoteFor = null;
+    DB.watch = k122.watch; DB.qual = k122.qual; DB.positions = k122.pos; DB.invLots = k122.inv;
+    DB.flips = k122.flips; DB.slots = k122.slots; DB.minExpectGp = k122.minE; DB.bank = k122.bank;
+    DB.bankAsOf = k122.bAsOf; DB.shadowReserve = k122.sres; DB.reserve = k122.res;
+    DB.t1Budget = k122.t1; DB.t2Budget = k122.t2; DB.clusters = k122.cl;
+    DB.planPriority = k122.prio; DB.planDemoted = k122.dem; S.scorerCtlPass = k122.ctl;
+    S.latestAt = k122.latestAt; S.chartCache = k122.cc; S.scorerSurf = k122.ss;
+    DB.touchWindows = k122.tw; DB.touchLog = k122.tl; DB.gameLedger = k122.gl;
+    DB.poolSeen = k122.seen; DB.shadowBook = k122.book;
+    if (k122st2 === undefined) delete DB.scorerT2[ctl122.hash]; else DB.scorerT2[ctl122.hash] = k122st2;
+    for (const id of [9841, 9842, 9843, 9844, 9845]){ S.byId.delete(id); delete S.latest[id]; delete S.hour[id]; delete S.min5[id]; S.spark.delete(id); S.items = S.items.filter(it => it.i !== id); }
+  } catch(e){
+    out.push("FAIL spark-age disclosure / unified badge :: " + (e && e.stack || e));
   }
 
   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══

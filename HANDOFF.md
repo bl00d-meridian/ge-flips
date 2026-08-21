@@ -1,3 +1,49 @@
+# CUTOVER DAY 2026-08-21, RESTART SESSION PART 2 — five follow-up rulings executed; the badge unified; pass ·E landed.
+
+**On top of the committed queue below (`2b91784`), the user's five-directive follow-up and the
+badge-unification directive are executed and landed (pass 2026-08-21·E, ledger rows 22–24).
+Suite on the tree: PROBE-PASS cold, BOTH viewports, 1,366 assertions, pairing clean both
+directions (549 tags / 561 rows / 549 cited).** Committed and pushed this session — hash in the
+session report and `git log`.
+
+1. **Trace-3 finding 2 RULED: DISCLOSE, DON'T TIGHTEN** — the spark stays authoritative; the
+   series age renders wherever a spark-fed reading informs a verdict (the five chart bench
+   sentences, the loading bench's spark branch, the trend/volTrend SHORT strings, the FALLING
+   chip via the chain's own stamp, and the provenance copy extended to *"charted from its own
+   fetch, 3h ago — ahead of the archive"*). §122, seeds both directions. **The re-open
+   condition is recorded with the ruling in the traces file** (a clear/fund on a spark >~12h
+   whose verdict the archive would have refused); the disclosure is its instrumentation. The
+   durable `gapTxt` strips the relative clause at store time (`gapTxtOf`).
+2. **The 48h `QUAL_GAP_RESET` is RATIFIED** (constant comment + R111.1 row; text-only,
+   verified by the cold review).
+3. **land.sh VERIFIES the landing now** (the A1/planCmp incident, **M184**): post-copy hash
+   comparison, refuses to report LANDED on a mismatch. It fired its first real verification
+   landing pass ·E.
+4. **Watch item recorded in the traces header, nothing built:** Clockwork's 0.85-edge
+   oscillation — if the week shows clear/fail/clear cycling on one flickering gate, the trace
+   comes BEFORE any hysteresis proposal; a re-entering Clockwork in-session is finding 2's
+   scenario and the age disclosure is what makes it observable.
+5. **The trace-method boundary recorded in the traces header:** transcribed production
+   arithmetic is fine for traces, never for assertions.
+
+**THE BADGE UNIFICATION (user directive, landed with pass ·E — display only):** pin rows
+render the SAME persistence badge as pool rows (`poolDot`, one renderer; slot B stays the
+caution chip per R92.2); a pin with no ledger row reads **NOT FUNDED BY CURRENT RULES — no
+funded cycle on record** (the eviction/retention qualifier in place — the review caught that
+"never funded" overclaims); the drill carries a pin's realized flip-log count in its own
+labelled column, never pooled with the simulated figures; the paper circles retired to the
+dormancy lane (`PAPER_DOT_RETIRED` gates the render sites AND the assertions, with the SE6
+era-drive on record: flag flipped → only era-pinned limbs red, all gated originals ran and
+passed); the legend and glossary swept, the circles' history stated to live on the Paper
+Book's own surface. **Batching call recorded in the pass:** landed now rather than at maturity
+because the not-funded state is observation-week information.
+
+Carried forward from the pass: the NON-pin NOT APPLICABLE wording carries the same eviction
+gap the pin copy fixed (next touch of `poolPersistence`'s why); §122/§123 rows sit above §121
+(cosmetic).
+
+---
+
 # CUTOVER DAY 2026-08-21, RESTART SESSION — the ruled queue is EXECUTED, COMMITTED AND PUSHED.
 
 **The restart directive's queue (items 2a–2i) is complete.** Three staged batches, each with

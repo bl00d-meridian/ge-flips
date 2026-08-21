@@ -725,13 +725,13 @@ hr{border:none;border-top:1px solid var(--line);margin:12px 0}
     <div class="panel">
       <div class="note" id="dotLegend" style="margin-bottom:6px">
         <b>Row dots</b> — shape is the identity, colour is the state inside it, and the two families never share a colour meaning:
-        <span class="dslot"><span class="sdot pos">◉</span></span> paper-profitable ·
-        <span class="dslot"><span class="sdot neg">◉</span></span> paper-losing ·
-        <span class="dslot"><span class="sdot">◎</span></span> shadow: the margin exists, the fills don't ·
-        <span class="dslot"><span class="sdot acc">◌</span></span> shadow accruing (under 3 closed trips — no verdict yet) ·
+        <span class="dslot"><span class="sdot pos">◉</span></span> persistence: funded ≥50% of its observed cycles ·
+        <span class="dslot"><span class="sdot">◉</span></span> persistence: funded under 50% (the pair is in the tooltip) ·
+        <span class="dslot"><span class="sdot acc">◌</span></span> persistence accruing / could-not-check (its own words in the tooltip) ·
+        <span class="dslot"><span class="sdot na">·</span></span> not funded by current rules / not applicable ·
         <span class="dslot"><span class="tdot on">●</span></span> margin test verified ·
         <span class="dslot"><span class="tdot">○</span></span> margin test expired.
-        Shadow states are circles-within-circles and carry good/bad colour because they ARE good/bad; test states are plain circles in neutral steel because verified-vs-stale is not good-vs-bad. Each dot keeps a fixed slot, so a missing one leaves its space rather than letting its neighbour slide over.
+        Persistence's read states are circles-within-circles (◉ ◌) and its no-history state is the small · — all counting the instrument's own funded-of-observed gate verdicts, the same badge on pins and pool rows, one renderer; test states are plain circles in neutral steel because verified-vs-stale is not good-vs-bad. Each dot keeps a fixed slot, so a missing one leaves its space rather than letting its neighbour slide over. The retired paper circles' per-item trip history lives on the Paper Book's own surface.
       </div>
       <div class="ph"><h2>Pins</h2><span class="sub" id="watchStack"></span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -3424,7 +3424,7 @@ function renderScan(){
         + esc(risks.map(f => f.label + ": " + f.why).join("\n")) + '">⚠ ' + risks.length + '</span>';
     return '<tr>'
       + '<td><span class="name" title="'+nameTitle(c.name)+'">'+esc(c.name)+'</span>'
-      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? shadowDot(c.id) + testDot(w, c) : '') + '</div></td>'
+      + '<div class="tags">' + slot1 + tierBadge(itemTier(c.id, c)) + chip + (w ? (PAPER_DOT_RETIRED ? poolDot(c.id) : shadowDot(c.id)) + testDot(w, c) : '') + '</div></td>'
       + '<td class="num">'+full(c.buy)+'</td>'
       + '<td class="num">'+full(c.sell)+'</td>'
       + '<td class="num dim sec">'+full(c.tax)+'</td>'
@@ -5783,6 +5783,16 @@ function candidateFor(w, srcArg){
        unmasking failure the Aug 18 wiring would have produced. `hourWeight`
        is deliberately NOT on it and says so below. */
     const ser = itemSeries(w.id, sp);
+    /* THE SERIES AGE, STATED WHEREVER A SPARK-FED READING INFORMS A VERDICT
+       (user ruling 2026-08-21 — trace 3 finding 2: DISCLOSE, DON'T TIGHTEN).
+       A spark is real observed data and stays authoritative; the defect was
+       silence about its age — in a long session an item can leave the fetch
+       population with its spark frozen at the last fetch, and every chart
+       reading then rides that instant. Display only; no verdict moves. The
+       recorded re-open condition for a tightening ruling lives in the traces
+       file, and this clause is what makes its evidence observable. */
+    const sparkAge = (ser.src === "spark" && sp && sp.at)
+      ? " (series from its own fetch, " + ago(sp.at) + ")" : "";
     const rdy = seriesReadiness(ser);
     const tr = ser.pts.length ? trendPct(ser.pts) : null;
     const vt = ser.vols.length ? volTrendPct(ser.vols) : null;
@@ -5944,20 +5954,24 @@ function candidateFor(w, srcArg){
       }
       return "no chart yet — the series feeds " + rdy.pts + " price points and " + rdy.vols
         + " volume points; drift needs " + SERIES_MIN.drift + " and volume trend needs " + SERIES_MIN.volTrend
-        + ", so some restraints cannot read yet and UNKNOWN IS NOT A PASS";
+        + ", so some restraints cannot read yet and UNKNOWN IS NOT A PASS"
+        /* the counts above are the SPARK's when spark-fed — a frozen spark
+           never improves, so the age rides the promise (cold review, the
+           disclose ruling's strongest case) */
+        + sparkAge;
     })());
     /* The core emits ONE "trend" fail; the two copy limbs split on which side
        of the knife line the reading fell — same conditions as before, read
        off the value rather than re-compared. */
     chk(mfHas("trend") && tr <= GATE.falling, "trend",
-      "falling chart — " + (tr != null ? tr.toFixed(1) : "?") + "% over 7d",
-      tr == null ? null : { have: tr, need: GATE.falling, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.falling + "% knife line" });
+      "falling chart — " + (tr != null ? tr.toFixed(1) : "?") + "% over 7d" + sparkAge,
+      tr == null ? null : { have: tr, need: GATE.falling, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.falling + "% knife line" + sparkAge });
     chk(mfHas("trend") && tr > GATE.falling, "trend",
-      "downtrend " + (tr != null ? tr.toFixed(1) : "?") + "% — needs better than " + GATE.trendSoft + "%",
-      tr == null ? null : { have: tr, need: GATE.trendSoft, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.trendSoft + "% floor" });
+      "downtrend " + (tr != null ? tr.toFixed(1) : "?") + "% — needs better than " + GATE.trendSoft + "%" + sparkAge,
+      tr == null ? null : { have: tr, need: GATE.trendSoft, short: "7d trend " + tr.toFixed(1) + "% vs the " + GATE.trendSoft + "% floor" + sparkAge });
     chk(mfHas("volTrend"), "volume trend",
-      "volume dying — " + (vt != null ? vt.toFixed(0) : "?") + "% vs the prior 6 days",
-      vt == null ? null : { have: vt, need: GATE.volDecline, short: "volume trend " + vt.toFixed(0) + "% vs the " + GATE.volDecline + "% floor" });
+      "volume dying — " + (vt != null ? vt.toFixed(0) : "?") + "% vs the prior 6 days" + sparkAge,
+      vt == null ? null : { have: vt, need: GATE.volDecline, short: "volume trend " + vt.toFixed(0) + "% vs the " + GATE.volDecline + "% floor" + sparkAge });
     chk(!(qty > 0), "sizing",
       workingStack() < 100000
         ? "can't size — working capital is " + gp(workingStack()) + " (stack " + gp(stack()) + " minus " + gp(DB.shadowReserve||0) + " shadow reserve). Stamp the bank (Shadow Fund tab) or import your laptop export; the plan sizes only against working capital"
@@ -5993,7 +6007,7 @@ function candidateFor(w, srcArg){
       { have: volGate, need: volFloorFor(c.buy), short: "volume " + full(Math.round(volGate)) + "/h vs the " + full(volFloorFor(c.buy)) + "/h floor" });
     chk(mfHas("momentum"), "momentum",
       "falling knife — instasell sits in the bottom quartile of the last 4h range and the range is falling; "
-             + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid");
+             + "a bid that fills here fills because the price came down through it (adverse), not because the spread paid" + sparkAge);
     chk(!!sh, "fill history",
       !sh ? "" : "historically slow fills — median " + fmtHrs(sh.med) + " buy leg across " + sh.hist.length
              + " timed flips (" + sh.hist.map(fmtHrs).join(", ") + "); a fresh fill under " + fmtHrs(planHorizonH()) + " unbenches it");
@@ -6006,7 +6020,7 @@ function candidateFor(w, srcArg){
     chk(stw.drifty && walkGapH > 24, "drift bench",
       "drifty pick benched — your last walk-up was " + (Number.isFinite(walkGapH) ? Math.round(walkGapH) + "h" : "a long time")
                + " ago (that predicts the next gap), and its typical daily wander (" + (stw.r ? full(Math.round(stw.r.daily)) : "?")
-               + " gp) would eat the " + full(Math.round(eMargin || 0)) + " gp margin unattended");
+               + " gp) would eat the " + full(Math.round(eMargin || 0)) + " gp margin unattended" + sparkAge);
     const failed = fails.length ? fails[0].detail : null;
 
     const cat = cautionCat(c.name);
@@ -6029,10 +6043,11 @@ function candidateFor(w, srcArg){
        mercy on fill horizon or momentum at tier 2. */
     const tier = itemTier(w.id, c);
     return { ...(srcArg ? { src: srcArg } : {}),
-             /* WHICH series answered, stamped once here so a consumer never
-                re-resolves it (the ruled provenance copy on a sparked pool
-                clear reads this — one owner, the chain's own resolution). */
-             serSrc: ser.src,
+             /* WHICH series answered and WHEN it was fetched, stamped once
+                here so a consumer never re-resolves either (the ruled
+                provenance copy and the age disclosure read these — one
+                owner, the chain's own resolution). */
+             serSrc: ser.src, serAt: (ser.src === "spark" && sp && sp.at) ? sp.at : null,
              id:w.id, name:c.name, c, qty, tr, vt, volGate, volSrc: vg.label, volBound: vg.bound,
              failed, fails, eMargin, eRoi, wins, mo, tier,
              hw, stw, rel, horizonUnits,   /* exposed for the pool group's unweighted sort (step A.1) — the same term the score multiplies, not a re-derivation */
@@ -7158,11 +7173,11 @@ const qualSpanned = q => scheduleOn()
    cadence itself: two touches ~12h apart put every second pass at or past
    the boundary, and a once-a-day user could never reach a second counted
    pass while the surface promised an ETA.
-   VALUE PROPOSED, NOT RATIFIED — 48h, stated for the user's ruling: it
-   tolerates exactly one missed calendar day at the two-touch cadence
-   whichever touch was missed (worst case Mon 07:00 → Wed 07:00 = 48h), and
-   resets on two, because evidence older than that is the three-week case the
-   ruling struck. The ETA derives from the schedule (qualEtaFrom), so what
+   VALUE RATIFIED (user ruling, 2026-08-21) — 48h: it tolerates exactly one
+   missed calendar day at the two-touch cadence whichever touch was missed
+   (worst case Mon 07:00 → Wed 07:00 = 48h), and resets on two, because
+   evidence older than that is the three-week case the ruling struck. The
+   reasoning stands as recorded here; the ratification made it a constant. The ETA derives from the schedule (qualEtaFrom), so what
    the surface promises is achievable by construction.
    THE RESET REACHES INCOMPLETE STREAKS ONLY (cold review, 2026-08-21): a
    COMPLETED streak — qualified tenure — is exempt, because qualification has
@@ -7613,7 +7628,9 @@ function buildPlan(armed){
        the note travels with the waiver note it usually accompanies. Reads
        the chain's own resolution (`serSrc`), never a re-resolve. */
     if (x.src === QUAL_SRC_POOL && x.serSrc === "spark" && !chartReady())
-      notes.push("charted from its own fetch, ahead of the archive");
+      /* the ruled copy extended with the series age (ruling, 2026-08-21):
+         "charted from its own fetch, 3h ago — ahead of the archive" */
+      notes.push("charted from its own fetch, " + (x.serAt ? ago(x.serAt) : "age unknown") + " — ahead of the archive");
     const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
     const blockedT2 = x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT;
     const full_ = picks.length >= targetSlots;
@@ -10050,6 +10067,12 @@ function shadowScanStateLine(P){
     + (stale ? ' <span class="dim">A book that is not opening accrues nothing, so this line renders whether or not anything is wrong.</span>' : '')
     + '</div>';
 }
+/* THE STORED CITATION STRIPS THE RELATIVE AGE (cold review of the disclose
+   ruling, 2026-08-21): `gapTxt` is a durable trip record, and freezing
+   "(series from its own fetch, 3h ago)" into it would present the OPEN-time
+   clock as the reading-time clock days later — the staleness rule's exact
+   shape. The clause is display-time vocabulary; the store keeps the reading. */
+const gapTxtOf = f => String((f && (f.short || f.detail)) || "").replace(/ \(series from its own fetch, [^)]*\)/g, "");
 function shadowScan(P){
   if (!S.latestAt) return;
   paperCooldownLog();
@@ -10105,7 +10128,7 @@ function shadowScan(P){
     const fp = failProfile(x);
     if (!fp.nearMiss || fp.nearMiss.g === "blacklist") continue;
     const f = fp.nearMiss;
-    add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: String(f.short || f.detail || "") });
+    add("bench:" + f.g + ":" + x.id, x, { benchedBy: [f.g], gapTxt: gapTxtOf(f) });
   }
   /* Discovery-slice counterfactuals (ruled Aug 11 2026; stratified + clean
      passers + gap band, user-directed same day): the slice carries gate
@@ -10138,7 +10161,7 @@ function shadowScan(P){
       const before = room;
       add((clean ? "slicepass:" : "slice:" + fl[0].g + ":") + c.id, { id: c.id, c },
         clean ? { slice: 1, slicePass: 1, stratum }
-              : { benchedBy: [fl[0].g], gapTxt: String(fl[0].short || fl[0].detail || ""),
+              : { benchedBy: [fl[0].g], gapTxt: gapTxtOf(fl[0]),
                   slice: 1, stratum });
       if (room < before){
         roomBox.n--;
@@ -10241,7 +10264,7 @@ async function scannerShadowScan(){
           buyQ: 0, sellQ: 0, buyQFull: 0, sellQFull: 0, buyDone: 0, obsMs: 0, lastObs: now,
           state: "open", cohort: "scanner", scanTier: t, score: Math.round(x.score),
           benchedBy: nearMiss ? [fl[0].g] : undefined,
-          gapTxt: nearMiss ? String(fl[0].short || fl[0].detail || "") : "" });
+          gapTxt: nearMiss ? gapTxtOf(fl[0]) : "" });
         /* Same era fact as shadowScan's add(): no `regimes` key under the
            dormant race (user ruling, Aug 14 2026). */
         if (!REGIME_RACE_RETIRED) recS.regimes = regimesFor(c);
@@ -16555,12 +16578,17 @@ function rowRiskFlags(w, c, sp, P){
      `candidateFor` benched that very row with "falling chart" off the archive:
      a component reporting nothing where it has something, on the surface the
      operator rules from, about the reading that caused the bench. */
+  const au = P && P.all ? P.all.find(x => x.id === w.id) : null;
   const tr = trendPct(itemSeries(w.id, sp).pts);
   if (tr != null && tr <= -5)
-    push("falling", tr <= -8, "FALLING", "7-day drift " + tr.toFixed(1) + "% — a wide margin on a plunge is catching a knife (the plan benches under −5%)");
+    /* the chip ties this reading to the bench threshold, so the disclose
+       ruling reaches it: the age comes from the CHAIN'S OWN STAMP (au.serAt)
+       when the candidate is in the build — never a re-resolve; when the item
+       is outside the build the clause is honestly absent (nothing stamped) */
+    push("falling", tr <= -8, "FALLING", "7-day drift " + tr.toFixed(1) + "% — a wide margin on a plunge is catching a knife (the plan benches under −5%)"
+      + (au && au.serSrc === "spark" && au.serAt ? " (series from its own fetch, " + ago(au.serAt) + ")" : ""));
   if (c.crowdRank && c.crowdRank <= 100)
     push("crowded", false, "CROWDED", "#" + c.crowdRank + " by 24h volume — every flipping tool recommends it; expect the spread pinned at the tax floor");
-  const au = P && P.all ? P.all.find(x => x.id === w.id) : null;
   if (au && au.caution && !au.cautionProven)
     push("seed", false, "SEED-CLASS", au.caution.why + " — half-sized, one slot per category until your log proves it");
   const pl = provenLoser(w.id, w);
@@ -16586,12 +16614,14 @@ function rowRiskFlags(w, c, sp, P){
     + tox.n + " marked-out fills) — someone better-informed is hitting your quotes");
   return out;
 }
-/* Paper dot (dot-class like the test dot — the four-BADGE rule holds): the
-   item's paper record at a glance. GLYPH FAMILY IS THE IDENTITY (user
-   ruling, Aug 11 2026): every paper state is a circle-within-a-circle —
-   ◉ verdict, ◎ fills-missing, ◌ accruing — so it can never be misread as the
-   test dot's plain ●/○ at a glance or on a phone. Colour then carries state
-   WITHIN that identity, and only here does green/red mean good/bad. */
+/* Paper dot — DORMANT since 2026-08-21 (the badge unification; see
+   PAPER_DOT_RETIRED below, which gates its render sites and assertions).
+   What it was (user ruling, Aug 11 2026): the item's paper record at a
+   glance, every state a circle-within-a-circle — ◉ verdict, ◎ fills-missing,
+   ◌ accruing — never mistakable for the test dot's plain ●/○; green/red
+   meant good/bad only within that identity. The circle-in-circle identity
+   and the colour rule are inherited by the persistence badge that replaced
+   it on the rows. */
 /* ═══ THE CONTROLS, ON THE ITEM (step B, ruling point 4) ═══════════════════
    The point of the re-key: a pool item has no watch row, so the controls that
    write operator state had nowhere to render. These live on the plan line —
@@ -16656,12 +16686,29 @@ function poolControlsHTML(x, armed){
    BESIDE the pair, never instead of it. */
 function poolDot(id){
   const p = poolPersistence(id);
-  if (p.state === "not-scored")
+  if (p.state === "not-scored"){
     /* NOT APPLICABLE, which is a different claim from zero — so the slot
-       renders empty WITH a reason rather than a zero or nothing at all. */
+       renders empty WITH a reason rather than a zero or nothing at all.
+       FOR A PIN the same ledger absence means something sharper (ruling,
+       2026-08-21, badge unification point 4): the instrument, running your
+       rules, has never funded this item — information the operator wants
+       visible, not an empty slot. Pinned-ness derived here, never passed,
+       so a caller cannot mislabel the population. */
+    const pinned = DB.watch.some(w => w.id === id);
+    if (pinned)
+      /* EXACTLY WHAT THE ABSENCE MEANS (cold review): a missing ledger row
+         says "no funded cycle ON RECORD" — a prior row can also have aged
+         out at the retention window or the store cap (the drill's eviction
+         note counts those), so "never funded" would overclaim. */
+      return '<span class="dslot"><span class="sdot na" title="Persistence: NOT FUNDED BY CURRENT RULES — '
+        + 'no funded cycle on record: the control cell\'s durable ledger holds no row for this pin under the '
+        + 'current configuration (a prior row can also have aged out at the retention window or store cap — the '
+        + 'drill\'s eviction note counts those). Not a zero and not an error; worth reading against why you pinned it.">'
+        + glTerm("plan-persist", "·", "glyph") + '</span></span>';
     return '<span class="dslot"><span class="sdot na" title="Pool persistence: NOT APPLICABLE — '
       + esc(p.why) + '. This is not a score of zero; the question does not apply to this item.">'
       + glTerm("plan-persist", "·", "glyph") + '</span></span>';
+  }
   const pair = p.obs == null ? null : p.cyc + " of " + p.obs;
   const pct = (p.obs && p.obs > 0) ? Math.round(p.cyc / p.obs * 100) : null;
   const six = p.nc != null && p.cyc > 0 && p.nc > 0
@@ -16697,6 +16744,12 @@ function poolDrill(P){
   const hist = S.scorerItemHist || new Map();
   const seen = DB.poolSeen || {};
   const onPlan = new Set(((P && P.pass) || []).concat((P && P.bench) || []).map(x => x.id));
+  /* REALIZED BESIDE SIMULATED, NEVER POOLED (ruling, 2026-08-21 — badge
+     unification point 2): a pin with real trading history says so in its own
+     labelled column; the count is from the flip log and shares no cell,
+     colour or arithmetic with the instrument's simulated/gate figures. */
+  const realCol = id => { const n = (DB.flips || []).filter(f => f.itemId === id).length;
+    return n ? n + " real" : "—"; };
   for (const x of ((P && P.pass) || []).concat((P && P.bench) || [])){
     const p = poolPersistence(x.id);
     if (p.state === "not-scored") continue;
@@ -16707,6 +16760,7 @@ function poolDrill(P){
       sess: h ? h.cyc : 0,
       hours: h ? [...h.hours].sort((a, b) => a - b).join(", ") : "—",
       cells: h ? h.cells.size : "—",
+      real: realCol(x.id),
       _txt: (x.name || "") + " " + p.state });
   }
   /* THE ANNOUNCED ITEM STAYS FINDABLE (M181, ruled 2026-08-21): the pool
@@ -16728,6 +16782,7 @@ function poolDrill(P){
       sess: h ? h.cyc : 0,
       hours: h ? [...h.hours].sort((a, b) => a - b).join(", ") : "—",
       cells: h ? h.cells.size : "—",
+      real: realCol(id),
       _txt: itemName(id) + " departed " + p.state });
   }
   if (!rows.length) return "";
@@ -16755,9 +16810,20 @@ function poolDrill(P){
            { k: "six", lab: "Six-gate of those", num: 1 },
            { k: "sess", lab: "Cycles funded (this session)", num: 1 },
            { k: "hours", lab: "Hour bands (this session)" },
-           { k: "cells", lab: "Cells funding it (this session)", num: 1 }],
+           { k: "cells", lab: "Cells funding it (this session)", num: 1 },
+           { k: "real", lab: "Realized trips (YOUR log — never pooled with the simulated columns)" }],
     rows, empty: "No item — on the plan or departed — has pool history yet." });
 }
+/* THE PAPER CIRCLES ARE RETIRED TO THE DORMANCY LANE (user ruling,
+   2026-08-21 — the badge unification): pin rows render the same persistence
+   badge as pool rows (`poolDot` — ONE renderer for one question, never two),
+   and the circles' per-item paper-trip history remains reachable on the
+   Paper Book's own surface. This flag gates the render sites AND the
+   circles' assertions ([R25.2]'s dot limb, [R25.6], [R25.7] — the R31.x
+   precedent: a retired feature whose tests vanish is how it returns broken).
+   Un-retiring is a ruling, and it also requires restoring the dot legend's
+   circle lines, which were rewritten to the persistence family. */
+const PAPER_DOT_RETIRED = true;
 function shadowDot(id){
   const s = shadowSlice(id);
   const book = DB.shadowBook || [];
@@ -16800,8 +16866,9 @@ const riskChip = (id, flags) => !flags.length ? ""
    absent = never tested. The numbers live in the tooltip. */
 function testDot(w, c){
   /* The slot is emitted whether or not there is a dot in it — a fixed
-     position is what stops the paper dot sliding over here and being read
-     as a test state (user ruling, Aug 11 2026). Tooltip names itself first. */
+     position is what stops the row's primary dot (the persistence badge;
+     historically the paper dot) sliding over here and being read as a test
+     state (user ruling, Aug 11 2026). Tooltip names itself first. */
   const O = opsFor(w);   // the tested pair through its one reader, never off the row
   const inner = !(Number.isFinite(O.tBuy) && Number.isFinite(O.tSell)) ? ""
     : c.tested
@@ -16971,7 +17038,9 @@ function renderWatch(){
       + '<span class="badge ' + status.cls + '" title="' + esc(status.why) + '">' + esc(status.label) + '</span>'
       + identityBadge(w, c)
       + riskChip(w.id, risks)
-      + shadowDot(w.id)
+      /* ONE BADGE FOR BOTH POPULATIONS (ruling, 2026-08-21): the persistence
+         pair, from the same renderer the pool rows read. */
+      + (PAPER_DOT_RETIRED ? poolDot(w.id) : shadowDot(w.id))
       + testDot(w, c)
       + '</div>';
     /* Filter row reaches every collapsed state — aggregation costs no
@@ -21927,10 +21996,14 @@ const GLOSSARY = [
     do: "Nothing directly — it is context for the CUTOVER ruling: the pool switch is gated on this ledger being the "
         + "longest-observed number in the instrument, so its day count (reported on the verdict line) is what tells "
         + "you how close that gate is to arming." },
-  { id: "plan-persist", term: "Pool persistence", aka: "funded n of obs",
-    what: "How often the control cell has funded this item, out of the cycles OBSERVED SINCE IT ENTERED THE POOL. "
+  { id: "plan-persist", term: "Persistence (pins and pool)", aka: "funded n of obs · NOT FUNDED BY CURRENT RULES",
+    what: "How often the control cell has funded this item, out of the cycles OBSERVED since its ledger window opened. "
         + "Always a pair — a percentage may render beside it, never instead of it, because 93 of 108 and 93% are "
-        + "different claims and only the first is rulable.",
+        + "different claims and only the first is rulable. SINCE 2026-08-21 the same badge renders on PINS and pool "
+        + "rows alike (one renderer); a pin with no ledger row reads NOT FUNDED BY CURRENT RULES — no funded cycle on "
+        + "record under the current configuration (a prior row can also have aged out at the retention window or store "
+        + "cap) — which is information about your rules' current reading, never an empty slot; a non-pin without a row "
+        + "keeps NOT APPLICABLE.",
     from: "DB.poolSeen, written once per scored bucket from the control cell's own pass set. The denominator is the "
         + "cell's cycle count at this item's FIRST pass subtracted from its count now, so an item that entered an hour "
         + "ago is measured against its own dozen cycles rather than the cell's whole life. It counts GATE VERDICTS, not "
@@ -22277,14 +22350,14 @@ const GLOSSARY = [
     from: "Your recorded margin test; tests expire after 16 hours.",
     do: "An expired dot on something you are about to fund means re-test before you size it — the shown spread may be two "
         + "unrelated trades." },
-  { id: "ind-paperdot", term: "Paper dot", aka: "◉ verdict, ◎ fills missing, ◌ accruing",
-    what: "A circle-within-a-circle carrying the paper book's read on this row. Solid green: paper-profitable. Solid red: "
-        + "paper-losing. Hollow (◎): the margin exists but the fill rate is under 40% — the spread is real and you would "
-        + "not have got it. Dim (◌): activity exists but fewer than 3 trips have closed and counted, so there is no "
-        + "verdict yet.",
+  { id: "ind-paperdot", term: "Paper dot (DORMANT since 2026-08-21)", aka: "◉ verdict, ◎ fills missing, ◌ accruing — retired from the rows",
+    what: "DORMANT (user ruling, 2026-08-21 — the badge unification): pin rows now carry the same persistence badge as "
+        + "pool rows, and these circles no longer render on any row. Kept readable because the historical vocabulary "
+        + "appears in older records. What they showed: a circle-within-a-circle carrying the paper book's read — solid "
+        + "green paper-profitable, solid red paper-losing, hollow (◎) margin-without-fills, dim (◌) accruing.",
     from: "That item's closed paper trips, excluding any under the observed-share floor.",
-    do: "◉ green is a candidate for the exception lane, not a reason to fund. ◎ hollow is the most useful one: it says "
-        + "the gate benching this item is not costing you what the margin suggests." },
+    do: "Nothing on the rows any more — the per-item paper-trip history remains fully reachable on the Paper Book's own "
+        + "surface (per-cohort ledger and per-item drills), so nothing the circles showed is lost." },
   { id: "ind-status", term: "Row status", aka: "funded, NEXT UP, qualifying, benched, live position",
     what: "Where the allocator has put this row. FUNDED is in the plan; NEXT UP is the queue behind a binding constraint, "
         + "with the constraint named; QUALIFYING is seasoning; BENCHED names its gate; LIVE POSITION means capital is "
