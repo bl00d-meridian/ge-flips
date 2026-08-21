@@ -1,0 +1,859 @@
+--- a/index.html
++++ b/staging/index.html
+@@ -3275,7 +3275,11 @@
+   }
+   return DB.touchLog.length + untracked.size * 2;
+ }
+-const available = () => Math.max(0, stack() - committed());
++/* `available()` (stack minus committed) was DELETED here 2026-08-21 (fix F5):
++   it counted the shadow reserve as free, and its one render put a second
++   "free" figure on the tab that disagreed with `#watchStack`'s by exactly the
++   reserve. The one owner is `freeGp` (beside `workingStack`), and the shadow
++   reserve is never spendable in any figure anywhere. */
+ 
+ /* ── charts ──────────────────────────────────────────────────── */
+ function sparkSVG(pts, w = 110, h = 24){
+@@ -5390,6 +5394,13 @@
+ const TIER1_MIN = 400, TIER1_MAX = 5_000, TIER2_MAX = 100_000;
+ const T2_MAX_CONCURRENT = 3;   // live tier-2 items at once (positions + funded picks)
+ const workingStack = () => Math.max(0, stack() - (DB.shadowReserve || 0));
++/* ONE OWNER FOR "FREE GP" (user ruling, 2026-08-21 — fix F5). Free capital is
++   working stack minus committed, and the shadow reserve is NEVER spendable in
++   any figure anywhere — it never enters `workingStack`, so it cannot leak in
++   here. Every surface that renders "free" and the funding walk's deployable
++   base read this term; a second spelling is where the two figures on one tab
++   came to differ by exactly the reserve (`available()`, deleted). */
++const freeGp = () => Math.max(0, workingStack() - committed());
+ const partCap = () => Math.max(0.01, Math.min(1, (Number.isFinite(DB.partCapPct) ? DB.partCapPct : 10) / 100));
+ 
+ /* Proven for tier purposes: ≥2 completed logged round trips, positive net,
+@@ -6066,10 +6077,12 @@
+    comparator: a weight of 1.0 from no data and a weight of 1.0 from balanced
+    data are indistinguishable in an ordering and mean opposite things.
+ 
+-   The split is a RENDERING decision and stays display-only: each group is
+-   sorted by an expression evaluated on the information it actually has, and
+-   no scorer term enters either sort. Merging them, or adding a scorer term to
+-   either, is deployment-class and is not done here. */
++   THE SPLIT IS NO LONGER DISPLAY-ONLY (A1, ruled deployment-class Aug 19
++   2026; landed 2026-08-21 with the family-winner ruling). The funding walk,
++   every render, the printed plan and the family-seat decision all read the
++   ONE comparator below — pins fund before pool items, and each group is
++   sorted by an expression evaluated on the information it actually has. No
++   scorer term enters any sort; adding one is deployment-class. */
+ const planTenured = x => (x && x.src === QUAL_SRC_POOL) ? false : true;
+ const planPoolSortKey = x => (x && x.eMargin > 0 ? x.eMargin : 0)
+   * Math.max(1, (x && x.horizonUnits) || 1);
+@@ -6083,9 +6096,10 @@
+    pool. It is held BELOW the ranked block and sorted on the same unweighted
+    core the pool uses.
+ 
+-   NOTHING ABOUT FUNDING OR SIZING MOVES: `buildPlan` has already decided what
+-   is funded and at what size, and this is the render grouping, exactly as the
+-   two-group split is. Only the item's PLACE in a list changes.
++   SINCE A1 LANDED (2026-08-21) THE HOLD-OUT IS PART OF THE FUNDING ORDER,
++   not only the render: a held pin funds after the ranked block and before the
++   pool, on the same comparator every surface reads. SIZING is untouched —
++   only the order capital walks in.
+ 
+    MEASURED THE DAY IT SHIPPED: 0 of 43 live watch items are held — both
+    series-derived weights are fed for the entire book — so the ordering change
+@@ -6093,18 +6107,67 @@
+    population and for a /timeseries breaker outage. A candidate with no `wFed`
+    ranks: see the stamp comment in `candidateFor`. */
+ const planSeriesFed = x => (x && x.wFed) ? x.wFed.seriesFed !== false : true;
++/* ═══ ONE COMPARATOR, NOT TWO — AND NOT FOUR (A1 ruled Aug 19 2026; landed
++   2026-08-21 with the family-winner ruling). The funding walk, planGroups,
++   the printed plan and the family-seat decision all read `planCmp`, because
++   two orderings of one list is the defect this file has recorded four times
++   (F3 counted three on one screen). Manual promotion still jumps everything —
++   `planRank` is the first key and applies ACROSS the groups, since a promote
++   is an explicit press and overriding the ordering is exactly what it is for.
++
++   THE POPULATION GROUP IS INSIDE THE COMPARATOR, which is the one deliberate
++   change from the Aug 19 staged form (that form kept the group out of
++   `planCmp` and settled cross-group order by concatenation, so `planCmp` was
++   only ever called within a group). A pairwise decision — the family seat —
++   needs a TOTAL order, and putting the group key second means the value key
++   never compares across populations: a pin's weighted score and a pool item's
++   unweighted core are settled by the group key before `planSortKey` is ever
++   consulted. The flat sort and the group concatenation are the same sequence
++   by construction, and [R117.1] holds them identical. */
++const planRank = x => { const i = (DB.planPriority || []).indexOf(x && x.id); return i < 0 ? Infinity : i; };
++/* Population group: ranked pins, then held pins (series weights unfed), then
++   the pool. This is the A1 ruling — pins fund first, pool fills the rest. */
++const planPopGroup = x => planTenured(x) ? (planSeriesFed(x) ? 0 : 1) : 2;
++/* Tier order (T1 proven, T1 unproven, T2), WITHIN a population group. A row
++   with no tier sorts as 0 so a tier-less fixture falls straight through to the
++   value key rather than being ordered by an absence. */
++const planTierGroup = x => { const t = x && x.tier; return !t ? 0 : t.t === 1 ? (t.proven ? 0 : 1) : 2; };
++/* THE VALUE KEY IS THE ONE THE ITEM'S OWN EVIDENCE SUPPORTS: the full score
++   only where the series weights are fed, the unweighted core everywhere else.
++   Never compared across populations — the group key settles that first. */
++const planSortKey = x => (planTenured(x) && planSeriesFed(x)) ? ((x && x.score) || 0) : planPoolSortKey(x);
++/* Two unpromoted items give Infinity − Infinity = NaN on the first key; NaN
++   is falsy, so the chain falls through — deliberate, do not "fix" it. */
++const planCmp = (a, b) => (planRank(a) - planRank(b))
++  || (planPopGroup(a) - planPopGroup(b))
++  || (planTierGroup(a) - planTierGroup(b))
++  || (planSortKey(b) - planSortKey(a));
++/* PROMOTED ITEMS ARE THEIR OWN GROUP, AND THEY HAVE TO BE (found by the
++   assertion written for it, Aug 19 2026). A funding order that concatenated
++   the population groups with promotion ranked only WITHIN each would leave a
++   promoted pool item first among pool items and still behind every pin —
++   silently removing a control the operator has today: promote exists to
++   override the ordering, and an override that cannot cross the boundary it
++   was pressed to cross is not one. The block renders only when something is
++   promoted, so the ordinary plan is unchanged. */
+ function planGroups(pass){
+-  const tenured = [], held = [], pool = [];
++  const promoted = [], tenured = [], held = [], pool = [];
+   for (const x of pass){
+-    if (!planTenured(x)) pool.push(x);
++    if (Number.isFinite(planRank(x))) promoted.push(x);
++    else if (!planTenured(x)) pool.push(x);
+     else if (planSeriesFed(x)) tenured.push(x);
+     else held.push(x);
+   }
+-  tenured.sort((a, b) => b.score - a.score);
+-  held.sort((a, b) => planPoolSortKey(b) - planPoolSortKey(a));
+-  pool.sort((a, b) => planPoolSortKey(b) - planPoolSortKey(a));
+-  return { tenured, held, pool };
+-}
++  promoted.sort(planCmp);
++  tenured.sort(planCmp);
++  held.sort(planCmp);
++  pool.sort(planCmp);
++  return { promoted, tenured, held, pool };
++}
++/* THE FUNDING ORDER ITSELF — one flat sort on the total comparator. Identical
++   to the groups' concatenation ([R117.1] asserts it), so the rendered order
++   and the order capital is committed in are the same list read twice. */
++const planOrder = pass => pass.slice().sort(planCmp);
+ /* The held block's line, which is the ONLY place the hour and stability
+    absences are disclosed — once over the population, never per row. It names
+    the weights that are actually unfed across the block rather than reciting all
+@@ -6898,13 +6961,48 @@
+   return "plan gate";
+ }
+ 
+-/* One position per family, highest score wins. Applied after the gates so the
+-   bench reason names the winner rather than hiding the item entirely. */
++/* ONE OWNER FOR THE POOL INVENTORY DURING THE WAITING ERA (cold review,
++   2026-08-21). Two surfaces counted "waiting" two ways — the header from the
++   benched pool rows, the tile by subtracting funded from the whole cell —
++   and the two disagree exactly on a sparked pool item sitting in NEXT UP or
++   mid-seasoning: cleared coverage, unfunded for another reason, claimed
++   "waiting on coverage" by one surface and missing from the other's total.
++   Every pool member of the build lands in exactly one state here: FUNDED,
++   WAITING on the chart gate (the bench rows whose first-binding gate is the
++   chart), or OTHER (market-gate benches, NEXT UP, qualifying, anything
++   else) — `other` is the remainder by construction, so the three always sum
++   to the population. Both surfaces render these numbers and no others. */
++function poolInventory(P){
++  const pool = x => x && x.src === QUAL_SRC_POOL;
++  const total = ((P && P.all) || []).filter(pool).length;
++  const funded = ((P && P.picks) || []).filter(pool).length;
++  const waiting = ((P && P.bench) || []).filter(x => pool(x) && gateName(x.failed) === "chart still loading").length;
++  return { total, funded, waiting, other: Math.max(0, total - funded - waiting) };
++}
++
++/* One position per family — the seat goes to the member that funds first
++   (`planCmp`). Applied after the gates so the bench reason names the winner
++   rather than hiding the item entirely. */
+ function applyFamilyRule(pass, bench){
++  /* THE FAMILY SEAT GOES TO THE MEMBER THAT FUNDS FIRST (user ruling,
++     2026-08-21). The winner was `x.score > cur.score` — a raw-score compare
++     across populations, so a sparked pool item (real hourWeight, no operator
++     history) could bench a pin, and two pool items compared numbers built
++     from different evidence (sparked carry real weights, unsparked sit at
++     the neutral 1.0). `planCmp` is the one comparator that owns funding and
++     display; deciding the seat with it removes cross-population score mixing
++     entirely, and a promoted member wins its family's seat for the same
++     reason it jumps the funding order.
++     SEEN AND DELIBERATELY NOT MOVED: this rule still runs BEFORE the mm and
++     untiered filters, so a winner those filters later bench takes the family
++     seat with it (both members end benched). That ordering predates this
++     ruling; running the rule after the filters would let a family fund its
++     second member where today it funds neither — a WIDENING of what the
++     allocator may fund, which is deployment-class and its own ruling. */
+   const bestByFam = new Map();
+   for (const x of pass){
+     const cur = bestByFam.get(x.fam);
+-    if (!cur || x.score > cur.score) bestByFam.set(x.fam, x);
++    if (!cur || planCmp(x, cur) < 0) bestByFam.set(x.fam, x);
+   }
+   const kept = [];
+   for (const x of pass){
+@@ -7350,7 +7448,10 @@
+     x.exception = exc;
+   }
+   const bench = all.filter(x => x.failed);
+-  let pass = all.filter(x => !x.failed).sort((a,b) => b.score - a.score);
++  /* No pre-sort: the ordering has ONE owner (`planOrder`, below) and the
++     family rule selects its winner by `planCmp` directly, so a sorted input
++     buys nothing and a second sort site is where two orders would drift. */
++  let pass = all.filter(x => !x.failed);
+   pass = applyFamilyRule(pass, bench);
+ 
+   /* One item, one mandate — inside flipping too (audit F6a, ratified Aug 10
+@@ -7398,21 +7499,27 @@
+     return false;
+   });
+ 
+-  /* Manual promotions jump the queue; then tier order (T1 proven, T1
+-     unproven, T2), then score. Demoted picks drop to NEXT UP. */
+-  const prio = DB.planPriority || [], demoted = new Set(DB.planDemoted || []);
+-  const rank = x => { const i = prio.indexOf(x.id); return i < 0 ? Infinity : i; };
+-  const groupOf = x => x.tier.t === 1 ? (x.tier.proven ? 0 : 1) : 2;
+-  pass.sort((a,b) => (rank(a) - rank(b)) || (groupOf(a) - groupOf(b)) || (b.score - a.score));
+-
+-  const st = workingStack(), avail = Math.max(0, st - committed());
++  /* THE FUNDING ORDER IS `planOrder`, THE SAME TERM EVERY RENDER READS (A1,
++     ruled Aug 19 2026, landed 2026-08-21): promotion crosses everything, then
++     population (ranked pins · held pins · pool), then tier, then the value
++     key the item's own evidence supports. The local rank/tier/score sort this
++     replaces was the funding side of the recorded two-owner instance — the
++     screen grouped by population while the money did not. Demoted picks drop
++     to NEXT UP. */
++  const demoted = new Set(DB.planDemoted || []);
++  pass = planOrder(pass);
++
++  /* Deployable base reads the ONE free-capital owner (F5) — same figure the
++     two "free" renders show, so the money and the copy cannot disagree. */
++  const avail = freeGp();
+   const targetSlots = Math.max(1, Math.min(8, DB.slots || 7));
+   /* The day horizon is now derived: a placement rolls buy-limit windows
+      across ITS OWN gap (limitWindowsFor), and this remains only as the
+      legacy per-day figure for stores with no cadence kept. */
+   const H = scheduleOn() ? planHorizonH() : (DB.horizonH || 10);
+-  /* Deployable = free WORKING capital minus the incidentals reserve. The
+-     shadow reserve never entered `st`, so it cannot be invaded from here. */
++  /* Deployable = free WORKING capital minus the incidentals reserve. `avail`
++     is `freeGp()`, whose base is `workingStack` — the shadow reserve never
++     enters it, so it cannot be invaded from here. */
+   const deployable = Math.max(0, avail - (DB.reserve || 0));
+   const t1Budget = Math.max(0, DB.t1Budget != null ? DB.t1Budget : 60e6);
+   const t2Budget = Math.max(0, DB.t2Budget != null ? DB.t2Budget : 30e6);
+@@ -7748,7 +7855,7 @@
+      An S stamp from a computation the poll drives every 60s — not a ledger
+      write, so no R34.1 concern; the diff's own accrual rides loadHour. */
+   S.lastPlanPicks = picks.map(p => p.id); S.lastPlanAt = Date.now();
+-  return { all, picks, nextUp, qualifying, bench, pass, remaining: pools[1] + pools[2], st, avail, deployable,
++  return { all, picks, nextUp, qualifying, bench, pass, remaining: pools[1] + pools[2], st: workingStack(), avail, deployable,
+            reserve: DB.reserve || 0, deployed: t1Spent + t2Spent,
+            t1Budget, t2Budget, t1Spent, t2Spent, t1Pool: pool0[1], t2Pool: pool0[2],
+            shadowReserve: Math.min(DB.shadowReserve || 0, stack()) };
+@@ -7854,6 +7961,35 @@
+   " each (" + gp(p.cost) + ") — expect ~" + gp(p.expect) + "/cycle, est. fill ~" + fmtEstH(estFillH(p.allocQty, p.c))
+   + (p.sizeNotes && p.sizeNotes.length ? " [" + p.sizeNotes.join("; ") + "]" : "");
+ 
++/* THE PRINTED PLAN DERIVES FROM THE SAME GROUPS THE SCREEN RENDERS (F3,
++   landed 2026-08-21 with the one-comparator ruling — the copy button was the
++   recorded two-owner instance: it printed the walk's order while the screen
++   rendered `planGroups`, and with two owners they diverged). The button's
++   only ordering source is this function, and this function's only ordering
++   source is `planGroups` — the group labels print exactly where the screen
++   draws its headers, tenured unlabeled like the screen's unheadered block.
++   Numbering runs across the concatenation, which [R117.1] holds identical to
++   the funding order. */
++function planCopyText(P){
++  const g = planGroups(P.picks);
++  const lines = [];
++  let i = 0;
++  const emit = (rows, label) => {
++    if (!rows.length) return;
++    if (label) lines.push("— " + label + " —");
++    for (const p of rows) lines.push(planLineText(p, i++));
++  };
++  emit(g.promoted, "promoted by you: these jump the funding order");
++  emit(g.tenured, "");
++  emit(g.held, "not ranked — price history not fed");
++  emit(g.pool, "pool — no operator history");
++  return ["Today's plan — margin-test anything new first: instant-buy 1 unit (fill = sell side), instant-sell it back (fill = buy side), record both.", ""]
++    .concat(lines)
++    .concat(["", "T1 " + gp(P.t1Spent) + " of " + gp(P.t1Budget) + " budget · T2 " + gp(P.t2Spent) + " of " + gp(P.t2Budget)
++           + " budget · reserve untouched: " + gp(P.shadowReserve) + " · " + P.picks.length + " slots."])
++    .join("\n");
++}
++
+ /* Position lifecycle: buying → bought → selling → sold (= log entry).
+    Each stage has one obvious next action; nothing advances on its own. */
+ const STAGES = {
+@@ -8758,11 +8894,11 @@
+     .join("");
+ 
+   let unprovenBanner = false;
+-  /* TWO GROUPS, NEVER INTERLEAVED (step A.1). This is a RENDER grouping only:
+-     `buildPlan` decides what is funded and at what size, and neither moves —
+-     re-ordering the allocator would be deployment-class. With CUTOVER_POOL
+-     off the pool group is empty and this is a no-op, which is what makes it
+-     safe to frontload. */
++  /* GROUPS, NEVER INTERLEAVED (step A.1; A1 landed 2026-08-21). The grouping
++     is no longer render-only: `buildPlan` walks `planOrder` — the same
++     comparator these groups sort by — so this render and the funding order
++     are one list read twice. SIZING is untouched. With CUTOVER_POOL off the
++     pool group is empty and the split is tenured-versus-held. */
+   const pickGroups = planGroups(picks);
+   const renderPick = p => {
+     n++;
+@@ -8847,10 +8983,15 @@
+ 
+   let nextHTML = "";
+   if (nextUp.length){
+-    nextHTML = '<div class="nexthead"><b>Next up</b> — passed gates, unfunded, each line stating exactly why. '
+-      + 'When slots or budget free up, these fund AUTOMATICALLY at the next recompute — no press required; '
+-      + 'promote only jumps the ORDER. Total deployed never exceeds the stack.</div>'
+-      + nextUp.map(x => {
++    /* THE SAME SPLIT THE FUNDED BLOCK CARRIES, AND THE SAME ORDER THE MONEY
++       USES (A1 landed 2026-08-21): `buildPlan` walks `planOrder(pass)` and
++       pushes `nextUp` in that order, and `planGroups` re-splits it with the
++       same comparator — so the concatenation of the groups below IS the
++       funding order, and the queue position each picker cites is read off it
++       rather than re-derived. */
++    const nextGroups = planGroups(nextUp);
++    const nextOrdered = nextGroups.promoted.concat(nextGroups.tenured, nextGroups.held, nextGroups.pool);
++    const renderNext = x => {
+           n++;
+           /* Reason-aware picker: only demotions that free the binding resource
+              are offered, and the binding resource is named. A demotion that
+@@ -8901,7 +9042,29 @@
+                   ? "only the pick holding the " + (x.caution ? x.caution.label : "caution") + " slot frees it"
+                   : "the " + (x.caution ? x.caution.label : "caution") + " slot is held elsewhere — nothing funded to demote";
+               } else if (k0 === "full"){
+-                cands = picks; blame = "plan is full — any funded pick can give up its slot";
++                /* WHICH LIST IS FULL, AND WHO TAKES THE FREED SLOT (A1's
++                   reason work, landed 2026-08-21). "Any funded pick can give
++                   up its slot" is true only for the row at the HEAD of the
++                   queue. For every row behind one, a demotion frees a slot
++                   the row AHEAD of it takes — so offering demotions without
++                   saying that is a fake remedy, the exact thing the
++                   reason-aware picker was built to stop. The position is read
++                   off `nextOrdered`, the same term the render groups by. */
++                const qAhead = Math.max(0, nextOrdered.indexOf(x));
++                const pinsAhead = nextOrdered.slice(0, qAhead).filter(planTenured).length;
++                cands = picks;
++                /* THE CONSEQUENCE CLAUSE CLAIMS THE MECHANISM EXACTLY (cold
++                   review 2, 2026-08-21): a freed slot funds the first row
++                   ahead WHOSE OWN OTHER BINDS CLEAR — a row ahead that is
++                   also floor-bound or caution-bound is skipped, so "frees a
++                   slot for the first of them, not for this" was false in the
++                   region where every row ahead carries an unclearable bind,
++                   and false in the direction of denying a true remedy. */
++                blame = qAhead === 0
++                  ? "plan is full — any funded pick can give up its slot, and this is first in the queue"
++                  : "plan is full, and " + qAhead + " candidate" + (qAhead === 1 ? " is" : "s are") + " ahead of this one in the order"
++                    + (planTenured(x) ? "" : (pinsAhead === qAhead ? ", all of them pins" : ", " + pinsAhead + " of them pins"))
++                    + " — a freed slot goes to the first of them whose other binds clear before it can reach this one. Promote it to jump the order";
+               } else {
+                 /* THE THIRD STATE, NOT A CONFIDENT DEFAULT (cold review,
+                    2026-08-21): an unrecognised key must not re-encode the
+@@ -8935,10 +9098,29 @@
+             + '<button class="sm" data-place="'+x.id+'" data-q="'+x.wouldQty+'" data-b="'+x.c.buy+'" title="You executed this substitute in-game — track it as a position">placed</button>'
+             + '<button class="sm ghost" data-ignore="'+x.id+'" title="Not worth your time — drops to the bench for the rest of today. Blacklist it for permanence.">ignore</button>'
+             + '</span></li>';
+-        }).join("");
+-  }
+-
+-  const pickHTML = (pickGroups.tenured.length ? pickGroups.tenured.map(renderPick).join("") : "")
++    };
++    const nextGroup = (rows, head) => rows.length
++      ? '<div class="nexthead"><b>' + head + '</b></div>' + rows.map(renderNext).join("")
++      : "";
++    nextHTML = '<div class="nexthead"><b>Next up</b> — passed gates, unfunded, each line stating exactly why. '
++      + 'When slots or budget free up, these fund AUTOMATICALLY at the next recompute, in the order shown — '
++      + 'no press required; promote only jumps the ORDER. Pins fund before pool items, so a pool line waits '
++      + 'behind every pin above it however good its economics. Total deployed never exceeds the stack.</div>'
++      + nextGroup(nextGroups.promoted, 'Promoted by you')
++      + nextGroups.tenured.map(renderNext).join("")
++      + nextGroup(nextGroups.held, 'Not ranked — price history not fed')
++      + nextGroup(nextGroups.pool, 'Pool — no operator history');
++  }
++
++  const pickHTML = (pickGroups.promoted.length
++        /* THE CLAUSE NAMES WHAT THE OPERATOR CAN ACTUALLY DO (cold review 2,
++           2026-08-21 — the reachable-remedy property): there is no standing
++           un-promote control; the real lifts are the undo toast at press
++           time and the daily reset, so the copy claims exactly those. */
++        ? '<div class="nexthead"><b>Promoted by you</b> <span class="dim">these jump the funding order across every group — promotions reset with tomorrow\'s plan (undo is offered at press time)</span></div>'
++          + pickGroups.promoted.map(renderPick).join("")
++        : "")
++    + (pickGroups.tenured.length ? pickGroups.tenured.map(renderPick).join("") : "")
+     /* The held block renders ONLY when it has members — an empty one would be a
+        standing claim that something is unfed when nothing is. */
+     + (pickGroups.held.length
+@@ -8978,9 +9160,31 @@
+      exactly these rows. When coverage matures the group vanishes and pool
+      rows return to the normal benches and groups. */
+   const poolWaiting = era.state === "waiting" ? bench.filter(b => b && b.src === QUAL_SRC_POOL) : [];
+-  const poolEraHTML = poolWaiting.length
+-    ? '<div class="nexthead" data-poolgroup="1"><b>THE POOL</b> — ' + poolWaiting.length + ' item'
+-      + (poolWaiting.length === 1 ? "" : "s") + ' your rules would fund, waiting on chart coverage</div>'
++  /* THE TRANSITION-WEEK HEADER CARRIES THE WHOLE POOL INVENTORY (user ruling,
++     2026-08-21 — the Clockwork trace): a sparked pool item can FUND during
++     the benched era, and a header that counts only the waiting rows makes a
++     funded pool item invisible from the group that announced its population.
++     ALL counts come from `poolInventory` over the same build this render
++     draws from — one owner for the per-member state (cold review,
++     2026-08-21: "waiting" derived two ways on two surfaces disagrees exactly
++     on the sparked items this header exists for), and a member benched on a
++     MARKET gate, queued on NEXT UP, or mid-seasoning is counted in OTHER
++     states, never claimed to be waiting on coverage. Funded rows keep
++     rendering in the plan above, in the money order — the locator clause
++     says so rather than duplicating them here. When the era line disappears
++     the group vanishes with it and the funded pool group's own header
++     (PLAN_POOL_HEADER) is the normal form. */
++  const poolInv = era.state === "waiting" ? poolInventory(PLAN) : { total: 0, funded: 0, waiting: 0, other: 0 };
++  const poolEraHTML = (poolWaiting.length || poolInv.funded)
++    ? '<div class="nexthead" data-poolgroup="1"><b>THE POOL</b> — ' + poolInv.total
++      + ' item' + (poolInv.total === 1 ? "" : "s") + ' · ' + poolInv.funded + ' funded · '
++      + poolInv.waiting + ' waiting on chart coverage'
++      /* `other` is a REMAINDER bucket — the copy must not enumerate a closed
++         list over it (cold review 2: an ignored row or a held position lands
++         here too), so it points at the per-row statements instead. */
++      + (poolInv.other ? ' · ' + poolInv.other + ' in other states — each states its own where it renders' : '')
++      + (poolInv.funded ? ' <span class="dim">(funded rows render in the plan above, in the money order)</span>' : '')
++      + '</div>'
+       + (planInertLine(PLAN) ? '<div class="plan-note">' + esc(planInertLine(PLAN)) + '</div>' : "")
+       + poolWaiting.map(b => '<li class="next"><div class="body"><b>POOL</b> <span title="' + nameTitle(b.name) + '">'
+           + esc(b.name) + '</span>' + (b.tier ? tierBadge(b.tier) : '')
+@@ -11156,11 +11360,28 @@
+     : "frontier — no cycle yet this session";
+   /* THE TILE LEADS WITH THE POOL during the benched era (Part A) — the ruled
+      verdict wording stays, ordering changes only. The days figure repeats in
+-     the chart-gates clause by that same instruction; both read one term. */
++     the chart-gates clause by that same instruction; both read one term.
++     THE LEAD CARRIES THE SAME THREE COUNTS AS THE POOL GROUP'S HEADER
++     (2026-08-21, the Clockwork trace): `cutoverPoolRows().length` alone
++     claimed every pool candidate was WAITING, and a sparked pool item can
++     FUND during the benched era — so the funded count comes from the same
++     build the plan funds from, and no member is claimed waiting while its
++     row sits funded on the plan. */
+   const era = poolEraInfo();
+-  const lead = era.state === "waiting"
+-    ? cutoverPoolRows().length + " pool candidates waiting on coverage · " + era.days + " of " + CHART_MIN_DAYS + " days · "
+-    : "";
++  let lead = "";
++  if (era.state === "waiting"){
++    /* The SAME inventory term the pool group's header reads — never a
++       subtraction over a different population (cold review, 2026-08-21).
++       The tile degrades to a stated could-not-read rather than taking the
++       whole line down (the renderHome tile convention), because a plan-build
++       failure is not a fact about the pool. */
++    try {
++      const inv = poolInventory(buildPlan());
++      lead = inv.total + " pool candidates · " + inv.funded + " funded · " + inv.waiting
++        + " waiting on coverage" + (inv.other ? " · " + inv.other + " in other states" : "")
++        + " · " + era.days + " of " + CHART_MIN_DAYS + " days · ";
++    } catch(e){ lead = "pool inventory could not be read this render · "; }
++  }
+   return lead + state + " · " + charts + " · " + fr;
+ }
+ /* THE FIRST SCREEN (the walk-up test, ruled with 1e): one sentence, then the
+@@ -12640,8 +12861,9 @@
+ 
+    And a capital-feasibility line, because a counterfactual that quietly
+    spends money that does not exist is not screening evidence: peak
+-   simultaneous simulated notional against working capital, flagged when the
+-   sim assumed more than there was.
++   simultaneous simulated notional against deployable working capital (the
++   working stack minus the incidentals reserve — `workingCapital`, reading
++   the owners), flagged when the sim assumed more than there was.
+ 
+    A SHARE OF A NET IS ONLY A PROPORTION WHEN THE NET IS POSITIVE (Aug 13
+    2026). `top5 / net` on a losing population returns a large negative
+@@ -12707,7 +12929,13 @@
+   for (const e of ev){ cur += e.v; if (cur > peak){ peak = cur; at = e.t; } }
+   return { peak, at };
+ }
+-const workingCapital = () => Math.max(0, (DB.bank || 0) - (DB.shadowReserve || 0) - (DB.reserve || 0));
++/* FOLDED TO THE OWNERS (cold review, 2026-08-21 — F5's property). This read
++   `DB.bank` raw — the stamp, not the stack — so it ignored every flip and
++   game entry since the stamp, and it re-subtracted the shadow reserve inline,
++   a third spelling of the working figure. It is deployable-like capital for
++   the paper book's feasibility read: the working stack minus the incidentals
++   reserve, exactly the base the funding walk deploys against. */
++const workingCapital = () => Math.max(0, workingStack() - (DB.reserve || 0));
+ function paperRateFace(closed){
+   const e = paperEconomics(closed);
+   if (!e.n) return '<span class="dim">no closed trips yet — no rate to report</span>';
+@@ -13905,7 +14133,7 @@
+       }) + '</div>');
+   bits.push('<div class="' + (over ? 'neg' : 'dim') + '" style="margin-top:5px">'
+     + (over ? '⚠ ' : '') + 'Capital feasibility: peak simultaneous simulated notional <b>' + gp(Math.round(pk.peak))
+-    + '</b> against working capital <b>' + gp(Math.round(wc)) + '</b>'
++    + '</b> against deployable working capital <b>' + gp(Math.round(wc)) + '</b> (working stack minus the incidentals reserve)'
+     + (wc > 0 ? ' (' + Math.round(pk.peak / wc * 100) + '% of it)' : ' — no bank figure recorded')
+     + (over ? ' — <b>the sim assumed more capital than exists.</b> Trips above that line could not all have been held at '
+             + 'once, so the rate above is not reachable in practice: treat it as an upper bound on the screen, not a '
+@@ -16112,7 +16340,7 @@
+ function renderPositions(){
+   const body = $("#posBody");
+   $("#posSub").textContent = DB.positions.length
+-    ? gp(committed()) + " committed · " + gp(available()) + " free of " + gp(stack())
++    ? gp(committed()) + " committed · " + gp(freeGp()) + " free of " + gp(workingStack()) + " working (shadow reserve excluded)"
+     : "none open";
+   if (!DB.positions.length){
+     body.innerHTML = '<tr><td colspan="9" class="empty">No open positions.</td></tr>';
+@@ -16580,7 +16808,7 @@
+   /* One plan read feeds the whole surface: row statuses, the plan panel,
+      and the deploy funnel all describe the SAME recompute. */
+   const P = buildPlan();
+-  $("#watchStack").textContent = "working " + gp(st) + " (reserve " + gp(Math.min(DB.shadowReserve||0, stack())) + " excluded) · free " + gp(Math.max(0, st - committed())) + " · one-third cap " + gp(third);
++  $("#watchStack").textContent = "working " + gp(st) + " (reserve " + gp(Math.min(DB.shadowReserve||0, stack())) + " excluded) · free " + gp(freeGp()) + " · one-third cap " + gp(third);
+   const scT1 = DB.watch.filter(w => w.src === "scout" && (w.scoutTier || 1) === 1).length;
+   const scT2 = DB.watch.filter(w => w.src === "scout" && w.scoutTier === 2).length;
+   $("#scoutTog").textContent = DB.scoutOn
+@@ -22117,9 +22345,10 @@
+           + "large negative percentage that reads like a concentration figure and is not one — so the column reports the "
+           + "top trip's own net there instead, and says why." },
+   { id: "met-capfeas", term: "Capital feasibility",
+-    what: "The peak amount of simulated notional the paper book ever held at one moment, against your actual working "
+-        + "capital (bank less reserve and Shadow Fund). Swept over open and close events, not summed, because trips "
+-        + "overlap.",
++    what: "The peak amount of simulated notional the paper book ever held at one moment, against your deployable "
++        + "working capital — the working stack (bank stamp plus realized flips and game gp since, minus the Shadow "
++        + "reserve) minus the incidentals reserve; the same base the funding walk deploys against. Swept over open "
++        + "and close events, not summed, because trips overlap.",
+     from: "Every counted trip's size and its open/close stamps.",
+     do: "If the peak exceeds working capital, stop reading the rate above it as achievable — those trips could not all "
+         + "have been held at once, so the screen is an upper bound rather than a forecast. A counterfactual that quietly "
+@@ -22689,6 +22918,12 @@
+     /* The exact lines you're about to execute, inline — no tab-hopping mid-touch. */
+     if (s[3] === "plan"){
+       const { picks } = buildPlan();
++      /* DELIBERATELY direct, not planCopyText (recorded 2026-08-21): this is
++         the checklist's compact inline HTML render, not the clipboard text.
++         Its SEQUENCE is `picks` — the walk's own order, the one comparator —
++         so it cannot disagree with the screen or the print. If it ever grows
++         group labels or any reordering, it reads planGroups/planCopyText
++         instead of doing either itself. */
+       inline = picks.length
+         ? '<div class="inline">' + picks.map((p,j) => '<div>' + esc(planLineText(p,j)) + '</div>').join("") + '</div>'
+         : '<div class="inline"><div class="dim">Nothing clears the gates today.</div></div>';
+@@ -23180,7 +23415,10 @@
+   }
+   const cat = bestCat ? bestCat.txt : "no catalyst window";
+   const have = stack();
+-  const work = Math.max(0, have - (DB.shadowReserve || 0));
++  /* `workingStack()` is the owner — this was `have − shadowReserve` inline, a
++     second spelling of the working figure (folded 2026-08-21, F5's property
++     one figure over). */
++  const work = workingStack();
+   /* The Shadow-fund progress headline rides the capital tile (its full bars
+      live on Review) — the tile answers "how far along is the purchase". */
+   let fund = "";
+@@ -23342,7 +23580,8 @@
+     ['<span title="Named capital for the Shadow purchase — excluded from the allocator, the one-third rule, and all position math. Recall it by lowering the Shadow reserve setting in the plan\'s sizing row; the tool never does that for you.">Reserved — recallable</span>',
+       gp(Math.min(DB.shadowReserve||0, have))],
+     ['<span title="What the flip allocator actually sizes against: stack minus the shadow reserve. Tier budgets are carved from this.">Working capital</span>',
+-      gp(Math.max(0, have - (DB.shadowReserve||0)))],
++      /* the owner, not a respelling (folded 2026-08-21, F5) */
++      gp(workingStack())],
+     ["Profit since stamp", '<span class="'+sign(profitSince)+'">'+gp(profitSince)+'</span>'],
+     ['<span title="Non-flip bank changes (Game gp panel, Trade ▸ Flip Log) since the stamp — counted into the fund total but never into flipping stats.">Game gp since stamp</span>',
+       gSince ? '<span class="'+sign(gSince)+'">'+(gSince > 0 ? '+' : '')+gp(gSince)+'</span>' : '<span class="dim v sm">none</span>'],
+@@ -26451,13 +26690,11 @@
+     if (!lines.length){ toast("No open positions to copy."); return; }
+     txt = ["Sells this walk-up:", ""].concat(lines.map(sellLineText)).join("\n");
+   } else {
+-    const { picks, t1Budget, t2Budget, t1Spent, t2Spent, shadowReserve } = buildPlan();
+-    if (!picks.length){ toast("Nothing to copy — no picks today."); return; }
+-    txt = ["Today's plan — margin-test anything new first: instant-buy 1 unit (fill = sell side), instant-sell it back (fill = buy side), record both.", ""]
+-      .concat(picks.map(planLineText))
+-      .concat(["", "T1 " + gp(t1Spent) + " of " + gp(t1Budget) + " budget · T2 " + gp(t2Spent) + " of " + gp(t2Budget)
+-             + " budget · reserve untouched: " + gp(shadowReserve) + " · " + picks.length + " slots."])
+-      .join("\n");
++    const P = buildPlan();
++    if (!P.picks.length){ toast("Nothing to copy — no picks today."); return; }
++    /* One call, no ordering of its own: `planCopyText` derives from
++       `planGroups`, so the print cannot disagree with the screen (F3). */
++    txt = planCopyText(P);
+   }
+   try { await navigator.clipboard.writeText(txt); toast("Copied."); }
+   catch(e){
+--- a/tools/probe/probe-snippet.html
++++ b/staging/probe-snippet.html
+@@ -10663,7 +10663,7 @@
+     const mk = (id, src, score, eM, hu) => ({ id, name: "P" + id, src, score, eMargin: eM, horizonUnits: hu });
+     const gs = planGroups([mk(1, QUAL_SRC_WATCH, 10, 5, 1), mk(2, QUAL_SRC_POOL, 999, 2, 2),
+                            mk(3, QUAL_SRC_WATCH, 50, 1, 1), mk(4, QUAL_SRC_POOL, 1, 9, 3)]);
+-    ok("[R92.3] the two groups never interleave, tenured sorts by score and pool by the UNWEIGHTED core — a pool item's four history weights all default to 1.0, so one ranked list would place it mid-field on no evidence at all",
++    ok("[R92.3] the two groups never interleave, and each group's VALUE key is the one its evidence supports — tenured's is the score, pool's the UNWEIGHTED core (under the landed comparator tier settles before value; this fixture is tier-less, so the value key decides) — a pool item's four history weights all default to 1.0, so one ranked list would place it mid-field on no evidence at all",
+        gs.tenured.map(x => x.id).join(",") === "3,1"
+        && gs.pool.map(x => x.id).join(",") === "4,2"
+        && gs.pool.every(x => x.src === QUAL_SRC_POOL) && gs.tenured.every(x => x.src !== QUAL_SRC_POOL),
+@@ -13308,7 +13308,7 @@
+        && /observes only while the app is open/.test(plHTML),
+        (plHTML.match(/Chart coverage[^<]*/) || ["not found"])[0]);
+     ok("[R113.3] THE POOL group renders OPEN with its count, and each waiting row shows name, price and its one-line bench reason",
+-       /THE POOL<\/b> — 3 items your rules would fund, waiting on chart coverage/.test(plHTML)
++       /THE POOL<\/b> — 3 items · 0 funded · 3 waiting on chart coverage/.test(plHTML)
+        && /Probe era pool A/.test(plHTML) && /Probe era pool B/.test(plHTML) && /Probe era pool C/.test(plHTML)
+        && /data-poolgroup="1"/.test(plHTML),
+        (plHTML.match(/THE POOL[^<]*/) || ["not found"])[0]);
+@@ -13318,8 +13318,8 @@
+        && /carry readings the archive cannot feed yet/.test(plHTML)
+        && !/carry readings the archive cannot feed yet/.test(bbHTML),
+        JSON.stringify({ summary: bsTxt, benchHasPool: /Probe era pool/.test(bbHTML) }));
+-    ok("[R113.4] the scorer tile LEADS with the pool during the benched era — count and coverage ahead of the ruled cannot-rank wording, which is unchanged",
+-       /^3 pool candidates waiting on coverage · 4\.5 of 7 days · measuring, cannot rank yet/.test(scorerTileLine()),
++    ok("[R113.4] the scorer tile LEADS with the pool during the benched era — the same three counts as the pool group's header (nothing funded here, and the lead says so), coverage, then the ruled cannot-rank wording unchanged",
++       /^3 pool candidates · 0 funded · 3 waiting on coverage · 4\.5 of 7 days · measuring, cannot rank yet/.test(scorerTileLine()),
+        scorerTileLine());
+     /* the era ends: everything above disappears and pool rows go back —
+        flipped at the ONE owner, the gates' snapshot */
+@@ -13330,7 +13330,7 @@
+     ok("[R113.2] the countdown and THE POOL group DISAPPEAR the render coverage matures — and the pool rows return to the normal bench pile (asserted by absence, the scoping rule)",
+        !/Chart coverage:/.test(plDone) && !/data-poolgroup/.test(plDone)
+        && /Probe era pool A/.test(bbDone)
+-       && !/pool candidates waiting on coverage/.test(scorerTileLine()),
++       && !/pool candidates/.test(scorerTileLine()),
+        JSON.stringify({ benchBack: /Probe era pool A/.test(bbDone), tile: scorerTileLine().slice(0, 60) }));
+ 
+     /* [R113.5] the first clear: a record, once, pool provenance only */
+@@ -13662,6 +13662,189 @@
+     out.push("FAIL chart-bench causes / untiered remedy :: " + (e && e.stack || e));
+   }
+ 
++  try {
++    /* ═══ §116–118 — ONE OWNER FOR FREE GP (F5) · ONE COMPARATOR OWNS THE
++       ORDER AND THE FAMILY SEAT (A1 landed + family-winner ruling) · THE
++       TRANSITION POOL HEADER (ruled batch 2, 2026-08-21) ══════════════════ */
++    const k116 = { watch: DB.watch, qual: DB.qual, pos: DB.positions, inv: DB.invLots,
++      flips: DB.flips, slots: DB.slots, minE: DB.minExpectGp, bank: DB.bank, bAsOf: DB.bankAsOf,
++      sres: DB.shadowReserve, res: DB.reserve, t1: DB.t1Budget, t2: DB.t2Budget,
++      cl: DB.clusters, prio: DB.planPriority, dem: DB.planDemoted, ctl: S.scorerCtlPass,
++      latestAt: S.latestAt, cc: S.chartCache, ss: S.scorerSurf, tw: DB.touchWindows,
++      tl: DB.touchLog, gl: DB.gameLedger, fhz: DB.fillHorizonH };
++    DB.touchWindows = []; DB.fillHorizonH = 4; DB.clusters = [];
++    DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
++    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
++    DB.bank = 500e6; DB.bankAsOf = Date.now(); DB.shadowReserve = 300e6; DB.reserve = 0;
++    DB.invLots = []; DB.flips = []; DB.gameLedger = [];
++    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
++    S.latestAt = Date.now(); S.qualStamp = S.latestAt + "|" + S.hourAt;
++    const nowS116 = Math.floor(Date.now() / 1000);
++    const mk116 = (id, n, hi, spark) => {
++      S.byId.set(id, { i: id, n, l: 25000, m: 0, v: 0, a: 0 });
++      S.latest[id] = { high: hi, low: 4000, highTime: nowS116 - 60, lowTime: nowS116 - 120 };
++      S.hour[id] = { avgHighPrice: hi, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
++      S.min5[id] = { avgHighPrice: hi, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
++      if (spark){
++        const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
++        for (let k = 0; k < 168; k++){ const mid = (4000 + hi) / 2 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS116 - (168 - k) * 3600, mid }); }
++        S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
++      }
++    };
++    /* Two pins; a SPARKED pool item with WIDER raw economics than either pin
++       (the Clockwork shape — real session data clears it early); two
++       unsparked pool items benched on the coverage clock. The sparked pool
++       item's raw score EXCEEDS both pins', which is what makes every ordering
++       assertion below discriminating: raw-score order and planCmp order
++       disagree on this fixture. */
++    mk116(9801, "Probe cmp pin one", 4600, true);
++    mk116(9802, "Probe cmp pin two", 4500, true);
++    mk116(9811, "Probe cmp sparked pool", 4800, true);
++    mk116(9812, "Probe cmp waiting pool A", 4400, false);
++    /* 9813 fails a MARKET gate (18gp margin under the 3×-tax floor), so it is
++       a pool member in the OTHER state — the disagreement region: cleared or
++       never reached coverage, unfunded for a non-chart reason. A count that
++       derives "waiting" from the whole population minus funded, or from the
++       bench pile's length, files this item as waiting-on-coverage — false. */
++    mk116(9813, "Probe cmp other-state pool B", 4100, false);
++    const q116 = src => ({ n: 3, firstAt: Date.now() - 26 * 3600e3, lastAt: Date.now() - 3600e3, src });
++    DB.qual = { 9801: q116(QUAL_SRC_WATCH), 9802: q116(QUAL_SRC_WATCH), 9811: q116(QUAL_SRC_POOL) };
++    DB.watch = [{ id: 9801, qty: null }, { id: 9802, qty: null }];
++    S.scorerCtlPass = [9801, 9802, 9811, 9812, 9813];
++    S.chartCache = { at: Date.now(), state: chartWireState({ observed: 108 }), pts: new Map(), vols: new Map() };
++    S.scorerSurf = { at: Date.now(), h1: { observed: 108 } };
++    /* A committed position on a NEUTRAL item (held-set interference avoided),
++       so free ≠ working ≠ stack and every wrong base is a distinct number:
++       stack 500m · working 200m · committed 60m · free 140m · dead available() 440m. */
++    S.byId.set(9899, { i: 9899, n: "Probe cmp held item", l: 25000, m: 0, v: 0, a: 0 });
++    S.latest[9899] = { high: 4400, low: 4000, highTime: nowS116 - 60, lowTime: nowS116 - 120 };
++    S.hour[9899] = { avgHighPrice: 4400, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
++    DB.positions = [{ itemId: 9899, qty: 10000, buy: 6000, placedAt: Date.now() - 3600e3, stage: "buying", hzH: 4 }];
++    S.tab = "watch"; S.promoteFor = null; renderWatch(); renderPositions();
++    const posSub116 = document.querySelector("#posSub").textContent;
++    const wStack116 = (document.getElementById("watchStack") || {}).textContent || "";
++    const plHTML116 = document.querySelector("#planList").innerHTML;
++
++    ok("[R116.1] ONE owner for free gp — the positions line renders free from freeGp over the WORKING stack, says the shadow reserve is excluded, and never renders the stack-based figure that counted the reserve as spendable",
++       /140m free of 200m working \(shadow reserve excluded\)/.test(posSub116)
++       && !/440m/.test(posSub116) && !/free of 500m/.test(posSub116),
++       posSub116);
++    ok("[R116.1] and the two rendered \"free\" figures are ONE figure, which is also the funding walk's deployable base — the money and the copy read the same term and cannot disagree by the reserve",
++       /free 140m/.test(wStack116) && freeGp() === 140e6 && buildPlan().avail === freeGp(),
++       JSON.stringify({ w: wStack116.slice(0, 100), free: freeGp() }));
++
++    /* ── §117: the one comparator ── */
++    const P116 = buildPlan();
++    const passIds = P116.pass.map(x => x.id);
++    const g116 = planGroups(P116.pass);
++    const concatIds = g116.promoted.concat(g116.tenured, g116.held, g116.pool).map(x => x.id);
++    ok("[R117.1] the funding order IS planOrder — one flat sort on the total comparator, identical to the display groups' concatenation — and the walk's picks follow it: both pins fund BEFORE the sparked pool item despite its wider raw economics, because population settles before value",
++       JSON.stringify(passIds) === JSON.stringify(concatIds)
++       && P116.picks.length >= 3
++       && P116.picks.map(p => p.id).slice(0, 3).join(",") === "9801,9802,9811",
++       JSON.stringify({ pass: passIds, picks: P116.picks.map(p => p.id) }));
++
++    /* Direct rows for the pairwise decisions — candidateFor-shaped, with the
++       fam supplied so the family rule is drivable without a name-stem
++       coincidence. Raw score and planCmp disagree by construction. */
++    const famPin = { id: 1, name: "Fam pin", fam: "FAMX", src: QUAL_SRC_WATCH, score: 10, eMargin: 300, horizonUnits: 1, tier: { t: 1, proven: false } };
++    const famPool = { id: 2, name: "Fam pool", fam: "FAMX", src: QUAL_SRC_POOL, score: 999, eMargin: 900, horizonUnits: 1, tier: { t: 1, proven: false } };
++    const bench117 = [];
++    const kept117 = applyFamilyRule([famPool, famPin], bench117);
++    ok("[R117.2] the family seat goes to the member that FUNDS FIRST (planCmp), not the raw-score winner — a pool item with the higher score loses the seat to a pin, and the bench reason names the winner with the market-offered sentence",
++       kept117.length === 1 && kept117[0].id === 1
++       && bench117.length === 1 && bench117[0].id === 2
++       && /family overlap with Fam pin/.test(bench117[0].failed)
++       && /MARKET offered two members/.test(bench117[0].failed),
++       JSON.stringify({ kept: kept117.map(x => x.id), why: bench117[0] && String(bench117[0].failed).slice(0, 80) }));
++    const ord117 = planOrder([famPool, famPin]).map(x => x.id);
++    ok("[R117.3] a pool item never precedes a tenured fed pin on VALUE — the population key settles before the value key, so a weighted score and an unweighted core are never compared across populations",
++       ord117.join(",") === "1,2" && planCmp(famPin, famPool) < 0 && planCmp(famPool, famPin) > 0,
++       JSON.stringify(ord117));
++    DB.planPriority = [2];
++    const ordProm = planOrder([famPool, famPin]).map(x => x.id);
++    const benchProm = []; const keptProm = applyFamilyRule([famPool, famPin], benchProm);
++    ok("[R117.4] a promoted pool item crosses the population boundary in the funding order AND takes its family's seat — promote exists to override the ordering, and an override that cannot cross the boundary it was pressed to cross is not one",
++       ordProm.join(",") === "2,1" && keptProm.length === 1 && keptProm[0].id === 2
++       && benchProm.length === 1 && benchProm[0].id === 1,
++       JSON.stringify({ ord: ordProm, kept: keptProm.map(x => x.id) }));
++    DB.planPriority = [];
++
++    const copy116 = planCopyText(P116);
++    const iPin = copy116.indexOf("Probe cmp pin one"), iPool = copy116.indexOf("Probe cmp sparked pool");
++    const onclickSrc = String((document.getElementById("planCopy") || {}).onclick || "");
++    ok("[R117.5] the printed plan derives from the SAME groups the screen renders — the pool pick prints under its own label after every pin, and the copy button's handler has no ordering of its own: one planCopyText call, no direct planLineText map",
++       iPin >= 0 && iPool > iPin
++       && /— pool — no operator history —/.test(copy116)
++       && /planCopyText\(/.test(onclickSrc) && !/map\(planLineText\)/.test(onclickSrc),
++       JSON.stringify({ iPin, iPool, handlerCallsTerm: /planCopyText\(/.test(onclickSrc) }));
++
++    /* the queue-position blame: slots 1 → one pin funds, one pin and the
++       sparked pool item land on NEXT UP with the full key */
++    DB.slots = 1; S.promoteFor = 9811; renderWatch();
++    const plFull116 = document.querySelector("#planList").innerHTML;
++    const pick117 = (plFull116.match(/Promote Probe cmp sparked pool[\s\S]{0,900}?cancel/) || [""])[0];
++    ok("[R117.6] the \"plan is full\" blame counts the QUEUE off the same ordered term the render groups by — a pool row behind a pin is told how many candidates are ahead and that they are pins, and the consequence clause claims the walk's actual rule (a freed slot goes to the first row ahead whose other binds clear), never the head-of-queue sentence and never a promise the walk does not keep",
++       /plan is full, and 1 candidate is ahead of this one in the order, all of them pins/.test(pick117)
++       && /a freed slot goes to the first of them whose other binds clear/.test(pick117)
++       && !/any funded pick can give up its slot/.test(pick117)
++       && !/frees a slot for the first of them, not for this/.test(pick117),
++       pick117 ? pick117.replace(/<[^>]*>/g, " ").slice(0, 200) : "(picker not found)");
++    S.promoteFor = null; DB.slots = 7;
++
++    /* ── §118: the transition-week pool inventory, ONE owner for the state ── */
++    ok("[R118.1] the pool header carries the WHOLE inventory from poolInventory — funded, waiting-on-the-chart-gate, and OTHER states each counted in the state they are in: the market-benched member is never filed as waiting on coverage, the funded member is never invisible, and the locator clause names where the funded rows render",
++       /THE POOL<\/b> — 3 items · 1 funded · 1 waiting on chart coverage · 1 in other states/.test(plHTML116)
++       && /funded rows render in the plan above, in the money order/.test(plHTML116)
++       && !/items your rules would fund, waiting on chart coverage/.test(plHTML116)
++       && !/2 waiting on chart coverage/.test(plHTML116),
++       (plHTML116.match(/THE POOL[^<]*/) || ["not found"])[0]);
++    ok("[R118.2] the scorer tile's pool lead reads the SAME inventory term — never a subtraction over a different population: the other-state member is not claimed waiting, and the funded member is counted funded",
++       /^3 pool candidates · 1 funded · 1 waiting on coverage · 1 in other states · 4\.5 of 7 days/.test(scorerTileLine())
++       && !/2 waiting on coverage/.test(scorerTileLine()),
++       scorerTileLine().slice(0, 110));
++    /* the inventory itself sums by construction and classifies by the
++       first-binding gate's NAME, not by position in a pile */
++    const inv116 = poolInventory(P116);
++    ok("[R118.1] and poolInventory partitions the population exactly — every pool member of the build in one state, the three summing to the total",
++       inv116.total === 3 && inv116.funded === 1 && inv116.waiting === 1 && inv116.other === 1,
++       JSON.stringify(inv116));
++    /* the tile's degrade is a restraint-shaped promise and gets its
++       fires-when-it-should drive: a poisoned build must yield the STATED
++       could-not-read lead, never a silent empty one */
++    const kPos118 = DB.positions; DB.positions = null;
++    ok("[R118.2] and the tile's degrade FIRES on a build failure — the stated could-not-read lead, never a silently empty line",
++       /^pool inventory could not be read this render · /.test(scorerTileLine()),
++       scorerTileLine().slice(0, 70));
++    DB.positions = kPos118;
++
++    /* ── §116 again: workingCapital reads the OWNERS (cold review) — the old
++       DB.bank base ignored every flip since the stamp, and its inline reserve
++       subtraction was a third spelling of the working figure. Backdate the
++       stamp and log a flip after it so the two bases are DIFFERENT numbers. */
++    DB.bankAsOf = Date.now() - 3600e3;
++    DB.flips = [{ id: Date.now() - 60e3, itemId: 9899, name: "Probe wc flip", qty: 1000, buy: 3000, sell: 3500, date: today() }];
++    DB.reserve = 10e6;
++    const wcNew = workingCapital();
++    const wcOldForm = Math.max(0, (DB.bank || 0) - (DB.shadowReserve || 0) - (DB.reserve || 0));
++    ok("[R116.2] workingCapital reads the owners — the working stack (which includes realized flips since the bank stamp) minus the incidentals reserve — so it differs from the raw-stamp arithmetic by exactly the realized profit, and the shadow reserve is subtracted once, at the owner",
++       wcNew === Math.max(0, workingStack() - 10e6)
++       && wcNew > wcOldForm
++       && (wcNew - wcOldForm) === realizedSince(DB.bankAsOf),
++       JSON.stringify({ wc: wcNew, oldForm: wcOldForm, realized: realizedSince(DB.bankAsOf) }));
++
++    DB.watch = k116.watch; DB.qual = k116.qual; DB.positions = k116.pos; DB.invLots = k116.inv;
++    DB.flips = k116.flips; DB.slots = k116.slots; DB.minExpectGp = k116.minE; DB.bank = k116.bank;
++    DB.bankAsOf = k116.bAsOf; DB.shadowReserve = k116.sres; DB.reserve = k116.res;
++    DB.t1Budget = k116.t1; DB.t2Budget = k116.t2; DB.clusters = k116.cl;
++    DB.planPriority = k116.prio; DB.planDemoted = k116.dem; S.scorerCtlPass = k116.ctl;
++    S.latestAt = k116.latestAt; S.chartCache = k116.cc; S.scorerSurf = k116.ss;
++    DB.touchWindows = k116.tw; DB.touchLog = k116.tl; DB.gameLedger = k116.gl; DB.fillHorizonH = k116.fhz;
++    for (const id of [9801, 9802, 9811, 9812, 9813, 9899]){ S.byId.delete(id); delete S.latest[id]; delete S.hour[id]; delete S.min5[id]; S.spark.delete(id); S.items = S.items.filter(it => it.i !== id); }
++  } catch(e){
++    out.push("FAIL free-gp owner / one comparator / pool header :: " + (e && e.stack || e));
++  }
++
+   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
+      Derived from [R#] tags in assertion names; a requirement is FAIL if any
+      tagged assertion failed. Lines are prefixed REQ so the fail counter
+--- a/REQUIREMENTS.md
++++ b/staging/REQUIREMENTS.md
+@@ -524,10 +524,10 @@
+ | R91.1 | **MOMENTUM RETURNS `null` ON TOO FEW POINTS, AND THE HONEST READER IS THE ONLY READER.** It returned **`"flat"`** — a definite, PASSING verdict manufactured from an empty input — so the chain's `moState == null ? unknown : (=== "knife" ? fail : pass)` received a pass, and the falling-knife defense silently stopped defending on every item without a spark series. The instrument's stats builder read the identical absence and reported null: **two readers of the same missing input, one honest.** `momentumState(pts, buy)` is now the single term and both callers route through it — **asserted BEHAVIOURALLY at every state boundary, not as wiring** (corrected Aug 19 2026: the source-substring form was deleted as "a grep, not an assertion", and this row went on citing it). The pair agrees at the knife line from both sides, the chase line from both sides, the direction sign at a fixed q, the flat-range guard at exactly its threshold, and the five-point minimum — a second interpreter carrying a shifted constant agrees on one fixture and cannot survive all eight; `chartPts(id)` is the one line the chart wiring changes. **This does not newly bench anything** — unknown is not failing — and says so: the restraint returns when the series does, and what changes today is that the absence stops wearing a passing verdict | probe `[R91.1]` |
+ | R91.2 | **DRIFT CARRIES THREE STATES ON `drifty`.** `sitRisk` needs 24 hourly points; with none, `stabilityWeight` returned `drifty: false`, so an item nothing had looked at was indistinguishable from one measured and found steady — and the drift bench, which exists **precisely for the case where you are away**, could never fire on an item without sparks. Now: `true` measured-and-drifty, `false` measured-and-steady, **`null` unknown**. `chk(stw.drifty && …)` is unchanged and still falsy on null, so nothing is newly benched; the value becomes readable so a surface can render the restraint as INERT rather than as satisfied | probe `[R91.2]` |
+ | R91.3 | **THE 5m STREAK REPORTS NOT-COUNTED RATHER THAN ZERO.** `S.vol5Low` is written by a loop over `DB.watch`, so for a non-member the streak is not zero, it is **not running** — and `\|\| 0` collapsed the two, after which the label stated *"0/N consecutive refreshes — not binding yet"*, claiming a counter that does not exist. That is never-fed rendered as a reading of zero, **inside a bench reason**. `streak` now carries a number (counted) or `null` (not counted) so a reader can test rather than parse copy, and the label says which. **Proposed and NOT built: feeding the streak universe-wide from the archive** — cheap in compute, but it pulls `DB.dieOffLog` into the pool population, which is a persisted store needing its own bound and partition answer, so it belongs with the chart wiring where the archive read already exists | probe `[R91.3]` |
+-| **§92 The post-cutover plan surface — display-only, built ahead of the flip (user ruling, Aug 18 2026 — step A)** | | |
++| **§92 The post-cutover plan surface — display-only when built (user ruling, Aug 18 2026 — step A); the two-group split became the funding order when A1 landed 2026-08-21 (§117)** | | |
+ | R92.1 | **FOUR NO-HISTORY STATES, AND AN OBSERVED DENOMINATOR.** `poolPersistence(id)` returns **not-scored** (empty slot WITH a reason — *not applicable* is a different claim from zero), **first-cycle**, **accruing**, **settled**, plus **era-closed** when the row's `ch`/`v` stamp no longer matches. The denominator is **observed cycles since the item entered the pool**, computed against the control cell's cycle count at first pass (`c0`), never the cell's whole life: an item that entered an hour ago has about twelve cycles available, and rendering `1 of 1024` would be false in exactly the way the observed-time rule forbids | probe `[R92.1]` |
+ | R92.2 | **THE BADGE RENDERS A PAIR, NEVER A BARE PERCENTAGE**, and a percentage may appear only beside it — `93 of 108` and `93%` are different claims and only the first is rulable. Slot A is persistence (a property of the ITEM, the trader's question); slot B is pump exposure, which is the caution badge already on the line — a second pump mark would be the duplicate the gloss-nothing-that-delivers-its-own-intel restraint forbids. **Breadth stays behind the drill** because it is a property of the CONFIG GRID, the instrument-tuner's question, and its denominator is about to change. The six-gate era rides the tooltip and decomposes rather than pooling | probe `[R92.2]` |
+-| R92.3 | **TWO GROUPS, NEVER INTERLEAVED.** Tenured sorts by `score` as today; Pool sorts by the **unweighted core** `eMargin × horizonUnits`, and the header says the history weights are **NOT APPLIED, and the DATA half is computed separately** (corrected Aug 19 2026, adversarial pass): the header separates its two claims (**corrected Aug 19 2026, adversarial pass**): *not applied* is a fact about the SORT and stays in the constant; *not fed* is a fact about the DATA, is computed per weight by `planPoolFedLine`, and the constant now FORBIDS the string. Pinning both halves in one constant was an anti-tripwire — it holds the data half green through the transition that makes it false. The data half is asserted on a MIXED pool, because a single-row fixture cannot separate a union from a universal Four of the score's six terms are operator-history terms defaulting to a neutral 1.0, so one ranked list places every pool item mid-field **not because the evidence says middling but because there is no evidence** — the never-fed-aggregate rule inside a sort comparator. **This is a RENDER grouping only**: `buildPlan` decides what is funded and at what size and neither moves, because re-ordering the allocator would be deployment-class | probe `[R92.3]` |
++| R92.3 | **TWO GROUPS, NEVER INTERLEAVED.** Tenured sorts by `score` as today; Pool sorts by the **unweighted core** `eMargin × horizonUnits`, and the header says the history weights are **NOT APPLIED, and the DATA half is computed separately** (corrected Aug 19 2026, adversarial pass): the header separates its two claims (**corrected Aug 19 2026, adversarial pass**): *not applied* is a fact about the SORT and stays in the constant; *not fed* is a fact about the DATA, is computed per weight by `planPoolFedLine`, and the constant now FORBIDS the string. Pinning both halves in one constant was an anti-tripwire — it holds the data half green through the transition that makes it false. The data half is asserted on a MIXED pool, because a single-row fixture cannot separate a union from a universal Four of the score's six terms are operator-history terms defaulting to a neutral 1.0, so one ranked list places every pool item mid-field **not because the evidence says middling but because there is no evidence** — the never-fed-aggregate rule inside a sort comparator. ~~This is a RENDER grouping only~~ **SUPERSEDED 2026-08-21: the split IS the funding order since A1 landed (§117)** — `planOrder` walks pins before pool on the one comparator; SIZING still does not move. Within each group the ruled money order now applies TIER before the value key (cold review, 2026-08-21 — an earlier wording claimed the within-group sorts were unchanged, which was false); the VALUE keys this row describes — score for tenured, the unweighted core for pool and held — are what is unchanged | probe `[R92.3]` |
+ | R92.4 | **`#planSub` READS "N PASS THE GATES, OF M SCORED" AND NAMES ITS POOL.** It read `pass.length + " of " + DB.watch.length`, which after the flip is a pool numerator over a pin-list denominator and renders an arithmetically impossible fraction — *"9 of 3 pass the gates"*, the kind of defect that makes a reader distrust everything else on the page. Fixed at the SOURCE: `M` is the candidate count `deployLog.n` now stores. The funnel tile's `pass` names its pool for the same reason; `funded` (slot-capped) and `% deployed` (capital-denominated) do not need to and do not get one | probe `[R92.4]` |
+ | R92.5 | **INERT RESTRAINTS ARE STATED ONCE, OVER THE POPULATION, AS THE ARCHIVE'S STATE.** **Rewritten Aug 19 2026 (adversarial pass).** Each chart-derived reading is COUNTED over the rows that carry it (`momentum on 1 of 3`), never unioned into a claim about the population; a candidate with no live price is reported as a dead FEED in its own sentence rather than credited with absent readings it never had; and the 5m die-off streak has its own sentence naming its own trigger, because it returns on a RULING and not when the archive matures — the old frame said *"restraints the archive cannot feed yet … they return when the archive does"* beside *"at 7 of 7 observed days"*, which is the self-contradiction the first repair was written to end, surviving one clause deeper. Historically: a pool item had momentum unknown, drift unknown, its 5m streak not counted and its chart gates still loading — **four unknowns stamped on every row would read as four problems with the item, which is the opposite of true.** So the bench block carries one line naming the archive's coverage, and it renders **nothing** when no pool item is present, because a standing line about an empty population is the never-fed defect in copy. **An unknown restraint must never read as a passed one** and the line says so in those words | probe `[R92.5]` |
+ | R92.6 | **THE MUST-LAND-WITH COPY SET, ASSERTED BY PRESENCE AND ABSENCE.** `gov-propose` states the **property** — *no capital is committed without an explicit press* — with the watchlist demoted to a dated example (M156: the surface-not-property defect found in the tool's own statement of its constitutional rule); `+ watch` becomes `+ pin`; the sub-tab reads **Plan & Pins** and the old string is asserted ABSENT, because a rename checked only by presence leaves the old form standing somewhere; the family and caution bench copy each gain their one word of context for a pool item | probe `[R92.6]` |
+@@ -570,7 +570,7 @@
+ | R99.3 | **READINESS IS PER CONSUMER, AND THE MASK KEYS ON THE WEAKEST-FED ONE.** The four chart consumers have four different minima — trend 3, momentum 5, drift 24, volume-trend 48 — while the *"chart still loading"* mask fired on `tr == null` alone, the shallowest. A 20-point archive series therefore fed trend and momentum, **lifted the mask, and left drift unknown with nothing benching it** — the exact failure the source repair claimed to close, surviving one level up, because changing the SOURCE does not close a hole that was never about the source. The acceptance fixture could not see it: 30 points and 60 volumes clear all four thresholds at once. **NaN price points are not counted as fed** — the archive pushes NaN for an hour with no print on either side, so an unfiltered length would call a starved series ready. Benching while any consumer is unfed is restraint-TIGHTENING, the direction that may auto-arm | probe `[R99.3]` |
+ | **§100 The hour weight: routed through the resolver, third-stated, and held out of the ranking (user ruling, Aug 19 2026 — the re-pass's third money-path finding)** | | |
+ | R100.1 | **AN UNFED WEIGHT IS A THIRD STATE, NOT AN AVERAGE.** `hourWeight` returned `{ w: 1 }` both when the hour-of-day volume profile was MISSING and when it was measured and flat, and that 1.0 multiplied the plan score inside a score-sorted ranking. Measured on the live book the day this shipped — 43 watch items, every one fed, `w` running 0.765 to 1.247 with a median of 1.049 — **a 1.0 from absence lands at the p25 of the fed distribution**: not an edge case that sorts harmlessly to one end but squarely mid-field, on no evidence. The reading now carries `fed`, and the discriminating pair is two candidates whose `w` is the identical number 1.0 — one from a UNIFORM 24-hour profile, one from no profile at all. **Asserted on `candidateFor`, not on `hourWeight`**: a correct term with no assertion on the branch that reads it is what the two preceding passes each shipped (MISTAKES M157/M158/M159) | probe `[R100.1]` |
+-| R100.2 | **THE HOLD-OUT: A SERIES-UNFED CANDIDATE IS NOT PLACED IN THE SCORE-RANKED ORDER.** It is held below the ranked block and sorted on the same unweighted core the pool group uses. **Nothing about funding or sizing moves** — `buildPlan` has already decided what is funded and at what size; this is the render grouping, exactly as the two-group split is, and only the item's PLACE in a list changes. Asserted at `planGroups`, on two candidates differing in nothing but a 24-slot volume profile. **Ordering change measured on live data: 0 of 43 watch items are held today**, because both series-derived weights are fed for the whole book — the restraint is entirely for the post-transition population and for a `/timeseries` breaker outage | probe `[R100.2]` |
++| R100.2 | **THE HOLD-OUT: A SERIES-UNFED CANDIDATE IS NOT PLACED IN THE SCORE-RANKED ORDER.** It is held below the ranked block and sorted on the same unweighted core the pool group uses. ~~Nothing about funding or sizing moves~~ **SUPERSEDED 2026-08-21 (A1 landed, §117): the hold-out is part of the funding order** — a held pin funds after the ranked block and before the pool, on the one comparator; SIZING still does not move. Asserted at `planGroups`, on two candidates differing in nothing but a 24-slot volume profile. **Ordering change measured on live data: 0 of 43 watch items are held today**, because both series-derived weights are fed for the whole book — the restraint is entirely for the post-transition population and for a `/timeseries` breaker outage | probe `[R100.2]` |
+ | R100.3 | **AND ITS SCOPE, WHICH IS THE DISCRIMINATING NEGATIVE: a LOG-derived absence never holds an item out.** The two families of history weight fail for different reasons and the difference is the whole rule. SERIES-derived (hour, stability) are absent only when the DATA PIPELINE has not fed them — a failed fetch, a tripped breaker, an accruing archive — which is a TOOL STATE, temporary and nothing to do with the item, and ranking on it is ranking on nothing. LOG-derived (reliability, wins) are absent when YOU HAVE NOT TRADED THE ITEM, which is a FACT ABOUT THE BOOK and the normal state of every new candidate. The ranked item in the fixture has zero flips and an unfed reliability weight and ranks anyway. **Inverting the scope would have held 40 of the 43 live watch items out of their own ranking**, and a hold-out that empties the ranking is a deletion of the ranking. `wins` is in neither set: it ranges [1.0, 1.5] and absence gives its FLOOR rather than its middle, which is the conservative reading `wins` is in neither set: it ranges [1.0, 1.5] and absence gives its FLOOR rather than its middle, which is the conservative reading rather than a fabricated average. **`logFed` was removed Aug 19 2026** as a write-only field with no production reader — the distinction it named is carried by `unfed`, which every reader already uses | probe `[R100.3]` |
+ | R100.4 | **ERA FACT, PINNED: the T0 archive does not feed an hour-of-day profile.** With the archive READY and no spark, the resolver reads `byHourSrc: "none"` and the chain's hour weight is UNFED. The archive's bucket keys are hour timestamps, so building a profile out of them is buildable and is a separate deployment-class ruling — it would feed a weight for an entire population whose ordering was ruled on the assumption that it was not fed. **That wiring must turn this assertion red before it lands**, which is the same shape as the `marketStatsFor().tr === null` tripwire inside `[R76.9]` | probe `[R100.4]` |
+ | R100.5 | **THE RESOLVER RESOLVES TWO READINGS AND NAMES BOTH SOURCES.** `src` answers for the price/volume series; the hour profile is a different reading with a different availability, and the archive branch was **silently DISCARDING a spark's profile** while returning `src: "archive"` — one field answering for two sources, which is the one-flag-one-meaning defect. `byHourSrc` is its own answer, and the resolver's `byHour` field — which no caller read, a standing scan-2(a) orphan sitting exactly where the missing wiring went — acquires its reader rather than being deleted. **STATED PLAINLY (Aug 19 2026, adversarial pass): routing `hourWeight` through the resolver is a behavioural IDENTITY today.** `itemSeries` derives `byHour` from `sp` on every branch before choosing one and never returns null, so the routed and unrouted forms are the same function of the same array and **no assertion can distinguish them** until something other than the spark feeds a profile. The routing's value is structural and prospective; this row pins the resolver's SHAPE, and the discard it fixed was real only inside a return value nothing read | probe `[R100.5]` |
+@@ -640,8 +640,8 @@
+ | **§113 Cutover visibility (Part A, user directive 2026-08-21 — display only)** | | |
+ | R113.1 | **ONE ERA TERM OWNS "IS THE POOL STILL WAITING ON COVERAGE", AND IT READS THE GATES' OWN SNAPSHOT.** `poolEraInfo` reads `S.chartCache.state` — the exact snapshot the chart gates bench off — re-sourced 2026-08-21 (the era-decided-twice fix: the first form read `S.scorerSurf.h1`, the same `t0Coverage` arithmetic through a second async snapshot with its own TTL, so at the 7-day boundary the countdown could dissolve while rows still benched, or vice versa). Every era consumer reads it: the countdown, THE POOL group, the scorer tile's chart-gates clause, the inert line's day count, the scorer verdict's chart-gates line, and the bench-reason copy — so no two can disagree about which era it is, proven by the discriminating one-owner limb (gates ready, scorer snapshot stale → READY). Four states: reading, could-not-check, waiting (live figure + earliest maturity, restated every call), ready | probe `[R113.1]` |
+ | R113.2 | **THE COUNTDOWN IS ONE HONEST LINE AT THE TOP OF THE PLAN, AND IT DISAPPEARS THE RENDER IT STOPS BEING TRUE.** *"Chart coverage: N of 7 observed days — pool items begin clearing ~<date> at the earliest (the archive observes only while the app is open)"* — the date is a floor and says so; the unreadable states render as reading / could-not-check rather than as nothing | probe `[R113.2]` |
+-| R113.3 | **THE POOL GROUP GETS PRESENCE DURING THE BENCHED ERA, AND EACH ROW RENDERS EXACTLY ONCE.** The waiting pool items render OPEN on the plan — *"THE POOL — N items your rules would fund, waiting on chart coverage"*, each row name + price + its one-line bench reason — and LEAVE the collapsed bench pile, whose count says so ("+N pool, shown above"). The inert-restraints line rides the group while it exists (it is about exactly those rows) and is not repeated in the bench. At maturity the group vanishes and pool rows return to the normal benches — replaces and consolidates, never stacks | probe `[R113.3]` |
+-| R113.4 | **THE SCORER TILE LEADS WITH THE POOL DURING THE BENCHED ERA** — *"N pool candidates waiting on coverage · X of 7 days"* ahead of the ruled cannot-rank wording, which is unchanged; ordering changes only, and the coverage figure repeats in the chart-gates clause by instruction (one term, so the two cannot disagree) | probe `[R113.4]` |
++| R113.3 | **THE POOL GROUP GETS PRESENCE DURING THE BENCHED ERA, AND EACH ROW RENDERS EXACTLY ONCE.** The benched pool items render OPEN on the plan — the header carries the inventory counts from `poolInventory` (*"THE POOL — N items · M funded · K waiting on chart coverage"*, §118; the old waiting-only form is asserted ABSENT) — each row name + price + its one-line bench reason — and LEAVE the collapsed bench pile, whose count says so ("+N pool, shown above"). The inert-restraints line rides the group while it exists (it is about exactly those rows) and is not repeated in the bench. At maturity the group vanishes and pool rows return to the normal benches — replaces and consolidates, never stacks | probe `[R113.3]` |
++| R113.4 | **THE SCORER TILE LEADS WITH THE POOL DURING THE BENCHED ERA** — the same inventory counts as the pool group's header (*"N pool candidates · M funded · K waiting on coverage · X of 7 days"*, from `poolInventory` — §118) ahead of the ruled cannot-rank wording, which is unchanged; the coverage figure repeats in the chart-gates clause by instruction (one term, so the two cannot disagree) | probe `[R113.4]` |
+ | R113.5 | **THE POOL'S FIRST CLEAR IS AN EVENT, RECORDED ONCE, ANNOUNCED WITHOUT QUIETING ANYTHING.** `notePoolFirstClear` rides the poll and writes `DB.poolFirstClear` (t/d/id/name) on the first POOL-provenance full-gate pass — one-shot by the record's own presence, never a flag (the restore hazard). The NOW line announces it on the day it happened, BELOW every actionable state, snoozable like any nudge. The record carries through the state backup well-formed or not at all, and a file without one omits the key so a pre-event backup cannot clobber the record | probe `[R113.5]` |
+ | **§114 Cohort provenance at birth (F0, ruled 2026-08-21 — before chart maturity)** | | |
+ | R114.1 | **A PAPER TRIP CARRIES ITS CANDIDATE'S PROVENANCE, AND THE COHORT READER SPLITS THE TWO POPULATIONS.** `shadowScan`'s one add-site stamps `src` from the candidate (watch/pool); `paperCohortOf` files `src: "pool"` rows in their own POOL cohort — a pool trip and a pin trip have opposite epistemic standing and must never pool in the headline cohort read (the populations-never-pool rule on the plumb line itself, biting exactly at coverage maturity). Absent stays absent: pre-stamp rows (at most the flip day's own picks) file under the legacy label as UNRECORDED, never defaulted; the carry preserves all three states; the cohort glossary names the pool cohort in the same commit. **Validity is ONE term at both writers** (`paperSrcOk`, cold review 2026-08-21): an unrecognised value is not stamped at the add site — absent, the same answer the import sanitizer gives it — so the live store and a restore cannot file one row in two cohorts | probe `[R114.1]` |
+@@ -655,6 +655,19 @@
+ | R115.4 | **THE SIZING LIMB'S NO-BUY-LIMIT REMEDY NAMES A CONTROL ITS POPULATION CAN REACH** (cold review, 2026-08-21 — the F1 property one gate up the chain; a no-limit item passes the instrument's market gates, so a pool row can land on this bench). The pool sentence says a pool row carries no manual size and names the hand-pin route; the watch-row sentence stays on the population that has one — presence and absence asserted both ways. Enabled by provenance entering `candidateFor` at the call (`candidateFor(w, src)`, the two `planCandidates` sites; `markSrc` absorbed) | probe `[R115.4]` |
+ | R115.5 | **THE SCORER VERDICT'S CHART-GATES LINE BRANCHES ON THE OWNER'S STATE** (cold review, 2026-08-21 — era-invalidated copy). At maturity it says the gates read from the archive and never that they *"stay unknowable until 7"*; below maturity the waiting sentence stands — presence and absence asserted both ways, so the waiting-era sentence cannot survive into the era it is false of. The ready figure is the REAL observation (`era.days`), never the threshold standing in for it (cold review 2) | probe `[R115.5]` |
+ | R115.6 | **THE PROVEN-LOSER RE-TEST REMEDY NAMES A CONTROL ITS POPULATION CAN REACH** (cold review 2, 2026-08-21 — the reachable-remedy property's third site). The watch-row test control hard-requires a row and the pool line's own test control is inert until ITEM_OPS arms, so the pool sentence names the hand-pin route and says the test control is inert while ITEM_OPS is off; the pin sentence keeps the plain re-test instruction — presence and absence asserted both ways | probe `[R115.6]` |
++| **§116 One owner for free gp (F5, ruled 2026-08-21)** | | |
++| R116.1 | **"FREE GP" HAS EXACTLY ONE OWNER AND THE SHADOW RESERVE IS NEVER SPENDABLE IN ANY FIGURE ANYWHERE.** `freeGp()` = working stack − committed, beside `workingStack` (whose base already excludes the reserve); the positions line, the watchlist header and the funding walk's deployable base all read it. `available()` — stack − committed, which counted the shadow reserve as free and put a second "free" figure on the tab differing from `#watchStack`'s by exactly the reserve — is DELETED, with the reason at its old site. The positions line names its base (*"free of N working (shadow reserve excluded)"*) and never renders the stack-based figure; asserted with fixture numbers where every wrong base is a distinct number. Stated limit: the assertion pins values and the deleted form's absence, not spellings — a reintroduced inline respelling computing the same number is a read (scan 17), not a test | probe `[R116.1]` |
++| R116.2 | **`workingCapital` READS THE OWNERS** (cold review, 2026-08-21 — F5's property at the site the sweep missed): the old form read raw `DB.bank` — the stamp, ignoring every flip and game entry since it — and re-subtracted the shadow reserve inline, a third spelling of the working figure. Now the working stack minus the incidentals reserve, the base the funding walk deploys against. Asserted discriminating: with a flip logged after the bank stamp, the two bases are different numbers and the difference is exactly the realized profit. The relabelled feasibility line and its glossary entry ("deployable working capital", `met-capfeas`) are verified by inspection — the probe covers the term's base, not the rendered label | probe `[R116.2]` |
++| **§117 One comparator owns the funding order, the display, the print, and the family seat (A1 ruled Aug 19 2026, deployment-class; landed with the family-winner ruling 2026-08-21)** | | |
++| R117.1 | **THE FUNDING ORDER IS `planOrder` — ONE FLAT SORT ON THE TOTAL COMPARATOR `planCmp` (promotion ‖ population ‖ tier ‖ value), IDENTICAL TO THE DISPLAY GROUPS' CONCATENATION.** `buildPlan`'s walk reads it, so pins fund before pool items and a held pin funds after the ranked block — the screen order and the order capital is committed in are the same list read twice. Asserted discriminating: a sparked pool item with wider raw economics than every pin funds after them | probe `[R117.1]` |
++| R117.2 | **THE FAMILY SEAT GOES TO THE MEMBER THAT FUNDS FIRST** (user ruling 2026-08-21). `applyFamilyRule` selects its winner by `planCmp`, never by raw score — raw-score winner selection compared heterogeneous scores across populations, so a sparked pool item (real hourWeight) could bench a pin, and two pool items compared numbers built from different evidence. The bench reason still names the winner. SEEN AND DELIBERATELY NOT MOVED (recorded at the site): the rule still runs before the mm and untiered filters; moving it after them would widen what the allocator may fund and is its own ruling | probe `[R117.2]` |
++| R117.3 | **THE POPULATION KEY SETTLES BEFORE THE VALUE KEY** — a pool item never precedes a tenured fed pin on value, because `planSortKey` (weighted score vs unweighted core) is never compared across populations; the group key decides first. This is the one deliberate change from the Aug 19 staged form, which kept the group outside the comparator and settled cross-group order by concatenation — a pairwise decision (the family seat) needs the total order | probe `[R117.3]` |
++| R117.4 | **PROMOTION CROSSES EVERY BOUNDARY** — `planRank` is `planCmp`'s first key, so a promoted pool item precedes every unpromoted pin in the funding order AND takes its family's seat; an override that cannot cross the boundary it was pressed to cross is not one (the Aug 19 assertion's finding, carried into the landed form) | probe `[R117.4]` |
++| R117.5 | **THE PRINTED PLAN DERIVES FROM THE SAME GROUPS THE SCREEN RENDERS** (F3 — the copy button was the recorded two-owner instance). `planCopyText` is the button's only ordering source and `planGroups` is `planCopyText`'s; group labels print where the screen draws its headers; the handler carries no ordering of its own (asserted on the handler's own source: one `planCopyText` call, no direct `planLineText` map) | probe `[R117.5]` |
++| R117.6 | **THE "PLAN IS FULL" BLAME COUNTS THE QUEUE** off the same ordered term the render groups by: a NEXT UP row behind others is told how many candidates are ahead and how many are pins — a demotion frees a slot for the first of them, not for this row — and only the head of the queue gets the any-funded-pick sentence. NEXT UP renders in the same groups as the funded block, concatenated in the funding order | probe `[R117.6]` |
++| **§118 The transition-week pool header (ruled 2026-08-21)** | | |
++| R118.1 | **THE POOL GROUP'S HEADER CARRIES THE WHOLE POOL INVENTORY DURING THE WAITING ERA, FROM ONE OWNER** — `poolInventory(P)` partitions every pool member of the build into exactly one state: FUNDED, WAITING on the chart gate (bench rows whose first-binding gate is the chart, by `gateName`), or OTHER (market-gate benches, NEXT UP, qualifying — the remainder by construction, so the states always sum to the population). The header renders *"THE POOL — N items · M funded · K waiting on chart coverage"* plus the other-states clause when nonzero and the locator clause for funded rows. A sparked pool item can FUND during the benched era (the Clockwork trace), and one benched on a MARKET gate or queued must never be filed as waiting-on-coverage (cold review, 2026-08-21 — the two-owner "waiting" disagreed exactly there). When the era line disappears the group vanishes and the funded pool group's own header is the normal form | probe `[R118.1]` |
++| R118.2 | **THE SCORER TILE'S POOL LEAD READS THE SAME INVENTORY TERM** — never a subtraction over a different population (cold review, 2026-08-21: `cutoverPoolRows().length − funded` filed an other-state member as waiting). The tile renders `poolInventory(buildPlan())`'s counts; on a build failure it degrades to the STATED could-not-read lead, and the degrade is driven fires-when-it-should (a poisoned build in the fixture must yield the stated lead, never a silent empty one — the restraint-assertion asymmetry). At maturity the lead disappears entirely | probe `[R118.2]` |
+ | **§6 Verification** | | |
+ | R6.1 | Probe report cross-references this file (`===REQS===` section from `[R#]` assertion tags) | the report itself |
+ | R6.2 | THE PAIRING IS CHECKED IN BOTH DIRECTIONS, and a failure either way fails the suite (user ruling, Aug 13 2026). **A tag with no requirement:** an assertion reporting `[Rxx.y]` where this file has no such row and cites it nowhere — the report printed "REQ PASS R61.1" for six ids that did not exist, and a requirement that does not exist cannot fail, so the ledger was lying in the direction it was built to prevent. **A requirement with no assertion:** a row citing `` probe `[Rxx.y]` `` that no assertion reported — §31's withdrawn rows went on claiming coverage after their assertions were deleted with the feature, and R35.4 cited one of them; that is the seasoning-gate shape, a spec claiming an implementation that is not there. Rows verified by inspection, UI or documentation cite no probe tag and are exempt by construction. Runs in `tools/probe/reqpair.sh` rather than in the page, because the check needs to read this file and the in-page suite cannot — which is precisely why the gap survived. It appends a `===PAIRING===` section and **rewrites the report header**, so `head -1` never reads PROBE-PASS while a pairing failure stands | `tools/probe/reqpair.sh`, run by `run.sh` |

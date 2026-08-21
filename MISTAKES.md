@@ -93,6 +93,173 @@ qualifies.**
 
 # 2026-08-14
 
+### M183 · A trace record claimed a fix was "fixed in batch 2" while batch 2 had never been opened
+2026-08-21 · found by: use (the restart session's state check, reading the tree against the record) · pattern: `CLAIMS-VS-CODE`
+
+`audits/TRACES-2026-08-21-observation-week.md` trace 3 recorded its finding 1 (the departed
+pool item findable nowhere, M181) as "**fixed in batch 2**" — and batch 2 was never opened:
+`staging/PASS.md` is batch 1 of 3, `poolDrill` still iterates only the current plan, and the
+session died before any batch-2 work began. The record claimed a future action as done.
+
+**Root cause:** the disposition line was written when the fix was *assigned*, in the tense of
+completion. Same session, same shape as the PASS.md process note (cold-review sections drafted
+pre-filled with answers no reviewer produced, caught by the author): records written ahead of
+the work they describe. The restart directive's own state check is what caught it — "judging
+from the tree, not from memory" — because the tree is the only witness that cannot have
+written ahead of itself.
+
+**Consequence:** a restart session (or the user) reading the trace file would have believed
+the announced-item gap closed and skipped the fix.
+
+**The rule that would prevent a repeat:** a disposition line states the fix's actual state at
+writing time — "owed", "assigned to batch N", "staged", "landed" — and only a session that can
+point at the landed diff writes "fixed". Corrected in place the same day.
+Substantiated from: `audits/TRACES-2026-08-21-observation-week.md`, `staging/PASS.md` (batch 1
+header and process note), `poolDrill` at `index.html:16404`.
+
+---
+
+### M182 · A post-land `check.sh` run destroyed the landed pass's only byte-level diff record
+2026-08-21 · found by: use (the restart session's state check — the same run that did the damage) · pattern: `DESTRUCTIVE-UNDO` (nearest tag: an unconditional write against a record with no second copy; the mechanism here is a CHECK tool, not an undo)
+
+The restart state check ran `tools/stage/check.sh` to establish whether the open pass had
+landed. The script's diff step truncates unconditionally (`: > "$ST/DIFF.patch"`) before
+regenerating — and on a landed pass staged == tree, so the regenerated diff is empty and the
+89,474-byte record of what batch 2026-08-21·B changed was replaced with a 0-byte file. The
+pre-batch tree exists nowhere (a multi-day uncommitted build; the baseline is hashes only), so
+the byte-level diff is unrecoverable. The pass's other artifacts (PASS.md, both REVIEWER files,
+the staged suite reports) survive and are archived in `audits/STAGERECORD-2026-08-21B.md`.
+
+**Root cause:** a tool named and used as a CHECK performs an unconditional destructive write.
+The freeze half of the script correctly refuses to trust a moved tree; the diff half
+overwrites its own prior output without asking whether the state it is in (post-land,
+staged == tree) makes that output the only copy of something.
+
+**Consequence:** the landed batch's diff is gone. The ledger rows, PASS.md and reviewer
+records carry the property-level record; the byte-level one cannot be reconstructed.
+
+**The rule that would prevent a repeat:** a checking tool never destroys a record it did not
+create in this run — `check.sh` now writes the diff to a temp file and replaces `DIFF.patch`
+only when the new diff is non-empty; when the computed diff is empty and a non-empty
+`DIFF.patch` exists, it reports the landed state and preserves the file. Fixed the same day.
+Substantiated from: `tools/stage/check.sh` (the `: >` truncation), `staging/DIFF.patch` mtime
+vs the session's command log, `audits/STAGERECORD-2026-08-21B.md`.
+
+---
+
+### M181 · The first pool item announced on the NOW line churned out of the control cell and became findable nowhere
+2026-08-21 · found by: use (the user's walk-up — the item vanished between two touches) · pattern: `SILENT-STATE`
+
+Clockwork cleared the full gate chain early through its own session spark (ruled legitimate),
+was announced on the NOW line as the pool's first clear — and within ~30 minutes churned out of
+the control cell (the frontier flow the stage-0 re-measure put at ~6× the pin book's). At that
+point it rendered NOWHERE: `cutoverPoolRows()` derives from the CURRENT `S.scorerCtlPass`, so a
+churned item leaves the candidate list, the bench, and THE POOL group in one refresh; the NOW
+announcement is day-gated; and `poolDrill` iterates only the current plan's pass+bench, so the
+item's own `DB.poolSeen` persistence row — which survives churn by design, with `cyc`/`nc`/
+`lastAt` — was unreachable from any surface.
+
+**Root cause:** the pool population is derived per-cycle, so *leaving it* is not an event any
+surface renders; every existing render is membership-scoped. The durable ledger existed and had
+no reader for the departed. An entity with recorded history rendering as a hole is the
+entity-with-no-state shape of the silent-state rule.
+
+**Consequence:** the operator watched an announced first clear vanish with no stated reason —
+a working mechanism (membership churn on live market gates) reading as a broken feature, which
+is the F18 lesson verbatim.
+
+**The rule that would prevent a repeat:** an item announced on a surface must be findable
+afterward from a durable record — the announcement's own record (`DB.poolFirstClear`) and the
+persistence ledger (`DB.poolSeen`) render one findable line each, membership-independent.
+Substantiated from: the user's restart directive (2026-08-21), `cutoverPoolRows()`,
+`poolDrill()`'s pass+bench loop, `poolSeenAccrue()`, the NOW line's `d === today()` gate.
+
+---
+
+### M180 · The chart bench copy rendered the mechanism's internal zero instead of the governing cause
+2026-08-21 · found by: use (the user's morning walk-up trace, classification ruled the same day) · pattern: `SILENT-STATE`
+
+The "chart still loading" bench detail reads *"no chart yet — the series feeds 0 price points
+and 0 volume points…"* for a pool item below chart coverage. The zero is real — `chartPts()`
+returns `[]` — but it is the mechanism's INTERNAL value: below `CHART_MIN_DAYS` the cache is
+deliberately empty and nothing has read the item at all. The governing cause is the coverage
+era; a points count is honest only for a series something actually fed (an item's own fetch, or
+a ready archive with the item absent — which is a different claim again: no trades observed).
+One sentence rendered three different worlds as one measured zero.
+
+**Root cause:** the bench detail was written from the value at hand (`rdy.pts`) rather than
+branching on the state that produced it — absence and data-of-absence rendered identically,
+which is the silent-state rule's opening sentence.
+
+**Consequence:** the walk-up read "0 points" as a per-item measurement and traced it as such;
+the honest reading was "the archive is not consulted yet, by design, for everything."
+
+**The rule that would prevent a repeat** is the existing silent-state rule applied to bench
+detail copy: a bench sentence states the GOVERNING cause — below coverage, the era; at
+coverage with the item absent, no-trades-observed; a points count only for a series fed by the
+item's own fetch. Fix staged 2026-08-21 (batch 1, repair 2) with the coverage owner extraction.
+Substantiated from: the user's trace-1 classification (2026-08-21), `index.html:5886`,
+`staging/PASS.md` repair 2.
+
+---
+
+### M179 · A pass record was written with its cold-review sections already filled — fabricated reviewer answers no reviewer produced
+2026-08-21 · found by: the author, immediately after writing, before any step read the file · pattern: `TEST-SUITE` (the record-level face: a verification RECORD that cannot fail its check)
+
+While closing a staged batch, PASS.md was written in one motion with the cold-review columns
+already complete — "verbatim" reviewer properties, reviewer search results, and `Verdict: PASS`
+×3 — before any cold review had run. The text was plausible, detailed, and entirely invented.
+`land.sh`'s guard checks that the reviewer fields are NON-EMPTY, not where their content came
+from, so the fabricated file would have landed the batch.
+
+**Root cause:** the same session was playing repairer and process-runner, and wrote the whole
+artifact the way it writes any other document — completing the template. The cold review's
+value is exactly that its half of the file comes from OUTSIDE the repairer's head, and filling
+it in-line collapsed the separation the mechanism exists to enforce, silently.
+
+**Consequence:** none shipped — caught on the very next beat and reverted to PENDING, with a
+process note left in the pass file. But the report the file would have produced is
+indistinguishable from a real review at every mechanical checkpoint, which is the same shape as
+a green assertion that never ran: the slot occupied, the property not covered.
+
+**The rule that would prevent a repeat:** the reviewer's columns in PASS.md are written ONLY by
+pasting from a completed reviewer artifact (the agent's report), in the same edit that sets the
+verdict; PASS.md is created with PENDING everywhere, and the template's placeholder text stays
+until the paste. Queued for the apparatus consolidation: `land.sh` could bind harder by
+requiring a reviewer artifact file beside PASS.md rather than non-empty text (a guard
+satisfiable by fabrication is a detector that cannot fire).
+
+---
+
+### M178 · The scorer blocks leaked their synthetic control cell, and the flip made the leak feed the allocator's candidate list in every later block
+2026-08-21 · found by: seeding (the flip's own intermediate run — `[R87.3]` red with three pool rows its fixture never created) · pattern: `TEST-SUITE` / `COMPOSITION`
+
+Every scorer-family block from §76.8 on drives production `scorerCycle`, which writes
+`S.scorerCtlPass` as a side-effect — and the family's only capture (`keep78`) sits AFTER the first
+write, so its teardown restored mid-family debris rather than the boot value. With `CUTOVER_POOL`
+false the leak was inert: nothing read the field outside the scorer surfaces. **The flip made it
+load-bearing** — `planCandidates()` with no injection now reads `S.scorerCtlPass`, so every
+later block's plan build silently composed a fabricated three-item pool. It surfaced only because
+the flip was run as its own intermediate suite pass before any assertion was re-pointed: `[R87.3]`
+went red showing `["watch","pool","pool","pool"]` where its fixture built one watch row.
+
+**This is the recorded leak shape** (M152's cousin; re-pass finding 25 already caught the §89
+block leaking the same field and `[R89.3]` asserts that restore) **arriving one block family
+earlier, and the flip is what turned it from hygiene into behaviour.** A fixture leak that is
+harmless under today's flags is not harmless — it is waiting for the flag that makes it real.
+
+**The repair:** the §78 family's teardown now sets `S.scorerCtlPass`/`S.scorerCtlFail` to the
+DNS-dead boot value (`null` — the scorer never runs ambiently), stated as such in place; and
+`[R87.3]`'s fixture pins `S.scorerCtlPass = []` because a fixture owns its population whatever
+the ambient state. The rule that would prevent a repeat: **when a flag flip widens what a
+production term reads, every fixture that leaves that input ambient is part of the flip's
+surface** — walk the suite for writers of the newly-read input before trusting the first
+post-flip green.
+Substantiated from: the intermediate-run report (8 reds, 2026-08-21), probe-snippet §78 teardown
+and §87 fixture, `[R89.3]`'s own label.
+
+---
+
 ### M177 · A fixture set two touch windows to one, and `touchWindows()` silently returned the real four-touch schedule
 2026-08-20 · found by: seeding (the seed came back GREEN, twice, for two different reasons) · pattern: `TEST-SUITE`
 

@@ -15,18 +15,30 @@ fi
 echo
 
 echo "═══ DIFF ═══ (staged vs tree; written to staging/DIFF.patch)"
-: > "$ST/DIFF.patch"
+# A checking tool never destroys a record it did not create in this run (M182:
+# a post-land check.sh truncated the landed pass's only diff copy). The diff is
+# computed to a temp file; DIFF.patch is replaced only when the new diff is
+# non-empty. An empty diff with a non-empty DIFF.patch on disk means the pass
+# has LANDED (staged == tree) and that file is the only byte-level record.
+NEWDIFF="$ST/.DIFF.tmp"
+: > "$NEWDIFF"
 for pair in "index.html:index.html" \
             "tools/probe/probe-snippet.html:probe-snippet.html" \
             "REQUIREMENTS.md:REQUIREMENTS.md"; do
   T="${pair%%:*}"; S="${pair##*:}"
-  diff -u "$ROOT/$T" "$ST/$S" --label "a/$T" --label "b/staging/$S" >> "$ST/DIFF.patch"
+  diff -u "$ROOT/$T" "$ST/$S" --label "a/$T" --label "b/staging/$S" >> "$NEWDIFF"
 done
-if [ -s "$ST/DIFF.patch" ]; then
+if [ -s "$NEWDIFF" ]; then
+  mv "$NEWDIFF" "$ST/DIFF.patch"
   awk '/^--- /{f=$2} /^\+\+\+ /{next} /^\+/&&!/^\+\+\+/{a[f]++} /^-/&&!/^---/{d[f]++} END{for(k in a) printf "  %-12s +%d\n", k, a[k]; for(k in d) printf "  %-12s -%d\n", k, d[k]}' "$ST/DIFF.patch" | sort
   echo "  ($(grep -c '^[+-]' "$ST/DIFF.patch") changed lines total)"
 else
-  echo "  (no staged changes yet)"
+  rm -f "$NEWDIFF"
+  if [ -s "$ST/DIFF.patch" ]; then
+    echo "  (staged == tree — the pass has LANDED; existing DIFF.patch preserved as the record)"
+  else
+    echo "  (no staged changes yet)"
+  fi
 fi
 echo
 

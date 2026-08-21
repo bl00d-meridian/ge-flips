@@ -1,4 +1,210 @@
-# TOMORROW: THE FLIP. Read this section and execute it — everything you need is here.
+# CUTOVER DAY 2026-08-21, RESTART SESSION — the ruled queue is EXECUTED, COMMITTED AND PUSHED.
+
+**The restart directive's queue (items 2a–2i) is complete.** Three staged batches, each with
+seeds red-alone and hash-restored between, fresh-agent cold reviews (finding withheld, subsystem
+map supplied), landed via the guard, tree suite cold both viewports after each landing.
+**Suite on the committed tree: PROBE-PASS cold, BOTH viewports, 1,364 assertions, pairing clean
+both directions (546 tags / 558 rows / 546 cited).** Committed and pushed this session per the
+directive — the hash is in the session report and `git log`.
+
+**The state check found (directive §0):** the dead session had already landed batch 1 of the
+queue (F0 cohort stamp · one coverage owner + the three-way bench copy · F1 reachable remedy —
+§114/§115; ledger rows 13–15 were written THIS session from the surviving PASS.md, and the
+verbatim pass record is archived in `audits/STAGERECORD-2026-08-21B.md`) and recorded traces
+1–3. Two incidents from the check: **M182** — a post-land `tools/stage/check.sh` run truncated
+batch 1's only byte-level diff (the tool now preserves a non-empty DIFF.patch on a landed pass;
+batches 2 and 3's diffs are archived as `audits/DIFF-2026-08-21C-batch2.patch` and
+`…D-batch3.patch`) — and **M183** — the traces file claimed the M181 fix "fixed in batch 2"
+while batch 2 had never been opened (corrected; a disposition line states the fix's actual
+state at writing time).
+
+**The Clockwork trace (directive §1)** was complete in
+`audits/TRACES-2026-08-21-observation-week.md`: out of the cell on MARKET gates (sustained
+margin 21gp vs the 63gp need · 85.13% one-way flow · thin side 329/h vs the 1,000 floor), not
+on charts; churn confirmed clean; the first-clear one-shot confirmed record-keyed. Its finding
+1 (M181) landed in batch 3; **finding 2 — a session spark never goes stale for reads — remains
+a PROPOSAL for a ruling** (tighten: archive preferred past an age bound, which re-decides the
+sparked-clears precedent; or disclose: series age on the line, display-only). NOT built.
+
+## Batch 2 (pass 2026-08-21·C — ledger rows 16–18, §116–§118)
+
+- **F5:** `freeGp()` owns free capital; `available()` (stack-based — counted the shadow reserve
+  as spendable) DELETED; `workingCapital()` folded to the owners (round-1 review catch — the
+  `DB.bank`-spelled respelling the `stack()`-spelled sweep missed); the `met-capfeas` glossary
+  corrected (round-2 catch).
+- **2f + A1 LANDED.** `planCmp` (promotion ‖ population ‖ tier ‖ value) is a TOTAL comparator —
+  the population key sits INSIDE it, the one deliberate delta from the Aug 19 held form, because
+  a pairwise family-seat decision needs a total order; the value key still never compares across
+  populations (the group key settles first). `planOrder` is the funding walk; `planGroups`
+  (with the promoted group), the print (`planCopyText` — F3 closed), NEXT UP's grouping and
+  queue-position blame, and `applyFamilyRule`'s winner all read the one term. Review catches
+  fixed: a third stale "render grouping only" claim; the promoted header naming a control that
+  does not exist; the queue blame promising a consequence the walk does not keep (a freed slot
+  funds the first row ahead WHOSE OWN OTHER BINDS CLEAR). **`staging-held/` is untouched** —
+  A1's substance landed fresh; the held nine stay per the directive.
+- **2g:** `poolInventory(P)` owns the pool-era counts — every pool member of one build in
+  exactly one state (funded / waiting-on-the-chart-gate by `gateName` / other, the remainder by
+  construction). THE POOL header and the scorer tile lead render its numbers and no others
+  (round-1 catch: "waiting" had two owners disagreeing exactly on a sparked item in NEXT UP);
+  the tile degrades to a stated could-not-read, fires-when-it-should driven.
+
+## Batch 3 (pass 2026-08-21·D — ledger rows 19–21, §119–§121)
+
+- **2h, the naming sweep:** ~60 rendered sites to the pins/pool vocabulary across the audit's
+  six families plus the review's round-1 enumeration (which caught ~9 missed classes, several
+  inside strings the sweep itself edited, and the `rateBlend` mapper bypass — the M170 shape,
+  named in the ledger row). Partition values, era-branched copy and historical records kept
+  with sweep-proof notes; `paperCohortLabel` is the ONE label mapper ("pins (key: watchlist)");
+  the **populations** glossary group (Pin, The pool) same-commit; F10's seat-economy checklist
+  copy rewritten to the pool economy; the paper cohort enumeration gained `pool`. Eight probe
+  pins moved with their copy.
+- **M181 + trace 2:** `poolDrill` carries departed items from their durable `DB.poolSeen` rows
+  (state named by `poolPersistence`, membership-independent, "left the cell — last passed Xh
+  ago") and the first-clear record's line; `candidateFor` stamps `serSrc` (one owner for "which
+  series answered") and a sparked pool clear below coverage carries *"charted from its own
+  fetch, ahead of the archive"* on its funded line — presence and absence asserted.
+- **2i, the display batch:** F2 (famDebug feeds pins ∪ pool, own assertion) · F6 (⏳ counts the
+  full fail set) · F7 (`posSellNet`) · F8 (pool rows carry the 🚫 press — and the review's
+  unreachability claim on its remove branch was pushed back and WITHDRAWN on re-verification)
+  · F9 (the funnel names the NEXT-UP first-reason partition) · F11 (the digest is the ONE
+  cluster press surface with `cluEvidenceLine` in view; the review queue AND the audit §3 —
+  round-1 catch: a third press surface whose hand-rolled evidence spelling had already drifted
+  — are pointers) · F12/F14 (freshness + clock labels) · F13 (`overnightSpreadVerdict`) · F15
+  (the four sub-view keys) · F16 (ONE bank entry point — the dot stays a MEASUREMENT and
+  records from the stamp; review catches closed: the handlers re-render the step's own
+  surfaces, and an empty-bank press can no longer silently delete a measured dot). F17 stays
+  accepted-by-design.
+
+## Owed / standing
+
+- The user's phone check batches to the cutover (standing).
+- **Trace-3 finding 2 (spark staleness) — needs a ruling.** Stated both ways in the traces
+  file; the disclose option is buildable without a ruling, the tighten option is not.
+- The 48h `QUAL_GAP_RESET` value remains PROPOSED, not ratified (ledger row 11).
+- Batch-1 carry-forwards (ledger rows 13–15): fold `shadowByGate`'s inline exclusion with
+  `excCohortOk` when next touched; two era-stale tooltips listed for a later pass.
+- Recorded limits, not defects: `[R121.2]` is a drift tripwire (the pre-repair spellings were
+  identical); `[R121.3]` and `[R116.1]` assert terms/values with their read-halves stated in
+  their rows.
+- Everything in the directive's "NOT TODAY" untouched: the detector queue, severity classifier,
+  settings-change log, apparatus consolidation, restore track, tenure-expiry, scorer
+  hour-split, collapse step 6, staging-held's six repairs.
+- Reserve: the user set `#szRes` to ~82m (pre-change 3m, written down); `ITEM_OPS` stays OFF
+  until coverage maturity as ruled. No backup restores.
+
+---
+
+# CUTOVER DAY 2026-08-21, LATER — the three ruled repairs LANDED; cutover visibility (Part A) BUILT.
+
+**The three-repair batch (pass-8 pairs 1.2+1.3 · 4.2+4.3 · 7.1+7.2) went through the full staged
+pass and LANDED**: staged in `staging/` (the prior pass's six unlanded repairs preserved intact in
+`staging-held/`, gitignored), 16 seeds each red alone with the staged tree hash-restored between,
+cold-reviewed by a FRESH agent shown the code diff only, its findings fixed or recorded, verdicts
+PASS ×3, `land.sh --yes`, tree suite PROBE-PASS both viewports. **Durable record:
+`audits/REPAIR-LEDGER.md` rows 10–12** (both property namings per repair). Headlines:
+
+- **R1:** sells restamp `hzH` at listing and reprice; stampless legacy legs freeze once at boot
+  (`freezeLegHorizons`, marked `hzFroze`, disclosed on the cards and the quote line); the slider can
+  no longer re-age any real leg.
+- **R2:** an INCOMPLETE seasoning streak lapses beyond `QUAL_GAP_RESET` (**48h — VALUE PROPOSED,
+  NOT RATIFIED**) and resets to fresh with the lapse recorded (`lapsedN`/`lapsedAt`); **completed
+  tenure is EXEMPT** — the cold reviewer measured that without the exemption one weekend away
+  re-seasoned the whole funded book for ~27h, and expiry-for-tenure is a separate ruling
+  (available, not taken). The ETA now derives from the touch schedule (`qualEtaFrom`/`qualEtaText`,
+  day-aware, never in the past) so the promise is achievable for the ruled cadence.
+- **R3:** `whyKeys` owns the full unfunded-reason set (whyKey/sentence/picker/funnel all derive);
+  the soft-fill row carries `softfill`; the picker tells the truth at the first render and its
+  unknown-key fallback is the third state, never "plan is full".
+
+**Part A (cutover visibility, user directive mid-day) BUILT on the landed tree** — display only:
+`poolEraInfo` (one era term: reading / could-not-check / waiting+earliest-date / ready) feeds the
+plan's countdown line, THE POOL open group (waiting pool rows leave the collapsed bench pile —
+each row renders exactly once), and the scorer tile's pool lead; `notePoolFirstClear` records the
+pool's first full-gate pass once (record-keyed, imported well-formed-or-omitted) and the NOW line
+announces it below every actionable state. §113, `[R113.1]`–`[R113.5]`, 7 seeds each red alone,
+tree hash-restored (one restore initially duplicated a comment — caught by the hash check, fixed,
+re-proven). Suite: **PROBE-PASS cold, both viewports, 1,316 assertions, pairing 513/525/513,
+cold=warm.** Phone artifact (synthetic 390×844): countdown *"Chart coverage: 4.5 of 7 observed
+days — pool items begin clearing ~Aug 23 at the earliest…"*, THE POOL — 7 items open with per-row
+reasons, bench pile *"0 items (+7 pool, shown above)"*, tile *"7 pool candidates waiting on
+coverage · 4.5 of 7 days · measuring, cannot rank yet…"*. Plan open-element count 4 → 14 (rows
+moved out of the collapsed pile, by directive); walk-up decision count unchanged.
+
+**Parts B/C (surface audit + watchlist dependency enumeration) are propose-only:
+`audits/SURFACE-2026-08-21-ui-audit.md`** — full element tables for Plan & Pins and Review,
+surface tables for the other tabs, the ~40-site watchlist-naming sweep list, the 18-entry
+drift-hazard register (F0–F17; F0 is the paper cohort stamp gap that bites at chart maturity),
+the 109-touch-point DB.watch dependency enumeration in six release groups, and the seven-step
+collapse plan mapped to the ruled sequence. **The user rules row by row before anything moves.**
+Nothing from B/C has been changed in code.
+
+---
+
+# CUTOVER DAY 2026-08-21 — THE FLIP IS DONE. The pool is live and benched on the coverage clock.
+
+**`CUTOVER_POOL = true` and `VOL5_UNIVERSE = true`, flipped together per the pairing guard.
+`ITEM_OPS` stays `false` — HANDOFF §c below, followed over the day-of instruction's "flips with
+them", and the discrepancy was reported.** Tree UNCOMMITTED on top of `b24b36c` (whose own delta
+over `bb648fb` is HANDOFF.md only — the shipped code baseline is exactly `bb648fb`). Committing
+and pushing are the user's.
+
+**Suite: PROBE-PASS, cold, BOTH viewports (1200×900 and 390×844), cold and warm identical,
+pairing clean both directions (497 tags / 509 rows / 497 cited).** Pre-flip checks all passed:
+cold PROBE-PASS at 1,272 assertions, cold=warm, all five Aug 20 fixes verified in-tree
+(`[R108.1]`–`[R108.7]` all green plus code anchors read).
+
+**The flip was run as its own intermediate suite pass before any assertion moved: 8 red, every
+one accounted for.** Two were the pins doing their job (`[R89.1]`, `[R94.3]`); six were fixtures
+written against the pre-flip default. All re-pointed with BOTH eras kept drivable — the retired
+watchlist regime now asserts under an injected off set (`planSubLine`, `planInertLine`,
+`deployPoolRegime` and `cutoverDecisionLogOnce` gained the injectable-set parameter;
+production passes nothing — the `planCandidates(armed)` precedent). A new `[R89.1]` limb asserts
+`planCandidates()` with NO injection returns pins + pool: the branch-level proof the shipped
+consts are read, and Seed A proved it discriminates (wiring severed → branch limbs red, pin green).
+
+**Eight seeds, one at a time, tree restored byte-identical between each (hashes proven):**
+A `planCandidates` wiring severed → 3 red; B `planInertLine` ignores its set → both `[R92.5]`
+limbs alone; C `planSubLine` ignores its set → `[R92.4]` alone; D `deployPoolRegime` ignores its
+set → `[R90.2]` alone; F one-shot presence check deleted → its limb alone; G the wait for a
+coverage read removed → its limb alone; H `accrueBackground` wiring removed → its limb alone;
+I `by:"user"` dropped → its limb alone.
+
+**New: `cutoverDecisionLogOnce` (§109, `[R109.1]` ×6, REQUIREMENTS row added).** Rides
+`accrueBackground` (the poll, never a render), writes ONE `kind:"cutover"` decision-log row —
+`auto:1, by:"user"`, the closure precedent — with the chart coverage in force when the press
+lands in that browser, read from `S.chartCache.state` (the same term every surface reads).
+One-shot by the row's own presence, never a flag (the `shadowPurgeV1` restore hazard). Waits for
+the first coverage read; could-not-check is recorded as could-not-check. It will fire on the
+user's phone at the first poll after boot — the row is the §3a deliverable and it lands
+per-browser by design. The row renders in the review's "Applied automatically" drill; no
+decision-log `kind` carries an individual glossary entry (settings/sleeve likewise), noted for
+scan 4.
+
+**One incident: M178.** The §78 scorer blocks leaked their synthetic control cell
+(`S.scorerCtlPass`, written by production `scorerCycle` before the only capture), and the flip
+made the leak feed `planCandidates` in every later block — caught by the intermediate run
+(`[R87.3]` red with pool rows its fixture never built). Repaired at the writer (§78 teardown
+restores the boot value, stated in place) and at the reader (`[R87.3]` pins its population).
+
+**Stale-claim sweep done:** the pool-switch stanza and both requirement rows (`R89.1`, `R94.3`)
+now state the flipped era; `R90.2`/`R92.4`/`R92.5` rows were already era-neutral; the
+"until the cutover ruling retires them" lines on Scanner/Prospecting stand — that retirement is
+its own ruling and was not part of today.
+
+**What the first plan shows, and the honest limit:** a real-network boot cannot be automated in
+this harness (PROBE.md's OPERATOR-VERIFIED ruling), so the day-of readout is a synthetic boot at
+390×844 in an isolated profile, plus the user's own phone check. The pool arrives BENCHED on
+"chart still loading" until the trailing-8-day archive crosses 168 observed hourly buckets
+(~Aug 21 late – Aug 23). Nothing new funds until then, and that is the correct verdict.
+
+**Owed / standing:** the three ruling pairs from pass 8 (1.2+1.3 · 4.2+4.3 · 7.1+7.2, all six
+still UNRULED — listed below under UNRULED); the user's walk-up reports each touch, traced to
+terms; the half-stack `reserve` press WAITS for coverage maturity; NO backup restores until the
+restore track closes; everything in "WHAT STAYS QUEUED" stays queued.
+
+---
+
+# THE FLIP SEQUENCE AS PLANNED (superseded by the section above — executed 2026-08-21). Read this section and execute it — everything you need is here.
 
 **Baseline commit `047cf6d`** (2026-08-14 → 2026-08-20, six days of work, committed *before* tonight's
 fixes so those land as their own diff). **Not pushed — pushing is the user's.** Tonight's fixes are

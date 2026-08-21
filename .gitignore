@@ -30,3 +30,7 @@ gef-backup*.json
 # here and lands by tools/stage/land.sh; the durable record is
 # audits/REPAIR-LEDGER.md. ANCHORED to the repo root, same reasoning as /inbox/.
 /staging/
+# the PRESERVED prior pass (2026-08-21): six unlanded repairs from the Aug 19
+# nine-repair pass, kept intact by user ruling while a new pass occupies
+# staging/. Same privacy reasoning; the durable record is still the ledger.
+/staging-held/

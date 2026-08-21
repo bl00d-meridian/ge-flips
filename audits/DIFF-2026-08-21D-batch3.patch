@@ -1,0 +1,1600 @@
+--- a/index.html
++++ b/staging/index.html
+@@ -487,7 +487,7 @@
+       <div id="paperGate"></div>
+     </div>
+     <div class="panel" id="paperCohortPanel">
+-      <div class="ph"><h2>Cohorts</h2><span class="sub">watchlist · slice · gap band · scanner — populations never mix in a gate read</span></div>
++      <div class="ph"><h2>Cohorts</h2><span class="sub">pins (key: watchlist) · pool · slice · gap band · scanner — populations never mix in a gate read</span></div>
+       <div id="paperCohort"></div>
+     </div>
+   </div>
+@@ -504,7 +504,7 @@
+       <div id="prospectGap"></div>
+     </div>
+     <div class="panel" id="prospectHoursPanel">
+-      <div class="ph"><h2>Hours ledger</h2><span class="sub">market stream (unbiased) vs paper stream (presence-biased)</span></div>
++      <div class="ph"><h2>Hours ledger</h2><span class="sub">market stream (unbiased) vs paper stream (presence-biased) · hours are YOUR LOCAL clock — the scorer's hour bands are UTC, so the same band sits offset between the two surfaces</span></div>
+       <div id="prospectHours"></div>
+     </div>
+   </div>
+@@ -605,7 +605,7 @@
+ 
+     <div class="panel">
+       <details id="beyondNet">
+-        <summary title="The discovery slice's stratified rotation is DORMANT (your ruling, Aug 14 2026) — superseded by the universe scorer, which scores every mapped item each 5m bucket. What still renders here: the gap band's 10-item draw from 250k–1m, the band between the T2 scanner ceiling and the anomaly scan's floor, gate-tagged like watchlist rows. Sanity gates only: tradeable, priced in band, nonzero volume. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
++        <summary title="The discovery slice's stratified rotation is DORMANT (your ruling, Aug 14 2026) — superseded by the universe scorer, which scores every mapped item each 5m bucket. What still renders here: the gap band's 10-item draw from 250k–1m, the band between the T2 scanner ceiling and the anomaly scan's floor, gate-tagged like pin rows. Sanity gates only: tradeable, priced in band, nonzero volume. Pure exploration: nothing here is admitted, funded, or watched except by your hand."><b>Beyond the net</b> — <span id="beyondNetSub" class="dim"></span></summary>
+         <div class="tw"><table>
+           <thead><tr><th>Item</th><th title="The structural stratum this row was drawn from — strata rotate one per cycle so small corners get sampled monthly instead of never. Name-pattern classification (the mapping carries no categories): approximate by construction, and it steers sampling only.">Stratum</th><th title="The full plan gate chain, run on every slice item each cycle — the slice exists to gauge the universe beyond your filters, and untagged rows would defeat it.">Gates</th><th>Buy</th><th>Sell</th><th>Margin</th><th>ROI %</th><th>Limit</th><th>Vol (thin side)</th><th>Age</th><th></th></tr></thead>
+           <tbody id="beyondNetBody"></tbody>
+@@ -733,7 +733,7 @@
+         <span class="dslot"><span class="tdot">○</span></span> margin test expired.
+         Shadow states are circles-within-circles and carry good/bad colour because they ARE good/bad; test states are plain circles in neutral steel because verified-vs-stale is not good-vs-bad. Each dot keeps a fixed slot, so a missing one leaves its space rather than letting its neighbour slide over.
+       </div>
+-      <div class="ph"><h2>Watchlist</h2><span class="sub" id="watchStack"></span>
++      <div class="ph"><h2>Pins</h2><span class="sub" id="watchStack"></span>
+         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+           <button class="sm" id="scoutTog" title="Auto-scout screens the whole market on sustained post-tax ROI and keeps the list topped up. It only adds and removes its own entries — items you added, tested, hold, or flipped recently are never touched."></button>
+           <button class="sm" id="wSpark">↻ Redraw charts</button>
+@@ -755,11 +755,11 @@
+       <div class="row" style="margin-bottom:10px">
+         <div class="ac" id="acWatch"><input placeholder="Add item by name…"></div>
+         <label class="f" title="Show only rows in a given plan state or carrying a given collapsed flag — the ⚠ chip aggregates them on the row; this reaches each one.">Filter<select id="wFlagFilter" style="width:130px"></select></label>
+-        <label class="f" title="How many scout·T1 candidates the pipeline maintains on the watchlist">T1 cand<input type="number" id="scT1Cap" min="0" max="20" style="width:52px"></label>
+-        <label class="f" title="How many scout·T2 candidates the pipeline maintains on the watchlist">T2 cand<input type="number" id="scT2Cap" min="0" max="20" style="width:52px"></label>
++        <label class="f" title="How many scout·T1 candidates the pipeline maintains as pins">T1 cand<input type="number" id="scT1Cap" min="0" max="20" style="width:52px"></label>
++        <label class="f" title="How many scout·T2 candidates the pipeline maintains as pins">T2 cand<input type="number" id="scT2Cap" min="0" max="20" style="width:52px"></label>
+         <label class="f" title="Profitable trips in 14 days that make an item a discovery SEED — deliberately below the 4-trip reliability floor: discovery may act on hints, funding may not">Seed trips<input type="number" id="scSeedN" min="1" max="10" style="width:48px"></label>
+-        <label class="f" title="Sibling watch slots per seed">Sib/seed<input type="number" id="scSibSeed" min="0" max="30" style="width:48px"></label>
+-        <label class="f" title="Sibling watch slots overall — beyond the normal watch cap, pruned hardest-first when full">Sib total<input type="number" id="scSibTot" min="0" max="60" style="width:48px"></label>
++        <label class="f" title="Sibling pin slots per seed">Sib/seed<input type="number" id="scSibSeed" min="0" max="30" style="width:48px"></label>
++        <label class="f" title="Sibling pin slots overall — beyond the normal pin cap, pruned hardest-first when full">Sib total<input type="number" id="scSibTot" min="0" max="60" style="width:48px"></label>
+       </div>
+       <div class="tw"><table id="watchTable">
+         <thead><tr>
+@@ -973,7 +973,7 @@
+     <div class="panel" id="clusterPanel">
+       <div class="ph"><h3>Item baskets — exposure caps & blast radius</h3><span class="sub" id="cluSub"></span>
+         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+-          <button class="sm" id="cluNew" title="Create an empty named standing basket, then tag members with the ⬡ button on watchlist rows.">+ new basket</button>
++          <button class="sm" id="cluNew" title="Create an empty named standing basket, then tag members with the ⬡ button on pin rows.">+ new basket</button>
+           <button class="sm" id="cluScan" title="Runs weekly on its own; this button runs it now.">↻ find co-moving groups</button>
+         </span>
+       </div>
+@@ -1083,7 +1083,7 @@
+       <div class="stats" style="margin-top:12px" id="shStats"></div>
+       <div class="row" style="margin-top:12px">
+         <label class="f">Bank value right now (gp)<input type="number" id="shBank" step="100000" style="width:160px"></label>
+-        <button class="sm" id="shBankNow" title="Re-stamp the bank figure as current, so already-counted profit isn't added twice">Mark as current</button>
++        <button class="sm" id="shBankNow" title="Re-stamp the bank figure as current, so already-counted profit isn't added twice. Also records today's equity dot from the same measurement — the one entry point (F16)">Mark as current</button>
+         <span class="note" style="align-self:center;max-width:520px" id="bankNote"></span>
+       </div>
+     </div>
+@@ -2319,7 +2319,8 @@
+    validateImport, because the sanitizer enumerates keys and an unlisted key
+    silently dies on restore (the R68.9 lesson, applied before the fact).
+ 
+-   NO SURFACE YET (stage 1e). Failure is surfaced through the standing warn
++   Reads on the Scorer sub-tab since stage 1e shipped (this comment used to
++   say no surface yet). Failure is surfaced through the standing warn
+    channel like the archive's, so a scorer that dies cannot die silently. */
+ const SCORER_V = 1;
+ const SCORER_ID_CAP = 3000;   // sized from the union flow: 171 over two snapshots at the loosest corner, 6x headroom on a weekly union estimate
+@@ -2788,7 +2789,7 @@
+              timing: "single observed bucket — consistent with the T/T−1 plan stamp (one poll of price movement); not proof of it",
+              "cannot say": "its only multi-bucket runs span an UNOBSERVED bucket, so persistence across a poll boundary was never watched" },
+   extra:   { standing: "survived a poll boundary — a durable admission gap, the population the cutover is about",
+-             transient: "single observed bucket — the control passed it once and the watchlist has never held it",
++             transient: "single observed bucket — the control passed it once and the pin list has never held it",
+              "cannot say": "its only multi-bucket runs span an UNOBSERVED bucket" } };
+ function rdiffClassOf(side, longest, longestClean){
+   if (longestClean >= 2) return side === "extra" ? "standing" : "persistent";
+@@ -4340,7 +4341,7 @@
+                  + VOL5_BIND_REFRESHES + " consecutive refreshes — not binding yet)"
+                : "1h (5m " + full(Math.round(c.vol5)) + "/h under floor — the consecutive-refresh streak is "
+                  + "NOT COUNTED for this item, so the 5m binding rule cannot arm; the streak is kept for "
+-                 + "watchlist members only)" };
++                 + "pinned items only)" };
+   }
+   return { v: c.volSide, bound: "1h", label: "1h" };
+ }
+@@ -5224,7 +5225,7 @@
+   if (!force && Date.now() - (DB.lastCoScanAt || 0) < 7 * 86400e3) return;
+   const ids = DB.watch.map(w => w.id);
+   if (ids.length < 3){
+-    if (force){ S.cluMsg = "Needs 3+ watchlist items — nothing to correlate."; renderClusters(); }
++    if (force){ S.cluMsg = "Needs 3+ pins — nothing to correlate."; renderClusters(); }
+     return;
+   }
+   cluScanBusy = true;
+@@ -5968,7 +5969,7 @@
+            it has no watch row to type a qty on. */
+         : srcArg === QUAL_SRC_POOL
+         ? "no buy limit in the mapping for this item and nothing else to size by — a pool row carries no manual size; hand-pin it (Scanner “+pin”, or the add-by-name box above the pin list) and type a manual qty on the pin's row"
+-        : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its watch row to include it");
++        : "no buy limit in the mapping for this item and nothing else to size by — type a manual qty on its pin's row to include it");
+     /* Volume floor is a PREDICTION of slow fills; repeated realized wins are
+        MEASUREMENT. 2+ profitable completed round trips in 14d waive the floor
+        (the mixed-hide-cape case: 84/h vs an 88/h floor, with proven wins) —
+@@ -6028,6 +6029,10 @@
+        mercy on fill horizon or momentum at tier 2. */
+     const tier = itemTier(w.id, c);
+     return { ...(srcArg ? { src: srcArg } : {}),
++             /* WHICH series answered, stamped once here so a consumer never
++                re-resolves it (the ruled provenance copy on a sparked pool
++                clear reads this — one owner, the chain's own resolution). */
++             serSrc: ser.src,
+              id:w.id, name:c.name, c, qty, tr, vt, volGate, volSrc: vg.label, volBound: vg.bound,
+              failed, fails, eMargin, eRoi, wins, mo, tier,
+              hw, stw, rel, horizonUnits,   /* exposed for the pool group's unweighted sort (step A.1) — the same term the score multiplies, not a re-derivation */
+@@ -6820,7 +6825,7 @@
+ function cutoverFault(set){
+   const s = set || { pool: CUTOVER_POOL, ops: ITEM_OPS, vol5: VOL5_UNIVERSE };
+   if (s.pool && !s.vol5)
+-    return "the candidate pool is armed and the 5-minute die-off streak still counts the watchlist only, so a pool "
++    return "the candidate pool is armed and the 5-minute die-off streak still counts the pins only, so a pool "
+          + "item's streak is NOT COUNTED and its volume gate falls back to the 1h book — which sizes it LARGER than "
+          + "an identically-placed pin in a market whose 5m flow has died. VOL5_UNIVERSE has to be ruled with it.";
+   return null;
+@@ -7092,7 +7097,7 @@
+   return "⚠ The qualification store hit its " + full(QUAL_ROW_CAP) + "-row cap and evicted "
+     + full(justNow) + " least-recently-seen POOL row" + (justNow === 1 ? "" : "s")
+     + " (" + full(total) + " evicted in total). Each evicted item loses its seasoning streak and re-seasons "
+-    + "from scratch — this is a change to what the plan may fund, not housekeeping. Watchlist rows are never evicted.";
++    + "from scratch — this is a change to what the plan may fund, not housekeeping. Pin rows are never evicted.";
+ }
+ /* THE RETENTION PREDICATE, EXTRACTED so the assertion can inject the window
+    instead of reaching through the live constant — an assertion pinned by a
+@@ -7374,7 +7379,7 @@
+      is how the regime race lost an epoch. Surfaced, not defaulted. */
+   if (unmarked) warn("qual-src", "⚠ " + unmarked + " qualification row" + (unmarked === 1 ? "" : "s")
+     + " were created from candidates carrying no provenance stamp, so their `src` is absent and their retention "
+-    + "falls back to the watchlist-membership rule. Provenance is stamped centrally in planCandidates — an unmarked "
++    + "falls back to the PIN-LIST membership rule (key: watchlist). Provenance is stamped centrally in planCandidates — an unmarked "
+     + "candidate means an entry path that bypasses it.");
+   else clearWarn("qual-src");
+   if (dirty) save();
+@@ -7495,7 +7500,7 @@
+     bench.push({ ...x, failed: "untiered — " + x.tier.why + "; the allocator funds only T1 (400–5k) and T2 (5k–100k). "
+       + (x.src === QUAL_SRC_POOL
+          ? "A pool item has no tier control yet — the per-item override waits on ITEM_OPS, a separate ruling gated on chart coverage maturity; until then, hand-pin it (Scanner “+pin”, or the add-by-name box above the pin list) and set the tier override on the pin"
+-         : "Override the tier on its watch row to include it") });
++         : "Override the tier on its pin's row to include it") });
+     return false;
+   });
+ 
+@@ -7602,6 +7607,13 @@
+       if (!qex){ qualifying.push({ ...x, qual: qs }); continue; }
+       notes.push("seasoning waived — " + qex);
+     }
++    /* THE RULED PROVENANCE COPY (trace 2, user ruling 2026-08-21): a pool
++       item that clears during the benched era did so on its own session
++       fetch, and the funded line says so — real data, ahead of the archive;
++       the note travels with the waiver note it usually accompanies. Reads
++       the chain's own resolution (`serSrc`), never a re-resolve. */
++    if (x.src === QUAL_SRC_POOL && x.serSrc === "spark" && !chartReady())
++      notes.push("charted from its own fetch, ahead of the archive");
+     const blockedSeed = rawCaution && (catSlots[x.caution.key] || 0) >= GATE.seedSlots;
+     const blockedT2 = x.tier.t === 2 && t2Live >= T2_MAX_CONCURRENT;
+     const full_ = picks.length >= targetSlots;
+@@ -8623,13 +8635,20 @@
+         : '<button class="sm ghost" data-delpos="'+p.id+'" title="Discard this position without logging — only if the items left your hands some other way">✕</button>');
+ }
+ 
++/* ONE OWNER FOR A POSITION'S SELL-SIDE NET (F7, 2026-08-21): the sell-mode
++   lines and the positions table's Unrealized column each spelled "the price
++   that matters × post-tax net" independently — a pair kept in agreement by
++   maintenance. The price that matters is your standing ask if listed, else
++   the live instabuy. */
++function posSellNet(p, c){
++  const stage = posStage(p);
++  const at = stage === "selling" ? p.ask : (c && c.sell != null ? c.sell : null);
++  return { at, stage, net: at != null ? p.qty * (at - p.buy - geTax(at, p.itemId)) : null };
++}
+ function sellLines(){
+   return DB.positions.map(p => {
+     const c = calc(p.itemId);
+-    const stage = posStage(p);
+-    /* the price that matters: your standing ask if listed, else live instabuy */
+-    const at = stage === "selling" ? p.ask : (c && c.sell != null ? c.sell : null);
+-    const net = at != null ? p.qty * (at - p.buy - geTax(at, p.itemId)) : null;
++    const { at, net, stage } = posSellNet(p, c);
+     const ageH = (Date.now() - p.placedAt)/3600e3;
+     return { p, c, at, net, ageH, stage };
+   });
+@@ -8646,8 +8665,16 @@
+    stays auditable even on a night when the plan is empty. */
+ function renderFamilyDebug(){
+   const fams = new Map();
+-  for (const w of DB.watch){
+-    const nm = itemName(w.id), k = familyKey(nm);
++  /* THE FEEDER MATCHES THE MECHANISM'S POPULATION (F2, 2026-08-21):
++     `applyFamilyRule` runs over the whole pass set — pins AND pool — so a
++     panel reading DB.watch alone claimed to show how grouping resolved while
++     blind to the population where a pool item can take a family seat.
++     Membership union, no gate evaluation: the grouping is a property of
++     NAMES, which is exactly what this panel audits. */
++  const famIds = new Set(DB.watch.map(w => w.id));
++  if (cutoverPoolOn()) for (const r of cutoverPoolRows()) famIds.add(r.id);
++  for (const id of famIds){
++    const nm = itemName(id), k = familyKey(nm);
+     if (!fams.has(k)) fams.set(k, []);
+     if (!fams.get(k).includes(nm)) fams.get(k).push(nm);
+   }
+@@ -8655,7 +8682,7 @@
+   $("#famBody").innerHTML = rows.length
+     ? rows.map(([k, names]) => '<div class="fam-row"><span class="k">' + esc(k) + '</span><span>'
+         + esc(names.join("  ·  ")) + (names.length > 1 ? ' <span class="badge b-warn">grouped</span>' : '') + '</span></div>').join("")
+-    : '<div class="fam-row"><span class="dim">Nothing on the watchlist yet.</span></div>';
++    : '<div class="fam-row"><span class="dim">No pins or pool candidates yet.</span></div>';
+ }
+ 
+ function renderPlan(P0){
+@@ -8774,8 +8801,14 @@
+      improve" note stopped rendering, on every cold boot, where it is the whole
+      explanation for why nothing passes yet. A counter keyed on rendered copy
+      breaks silently the next time the copy is improved; the gate's IDENTITY is
+-     the stable thing, and `fails[0]` is what `failed` was derived from anyway. */
+-  const loading = bench.filter(b => b.fails && b.fails[0] && b.fails[0].g === "chart still loading").length;
++     the stable thing. (The count read `fails[0]` when this was written —
++     first-fail; F6 below widened it to full-set membership.) */
++  /* THE FULL FAIL SET, NOT THE FIRST FAIL (F6, 2026-08-21): the ⏳ count
++     answers "how many verdicts will improve when charts land", which is a
++     membership question over the whole fail set — an item failing ROI first
++     AND chartless is a loading item too, and first-fail attribution
++     undercounted it by exactly the chain position. */
++  const loading = bench.filter(b => (b.fails || []).some(f => f && f.g === "chart still loading")).length;
+   $("#planSub").textContent = planSubLine(PLAN, loading);
+ 
+   /* Placements made today, shown dimmed in-line so the plan reflects what you
+@@ -8800,7 +8833,7 @@
+           : (b => b
+               ? ' · <span class="neg" title="' + esc(b.failed) + '">⚠ no longer passes today\'s gates — '
+                 + esc(gateName(b.failed) || "plan gate") + ' (passed when you placed it; hover for detail)</span>'
+-              : ' · <span class="dim">not on the watchlist — gates not evaluated for it</span>'
++              : ' · <span class="dim">not scored this cycle — gates not evaluated for it</span>'
+             )(bench.find(x => x.id === p.itemId)))
+       + ' — nothing is logged until the round trip completes</div></div>'
+       + '<span class="plan-actions">'+posActions(p)+'</span></li>';
+@@ -9186,10 +9219,18 @@
+       + (poolInv.funded ? ' <span class="dim">(funded rows render in the plan above, in the money order)</span>' : '')
+       + '</div>'
+       + (planInertLine(PLAN) ? '<div class="plan-note">' + esc(planInertLine(PLAN)) + '</div>' : "")
++      /* THE ONE CONTROL A POOL ROW CARRIES (F8, 2026-08-21): the blacklist is
++         the constitutional veto and its handler is id-based, so the press
++         works without a watch row; before this the only route was the name
++         box. Ignore stays off pool rows — it is day-scoped watch-row state. */
+       + poolWaiting.map(b => '<li class="next"><div class="body"><b>POOL</b> <span title="' + nameTitle(b.name) + '">'
+           + esc(b.name) + '</span>' + (b.tier ? tierBadge(b.tier) : '')
+           + (b.c && b.c.buy != null ? ' at <span class="num">' + full(b.c.buy) + '</span>' : ' <span class="dim">(no live price)</span>')
+-          + '<div class="why">' + esc(b.failed || "") + '</div></div></li>').join("")
++          + '<div class="why">' + esc(b.failed || "") + '</div></div>'
++          + '<span class="plan-actions"><button class="sm ghost" data-blk="' + b.id
++          + '" title="' + (isBlk(b.id) ? 'Remove from the blacklist — your press, no one else\'s'
++                                       : 'Blacklist this item: never scouted, funded, or quoted; no automated path can clear it. Yours alone to reverse.')
++          + '">' + (isBlk(b.id) ? '🚫✕' : '🚫') + '</button></span></li>').join("")
+     : "";
+   list.innerHTML = eraLine + ((placedHTML + quotesHTML + mmCandHTML + pickHTML + poolEraHTML + qualHTML + nextHTML) || emptyMsg);
+ 
+@@ -9211,8 +9252,8 @@
+          is never suggested — that decision is the user's alone. */
+       + (remaining > (t1Pool + t2Pool) * 0.25 && remaining > 5e6
+          ? '<div class="plan-note" style="margin-top:6px">' + gp(remaining) + ' of tier budget found no home this rotation '
+-           + '(T1 ' + gp(t1Pool - t1Spent) + ' idle · T2 ' + gp(t2Pool - t2Spent) + ' idle) — the watchlist can\'t absorb the working capital. '
+-           + 'Margin-test more tier-1 candidates from the scanner, set mm buffers on anything flagged <b>mm-ready</b>, or raise the watch cap so the scout surfaces more of the band.</div>'
++           + '(T1 ' + gp(t1Pool - t1Spent) + ' idle · T2 ' + gp(t2Pool - t2Spent) + ' idle) — the candidate set can\'t absorb the working capital. '
++           + 'Margin-test more tier-1 candidates from the scanner, set mm buffers on anything flagged <b>mm-ready</b>, or raise the pin cap (key: watchCap) so the scout surfaces more of the band.</div>'
+          : '')
+       + wedHTML;
+   } else foot.innerHTML = wedHTML;
+@@ -9238,7 +9279,7 @@
+           + (atCap ? ' <span class="dim">(meets the exception bar — cap reached, ' + EXC_MAX_ACTIVE + ' active)</span>' : '')
+           + '</span></div>';
+       }).join("")
+-    : '<div class="bench-row"><span class="dim">Nothing benched — every watchlist item passed.</span></div>';
++    : '<div class="bench-row"><span class="dim">Nothing benched — every candidate passed.</span></div>';
+   /* THE INERT-RESTRAINT LINE (step A.4) and the persistence drill ride the
+      bench block: said ONCE over the population, never stamped per row.
+      AFTER the assignment above, not before it (adversarial pass, Aug 19 2026).
+@@ -9296,6 +9337,11 @@
+   + 'Attribution below is the <b>' + headlineTag() + '</b>: the first gate in the chain that rejected the item, '
+   + 'not the only one that did. A gate earlier in the chain absorbs items later gates would also have benched, '
+   + 'so a big count here is not evidence that relaxing that gate would free anything. '
++  /* F9 (2026-08-21): the NEXT-UP rows below partition on the FIRST reason
++     key the same way, and nothing said so — a row failing two ways files
++     under the first. */
++  + 'The <b>→ NEXT UP rows partition the same way</b>: each unfunded row files under the FIRST of its reasons, '
++  + 'and a row bound two ways (its own line says "also binding") counts once, under the first. '
+   + '<b>The funnel keeps this attribution on purpose</b> — a cumulative "N remain" needs each candidate counted '
+   + 'once, and only first-fail partitions them. Read it for the shape of the drop-off; read the block above for '
+   + 'what relaxing a gate would actually do.</div>';
+@@ -9950,7 +9996,7 @@
+     byCap: r2c(byCap), wanted: r2c(wanted),
+     ceiling: r2c(Math.min(wanted, byCap)),
+     binding: wanted <= byCap
+-      ? "per-cohort limits (cooldown on the watchlist, draw size on the rotating cohorts)"
++      ? "per-cohort limits (cooldown on the pins cohort, draw size on the rotating cohorts)"
+       : "the " + SHADOW_MAX_OPEN + "-trip concurrency cap, which all three cohorts share" };
+ }
+ function paperCapacityLine(P){
+@@ -9958,7 +10004,7 @@
+   const days = n => c.ceiling > 0 ? Math.max(1, Math.ceil(n / c.ceiling)) : "∞";
+   return '<div class="dim" style="white-space:normal">Generator ceiling: <b>~' + c.ceiling + ' trips/day</b>'
+     + ' — reported per cohort, because they are limited by different mechanisms and one number would answer neither.'
+-    + ' <b>Watchlist</b> ' + c.watchCeil + '/day: ' + c.watchFams + ' famil' + (c.watchFams === 1 ? 'y' : 'ies')
++    + ' <b>Pins</b> ' + c.watchCeil + '/day: ' + c.watchFams + ' famil' + (c.watchFams === 1 ? 'y' : 'ies')
+     + ' × ' + c.perFamPerDay + ' (24h ÷ [' + fmtHrs(c.hz) + ' horizon + ' + c.cooldownH + 'h cooldown]) — a FIXED pool, so'
+     + ' the cooldown binds. <b>' + (SLICE_SAMPLING_RETIRED ? 'Gap band' : 'Slice + gap band') + '</b> ' + c.sliceCeil
+     + '/day' + (SLICE_SAMPLING_RETIRED ? ' (the slice\'s draw is dormant, retired Aug 14 2026)' : '')
+@@ -9967,8 +10013,8 @@
+     + ' Overall binding constraint: <b>' + esc(c.binding) + '</b> (the ' + SHADOW_MAX_OPEN + '-trip cap allows ~'
+     + c.byCap + '/day; the cohorts together want ~' + c.wanted + ').'
+     + ' At this rate a 30-trip bar needs ~' + days(30) + ' day' + (days(30) === 1 ? '' : 's')
+-    + '. <b>Read the watchlist figure alone for any verdict about YOUR items</b> — the rotating cohorts answer'
+-    + ' different questions and their volume does not shorten the wait for a watchlist verdict.</div>';
++    + '. <b>Read the pins-cohort figure alone for any verdict about YOUR items</b> — the rotating cohorts answer'
++    + ' different questions and their volume does not shorten the wait for a pins-cohort verdict.</div>';
+ }
+ function shadowScanState(P){
+   const now = Date.now(), cool = PAPER_FAM_COOLDOWN_H * 3600e3;
+@@ -11585,7 +11631,7 @@
+ function scorerRdiffCycleDrill(){
+   const r = S.scorerRdiffLast;
+   if (!r) return ' <span class="dim">· this session: no scored cycle yet, so no disagreements to name</span>';
+-  const rows = r.extra.map(id => ({ _cohort: "control passes · watchlist lacks", item: scorerItemMark(id),
++  const rows = r.extra.map(id => ({ _cohort: "control passes · pins lack", item: scorerItemMark(id),
+       fails: '<span class="dim">passes the control config — the disagreement is admission, not gates</span>',
+       _txt: itemName(id) }))
+     .concat(r.missing.map(m => ({ _cohort: "plan-funded · control fails", item: scorerItemMark(m.id),
+@@ -11596,7 +11642,7 @@
+       + "still the gate; this window is not a new consumer and the staged status does not change)"
+       + (r.planFresh ? "" : " · plan side unobserved this cycle: " + (r.planWhy || "unknown reason")),
+     cols: [{ k: "item", lab: "Item", html: 1 }, { k: "fails", lab: "Full fail set (config-free keys)", html: 1 }],
+-    rows, empty: "No disagreements this cycle — the control's pass set and the watchlist/plan agree." });
++    rows, empty: "No disagreements this cycle — the control's pass set and the pins/plan agree." });
+ }
+ /* §5 — THE RECONCILIATION HISTORY (ruled Aug 18 2026: the reader). The
+    current-cycle window above is one row; this is the ledger. ORDER IS THE
+@@ -11663,8 +11709,8 @@
+   };
+   html += side("sc:rdiff:missing", "Plan-funded · control fails", s.missing,
+     "the timing class lives here: every row compares the control at bucket T against a plan stamped at T−1, so a single-bucket entry may be one poll of price movement");
+-  html += side("sc:rdiff:extra", "Control passes · watchlist lacks", s.extra,
+-    "no timing class here — this side compares against watchlist MEMBERSHIP, a persisted set no plan staleness can move");
++  html += side("sc:rdiff:extra", "Control passes · pins lack", s.extra,
++    "no timing class here — this side compares against PIN-LIST membership (key: watchlist), a persisted set no plan staleness can move");
+   html += '<div class="dim" style="white-space:normal;margin-top:8px">Extraction defect versus understood difference is '
+     + 'your call and nothing here decides it; what the instrument decides is whether a disagreement is a disagreement at all. '
+     + '<button class="sm" data-analysis="rdiff" title="Downloads analysis-rdiff-&lt;date&gt;.json — coverage and the gap verdict first, then the plan side\'s states, then both sides classified with every row carried. A curated READ file, not the state backup.">⭳ export for analysis</button></div>';
+@@ -12154,6 +12200,12 @@
+   if (p.src === QUAL_SRC_POOL) return "pool";
+   return "watchlist";
+ }
++/* THE RENDERED LABEL FOR THE LEGACY COHORT KEY (the naming sweep, 2026-08-21).
++   The KEY "watchlist" is a partition value written into trips, drills and
++   exports — sweep-proof, never renamed. The LABEL the operator reads says
++   what the population is now: the pins. One mapper, so a surface cannot
++   invent its own spelling of the rename. */
++const paperCohortLabel = c => c === "watchlist" ? "pins (key: watchlist)" : c;
+ /* EXTRACTED Aug 13 2026 so the regime-separator table can label an outcome
+    without carrying a second copy of this mapping. Two renderers describing the
+    same state in two places is how the two drift; there is one now. */
+@@ -12208,7 +12260,7 @@
+       outcome,
+       net: '<span class="' + sign(p.net || 0) + '">' + gp(Math.round(p.net || 0)) + '</span>', _net: Math.round(p.net || 0),
+       regime: (p.regimes && p.regimes.length) ? p.regimes.join(" + ") : "—",
+-      cohort: glTerm("paper-cohort", esc(coh)), gate,
++      cohort: glTerm("paper-cohort", esc(paperCohortLabel(coh))), gate,
+       shape: shapeOf(p) + " (" + fmtHrs(legHorizonH(p)) + ")",
+       grade: gradeOf(p) + (p.exitApprox ? " · exit price approximate" : ""),
+       _cohort: coh,
+@@ -12468,7 +12520,7 @@
+     (DB.watch || []).map(w => w.id)
+       .concat((DB.shadowBook || []).filter(shadowResolved).filter(p => p.cohort !== "scanner").map(p => p.itemId)))];
+   if (!ids.length)
+-    return '<div class="dim">No items to score: the watchlist is empty and the paper book holds no non-scanner trips. '
++    return '<div class="dim">No items to score: the pin list is empty and the paper book holds no non-scanner trips. '
+          + 'This lane has no population yet — that is an absence of candidates, not a set of rejected ones.</div>';
+   const sts = ids.map(excStanding).sort((a, b) => a.rank - b.rank);
+   const cell = (st, k, face) => drill("exc:st:" + st.id + ":" + k, face, {
+@@ -12490,7 +12542,7 @@
+           + ' clause' + (st.failing.length === 1 ? '' : 's') + ' short'
+           + (st.binding.accrues ? '' : '; this one does not close by waiting') + '</span>';
+     return '<tr><td style="text-align:left">' + esc(st.name)
+-      + (st.watched ? '' : ' <span class="badge b-warn" title="Not on your watchlist — its trips come from the discovery slice or the gap band. It is scored here because it could qualify; a watchlist-only list would hide it.">unwatched</span>')
++      + (st.watched ? '' : ' <span class="badge b-warn" title="Not one of your pins — its trips come from the discovery slice or the gap band. It is scored here because it could qualify; a pins-only list would hide it.">unpinned</span>')
+       + '</td>'
+       + '<td>' + cell(st, "trips", mark(c.trips, c.trips.face)) + '</td>'
+       + '<td>' + mark(c.fill, c.fill.face) + '</td>'
+@@ -12509,7 +12561,7 @@
+     + 'fill rate and net can move either way, and a red flag or a missing gate does not close by waiting at all — so no ETA is '
+     + 'projected onto them rather than inventing one.' + provTag(true) + '</div>'
+     + '<div class="tw"><table id="excStandTable"><thead><tr><th>Item</th>'
+-    + '<th title="Closed counted trips, watchlist and slice cohorts only">Trips</th>'
++    + '<th title="Closed counted trips, pin and slice cohorts only">Trips</th>'
+     + '<th>' + glTerm("paper-fill", "Fill rate") + '</th><th>Net sim</th>'
+     + '<th>' + glTerm("exc-span", "Observed span") + '</th>'
+     + '<th>Red flags</th><th>Gate to waive</th><th>Binding clause</th></tr></thead>'
+@@ -13643,7 +13695,10 @@
+   const num = ps.reduce((a, p) => a + p.num, 0), den = ps.reduce((a, p) => a + p.den, 0);
+   if (!den) return '<span class="dim">' + esc(o.empty || "no population") + '</span>';
+   const pct = v => Math.round(v * 100) + "%";
+-  const rows = ps.map(p => ({ cohort: p.cohort, _cohort: p.cohort,
++  /* the label goes through the ONE mapper (the naming sweep — a legacy
++     cohort key rendering raw here read "watchlist" beside panels saying
++     "pins (key: watchlist)"); the KEY stays on _cohort for filtering */
++  const rows = ps.map(p => ({ cohort: paperCohortLabel(p.cohort), _cohort: p.cohort,
+     rate: pct(p.num / p.den), _rate: p.num / p.den,
+     n: p.den, _n: p.den, hits: p.num, _txt: p.cohort })).sort((a, b) => b._n - a._n);
+   const face = pct(num / den);
+@@ -13653,8 +13708,8 @@
+            { k: "hits", lab: o.numLab || "Count", num: 1, sortk: "hits" },
+            { k: "n", lab: o.denLab || "Population", num: 1, sortk: "_n" }],
+     rows, empty: "No cohort has a population here.",
+-    note: o.note || 'Cohorts are not interchangeable. The watchlist answers "would a plan candidate have filled", the '
+-        + 'discovery slice answers "does anything unwatched fill", the scanner cohort answers the filter question. '
++    note: o.note || 'Cohorts are not interchangeable. The pins cohort (key: watchlist) answers "would a plan candidate have filled", the '
++        + 'discovery slice answers "does anything unpinned fill", the scanner cohort answers the filter question. '
+         + 'Their average answers none of the three.' });
+   /* The decomposition rides BESIDE the number, not only inside the
+      expansion — the ruling is that the blend never renders alone, and an
+@@ -14096,7 +14151,7 @@
+   }
+   const rows = [...byCoh.entries()].map(([k, arr]) => {
+     const e = paperEconomics(arr);
+-    return { cohort: k, _cohort: k,
++    return { cohort: paperCohortLabel(k), _cohort: k,
+       n: e.n, _n: e.n,
+       rate: e.rate != null ? (e.rate * 100).toFixed(3) + "%" : "—", _rate: e.rate || 0,
+       net: gp(Math.round(e.net)), _net: Math.round(e.net),
+@@ -14109,8 +14164,8 @@
+   const pk = paperPeakNotional(closed);
+   const wc = workingCapital();
+   const over = wc > 0 && pk.peak > wc;
+-  const bits = ['<div class="note">Net is reported <b>per cohort and never blended</b> — the watchlist, the discovery '
+-    + 'slice, the gap band and the scanner cohort answer four different questions, and their sum answers none of them. '
++  const bits = ['<div class="note">Net is reported <b>per cohort and never blended</b> — the pins (key: watchlist), the pool, the discovery '
++    + 'slice, the gap band and the scanner cohort answer different questions, and their sum answers none of them. '
+     + 'The headline figure is a <b>rate</b>: simulated net per gp of notional held for a day, so it is comparable across '
+     + 'populations of different size and duration rather than growing with the book. All of it SIMULATED.</div>'];
+   bits.push('<div data-drillrow="1">Per-cohort screening rate: '
+@@ -14977,7 +15032,7 @@
+ }
+ function paperGateSection(){
+   const byGate = shadowByGate(true);
+-  const bits = ['<div class="note">Watchlist + slice cohorts only — the scanner cohort answers the FILTER question on its own ledger, pool-provenance trips read in their own cohort on the cohorts panel, and populations never mix in a gate read. '
++  const bits = ['<div class="note">Pin (key: watchlist) + slice cohorts only — the scanner cohort answers the FILTER question on its own ledger, pool-provenance trips read in their own cohort on the cohorts panel, and populations never mix in a gate read. '
+     + 'Every cell opens to the trips behind it: entry and exit, fill or no-fill with the tape evidence, observed share, regime and cohort.</div>',
+     /* Provenance, stated where the columns render (user ruling, Aug 12 2026):
+        these columns' arithmetic can be correct and still rest on an input
+@@ -15056,7 +15111,7 @@
+   if (scanClosed.length){
+     const t0 = Math.min.apply(null, scanClosed.map(p => p.t));
+     /* The computed population IS the labelled one (cold review 2,
+-       2026-08-21): the line renders "watchlist-cohort net", so membership
++       2026-08-21): the line renders "pins-cohort net", so membership
+        comes from the one cohort owner — which excludes pool-provenance and
+        gap-band trips the old cohort/slice test silently admitted. */
+     const wlWin = closed.filter(p => paperCohortOf(p) === "watchlist" && (p.closedAt || p.t) >= t0);
+@@ -15072,14 +15127,14 @@
+       + co("scan", String(scanClosed.length), "scanner-cohort closed paper trips — items your filters never surfaced", scanClosed)
+       + ' (scanner·T1 ' + co("scanT1", String(t1.length), "scanner·T1 closed paper trips", t1)
+       + ' · scanner·T2 ' + co("scanT2", String(t2.length), "scanner·T2 closed paper trips", t2)
+-      + '), net <span class="' + sign(sNet) + '">' + gp(Math.round(sNet)) + '</span> sim, vs watchlist-cohort net <span class="' + sign(wNet) + '">'
++      + '), net <span class="' + sign(sNet) + '">' + gp(Math.round(sNet)) + '</span> sim, vs pins-cohort net <span class="' + sign(wNet) + '">'
+       + gp(Math.round(wNet)) + '</span> (' + co("wl", wlWin.length + ' trip' + (wlWin.length === 1 ? '' : 's'),
+-          "watchlist-cohort closed paper trips inside the same window", wlWin)
++          "pins-cohort (key: watchlist) closed paper trips inside the same window", wlWin)
+       + ') over the same ' + winD + 'd window. '
+       + (sNet > wNet && scanClosed.length >= 5
+-        ? 'The screen reads: the scout\'s admission ranking may be leaving better items unwatched — a pipeline finding, not a gate finding. Items with ≥' + SHADOW_SCAN_BOOST_TRIPS
++        ? 'The screen reads: the scout\'s admission ranking may be leaving better items unpinned — a pipeline finding, not a gate finding. Items with ≥' + SHADOW_SCAN_BOOST_TRIPS
+           + ' profitable scanner-cohort trips are evaluated first at the scout\'s unchanged admission bar (attention, not authority).'
+-        : 'No filter-opportunity signal — the watchlist cohort holds its own against the scanner\'s best unwatched candidates.')
++        : 'No filter-opportunity signal — the pins cohort holds its own against the scanner\'s best unpinned candidates.')
+       + ' <span class="dim">[all simulated — screening; cap ' + SHADOW_MAX_OPEN + ' open across cohorts, scanner cohort evicts lowest-score-first]</span></div>');
+   } else {
+     lines.push('<div class="dim"><b>Filter opportunity cost</b> — no closed scanner-cohort trips yet; the cohort accrues as scan cycles pass (top '
+@@ -15087,7 +15142,10 @@
+   }
+   /* Every cohort states where it stands, including the ones with nothing in
+      them — an absent row reads as a broken feature (the F18 rule). */
+-  const cohorts = ["watchlist", "slice", "slice·clean", "gap band", "scanner·T1", "scanner·T2"];
++  /* "pool" joined the enumeration with the F0 cohort stamp (2026-08-21): the
++     every-cohort-states rule must cover it, or pool trips would accrue into a
++     cohort this surface never renders an absent-state row for. */
++  const cohorts = ["watchlist", "pool", "slice", "slice·clean", "gap band", "scanner·T1", "scanner·T2"];
+   const seen = new Map();
+   for (const p of closed) seen.set(paperCohortOf(p), (seen.get(paperCohortOf(p)) || []).concat([p]));
+   const thinByCoh = new Map();
+@@ -15100,9 +15158,9 @@
+        false promise on a cohort whose draw is retired — the empty state
+        names the true reason (the silent-state rule's shape (a)). */
+     const dormantCoh = SLICE_SAMPLING_RETIRED && (c === "slice" || c === "slice·clean");
+-    lines.push('<div data-drillrow="1">' + esc(c) + ' — '
++    lines.push('<div data-drillrow="1">' + esc(paperCohortLabel(c)) + ' — '
+       + drill("paper:coh:" + c, arr.length + ' closed trip' + (arr.length === 1 ? '' : 's'), {
+-          head: c + " — its closed paper trips", cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
++          head: paperCohortLabel(c) + " — its closed paper trips", cols: PAPER_TRIP_COLS, rows: paperTripRows(arr),
+           empty: dormantCoh
+             ? "Nothing remains: this cohort's draw is dormant (the slice's sampling role retired Aug 14 2026), and its historical trips have pruned out of the 30-day book. The durable per-stratum ledger keeps its counts."
+             : "This cohort has closed nothing yet. It is empty, not hidden — trips accrue as cycles run.",
+@@ -15237,8 +15295,8 @@
+   const rows = hoursLedger();
+   const withMkt = rows.filter(r => r.mkt != null);
+   if (!withMkt.length)
+-    return '<div class="inline"><div class="dim">No hour-of-day data yet — the ledger reads the 7-day hourly series that watchlist items already fetch. Add or keep watch entries and it fills within a cycle.</div></div>';
+-  const avg = withMkt.reduce((a, r) => a + r.mkt, 0) / withMkt.length;
++    return '<div class="inline"><div class="dim">No hour-of-day data yet — the ledger reads the 7-day hourly series that pinned items already fetch. Add or keep pins — it fills within a cycle.</div></div>';
++  const osv = overnightSpreadVerdict(withMkt), avg = osv.avg;
+   const top = withMkt.slice().sort((a, b) => b.mkt - a.mkt).slice(0, 3);
+   const hh = h => String(h).padStart(2, "0") + ":00";
+   const lines = [];
+@@ -15292,15 +15350,17 @@
+     + '<th>' + glTerm("prosp-hours", "Paper fill rate") + '</th>'
+     + '<th title="Simulated net of the paper trips opened in this hour">Net sim</th></tr></thead><tbody>'
+     + trs + '</tbody></table></div>');
+-  /* The overnight question, answered only where both streams can speak. */
+-  const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
++  /* The overnight question, answered only where both streams can speak. The
++     VERDICT comes from the one owner (`overnightSpreadVerdict`, F13) — this
++     surface words it, never re-derives it. */
++  const night = osv.night;
+   if (night.length){
+-    const nAvg = night.reduce((a, r) => a + r.mkt, 0) / night.length;
++    const nAvg = osv.nAvg;
+     const nObs = night.reduce((a, r) => a + r.n, 0);
+     const nFill = night.reduce((a, r) => a + r.filled, 0);
+     const nTrips = night.flatMap(r => r.trips);
+     lines.push('<div data-drillrow="1" style="margin-top:4px"><b>Overnight (00:00–06:00)</b>: post-tax spread averages <b>' + nAvg.toFixed(2)
+-      + '%</b> vs ' + avg.toFixed(2) + '% all-day — ' + (nAvg > avg * 1.1 ? 'WIDER than your waking hours' : nAvg < avg * 0.9 ? 'narrower than your waking hours' : 'about the same as your waking hours')
++      + '%</b> vs ' + avg.toFixed(2) + '% all-day — ' + (osv.verdict === "wider" ? 'WIDER than your waking hours' : osv.verdict === "narrower" ? 'narrower than your waking hours' : 'about the same as your waking hours')
+       + '. ' + (nObs
+         ? 'Shadow corroboration: ' + drill("hours:night", nFill + ' of ' + nObs, {
+             head: "the overnight paper trips behind this corroboration",
+@@ -15308,7 +15368,7 @@
+             empty: "No overnight paper trips.", note: PAPER_NOTE()
+           }) + ' overnight sim trips filled — fillable, not just quoted.'
+         : 'No shadow corroboration: the book has never been observed overnight, so whether those spreads are FILLABLE is unknown, not disproven.')
+-      + (nAvg > avg * 1.1
++      + (osv.verdict === "wider"
+         ? ' <b>Reading</b>: this is the case for sizing the standing overnight book heavier — a proposal for your ruling, never applied from here.'
+         : '') + '</div>');
+   }
+@@ -15388,7 +15448,10 @@
+   add("Market archive (T0 accrual)", S.t0LastBucket || 0, 15 * 60e3, "scheduled",
+       "whole-universe 5m buckets into IndexedDB; gaps are unobserved periods, not quiet ones");
+   add("Universe scorer (T2 cells)", S.scoredBucket || 0, 15 * 60e3, "scheduled",
+-      "one pass per 5m bucket over every mapped item; no surface until stage 1e — this line and the warn channel are its state");
++      /* F12 (2026-08-21): the old note claimed the scorer had no surface yet
++         ("until stage 1e") after that stage shipped — a stale claim standing
++         on the one panel whose job is freshness. */
++      "one pass per 5m bucket over every mapped item; reads on the Scorer sub-tab — this line and the warn channel carry its freshness");
+   add("Reconciliation diff (control vs plan)", S.rdiffLastBucket || 0, 15 * 60e3, "scheduled",
+       "the cutover's plumb line — one row per scored bucket; a gap is history that does not exist");
+   add("Fill sim (frontier trips)", S.t1LastBucket || 0, 15 * 60e3, "scheduled",
+@@ -15422,7 +15485,7 @@
+     : '<div class="pos">✓ every scheduled stream is current for its cadence.</div>');
+   if (neverSched.length)
+     lines.push('<div class="dim">Never accrued: ' + neverSched.map(r => esc(r.name)).join(" · ")
+-      + ' — expected on a fresh store; a finding if it persists past a few cycles with a watchlist loaded.</div>');
++      + ' — expected on a fresh store; a finding if it persists past a few cycles with pins loaded.</div>');
+   for (const r of rows)
+     lines.push('<div>' + (r.stale ? '<span class="neg">⚠</span> ' : r.never ? '<span class="dim">·</span> ' : '<span class="pos">✓</span> ')
+       + '<b>' + esc(r.name) + '</b> — '
+@@ -16203,7 +16266,7 @@
+     if (DB.flips.some(f => f.itemId === w.id && f.id > (w.sibAt || 0))){
+       DB.sibStats.graduated++;
+       DB.scoutLog.push({ t: now, act: "add", id: w.id, name: itemName(w.id),
+-        why: "sibling graduated — completed a funded trip, now a regular watchlist item" });
++        why: "sibling graduated — completed a funded trip, now a regular pin" });
+       w.sibGrad = 1; delete w.sib; w.lastPass = now;
+     }
+   }
+@@ -16302,7 +16365,7 @@
+   $("#blkBody").innerHTML = ids.length
+     ? ids.map(id => '<div class="bench-row"><span>' + esc(itemName(id)) + '</span>'
+         + '<span class="r"><button class="sm ghost" data-blkdel="' + id + '" title="Remove from the blacklist — your press, no one else\'s">remove</button></span></div>').join("")
+-    : '<div class="bench-row"><span class="dim">Empty. Blacklist an item with the 🚫 button on its watch row, or by name above.</span></div>';
++    : '<div class="bench-row"><span class="dim">Empty. Blacklist an item with the 🚫 button on its pin or pool row, or by name above.</span></div>';
+ }
+ function blkAdd(id){
+   DB.blacklist = DB.blacklist || [];
+@@ -16351,9 +16414,9 @@
+   let cost = 0, unreal = 0;
+   body.innerHTML = DB.positions.map(p => {
+     const c = calc(p.itemId);
+-    const stage = posStage(p), st = STAGES[stage];
+-    const at = stage === "selling" ? p.ask : (c && c.sell != null ? c.sell : null);
+-    const net = at != null ? p.qty * (at - p.buy - geTax(at, p.itemId)) : null;
++    /* the one owner (F7): same at/net the sell-mode lines render */
++    const { at, net, stage } = posSellNet(p, c);
++    const st = STAGES[stage];
+     const ageH = (Date.now() - p.placedAt)/3600e3;
+     cost += p.qty * p.buy; if (net != null) unreal += net;
+     return '<tr><td>'+esc(itemName(p.itemId, p.name))
+@@ -16633,6 +16696,7 @@
+   const rows = [];
+   const hist = S.scorerItemHist || new Map();
+   const seen = DB.poolSeen || {};
++  const onPlan = new Set(((P && P.pass) || []).concat((P && P.bench) || []).map(x => x.id));
+   for (const x of ((P && P.pass) || []).concat((P && P.bench) || [])){
+     const p = poolPersistence(x.id);
+     if (p.state === "not-scored") continue;
+@@ -16645,11 +16709,39 @@
+       cells: h ? h.cells.size : "—",
+       _txt: (x.name || "") + " " + p.state });
+   }
++  /* THE ANNOUNCED ITEM STAYS FINDABLE (M181, ruled 2026-08-21): the pool
++     population is derived per-cycle, so LEAVING it is not an event any
++     membership-scoped render can show — the durable `DB.poolSeen` row
++     survives churn by design and had no reader for a departed item. One
++     findable line per departed item, from its own ledger row, its state
++     named by `poolPersistence` exactly as a present item's is. */
++  for (const idStr of Object.keys(seen)){
++    const id = +idStr;
++    if (onPlan.has(id)) continue;
++    const p = poolPersistence(id);
++    if (p.state === "not-scored") continue;
++    const h = hist.get(id), r = seen[idStr];
++    rows.push({ _cohort: "departed — " + p.state, item: esc(itemName(id))
++        + ' <span class="dim">(left the cell' + (r && r.lastAt ? " — last passed " + esc(ago(r.lastAt)) : "") + ')</span>',
++      pair: p.obs == null ? "—" : p.cyc + " of " + p.obs,
++      six: p.nc != null ? p.nc : "—",
++      sess: h ? h.cyc : 0,
++      hours: h ? [...h.hours].sort((a, b) => a - b).join(", ") : "—",
++      cells: h ? h.cells.size : "—",
++      _txt: itemName(id) + " departed " + p.state });
++  }
+   if (!rows.length) return "";
+   return drill("plan:persist", rows.length + " item" + (rows.length === 1 ? "" : "s") + " with pool history", {
+     head: "Per-item pool persistence — funded cycles of OBSERVED cycles since each item entered the pool, "
+         + "beside this session's own cycle history. The durable store keeps counts, not per-cycle rows "
+-        + "(the archive is the ledger; T0 replay re-derives them), and the session columns are labelled as such"
++        + "(the archive is the ledger; T0 replay re-derives them), and the session columns are labelled as such. "
++        + "Departed items keep their line — churn out of the cell is membership, not history"
++        /* the first-clear record is durable and renders here membership-
++           independent, so the NOW announcement always has a findable trace */
++        + (DB.poolFirstClear
++            ? " · First pool clear on record: " + esc(DB.poolFirstClear.name || itemName(DB.poolFirstClear.id))
++              + " (" + esc(String(DB.poolFirstClear.d || "")) + ")"
++            : "")
+         /* AUDIT FINDING D-F1, fixed here: the eviction counter was persisted
+            and never read anywhere. An evicted item loses its observation
+            window and reads as a first-cycle item again, which is exactly the
+@@ -16664,7 +16756,7 @@
+            { k: "sess", lab: "Cycles funded (this session)", num: 1 },
+            { k: "hours", lab: "Hour bands (this session)" },
+            { k: "cells", lab: "Cells funding it (this session)", num: 1 }],
+-    rows, empty: "No item on the plan has pool history yet." });
++    rows, empty: "No item — on the plan or departed — has pool history yet." });
+ }
+ function shadowDot(id){
+   const s = shadowSlice(id);
+@@ -16727,7 +16819,7 @@
+   const fl = (cand.fails || []).filter(f => f.g !== "chart still loading");
+   const chartPend = (cand.fails || []).some(f => f.g === "chart still loading");
+   if (!fl.length && chartPend)
+-    return '<span class="badge b-warn" title="Every price gate passes; trend and momentum need the 7-day series, which only watchlist items fetch — +watch to load it.">gates pending chart</span>';
++    return '<span class="badge b-warn" title="Every price gate passes; trend and momentum need price history — pins fetch their own series now, and the whole-universe archive feeds every item at chart maturity. +pin to load it immediately.">gates pending chart</span>';
+   if (!fl.length) return '<span class="badge b-warn" title="' + esc(cand.failed) + '">' + gateChip(gateName(cand.failed) || "benched") + '</span>';
+   return '<span class="badge b-warn" title="' + esc(fl.map(f => f.g + " — " + (f.short || f.detail)).join(" · "))
+     + (chartPend ? " · chart still loading for the remaining gates" : "") + '">fails ' + fl.length + ' gate' + (fl.length === 1 ? '' : 's') + '</span>';
+@@ -17111,7 +17203,7 @@
+     : (S.cluThin && S.cluThin.length
+        ? 'Insufficient data — fewer than ' + Math.max(5, DB.clusterMinDays || 20)
+          + ' overlapping trading days, so not flagged and not guessed at: <span class="dim">' + esc(S.cluThin.join(", ")) + '</span>'
+-       : '<span class="dim">The scan reads 31 days of daily prices for every watchlist item, subtracts the market-wide tide, '
++       : '<span class="dim">The scan reads 31 days of daily prices for every pin, subtracts the market-wide tide, '
+          + 'and queues groups of 3+ that still move together into the review queue below — proposals only, nothing caps capital until you confirm. '
+          + 'Runs weekly on its own; ' + (DB.lastCoScanAt ? 'last ran ' + ago(DB.lastCoScanAt) : 'never run yet') + '.</span>');
+   const watchIds = new Set(DB.watch.map(w => w.id));
+@@ -17123,7 +17215,7 @@
+        lives in the thesis detail, a deliberate two-step. */
+     const mems = cl.members.map(id =>
+       '<span class="memchip' + (watchIds.has(id) ? '' : ' off') + '"'
+-      + (watchIds.has(id) ? '' : ' title="not on the watchlist — the cap still counts it whenever it holds capital"') + '>'
++      + (watchIds.has(id) ? '' : ' title="not pinned — the cap still counts it whenever it holds capital"') + '>'
+       + esc(itemName(id))
+       + (memberIsStat(cl, id) ? ' <b title="STATISTICAL member (coherence-admitted, no story): counts toward the exposure cap — risk is risk — but excluded from entry-watch narratives and laggard logic.">·S</b>' : '')
+       + '</span>'
+@@ -17145,7 +17237,7 @@
+          can't wrap the story and it runs the row off the screen edge. */
+       + (cl.story ? '<div class="dim" style="font-size:11px;max-width:260px;white-space:normal">' + esc(cl.story) + '</div>' : '')
+       + '<div style="margin-top:3px"><button class="sm" data-cldetail="' + cl.id + '" title="Is the thesis holding? Pairwise correlation, decay over time, overlaid charts — and member management.">detail…</button></div></td>'
+-      + '<td style="white-space:normal;text-align:left;max-width:380px;min-width:180px">' + (mems || '<span class="dim">empty — tag watchlist rows with ⬡</span>') + '</td>'
++      + '<td style="white-space:normal;text-align:left;max-width:380px;min-width:180px">' + (mems || '<span class="dim">empty — tag pin rows with ⬡</span>') + '</td>'
+       + '<td class="num' + (ex >= cap ? ' neg' : '') + '">' + gp(ex) + ' / ' + gp(cap)
+       + (ex >= cap ? ' <span class="badge b-risk" title="Exposure meets the cap — the allocator funds no more of this cluster until something exits">at limit</span>'
+          : ex >= cap * 0.8 ? ' <span class="badge b-warn">near cap</span>' : '') + '</td>'
+@@ -17194,19 +17286,28 @@
+       + (isAdd ? 'admit as ' + (p.mclass === "s" ? 'statistical' : 'thesis') + ' member' : 'remove member') + '</button>'
+       + '<button class="sm ghost" data-cohdismiss="' + p.id + '">dismiss</button></span></div>';
+   }).join("");
+-  $("#cluQueueBody").innerHTML = (cohHTML || "") + (pending.length ? pending.map(c => {
+-    const ev = [];
+-    if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + " overlapping days");
+-    if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
+-    if (c.src === "seed") ev.push("seeded from game knowledge");
+-    return '<div class="bench-row"><span>' + BADGES[c.status] + ' <b>' + esc(c.name || c.story || "unnamed") + '</b>'
+-      + (c.name && c.story ? '<div class="dim" style="font-size:11px;max-width:420px">' + esc(c.story) + '</div>' : '')
+-      + '<div>' + esc(c.members.map(id => itemName(id)).join(", ")) + '</div>'
+-      + '<div class="dim">' + esc((ev.length ? ev.join(" · ") + " · " : "") + "flagged " + ago(c.at)) + '</div></span>'
+-      + '<span class="r" style="white-space:nowrap"><button class="sm" data-clconfirm="' + c.id + '" title="Ratify: name the cluster and activate its exposure cap">confirm…</button>'
+-      + '<button class="sm" data-clmerge="' + c.id + '" title="Fold these members into an existing confirmed cluster">merge…</button>'
+-      + '<button class="sm ghost" data-cldismiss="' + c.id + '" title="Not a real cluster — silence this candidate for good">dismiss</button></span></div>';
+-  }).join("") : (cohHTML ? "" : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories, the seed list, and the coherence screen refill it as evidence appears.</span></div>'));
++  /* ONE PRESS SURFACE (F11, ruled 2026-08-21): cluster candidates were
++     pressable from two surfaces — here and the Home digest — and only this
++     one showed the evidence, so the digest ruling was made without the
++     evidence in view. The digest is the ONE press surface now and carries
++     `cluEvidenceLine`; this box keeps the coherence queue (drops,
++     add-proposals, resurfaced adds)
++     (their own constitutional queue) and points at the digest for
++     candidates rather than duplicating its presses. */
++  $("#cluQueueBody").innerHTML = (cohHTML || "") + (pending.length
++    ? '<div class="bench-row"><span class="dim">' + pending.length + ' cluster candidate' + (pending.length === 1 ? "" : "s")
++      + ' pending — ruled from the <b>Home digest</b>, the one press surface; each digest line carries its members and evidence.</span></div>'
++    : (cohHTML ? "" : '<div class="bench-row"><span class="dim">Queue is empty — the weekly co-movement scan, wiki categories, the seed list, and the coherence screen refill it as evidence appears.</span></div>'));
++}
++/* The evidence clause a cluster ruling needs in view — one term, read by the
++   digest line (the press surface), so the ruling and the evidence cannot end
++   up on different surfaces again (F11). */
++function cluEvidenceLine(c){
++  const ev = [];
++  if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + " overlapping days");
++  if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
++  if (c.src === "seed") ev.push("seeded from game knowledge");
++  return (ev.length ? ev.join(" · ") + " · " : "") + "flagged " + ago(c.at);
+ }
+ 
+ /* ═══ THESIS DETAIL — is the correlation holding? ═══
+@@ -17228,7 +17329,7 @@
+   try {
+     $("#cluDetSub").textContent = "⬡ " + cl.name;
+     box.innerHTML = '<span class="dim">Fetching daily history for ' + cl.members.length
+-      + ' members plus the watchlist market factor…</span>';
++      + ' members plus the all-pins market factor…</span>';
+     const ids = [...new Set(cl.members.concat(DB.watch.map(w => w.id)))];
+     const rets = new Map();
+     for (const id of ids){
+@@ -17337,12 +17438,12 @@
+   const manage = M.map(id =>
+     '<span class="memchip">' + esc(itemName(id))
+     + ' <button class="sm ghost" data-clrm="' + cl.id + ':' + id
+-    + '" title="Remove ' + esc(itemName(id)) + ' from this cluster — the item stays on the watchlist; the cap stops counting it" style="padding:0 5px">✕</button></span>'
++    + '" title="Remove ' + esc(itemName(id)) + ' from this cluster — the item stays pinned; the cap stops counting it" style="padding:0 5px">✕</button></span>'
+   ).join("")
+   + '<div class="dim" style="font-size:12px;margin-top:2px">Removal is undoable from the toast. The ✕ lives only here — the ledger can\'t take an accidental press.</div>';
+ 
+   return '<div class="dep-h">Pairwise excess correlation — full period</div>' + matrix
+-    + '<div class="dim" style="font-size:12px;margin-top:2px">Daily returns net of the all-watchlist average — the same market factor the detector uses; * = under the '
++    + '<div class="dim" style="font-size:12px;margin-top:2px">Daily returns net of the all-pins average — the same market factor the detector uses; * = under the '
+     + minDays + '-day overlap floor.</div>'
+     + '<div class="dep-h">Correlation over time — watch the thesis decay</div>' + rollHTML
+     + '<div class="dep-h">Members, overlaid</div>' + overlay
+@@ -17495,13 +17596,13 @@
+   save(); renderWatch();
+ });
+ $("#cluNew").onclick = () => {
+-  const a = prompt("Name the new thesis cluster (e.g. wilderness-gear). Tag members afterwards with the ⬡ button on watchlist rows.", "");
++  const a = prompt("Name the new thesis cluster (e.g. wilderness-gear). Tag members afterwards with the ⬡ button on pin rows.", "");
+   if (a === null) return;
+   const name = String(a).trim();
+   if (!name){ toast("A cluster needs a name."); return; }
+   DB.clusters.push({ id: cluId(), name, members: [], capPct: null, story: "", src: "manual", confirmedAt: Date.now() });
+   save(); renderWatch();
+-  toast("Cluster \"" + name + "\" created — tag members with ⬡ on watchlist rows.");
++  toast("Cluster \"" + name + "\" created — tag members with ⬡ on pin rows.");
+ };
+ $("#cluScan").onclick = () => runClusterScan(true);
+ 
+@@ -18153,23 +18254,19 @@
+   for (const r of rested) secs.push(audRuledLine("sib:" + r.id, r.name));
+   /* §3 cluster queue */
+   const cands = DB.clusterCands.filter(c => c.status === "suspected" || c.status === "dormant" || c.status === "seeded");
++  /* ONE PRESS SURFACE (F11, cold review 2026-08-21): this was a THIRD press
++     surface for the same candidates, with its own hand-rolled spelling of
++     the evidence clause — already drifted from `cluEvidenceLine`'s wording
++     ("over Nd" vs "over N overlapping days"). The digest is the one press
++     surface and the one evidence render; this section keeps the count and
++     the staleness flag and points there. */
+   secs.push('<div class="nexthead"><b>3 · Cluster queue</b> — ' + cands.length + ' candidate' + (cands.length === 1 ? '' : 's')
+     + ' awaiting ratification. Nothing caps capital until you confirm.</div>');
+   if (!cands.length) secs.push('<div class="dim">Queue is empty.</div>');
+-  for (const c of cands){
+-    const stale = Date.now() - c.at > 14 * 86400e3;
+-    const ev = [];
+-    if (c.evidence && Number.isFinite(c.evidence.corr)) ev.push("excess corr " + c.evidence.corr.toFixed(2) + " over " + c.evidence.days + "d");
+-    if (c.evidence && c.evidence.cat) ev.push("shared category: " + c.evidence.cat);
+-    if (c.src === "seed") ev.push("seeded from game knowledge");
+-    secs.push('<div style="margin:4px 0"><span class="badge ' + (c.status === "suspected" ? "b-warn" : c.status === "dormant" ? "b-seed" : "b-ok") + '">' + c.status + '</span> '
+-      + '<b>' + esc(c.name || c.story || "unnamed") + '</b> — ' + esc(c.members.map(id => itemName(id)).join(", "))
+-      + '<div class="dim">' + esc((ev.length ? ev.join(" · ") + " · " : "") + "flagged " + ago(c.at))
+-      + (stale ? ' · <b>stale — unratified 14d; dismiss?</b>' : '') + '</div>'
+-      + '<span class="plan-actions" style="white-space:nowrap">'
+-      + '<button class="sm' + (stale ? ' ghost' : '') + '" data-clconfirm="' + c.id + '">confirm…</button>'
+-      + '<button class="sm ghost" data-clmerge="' + c.id + '">merge…</button>'
+-      + '<button class="sm' + (stale ? ' primary' : ' ghost') + '" data-cldismiss="' + c.id + '">dismiss</button></span></div>');
++  else {
++    const staleN = cands.filter(c => Date.now() - c.at > 14 * 86400e3).length;
++    secs.push('<div class="dim">Ruled from the <b>Home digest</b> — the one press surface; each digest line carries its members and evidence.'
++      + (staleN ? ' <b>' + staleN + ' stale (unratified 14d)</b> — dismiss or confirm from the digest.' : '') + '</div>');
+   }
+   /* §4 gate health and §5 prospecting MOVED (ruled Aug 11 2026): both are
+      now first-class Trade sub-views where every number opens to its rows.
+@@ -18530,19 +18627,33 @@
+   return secs.join("");
+ }
+ /* One-line reads of the two time/recipe surfaces, for the weekly review. */
++/* ONE OWNER FOR THE OVERNIGHT-SPREAD VERDICT (F13, 2026-08-21): the hours
++   panel and this one-liner each computed it with copied 1.1×/0.9× thresholds
++   — two spellings of one question, the recorded two-owner shape. The bands
++   live here and nowhere else; each surface WORDS the verdict, never
++   re-derives it. Overnight = the 00:00–06:00 local hours, matching the
++   ledger's own local-clock rows. */
++function overnightSpreadVerdict(withMkt){
++  const avg = withMkt.reduce((a, r) => a + r.mkt, 0) / withMkt.length;
++  const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
++  const nAvg = night.length ? night.reduce((a, r) => a + r.mkt, 0) / night.length : null;
++  const verdict = nAvg == null ? null : nAvg > avg * 1.1 ? "wider" : nAvg < avg * 0.9 ? "narrower" : "same";
++  return { avg, night, nAvg, verdict };
++}
+ function hoursSummaryLine(){
+   const rows = hoursLedger();
+   const withMkt = rows.filter(r => r.mkt != null);
+   if (!withMkt.length)
+-    return '<div class="inline"><div class="dim">No hour-of-day data yet — the ledger fills from the hourly series watchlist items already fetch. <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
+-  const avg = withMkt.reduce((a, r) => a + r.mkt, 0) / withMkt.length;
+-  const night = withMkt.filter(r => r.h >= 0 && r.h <= 6);
+-  const nAvg = night.length ? night.reduce((a, r) => a + r.mkt, 0) / night.length : null;
+-  const nObs = night.reduce((a, r) => a + r.n, 0);
++    return '<div class="inline"><div class="dim">No hour-of-day data yet — the ledger fills from the hourly series pinned items already fetch. <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
++  /* THE VERDICT FROM THE ONE OWNER (F13, 2026-08-21) — this line and the
++     hours panel computed it independently with copied 1.1×/0.9× thresholds,
++     a pair kept in agreement by maintenance. */
++  const osv = overnightSpreadVerdict(withMkt), avg = osv.avg, nAvg = osv.nAvg;
++  const nObs = osv.night.reduce((a, r) => a + r.n, 0);
+   const unobs = rows.filter(r => !r.n).length;
+   return '<div class="inline"><div>All-day post-tax spread <b>' + avg.toFixed(2) + '%</b>'
+     + (nAvg != null ? ' · overnight (00–06) <b>' + nAvg.toFixed(2) + '%</b> — '
+-        + (nAvg > avg * 1.1 ? '<b>wider than your waking hours</b>' : nAvg < avg * 0.9 ? 'narrower' : 'about the same')
++        + (osv.verdict === "wider" ? '<b>wider than your waking hours</b>' : osv.verdict === "narrower" ? 'narrower' : 'about the same')
+         + (nObs ? ' with paper corroboration' : ' with <b>no</b> paper corroboration — unknown, not disproven') : '')
+     + ' · ' + unobs + ' of 24 hours never observed by the paper stream'
+     + ' — <a href="#" data-goto="prospect#prospectHoursPanel">open the hours ledger →</a></div></div>';
+@@ -18637,7 +18748,7 @@
+   logDecision("sibling", name, "prune", "zombie watcher — watched " + (gone.sibAt ? Math.floor((Date.now() - gone.sibAt) / 86400e3) + "d" : "long")
+     + " without graduating");
+   save(); renderWatch(); renderRoutine();
+-  toast("Pruned " + name + " from the watchlist.",
++  toast("Unpinned " + name + " — it stays scoreable in the pool.",
+         () => { DB.watch.splice(idx, 0, gone); delete DB.audRuled["sib:" + id]; save(); renderWatch(); renderRoutine(); });
+ }
+ 
+@@ -18668,7 +18779,7 @@
+ /* Guardrail: one item, one mandate — an item in the flipping machinery
+    cannot also become a sleeve position. Returns the reason, or null. */
+ function sleeveMandateConflict(itemId){
+-  if (DB.watch.some(w => w.id === itemId)) return "on the flipping watchlist";
++  if (DB.watch.some(w => w.id === itemId)) return "pinned in the flip tracker";
+   if (DB.positions.some(p => p.itemId === itemId)) return "in an open flip position";
+   if (DB.invLots.some(l => l.itemId === itemId)) return "held as inventory-mode lots";
+   return null;
+@@ -20375,6 +20486,10 @@
+   "tab:home": 0, "tab:routine": 0,
+   "tab:trade": 1, "tab:trade/watch": 1, "tab:watch": 1, "tab:sleeve": 1, "tab:review": 1, "tab:shadow": 1,
+   "tab:trade/scan": 2, "tab:scan": 2, "tab:trade/log": 2, "tab:log": 2,
++  /* F15 (2026-08-21): the four newest sub-views were absent, so the tier
++     check was structurally blind to them while the dormancy half saw them —
++     same store, half-covered. Same depth as the other Trade sub-tabs. */
++  "tab:trade/paper": 2, "tab:trade/prospect": 2, "tab:trade/gates": 2, "tab:trade/scorer": 2,
+   "panel:planBench": 2, "panel:famDebug": 2, "panel:blkBox": 2, "panel:scoutLogBox": 2, "panel:cluQueueBox": 2,
+   "panel:beyondNet": 3
+ };
+@@ -20713,11 +20828,17 @@
+     const key = "clu:" + c.id;
+     const ageD = Math.floor((now - (c.at || now)) / day);
+     items.push({ key, pri: 2, sort: -ageD, snoozed: rulingSnoozed(key),
+-      html: '⬡ cluster candidate: <b>' + esc(c.name || c.story || "unnamed") + '</b> (' + c.members.length + ' members, ' + esc(c.status) + ')'
++      /* THE EVIDENCE RIDES THE PRESS (F11, 2026-08-21): this is the ONE
++         press surface for candidates, so the members and the evidence
++         clause render here — a ruling made without the evidence in view was
++         the finding. */
++      html: '⬡ cluster candidate: <b>' + esc(c.name || c.story || "unnamed") + '</b> (' + esc(c.status) + ')'
++        + '<div class="dim" style="font-size:11px;max-width:460px">' + esc(c.members.map(id => itemName(id)).join(", "))
++        + ' · ' + esc(cluEvidenceLine(c)) + '</div>'
+         + stale(ageD, "dismiss")
+-        + ' <button class="sm" data-clconfirm="' + c.id + '">confirm…</button>'
+-        + ' <button class="sm" data-clmerge="' + c.id + '">merge…</button>'
+-        + ' <button class="sm ghost" data-cldismiss="' + c.id + '">dismiss</button>' });
++        + ' <button class="sm" data-clconfirm="' + c.id + '" title="Ratify: name the cluster and activate its exposure cap">confirm…</button>'
++        + ' <button class="sm" data-clmerge="' + c.id + '" title="Fold these members into an existing confirmed cluster">merge…</button>'
++        + ' <button class="sm ghost" data-cldismiss="' + c.id + '" title="Not a real cluster — silence this candidate for good">dismiss</button>' });
+   }
+   /* Audits are advisory and recomputed live — a compute hiccup must never
+      break the walk-up list itself. */
+@@ -21152,7 +21273,7 @@
+             + v.mk.avg30.toFixed(1)
+             + (v.toxic ? ' <span class="badge b-risk" title="Adverse markout exceeds '+v.mx+'× margin — informed flow is picking your quotes off. Widen, shrink, or drop this item.">toxic flow</span>' : '')
+             + '</td>'
+-          : '<td class="num dim sec" title="Needs timed flips inside the 7-day price history — older fills age out; unwatched items have no series fetched">no data</td>';
++          : '<td class="num dim sec" title="Needs timed flips inside the 7-day price history — older fills age out; unpinned items have no series fetched">no data</td>';
+         const capCell = v && v.capPct != null
+           ? '<td class="num sec '+(v.capPct >= 50 ? "pos" : "neg")+'" title="'+v.qmN+' flip'+(v.qmN===1?"":"s")
+             +' with entry quotes · spread capture '+gp(Math.round(v.capGp))+' vs drift '+gp(Math.round(v.driftGp))+'">'
+@@ -21162,7 +21283,7 @@
+           : '<td class="num dim sec" title="Needs flips placed through the plan, which records the quoted spread at entry">no data</td>';
+         return mkCell + capCell;
+       })()
+-    + '<td>'+(watched.has(a.id) ? '<button class="sm ghost" data-cut="'+a.id+'" title="Remove from watchlist">cut</button>' : '')+'</td></tr>';
++    + '<td>'+(watched.has(a.id) ? '<button class="sm ghost" data-cut="'+a.id+'" title="Unpin — the item stays scoreable in the pool; its operator overlays come off">cut</button>' : '')+'</td></tr>';
+   }).join("") : '<tr><td colspan="12" class="empty">Log a few round trips — this table is the weekly review.</td></tr>';
+ 
+   $("#logBody").innerHTML = flips.length ? flips.map(f => {
+@@ -21581,8 +21702,34 @@
+    paper-book quarantine, stratum approximation, markout attribution lean,
+    observed-share limits. */
+ const GLOSSARY = [
++/* SAME-COMMIT ENTRIES FOR THE NAMING SWEEP (2026-08-21): the sweep made
++   "pins" and "the pool" the primary vocabulary across the surfaces, and a
++   term ships with its glossary entry in the same commit. */
++{ g: "populations", title: "Pins and the pool — the two candidate populations",
++  note: "Since the cutover the plan draws from two populations: your PINS (the hand-curated rows, previously called "
++      + "the watchlist — persisted keys and historical records keep that name) and THE POOL (the control cell's "
++      + "machine-scored candidates). Pins fund before pool items, by ruling.",
++  entries: [
++  { id: "pop-pin", term: "Pin", aka: "pins, pin list, +pin, unpin (keys and history: watchlist, watch row)",
++    what: "An item you hold a row for, by explicit press. A pin carries your operator overlays — manual size, tier "
++        + "override, tested prices, inventory mode — and fetches its own 7-day price series. Pinned-ness is "
++        + "membership, and leaving it is a deliberate act: unpinning removes the overlays and demotes the item to "
++        + "pool-only; it stays scoreable.",
++    from: "The +pin presses (Scanner, add-by-name) and the scout's admissions; stored as the watch row (key: watchlist "
++        + "— the persisted name never renamed, so history stays readable).",
++    do: "Pin an item to give it operator overlays and attention; the plan funds pins before pool items, so pinning is "
++        + "also a priority statement." },
++  { id: "pop-pool", term: "The pool", aka: "pool candidates, control cell",
++    what: "The machine-scored candidate population: items the scorer's control configuration passes this cycle, offered "
++        + "to the plan with NO operator state. Membership is derived per cycle, so items churn with the market; the "
++        + "durable persistence ledger keeps each item's funded-of-observed counts across churn.",
++    from: "The universe scorer's control cell (CUTOVER_POOL), gated by the chart-coverage clock; a sparked pool item "
++        + "can clear early on its own session fetch.",
++    do: "Nothing to maintain — the pool is discovery. Blacklist from its rows if an item must never fund; hand-pin "
++        + "what deserves overlays or priority." }
++]},
+ { g: "gates", title: "Gates — why a candidate gets benched",
+-  note: "The plan runs every watched item through a chain of gates in a fixed order and reports the FIRST one that "
++  note: "The plan runs every candidate — pins and pool alike — through a chain of gates in a fixed order and reports the FIRST one that "
+       + "rejects it. Gate names below are the exact strings the bench reasons and the gate ledger use; tap one in a "
+       + "bench reason anywhere in the tool to land here. A bench is never a verdict on the item forever — it is a "
+       + "verdict on this item at this price with this book, re-run every refresh.",
+@@ -21772,7 +21919,7 @@
+     do: "Nothing until the wiring lands — unknown is not failing. When the six-gate share starts falling, the two eras "
+         + "must be read apart, and the stamps are what make that possible." },
+   { id: "sc-rdiff", term: "Reconciliation diff",
+-    what: "One row per scored bucket: items the control config passes that the watchlist does not hold, and plan-funded "
++    what: "One row per scored bucket: items the control config passes that the pin list does not hold, and plan-funded "
+         + "items the control fails, each with full fail sets. The plumb line for the eventual pool cutover — its value "
+         + "is its length.",
+     from: "scorerCycle, written to IndexedDB (90-day retention); the plan side is three-state (a plan never built this "
+@@ -21797,13 +21944,13 @@
+   { id: "sc-rdiff-class", term: "Disagreement class", aka: "timing · persistent · standing · transient · cannot say",
+     what: "How a reconciliation disagreement is classified by SURVIVAL ACROSS A POLL BOUNDARY, not by why it happened. "
+         + "Plan-funded·control-fails: persistent (present in two adjacent observed buckets) · timing (one bucket only) · "
+-        + "cannot say (its only multi-bucket runs span a bucket nothing observed). Control-passes·watchlist-lacks: "
++        + "cannot say (its only multi-bucket runs span a bucket nothing observed). Control-passes·pins-lack: "
+         + "standing · transient · cannot say, the same test under names that fit an admission gap.",
+     from: "rdiffRuns / rdiffClassOf over the read ledger. TIMING exists because the poll scores bucket T against a plan "
+         + "stamped at T−1 (the scorer runs, then the plan rebuilds twenty lines later), so a single-bucket entry can be "
+         + "one poll of price movement. It is CONSISTENT with that skew and is not proof of it. The class does not exist "
+-        + "on the control-passes side at all: that side compares against watchlist membership, a persisted set no plan "
+-        + "staleness can move.",
++        + "on the control-passes side at all: that side compares against pin-list membership (key: watchlist), a "
++        + "persisted set no plan staleness can move.",
+     do: "Read the persistent and standing piles and skip the timing one. The cutover gate asks every disagreement to be "
+         + "resolved as extraction defect or understood difference — this classification does not decide between those "
+         + "two, it decides which rows are a disagreement at all, so it is what stops the timing rows inflating whichever "
+@@ -21815,7 +21962,7 @@
+         + "counted as persistence — the ledger has no row there, so it is evidence neither way, and that item classifies "
+         + "as cannot say rather than as persistent.",
+     do: "Use it as the strength of a disagreement: 2 is the bar (it survived a poll boundary), and a long run on an item "
+-        + "the watchlist never held is the clearest single piece of evidence the admission gap is real rather than a "
++        + "the pin list never held is the clearest single piece of evidence the admission gap is real rather than a "
+         + "sampling artifact." }
+ ]},
+ 
+@@ -21896,7 +22043,7 @@
+           + "current band is unfeedable while the margin gate's effective ROI floor stands above the loose floor — "
+           + "arithmetic, not a sampling shortfall. The un-retire is a ruling." },
+   { id: "paper-cohort", term: "Cohorts", aka: "watchlist (the PIN list after cutover), pool, slice, slice·clean, gap band, scanner·T1/T2",
+-    what: "Which population a paper trip came from. Watchlist trips answer \"are my gates too tight\"; <b>pool</b> trips "
++    what: "Which population a paper trip came from. Pins-cohort trips (key: watchlist) answer \"are my gates too tight\"; <b>pool</b> trips "
+         + "(2026-08-21 on) are the control cell's own candidates — no operator history behind them, so they must never "
+         + "pool with pin trips in one read; scanner trips answer a different question — \"are my FILTERS excluding "
+         + "money\"; slice and gap-band trips come from random structural sampling.",
+@@ -21958,11 +22105,11 @@
+     caveat: "Grouping dimension, not a filter (ruled Aug 11 2026): a filter defaults to hiding exactly the finding that "
+           + "holds at one horizon and not the other." },
+   { id: "paper-filtercost", term: "Filter opportunity cost",
+-    what: "Scanner-cohort simulated net against watchlist-cohort net over the same window (since the earliest scanner "
+-        + "entry, so a young cohort is never compared against 30 days of history).",
++    what: "Scanner-cohort simulated net against pins-cohort net (key: watchlist) over the same window (since the earliest "
++        + "scanner entry, so a young cohort is never compared against 30 days of history).",
+     from: "The scanner cohort, top 8 per tier per cycle.",
+-    do: "If the scanner cohort out-earns the watchlist across 5+ closed trips, the finding is that your SCOUT'S ADMISSION "
+-        + "RANKING may be leaving better items unwatched — a pipeline conversation, not a gate one." },
++    do: "If the scanner cohort out-earns the pins across 5+ closed trips, the finding is that your SCOUT'S ADMISSION "
++        + "RANKING may be leaving better items unpinned — a pipeline conversation, not a gate one." },
+   { id: "paper-exception", term: "Exception lane", aka: "probation, standing waiver",
+     what: "A per-item waiver of one named gate, granted by you on paper screening, that starts a LIVE half-size test: "
+         + "half size, a 2× tick-floor safety, one position, for 3 real round trips. Those trips adjudicate on net P&L and "
+@@ -22116,8 +22263,8 @@
+     what: "Two independent screens with their own filter state: T1 covers roughly 400–8k gp with a unit-volume floor, T2 "
+         + "covers 5k–250k with a gp-flow floor on the thin side, because unit counts understate mid-tier liquidity.",
+     from: "The full item mapping, filtered live.",
+-    do: "Promote from here into the watchlist deliberately — the scanner shows what passes filters, the watchlist is what "
+-        + "you have committed attention to. They are different commitments." }
++    do: "Pin from here deliberately — the scanner shows what passes filters; pinning is what attaches your operator "
++        + "overlays (manual size, tier override, tested prices) and commits attention. They are different commitments." }
+ ]},
+ { g: "indicators", title: "Indicators — the dots, chips and row states",
+   note: "SHAPE carries identity and COLOUR carries state within that identity; the two families never share a colour "
+@@ -22320,7 +22467,7 @@
+   { id: "met-gpday", term: "Net per gp-day of simulated notional",
+     what: "The paper book's headline. Simulated net divided by the gp of notional the sim held, multiplied by how long "
+         + "it held it — a rate rather than a total, so it does not grow simply because the book is bigger or older.",
+-    from: "Closed counted trips, per cohort. It is never blended across cohorts: the watchlist, the slice, the gap band "
++    from: "Closed counted trips, per cohort. It is never blended across cohorts: the pins (key: watchlist), the pool, the slice, the gap band "
+         + "and the scanner cohort answer four different questions.",
+     do: "Compare cohorts against each other, and compare the same cohort across epochs. Read the median trip and the "
+         + "top-5 share beside it before you trust either — a rate carried by one outsized trip is anecdote.",
+@@ -22802,7 +22949,12 @@
+      longer offers; a closing line must not point at a step that is gone. */
+   weekly: { title: "📓 Review — every few days, whenever you open it", foot: "If flipping loses to content you enjoy, stop guilt-free. Baskets and the sleeve live on the Sleeve tab — read them when an import lands, not on a clock.", steps: [
+     ["Read the per-item table", "Sorted by gp per touch; gp/slot-hour is the truer rank once fills are timed. The bottom row is highlighted.", "log#byItemPanel"],
+-    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — scout will backfill the empty seat.", "log#byItemPanel"],
++    /* SEAT-ECONOMY REWORD (F10, the naming sweep 2026-08-21): "scout will
++       backfill the empty seat" narrated the pre-cutover economy — a fixed
++       seat count refilled by the scout. Unpinning now DEMOTES to pool-only
++       (the item stays scored; its operator overlays come off), and a freed
++       slot funds the next candidate in the order automatically. */
++    ["Cut the bottom performer", "Use the cut button on the highlighted row. No sentiment — unpinning demotes it to pool-only, and a freed slot funds the next candidate in the order automatically.", "log#byItemPanel"],
+     ["Promote one new item from the scanner", "Must pass every filter — volume, post-tax ROI, unit price, flat chart.", "scan"],
+     ["Check markouts and capture", "The verdicts, computed from your log:", "log#byItemPanel", "mkcap"],
+     ["Grade the briefing scorecard", "Expired intel gets a verdict — window passed, call was right / wrong / unclear — and the analyst's hit rate accrues by confidence tier:", "sleeve#intelPanel", "intelscore"],
+@@ -22947,7 +23099,7 @@
+         ? '<div class="dim">' + esc(MM_BENCH_WHY) + '</div>' + qs.map(x => '<div>' + esc(x) + '</div>').join("")
+         : (qs.length
+           ? qs.map(x => '<div>' + esc(x) + '</div>').join("")
+-          : '<div class="dim">No inventory-mode items — watchlist rows earn an mm-ready badge when your log qualifies them; click it to set a buffer.</div>')) + '</div>';
++          : '<div class="dim">No inventory-mode items — pin rows earn an mm-ready badge when your log qualifies them; click it to set a buffer.</div>')) + '</div>';
+     } else if (s[3] === "scorerline"){
+       /* One line, sync data only — the surface itself loads the IDB-backed
+          coverage figures; this line does not pretend to have them. */
+@@ -23043,12 +23195,15 @@
+             + resolved.slice(-20).reverse().map(f => '<div class="dim">' + noteLine(f) + '</div>').join("") + '</details>'
+           : '') + '</div>';
+     } else if (s[3] === "snap"){
++      /* ONE ENTRY POINT (F16, 2026-08-21): this step no longer takes its own
++         number — the dot records from the bank stamp, so the two hand-entries
++         of one physical number cannot diverge. The step reads state and
++         points at the one entry. */
+       const sn = snapToday();
+       inline = '<div class="inline"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+-        + '<input type="number" data-snap step="100000" style="width:150px" value="' + (sn ? sn.v : '') + '"'
+-        + ' placeholder="' + (stack() || '') + '" title="Total bank value in gp. Entering it again today just corrects the same dot — one snapshot per day.">'
+-        + (sn ? '<span class="pos">✓ ' + gp(sn.v) + ' recorded today</span>'
+-              : '<span class="badge b-warn" title="No snapshot for today yet. One number keeps the equity curve honest.">not recorded today</span>')
++        + (sn ? '<span class="pos">✓ ' + gp(sn.v) + ' recorded today — from the bank stamp, the one entry point</span>'
++              : '<span class="badge b-warn" title="No dot for today yet. One measured number keeps the equity curve honest.">not recorded today</span>'
++                + ' <a href="#" data-goto="review#tab-shadow">stamp the bank (Shadow Fund panel) — today\'s equity dot records from the same entry →</a>')
+         + '</div></div>';
+     }
+     return '<li class="'+(isDone?"done":"")+'" data-step="'+i+'" id="ckstep-'+(s[3] || "s"+i)+'">'
+@@ -23228,7 +23383,7 @@
+        discovery slice" would claim a draw that no longer runs. */
+     line("🎣 " + (p.stratum === "gap" ? "gap band" : "discovery slice") + " found a clean gate-passer: "
+       + itemName(p.itemId, p.name)
+-      + " (" + STRATUM_LAB(p.stratum) + ") — unwatched, passed every gate on a random draw", "scan#beyondNet");
++      + " (" + STRATUM_LAB(p.stratum) + ") — unpinned, passed every gate on a random draw", "scan#beyondNet");
+   const recs = (DB.reconLog || []).filter(r => r.at > since);
+   if (recs.length){
+     const trips = recs.reduce((a2, r) => a2 + r.trips, 0);
+@@ -24238,7 +24393,7 @@
+       paperFillRatePct: r.fillRate != null ? r2(r.fillRate * 100) : null,
+       paperNetSimGp: Math.round(r.net || 0),
+       paperTripsExcludedByObservationFloor: r.thin,
+-      note: "Two streams: the MARKET stream is the hourly ROI series watchlist items already fetch; the PAPER stream is simulated fills. They answer different questions and are never averaged together." })) };
++      note: "Two streams: the MARKET stream is the hourly ROI series pinned items already fetch; the PAPER stream is simulated fills. They answer different questions and are never averaged together." })) };
+ }
+ 
+ /* ═══ CALIBRATION EXPORT (user-directed, Aug 12 2026) ═════════════════════
+@@ -24674,7 +24829,7 @@
+       window: rs.from != null ? new Date(rs.from).toISOString() + " … " + new Date(rs.to).toISOString() : null,
+       standingCaveats: [
+         "a row the plan never saw records plan:null with its reason — that is UNOBSERVED, never agreement, and it is excluded from the missing side's denominator",
+-        "the `timing` class exists on the missing side ONLY: `extra` compares against watchlist MEMBERSHIP, a persisted set no plan staleness can move",
++        "the `timing` class exists on the missing side ONLY: `extra` compares against PIN-LIST membership (key: watchlist), a persisted set no plan staleness can move",
+         "`timing` is consistent with the T/T−1 plan stamp and is not proof of it — a single-bucket disagreement may still be real",
+         "extraction defect versus understood difference is the reader's call; nothing in this file decides between them" ] },
+     coverage: {
+@@ -24688,7 +24843,7 @@
+       note: "the missing side below is computed over the " + s.plan.observed + " observed rows only" },
+     missing: { what: "plan-funded items the control config FAILS, with their full fail sets (config-free gate keys)",
+       denomRows: s.missing.denomRows, items: s.missing.items, byClass: cls("missing"), rows: s.missing.rows },
+-    extra: { what: "items the control config PASSES that the watchlist does not hold — the admission gap",
++    extra: { what: "items the control config PASSES that the pin list does not hold — the admission gap",
+       denomRows: s.extra.denomRows, items: s.extra.items, byClass: cls("extra"), rows: s.extra.rows } };
+ }
+ const ANALYSIS_BUILDERS = { paper: analysisPaper, gates: analysisGates, prospecting: analysisProspecting, scorer: analysisScorer,
+@@ -24847,7 +25002,7 @@
+   setHTML("#paperShape", fold("Every cohort by scheduled gap and remaining duration — n, notional, net and concentration per cell",
+     paperShapeSection(), true));
+   setHTML("#paperGate", fold("Per-gate outcomes — which gate benched what, and what happened next", paperGateSection()));
+-  setHTML("#paperCohort", fold("Per-cohort ledger — watchlist, scanner and discovery slice apart", paperCohortSection()));
++  setHTML("#paperCohort", fold("Per-cohort ledger — pins, pool, scanner and discovery slice apart", paperCohortSection()));
+ }
+ function renderProspectView(){
+   const keys = Object.keys(DB.strataStats || {});
+@@ -25225,7 +25380,7 @@
+   if (inv){
+     if (MM_BENCHED){ toast(MM_BENCH_WHY + " Enrollment and per-item toggles are frozen; held lots stay sellable and standing quotes resolvable."); return; }
+     const id = +inv.dataset.inv, w = DB.watch.find(x => x.id === id);
+-    if (!w){ toast("Add the item to the watchlist first — inventory mode lives on a watch row."); return; }
++    if (!w){ toast("Pin the item first — inventory mode lives on a pin's row."); return; }
+     /* The log's verdict rides along in the prompt — advice, never a lock. */
+     const mv = w.invTarget > 0 ? null : mmVerdict(id);
+     const verdictLine = !mv ? ""
+@@ -25407,7 +25562,7 @@
+   if (idx < 0) return;
+   const [gone] = DB.watch.splice(idx, 1);
+   save(); renderWatch(); renderLog();
+-  toast("Removed " + itemName(id) + " from the watchlist.",
++  toast("Unpinned " + itemName(id) + " — it stays scoreable in the pool.",
+         () => { DB.watch.splice(idx, 0, gone); save(); renderWatch(); renderLog(); });
+ }
+ 
+@@ -25443,15 +25598,9 @@
+ }
+ 
+ document.addEventListener("change", e => {
+-  const sn = e.target.closest("[data-snap]");
+-  if (sn){
+-    const v = Math.round(clampNum(sn.value, 0));
+-    recordSnap(v);
+-    toast(v > 0 ? "Bank snapshot recorded: " + gp(v) + " for " + today() + "."
+-                : "Today's snapshot cleared.");
+-    renderRoutine(); renderLog();
+-    return;
+-  }
++  /* the data-snap branch is GONE (F16, 2026-08-21) — the equity dot records
++     from the bank stamp, the one entry point; no element emits data-snap any
++     more, so a listener for it would be an orphan reporting coverage. */
+   const em = e.target.closest("[data-eqmins]");
+   if (em){
+     DB.minsPerTouch = Math.max(1, clampNum(em.value, 10));
+@@ -25742,7 +25891,7 @@
+       const v = validateImport(d);
+       const msg = "Replace current data with this file?\n\n"
+         + "Flips: " + v.flips.length + "\nPositions: " + v.positions.length
+-        + "\nWatchlist: " + v.watch.length + "\nTargets: " + v.targets.length
++        + "\nPins: " + v.watch.length + "\nTargets: " + v.targets.length
+         + (v.rejected ? "\n\n" + v.rejected + " malformed row(s) will be DROPPED." : "");
+       if (!confirm(msg)) return;
+       applyImport(v);
+@@ -26640,13 +26789,27 @@
+    the weekly review IS the Review tab — the tabs are the mode switch. */
+ $("#ckReset").onclick  = () => { DB.checks[S.mode] = []; save(); renderRoutine(); };
+ 
++/* ONE ENTRY POINT FOR THE BANK (F16, ruled 2026-08-21). The equity curve's
++   daily dot and the bank stamp were two hand-entries of one physical number,
++   never reconciled — they could diverge and nothing would say so. The dot
++   stays a MEASUREMENT (auto-deriving it from stack() would destroy the
++   independent check the curve exists for: dots tracking the line = the log
++   is honest); it now records from the SAME entry the stamp does, so one act
++   measures once and feeds both. The checklist's own snapshot input is gone
++   and its step points here. */
+ $("#shBank").addEventListener("change", e => {
+   DB.bank = Math.max(0, clampNum(e.target.value, 0));
+   DB.bankAsOf = Date.now();          // typing a fresh figure re-stamps it
+-  save(); renderShadow(); renderWatch();
++  /* the day's equity dot, from the same measurement — only a POSITIVE figure
++     records (recordSnap treats 0 as clear-today, and a stamp of nothing must
++     not silently delete an existing measured dot — cold review 2) */
++  if (DB.bank > 0) recordSnap(DB.bank);
++  save(); renderShadow(); renderWatch(); renderRoutine(); renderLog();
+ });
+ $("#shBankNow").onclick = () => {
+-  DB.bankAsOf = Date.now(); save(); renderShadow(); renderWatch();
++  DB.bankAsOf = Date.now();
++  if (DB.bank > 0) recordSnap(DB.bank);   // asserting "current" is a measurement at now
++  save(); renderShadow(); renderWatch(); renderRoutine(); renderLog();
+   toast("Bank figure stamped as current — earlier profit is no longer added on top.");
+ };
+ for (const [el, key, lo, hi] of [["szSlots","slots",1,8],["szH","horizonH",4,16],["szFill","fillHorizonH",1,12],
+--- a/tools/probe/probe-snippet.html
++++ b/staging/probe-snippet.html
+@@ -4242,7 +4242,7 @@
+     const aud28 = paperCohortSection();
+     ok("[R28.2] FILTER OPPORTUNITY COST compares scanner-cohort vs watchlist-cohort net over the same window",
+        /Filter opportunity cost/.test(aud28) && /scanner-cohort paper trips closed: <button[^>]*>1</.test(aud28)
+-       && /scanner·T1 <button[^>]*>1</.test(aud28) && /vs watchlist-cohort net/.test(aud28)
++       && /scanner·T1 <button[^>]*>1</.test(aud28) && /vs pins-cohort net/.test(aud28)
+        && /No filter-opportunity signal/.test(aud28), aud28.slice(0, 1800));
+     // R28.4 — one stage per move: scanner evidence nominates admission, never probation
+     DB.shadowBook = [];
+@@ -5210,7 +5210,7 @@
+        /id="paperGateTable"/.test(pgs39)
+        && /data-glt="paper-observed"[^>]*>Observed</.test(pgs39)
+        && /data-glt="paper-book"[^>]*>Benched</.test(pgs39)
+-       && /data-glt="paper-cohort"[^>]*>watchlist</.test(paperTripRows(DB.shadowBook)[0].cohort),
++       && /data-glt="paper-cohort"[^>]*>pins \(key: watchlist\)</.test(paperTripRows(DB.shadowBook)[0].cohort),
+        pgs39.slice(pgs39.indexOf("<thead"), pgs39.indexOf("<thead") + 260));
+     DB.shadowBook = [];
+     /* ── the hover bridge: reported from use — the popover closed while the
+@@ -5866,7 +5866,7 @@
+     ok("[R49.1] the blend is computed across the pooled population",
+        /">45%/.test(rb) || /45%/.test(rb), rb.slice(0, 160));
+     ok("[R49.1] and the DECOMPOSITION renders beside it, not only inside the expansion",
+-       /watchlist 100% of 8/.test(rb) && /slice 8% of 12/.test(rb),
++       /pins \(key: watchlist\) 100% of 8/.test(rb) && /slice 8% of 12/.test(rb),
+        rb.slice(rb.indexOf("</button>")).slice(0, 200));
+     ok("[R49.1] the expansion carries the per-cohort rows through the shared primitive",
+        (() => { S.drillOpen = new Set(["t49"]);
+@@ -5876,7 +5876,7 @@
+                     && /answers none of them/.test(b); })(),
+        "per-cohort rows");
+     ok("[R49.1] a single-cohort rate says so rather than implying a split it does not have",
+-       /single cohort: watchlist/.test(rateBlend("t49b", [{ cohort: "watchlist", num: 3, den: 4 }], {})),
++       /single cohort: pins \(key: watchlist\)/.test(rateBlend("t49b", [{ cohort: "watchlist", num: 3, den: 4 }], {})),
+        rateBlend("t49b", [{ cohort: "watchlist", num: 3, den: 4 }], {}));
+     ok("[R49.1] an empty population renders as no-population, never as 0%",
+        /no population/.test(rateBlend("t49c", [{ cohort: "x", num: 0, den: 0 }], {})),
+@@ -5904,13 +5904,13 @@
+     const gs = paperGateSection();
+     const gFrag = blendFrag(gs, "paper:gate:ROI floor · pre-stamp:rateblend");
+     ok("[R49.2] the per-gate fill rate renders its cohort split inline — the blend is never alone",
+-       !!gFrag && /watchlist 100% of 2/.test(gFrag) && /slice 0% of 2/.test(gFrag),
++       !!gFrag && /pins \(key: watchlist\) 100% of 2/.test(gFrag) && /slice 0% of 2/.test(gFrag),
+        gFrag || "no blend at key paper:gate:ROI floor · pre-stamp:rateblend");
+     /* The fixture's own proof, kept: a whole-section match for this blend's
+        split is satisfiable by the OTHER gate's blend, so the container the
+        assertion above uses has to be the fragment, not the section. */
+     ok("[R49.2] the fixture proves the container matters — a second blend on the page carries the same split text",
+-       /watchlist 100% of 2/.test(gs.replace(gFrag, "")),
++       /pins \(key: watchlist\) 100% of 2/.test(gs.replace(gFrag, "")),
+        "no second blend — the scoping assertion would be untestable on this fixture");
+     ok("[R49.2] and the assertion is scoped to THAT blend — the split is inside the fragment, not merely on the page",
+        gFrag.length < gs.length && gs.indexOf(gFrag.slice(0, 60)) >= 0,
+@@ -5919,7 +5919,7 @@
+     const hKey = (hi49.match(/data-drill="(hours:rate:[^"]*)"/) || [])[1];
+     const hFrag = hKey ? blendFrag(hi49, hKey) : "";
+     ok("[R49.2] the hours ledger's paper fill rate does the same",
+-       !!hFrag && /watchlist 100% of 4/.test(hFrag) && /slice 0% of 4/.test(hFrag),
++       !!hFrag && /pins \(key: watchlist\) 100% of 4/.test(hFrag) && /slice 0% of 4/.test(hFrag),
+        hFrag || "no hours:rate: blend found");
+     DB.shadowBook = keep49; S.drillOpen = new Set(); S.drillUI = new Map();
+   } catch(e){
+@@ -6366,7 +6366,7 @@
+        /Generator ceiling:/.test(paperHeadlineSection())
+        && /Overall binding constraint:/.test(paperHeadlineSection())
+        && /reported per cohort/.test(paperHeadlineSection())
+-       && /Read the watchlist figure alone for any verdict about YOUR items/.test(paperHeadlineSection()),
++       && /Read the pins-cohort figure alone for any verdict about YOUR items/.test(paperHeadlineSection()),
+        paperHeadlineSection().slice(0, 240));
+     ok("[R57.3] the ruled constant is decision-logged with the reasoning it was approved on",
+        (() => { const kL = DB.decisionLog; DB.decisionLog = []; S.famCoolLogged = 0;
+@@ -7712,8 +7712,8 @@
+     ok("[R63.2] an item with trips but not on the watchlist is scored and MARKED, never silently included or hidden",
+        (() => { DB.watch = [];
+                 const h = excStandingsHTML(); DB.watch = [{ id: 9330, qty: null }];
+-                return /Probe span/.test(h) && /unwatched/.test(h) && /would hide it/.test(h); })(),
+-       "slice and gap-band trips land on unwatched items");
++                return /Probe span/.test(h) && /unpinned/.test(h) && /would hide it/.test(h); })(),
++       "slice and gap-band trips land on unpinned items");
+     ok("[R63.2] closest-first: an item one clause short outranks an item with no trips at all",
+        (() => { DB.watch = [{ id: 9330, qty: null }, { id: 9001, qty: null }];
+                 const order = [...new Set([9330, 9001].map(excStanding).sort((a, b) => a.rank - b.rank).map(x => x.id))];
+@@ -9875,7 +9875,7 @@
+     ok("[R84.4] the rdiff window names both disagreement lists with FULL fail sets, labelled informational for the cutover gate",
+        /2 named disagreements/.test(rdHtml) && rdSpec.rows.length === 2
+        && rdSpec.rows.some(r => r._cohort === "plan-funded · control fails" && /roi, margin/.test(r.fails))
+-       && rdSpec.rows.some(r => r._cohort === "control passes · watchlist lacks")
++       && rdSpec.rows.some(r => r._cohort === "control passes · pins lack")
+        && /informational/i.test(rdSpec.head) && /cutover gate/.test(rdSpec.head),
+        JSON.stringify({ rows: rdSpec.rows.length, head: rdSpec.head.slice(0, 140) }));
+     const all84 = ctlHtml + frHtml + dHtml + rdHtml;
+@@ -10234,7 +10234,7 @@
+        DB.qualEvict && DB.qualEvict.n === 3 && DB.qualEvict.last === 3
+        && /evicted 3 least-recently-seen POOL row/.test(qualEvictNote(3, 3))
+        && /not housekeeping/.test(qualEvictNote(3, 3))
+-       && /Watchlist rows are never evicted/.test(qualEvictNote(3, 3))
++       && /Pin rows are never evicted/.test(qualEvictNote(3, 3))
+        && qualEvictNote(5, 0) === null,
+        JSON.stringify(DB.qualEvict));
+ 
+@@ -13565,8 +13565,9 @@
+        !!u115p && /untiered/.test(u115p.failed) && /hand-pin it/.test(u115p.failed)
+        && /waits on ITEM_OPS, a separate ruling gated on chart coverage maturity/.test(u115p.failed)
+        && !/arrives when ITEM_OPS arms/.test(u115p.failed)
+-       && !/Override the tier on its watch row/.test(u115p.failed)
+-       && !!u115w && /Override the tier on its watch row/.test(u115w.failed)
++       && !/Override the tier on its pin/.test(u115p.failed)
++       && !!u115w && /Override the tier on its pin's row/.test(u115w.failed)
++       && !/watch row/.test(u115w.failed)
+        && !/hand-pin it/.test(u115w.failed),
+        JSON.stringify({ pool: u115p && u115p.failed, pin: u115w && u115w.failed }));
+     /* [R115.4] — the SIZING limb's no-buy-limit remedy branches the same way
+@@ -13597,8 +13598,9 @@
+     ok("[R115.4] the sizing limb's no-buy-limit remedy names a control its population can reach — the pool sentence says a pool row carries no manual size and names the hand-pin route; the watch-row sentence stays on the population that has one. Presence and absence both ways",
+        !!s115p && /no buy limit in the mapping/.test(s115p.failed)
+        && /a pool row carries no manual size/.test(s115p.failed) && /hand-pin it/.test(s115p.failed)
+-       && !/type a manual qty on its watch row/.test(s115p.failed)
+-       && !!s115w && /type a manual qty on its watch row/.test(s115w.failed)
++       && !/type a manual qty on its pin/.test(s115p.failed)
++       && !!s115w && /type a manual qty on its pin's row/.test(s115w.failed)
++       && !/watch row/.test(s115w.failed)
+        && !/hand-pin it/.test(s115w.failed),
+        JSON.stringify({ pool: s115p && s115p.failed, pin: s115w && s115w.failed }));
+     S.spark.delete(9714); S.spark.delete(9715); DB.bank = 500e6;
+@@ -13845,6 +13847,223 @@
+     out.push("FAIL free-gp owner / one comparator / pool header :: " + (e && e.stack || e));
+   }
+ 
++  try {
++    /* ═══ §119–121 — THE PINS/POOL NAMING SWEEP · THE ANNOUNCED ITEM STAYS
++       FINDABLE · THE DISPLAY BATCH (ruled batch 3, 2026-08-21) ═══════════ */
++    const k119 = { watch: DB.watch, qual: DB.qual, pos: DB.positions, inv: DB.invLots,
++      flips: DB.flips, slots: DB.slots, minE: DB.minExpectGp, bank: DB.bank, bAsOf: DB.bankAsOf,
++      sres: DB.shadowReserve, res: DB.reserve, t1: DB.t1Budget, t2: DB.t2Budget,
++      cl: DB.clusters, prio: DB.planPriority, dem: DB.planDemoted, ctl: S.scorerCtlPass,
++      latestAt: S.latestAt, cc: S.chartCache, ss: S.scorerSurf, tw: DB.touchWindows,
++      tl: DB.touchLog, gl: DB.gameLedger, seen: DB.poolSeen, pfc: DB.poolFirstClear,
++      snaps: DB.bankSnaps, cands: DB.clusterCands, blk: DB.blacklist };
++    DB.touchWindows = []; DB.clusters = []; DB.blacklist = [];
++    DB.planPriority = []; DB.planDemoted = []; DB.planDate = today();
++    DB.touchLog = [{ d: today(), m: "walkup", t: Date.now() }];
++    DB.bank = 500e6; DB.bankAsOf = Date.now(); DB.shadowReserve = 300e6; DB.reserve = 0;
++    DB.positions = []; DB.invLots = []; DB.flips = []; DB.gameLedger = [];
++    DB.slots = 7; DB.minExpectGp = 0; DB.t1Budget = 100e6; DB.t2Budget = 50e6;
++    S.latestAt = Date.now(); S.qualStamp = S.latestAt + "|" + S.hourAt;
++    const nowS119 = Math.floor(Date.now() / 1000);
++    const mk119 = (id, n, hi, spark) => {
++      S.byId.set(id, { i: id, n, l: 25000, m: 0, v: 0, a: 0 });
++      S.latest[id] = { high: hi, low: 4000, highTime: nowS119 - 60, lowTime: nowS119 - 120 };
++      S.hour[id] = { avgHighPrice: hi, avgLowPrice: 4000, highPriceVolume: 50000, lowPriceVolume: 50000 };
++      S.min5[id] = { avgHighPrice: hi, avgLowPrice: 3900, highPriceVolume: 4000, lowPriceVolume: 4000 };
++      if (spark){
++        const pts = [], vols = [], series = [], byHour = new Array(24).fill(1000);
++        for (let k = 0; k < 168; k++){ const mid = (4000 + hi) / 2 + ((k % 2) ? 1 : -1); pts.push(mid); vols.push(1000); series.push({ t: nowS119 - (168 - k) * 3600, mid }); }
++        S.spark.set(id, { at: Date.now(), pts, vols, byHour, series, noData: false });
++      }
++    };
++    mk119(9821, "Probe swp pin", 4600, true);
++    mk119(9822, "Probe swp sparked pool", 4800, true);
++    mk119(9823, "Probe swp waiting pool", 4400, false);
++    const q119 = src => ({ n: 3, firstAt: Date.now() - 26 * 3600e3, lastAt: Date.now() - 3600e3, src });
++    DB.qual = { 9821: q119(QUAL_SRC_WATCH), 9822: q119(QUAL_SRC_POOL) };
++    DB.watch = [{ id: 9821, qty: null }];
++    S.scorerCtlPass = [9821, 9822, 9823];
++    S.chartCache = { at: Date.now(), state: chartWireState({ observed: 108 }), pts: new Map(), vols: new Map() };
++    S.scorerSurf = { at: Date.now(), h1: { observed: 108 } };
++    S.tab = "watch"; S.promoteFor = null; renderWatch();
++    const pl119 = document.querySelector("#planList").innerHTML;
++    const P119 = buildPlan();
++
++    /* ── §119: the sweep, loudest surfaces, presence AND absence ── */
++    const h2s = [...document.querySelectorAll(".ph h2")].map(h => h.textContent);
++    ok("[R119.1] the pins vocabulary is on the chrome and the old form is gone — the panel header reads Pins, and no h2 says Watchlist anywhere",
++       h2s.indexOf("Pins") >= 0 && h2s.indexOf("Watchlist") < 0,
++       JSON.stringify(h2s.filter(t => /Pin|Watch/i.test(t))));
++    ok("[R119.1] the cohort LABEL renders the rename while the KEY stays the partition value — paperCohortLabel maps watchlist to \"pins (key: watchlist)\" and leaves every other key alone; the key itself is untouched so history and exports stay joinable",
++       paperCohortLabel("watchlist") === "pins (key: watchlist)"
++       && paperCohortLabel("pool") === "pool" && paperCohortLabel("scanner·T1") === "scanner·T1"
++       && paperCohortOf({ src: QUAL_SRC_WATCH }) === "watchlist",
++       JSON.stringify({ lab: paperCohortLabel("watchlist"), key: paperCohortOf({ src: QUAL_SRC_WATCH }) }));
++    ok("[R119.2] the paper cohort enumeration includes POOL — the every-cohort-states rule covers the F0 cohort, so pool trips cannot accrue into a cohort with no absent-state row",
++       /pool/.test(paperCohortSection()) && !/\bwatchlist —/.test(paperCohortSection()),
++       (paperCohortSection().match(/pins \(key: watchlist\)|pool —/g) || []).join(" · ").slice(0, 80));
++    /* F10: the checklist's seat-economy step narrates the pool economy —
++       needles SPLIT so this assertion's own source cannot satisfy them */
++    ok("[R119.2] and the checklist's cut step narrates the POOL economy (F10) — unpinning demotes to pool-only and a freed slot funds the next candidate; the retired scout-backfill narration is gone from the app's source",
++       (() => { const src = [...document.scripts].map(s => s.textContent).join("");
++          const good = "unpinning demotes it to " + "pool-only", bad = "scout will " + "backfill";
++          return src.indexOf(good) >= 0 && src.indexOf(bad) < 0; })(),
++       "split-needle source scan");
++
++    /* ── §120: the announced item stays findable, and the sparked clear says
++       where its chart came from ── */
++    DB.poolSeen = { 9829: { cyc: 3, nc: 2, c0: 0, lastAt: Date.now() - 3600e3 } };
++    S.byId.set(9829, { i: 9829, n: "Probe departed pool", l: 25000, m: 0, v: 0, a: 0 });
++    DB.poolFirstClear = { t: Date.now() - 7200e3, d: today(), id: 9829, name: "Probe departed pool" };
++    const drill120 = poolDrill(P119);
++    const spec120 = DRILLS.get("plan:persist");
++    ok("[R120.1] a departed pool item stays FINDABLE from its durable ledger row — the persistence drill carries one line for it, state named by poolPersistence, with when it last passed; and the first-clear record renders its line membership-independent (M181: the announced item vanished with no stated reason)",
++       !!drill120 && !!spec120
++       && spec120.rows.some(r => /departed/.test(r._cohort) && /Probe departed pool/.test(r.item) && /left the cell — last passed/.test(r.item))
++       && /First pool clear on record: Probe departed pool/.test(spec120.head),
++       spec120 ? JSON.stringify({ rows: spec120.rows.map(r => r._cohort), head: spec120.head.slice(-90) }) : "(no spec)");
++    DB.poolSeen = k119.seen; DB.poolFirstClear = k119.pfc;
++    const pick120 = P119.picks.find(p => p.id === 9822), pin120 = P119.picks.find(p => p.id === 9821);
++    ok("[R120.2] a sparked pool clear during the benched era says where its chart came from — \"charted from its own fetch, ahead of the archive\" rides the funded line's notes (the ruled provenance copy, trace 2), from the chain's own serSrc, and a pin's line never carries it",
++       !!pick120 && (pick120.sizeNotes || []).some(n => /charted from its own fetch, ahead of the archive/.test(n))
++       && !!pin120 && !(pin120.sizeNotes || []).some(n => /charted from its own fetch/.test(n)),
++       JSON.stringify({ pool: pick120 && pick120.sizeNotes, pin: pin120 && pin120.sizeNotes }));
++
++    /* ── §121: the display batch ── */
++    /* F6 — an item failing ROI first AND chartless counts as loading. 9824:
++       margin/ROI dead (first fail) and no spark below coverage (chart also
++       in its fail set). */
++    mk119(9824, "Probe swp roi-and-chartless", 4100, false);
++    S.scorerCtlPass = [9821, 9822, 9823, 9824];
++    renderWatch();
++    const sub121 = document.querySelector("#planSub").textContent;
++    ok("[R121.1] the ⏳ charts-loading count reads the FULL fail set — an item failing ROI first and chartless counts, so the count claims how many verdicts improve when charts land, never first-fail attribution (F6)",
++       /⏳ 2 charts still loading/.test(sub121),
++       sub121);
++    S.scorerCtlPass = [9821, 9822, 9823];
++
++    /* F7 — one owner for the sell-side net. Anchored at the RENDER, not
++       term-vs-term: sellLines calls posSellNet, so comparing those two is
++       true by construction — the branch that can drift is the positions
++       table's own row arithmetic, so the assertion reads the rendered
++       unrealized total against the sell-mode lines' sum. */
++    DB.positions = [{ itemId: 9821, qty: 100, buy: 4000, placedAt: Date.now() - 3600e3, stage: "bought", hzH: 4 }];
++    renderPositions();
++    const foot121 = (document.querySelector("#posFoot") || {}).innerHTML || "";
++    const netSum121 = sellLines().reduce((a, s) => a + (s.net || 0), 0);
++    ok("[R121.2] the sell-side net has ONE owner (posSellNet) — the positions table's rendered unrealized total equals the sell-mode lines' net for the same book, because both read the owner; a respelling in either render breaks the equality (F7)",
++       netSum121 > 0 && foot121.indexOf(gp(netSum121)) >= 0,
++       JSON.stringify({ netSum: netSum121, footHas: foot121.indexOf(gp(netSum121)) >= 0 }));
++    DB.positions = []; renderPositions();
++
++    /* F13 — one owner for the overnight-spread verdict: both surfaces word
++       the SAME verdict from one term, on a fixture in the 1.0–1.1× band
++       where a re-derived threshold would disagree. */
++    const mkHr = (h, mkt) => ({ h, mkt, n: 0, filled: 0, trips: [] });
++    const wm121 = [mkHr(1, 1.05), mkHr(2, 1.05), mkHr(3, 1.05), mkHr(12, 1.0), mkHr(13, 1.0), mkHr(14, 1.0)];
++    const osv121 = overnightSpreadVerdict(wm121);
++    ok("[R121.3] the overnight-spread verdict has ONE owner — inside the 1.1× buffer the verdict is \"same\", which a re-derived bare nAvg>avg comparison would call wider; both surfaces word this term's verdict and neither re-derives the thresholds (F13)",
++       osv121.verdict === "same" && osv121.nAvg > osv121.avg,
++       JSON.stringify(osv121));
++
++    /* F16 — one entry point for the bank: the stamp records the day's
++       equity dot from the same measurement, and the checklist step carries
++       no input of its own. */
++    DB.bankSnaps = [];
++    const shb = document.getElementById("shBank");
++    shb.value = "480000000"; shb.dispatchEvent(new Event("change", { bubbles: true }));
++    ok("[R121.4] ONE entry point for the bank (F16) — stamping it records today's equity dot from the same measurement (the dot stays a MEASUREMENT; deriving it from stack() would destroy the independent check the curve exists for), and no data-snap input exists anywhere for a second hand-entry",
++       DB.bank === 480e6 && snapToday() && snapToday().v === 480e6
++       && !document.querySelector("[data-snap]"),
++       JSON.stringify({ bank: DB.bank, dot: snapToday() }));
++    /* and a stamp of NOTHING never deletes a measured dot (cold review 2:
++       recordSnap treats 0 as clear-today, so the press had to guard) */
++    DB.bank = 0;
++    document.getElementById("shBankNow").onclick();
++    ok("[R121.4] and pressing Mark-as-current with an empty bank figure leaves today's measured dot INTACT — a stamp of nothing must not silently delete a measurement",
++       snapToday() && snapToday().v === 480e6,
++       JSON.stringify({ dot: snapToday() }));
++    DB.bankSnaps = k119.snaps; DB.bank = 500e6; DB.bankAsOf = Date.now();
++
++    /* F15 — the four newest sub-views are in the tier map. */
++    ok("[R121.5] SURFACE_DEPTH carries the four newest sub-views, so the tier check sees the same population the dormancy half does (F15)",
++       SURFACE_DEPTH["tab:trade/paper"] === 2 && SURFACE_DEPTH["tab:trade/prospect"] === 2
++       && SURFACE_DEPTH["tab:trade/gates"] === 2 && SURFACE_DEPTH["tab:trade/scorer"] === 2,
++       JSON.stringify(Object.keys(SURFACE_DEPTH).filter(k => /trade\//.test(k))));
++
++    /* F8 — the pool waiting row carries the one control its population has. */
++    ok("[R121.6] a waiting pool row carries the blacklist press — the constitutional veto, id-based so it needs no watch row; before this the only route was the name box (F8)",
++       new RegExp('data-blk="9823"').test(pl119),
++       (pl119.match(/data-blk="[0-9]+"/g) || []).join(","));
++
++    /* F11 — the digest is the ONE press surface and carries the evidence. */
++    DB.clusterCands = [{ id: "clu119", sig: "s119", status: "suspected", src: "scan",
++      members: [9821, 9822], story: "probe cluster",
++      evidence: { corr: 0.44, days: 12, cat: "probe-cat" }, at: Date.now() - 86400e3 }];
++    const digest121 = pendingRulingItems().map(x => x.html).join("");
++    renderClusters();
++    const qbody121 = (document.getElementById("cluQueueBody") || {}).innerHTML || "";
++    ok("[R121.7] cluster candidates have ONE press surface — the digest line carries the members and the evidence clause (corr, category, staleness) so the ruling is made with the evidence in view, and the review queue body carries no candidate press of its own, only the pointer (F11)",
++       /excess corr 0\.44 over 12 overlapping days/.test(digest121)
++       && /shared category: probe-cat/.test(digest121)
++       && /Probe swp pin/.test(digest121)
++       && /data-clconfirm/.test(digest121)
++       && !/data-clconfirm/.test(qbody121)
++       && /ruled from the <b>Home digest<\/b>/.test(qbody121),
++       JSON.stringify({ digestHasEv: /excess corr/.test(digest121), queuePress: /data-clconfirm/.test(qbody121) }));
++    /* the THIRD press surface (cold review: the review's audit §3 carried
++       its own presses and a second hand-rolled evidence spelling) is a
++       pointer now — asserted at its own render */
++    const aud121 = renderAuditInline();
++    ok("[R121.7] and the review audit's cluster section carries no candidate press and no second evidence spelling — the count, the staleness flag, and the pointer to the digest",
++       !/data-clconfirm/.test(aud121) && !/data-clmerge/.test(aud121)
++       && !/excess corr [0-9.]+ over [0-9]+d\b/.test(aud121)
++       && /1 candidate awaiting ratification/.test(aud121)
++       && /Ruled from the <b>Home digest<\/b>/.test(aud121),
++       (aud121.match(/3 · Cluster queue[\s\S]{0,220}/) || ["(section not found)"])[0].replace(/<[^>]*>/g, " ").slice(0, 180));
++    DB.clusterCands = k119.cands;
++    /* F2: the family-debug panel's feeder is the pins ∪ pool MEMBERSHIP
++       union — the population the family rule actually runs over. Pool-only
++       book: the panel must still show the pool item's family. */
++    const kW121 = DB.watch; DB.watch = [];
++    renderFamilyDebug();
++    const fam121 = (document.getElementById("famBody") || {}).innerHTML || "";
++    ok("[R121.9] the family-debug panel reads the pins ∪ pool membership union (F2) — with zero pins and a live pool, the pool items' families still render, so the panel can show a grouping the mechanism can actually produce",
++       /probe swp/.test(fam121) && !/No pins or pool candidates yet/.test(fam121),
++       fam121.replace(/<[^>]*>/g, " ").slice(0, 120));
++    DB.watch = kW121; renderFamilyDebug();
++
++    /* F9 + F12 + F14 — the three copy claims, presence and absence. */
++    ok("[R121.8] the funnel's disclosure names the NEXT-UP first-reason partition (F9); the freshness line stopped claiming the scorer has no surface (F12); and the hours ledger names its LOCAL clock against the scorer's UTC bands (F14)",
++       /NEXT UP rows partition the same way/.test(headlineNote())
++       /* the needles are SPLIT so this assertion's own source cannot satisfy
++          or violate them — document.scripts includes the probe itself */
++       && (() => { const src = [...document.scripts].map(s => s.textContent).join("");
++            const good = "reads on the " + "Scorer sub-tab", bad = "no surface until " + "stage 1e";
++            return src.indexOf(good) >= 0 && src.indexOf(bad) < 0; })()
++       && /hours are YOUR LOCAL clock/.test(document.body.innerHTML),
++       (() => { const src = [...document.scripts].map(s => s.textContent).join("");
++          return JSON.stringify({ f9: /NEXT UP rows partition the same way/.test(headlineNote()),
++            f12good: src.indexOf("reads on the " + "Scorer sub-tab") >= 0,
++            f12bad: src.indexOf("no surface until " + "stage 1e") >= 0,
++            f14: /hours are YOUR LOCAL clock/.test(document.body.innerHTML),
++            nScripts: document.scripts.length }); })());
++
++    S.promoteFor = null;
++    DB.watch = k119.watch; DB.qual = k119.qual; DB.positions = k119.pos; DB.invLots = k119.inv;
++    DB.flips = k119.flips; DB.slots = k119.slots; DB.minExpectGp = k119.minE; DB.bank = k119.bank;
++    DB.bankAsOf = k119.bAsOf; DB.shadowReserve = k119.sres; DB.reserve = k119.res;
++    DB.t1Budget = k119.t1; DB.t2Budget = k119.t2; DB.clusters = k119.cl; DB.blacklist = k119.blk;
++    DB.planPriority = k119.prio; DB.planDemoted = k119.dem; S.scorerCtlPass = k119.ctl;
++    S.latestAt = k119.latestAt; S.chartCache = k119.cc; S.scorerSurf = k119.ss;
++    DB.touchWindows = k119.tw; DB.touchLog = k119.tl; DB.gameLedger = k119.gl;
++    DB.poolSeen = k119.seen; DB.poolFirstClear = k119.pfc; DB.bankSnaps = k119.snaps;
++    DB.clusterCands = k119.cands;
++    for (const id of [9821, 9822, 9823, 9824, 9829]){ S.byId.delete(id); delete S.latest[id]; delete S.hour[id]; delete S.min5[id]; S.spark.delete(id); S.items = S.items.filter(it => it.i !== id); }
++  } catch(e){
++    out.push("FAIL naming sweep / findable line / display batch :: " + (e && e.stack || e));
++  }
++
+   /* ═══ REQUIREMENTS cross-reference (REQUIREMENTS.md) ═══
+      Derived from [R#] tags in assertion names; a requirement is FAIL if any
+      tagged assertion failed. Lines are prefixed REQ so the fail counter
+--- a/REQUIREMENTS.md
++++ b/staging/REQUIREMENTS.md
+@@ -650,9 +650,9 @@
+ | R114.4 | **THE OPPORTUNITY-COST LABEL AND ITS MEMBERSHIP READ ONE OWNER** (cold review 2, 2026-08-21). The "Filter opportunity cost" line's watchlist figure derives from `paperCohortOf(p) === "watchlist"` — the one cohort mapping — so the computed population IS the labelled one, and a pool-provenance or gap-band trip closed inside the scanner window cannot inflate "watchlist-cohort net" | probe `[R114.4]` |
+ | **§115 The chart bench states its true cause; the untiered remedy is reachable (ruled 2026-08-21)** | | |
+ | R115.1 | **THE CHART-GATE BENCH REASON BRANCHES ON THE ONE COVERAGE OWNER AND THE SERIES' OWN SOURCE — four honest causes, never the mechanism's internal zero.** Below coverage (WAITING), an archive-path item states the ERA (*"chart gates at N of 7 observed days — … deliberately unread until 7"*), because the cache is deliberately empty until 7 observed days and a points count there implied the series was consulted when it never was. A FAILED or absent coverage read states *"chart coverage could not be read this cycle — treated as unread, never as absent"* — nothing about a failed read is deliberate (cold review, 2026-08-21). At coverage, an item absent from every archived bucket states *"no trades observed in the archive in the trailing 7 days"* — data about the item, and the window named is the one the emptiness is READ over (`CHART_PTS_CAP` hours), never the coverage window's 8 (cold review — the pinned constant was the wrong one). A sparked item below its own thresholds keeps the points-count sentence, because its points are its own fetch's. `gateName` maps all four spellings to the chart gate, so a reword cannot fall out of the glossary or the funnel | probe `[R115.1]` |
+-| R115.2 | **THE UNTIERED BENCH NAMES A CONTROL ITS POPULATION CAN REACH** (F1 — the watchCap lesson on the pool's largest slice). The pool sentence points at the hand-pin route — naming where the pin controls live — and attributes the ITEM_OPS schedule to the RULING (*"a separate ruling gated on chart coverage maturity"*), never to a mechanism that keeps no such schedule (cold review, 2026-08-21); the pin sentence keeps the watch-row remedy and never the pool one — presence and absence asserted both ways | probe `[R115.2]` |
++| R115.2 | **THE UNTIERED BENCH NAMES A CONTROL ITS POPULATION CAN REACH** (F1 — the watchCap lesson on the pool's largest slice). The pool sentence points at the hand-pin route — naming where the pin controls live — and attributes the ITEM_OPS schedule to the RULING (*"a separate ruling gated on chart coverage maturity"*), never to a mechanism that keeps no such schedule (cold review, 2026-08-21); the pin sentence keeps its own-row remedy (*"Override the tier on its pin's row"* — reworded from "watch row" in the 2026-08-21 naming sweep, old form asserted absent) and never the pool one — presence and absence asserted both ways | probe `[R115.2]` |
+ | R115.3 | **THE ANALYSIS EXPORT'S COVERAGE HEADER READS THE ONE OWNER** (cold review, 2026-08-21). `chartGateDaysText()` — beside the owner, reading it — is the one rendering of the coverage answer for artefacts; the scorer export's `chartGateObservedDays` calls it rather than deriving observed/24 from the scorer surface's own idb snapshot, because the header promises the coverage IN FORCE and only the gates' snapshot is that. Asserted discriminating: gates ready with the surface snapshot stale must export ready | probe `[R115.3]` |
+-| R115.4 | **THE SIZING LIMB'S NO-BUY-LIMIT REMEDY NAMES A CONTROL ITS POPULATION CAN REACH** (cold review, 2026-08-21 — the F1 property one gate up the chain; a no-limit item passes the instrument's market gates, so a pool row can land on this bench). The pool sentence says a pool row carries no manual size and names the hand-pin route; the watch-row sentence stays on the population that has one — presence and absence asserted both ways. Enabled by provenance entering `candidateFor` at the call (`candidateFor(w, src)`, the two `planCandidates` sites; `markSrc` absorbed) | probe `[R115.4]` |
++| R115.4 | **THE SIZING LIMB'S NO-BUY-LIMIT REMEDY NAMES A CONTROL ITS POPULATION CAN REACH** (cold review, 2026-08-21 — the F1 property one gate up the chain; a no-limit item passes the instrument's market gates, so a pool row can land on this bench). The pool sentence says a pool row carries no manual size and names the hand-pin route; the own-row sentence (*"type a manual qty on its pin's row"* — reworded from "watch row" in the 2026-08-21 naming sweep, old form asserted absent) stays on the population that has one — presence and absence asserted both ways. Enabled by provenance entering `candidateFor` at the call (`candidateFor(w, src)`, the two `planCandidates` sites; `markSrc` absorbed) | probe `[R115.4]` |
+ | R115.5 | **THE SCORER VERDICT'S CHART-GATES LINE BRANCHES ON THE OWNER'S STATE** (cold review, 2026-08-21 — era-invalidated copy). At maturity it says the gates read from the archive and never that they *"stay unknowable until 7"*; below maturity the waiting sentence stands — presence and absence asserted both ways, so the waiting-era sentence cannot survive into the era it is false of. The ready figure is the REAL observation (`era.days`), never the threshold standing in for it (cold review 2) | probe `[R115.5]` |
+ | R115.6 | **THE PROVEN-LOSER RE-TEST REMEDY NAMES A CONTROL ITS POPULATION CAN REACH** (cold review 2, 2026-08-21 — the reachable-remedy property's third site). The watch-row test control hard-requires a row and the pool line's own test control is inert until ITEM_OPS arms, so the pool sentence names the hand-pin route and says the test control is inert while ITEM_OPS is off; the pin sentence keeps the plain re-test instruction — presence and absence asserted both ways | probe `[R115.6]` |
+ | **§116 One owner for free gp (F5, ruled 2026-08-21)** | | |
+@@ -668,6 +668,22 @@
+ | **§118 The transition-week pool header (ruled 2026-08-21)** | | |
+ | R118.1 | **THE POOL GROUP'S HEADER CARRIES THE WHOLE POOL INVENTORY DURING THE WAITING ERA, FROM ONE OWNER** — `poolInventory(P)` partitions every pool member of the build into exactly one state: FUNDED, WAITING on the chart gate (bench rows whose first-binding gate is the chart, by `gateName`), or OTHER (market-gate benches, NEXT UP, qualifying — the remainder by construction, so the states always sum to the population). The header renders *"THE POOL — N items · M funded · K waiting on chart coverage"* plus the other-states clause when nonzero and the locator clause for funded rows. A sparked pool item can FUND during the benched era (the Clockwork trace), and one benched on a MARKET gate or queued must never be filed as waiting-on-coverage (cold review, 2026-08-21 — the two-owner "waiting" disagreed exactly there). When the era line disappears the group vanishes and the funded pool group's own header is the normal form | probe `[R118.1]` |
+ | R118.2 | **THE SCORER TILE'S POOL LEAD READS THE SAME INVENTORY TERM** — never a subtraction over a different population (cold review, 2026-08-21: `cutoverPoolRows().length − funded` filed an other-state member as waiting). The tile renders `poolInventory(buildPlan())`'s counts; on a build failure it degrades to the STATED could-not-read lead, and the degrade is driven fires-when-it-should (a poisoned build in the fixture must yield the stated lead, never a silent empty one — the restraint-assertion asymmetry). At maturity the lead disappears entirely | probe `[R118.2]` |
++| **§119 The pins/pool naming sweep (queue item 2h, ruled 2026-08-21)** | | |
++| R119.1 | **RENDERED VOCABULARY NAMES THE POPULATION THE MECHANISM READS.** "Watchlist" survives only as (a) PARTITION VALUES (`qual.src`, cohort keys, `dieOffLog.pop`, `deployLog.poolRegime`, import recognizers — sweep-proof, never renamed, so history and exports stay joinable), (b) era-branched copy that renders only in the off era, and (c) historical records. Everywhere else the copy says pins (the hand-curated rows) or the candidate set. The panel header reads **Pins** and no h2 says Watchlist; the cohort LABEL maps through `paperCohortLabel` (one mapper — *"pins (key: watchlist)"*) while `paperCohortOf` keeps the key. Presence and absence asserted (the R92.6 precedent) | probe `[R119.1]` |
++| R119.2 | **THE PAPER COHORT ENUMERATION INCLUDES POOL** — the every-cohort-states rule covers the F0 cohort, so pool trips cannot accrue into a cohort the ledger never renders an absent-state row for. Glossary: the **populations** group (Pin, The pool) ships in the same commit as the sweep, per the same-commit rule; the review checklist's seat-economy narration (F10) rewritten to the pool economy (unpinning demotes to pool-only; a freed slot funds the next candidate in the order) | probe `[R119.2]` |
++| **§120 The announced item stays findable; the sparked clear states its chart source (M181 + trace 2, ruled 2026-08-21)** | | |
++| R120.1 | **AN ITEM ANNOUNCED ON A SURFACE IS FINDABLE AFTERWARD FROM A DURABLE RECORD, MEMBERSHIP-INDEPENDENT** (M181). The pool population is derived per-cycle, so LEAVING it is not an event any membership-scoped render can show; the persistence drill now carries one line per departed item with pool history — from its own `DB.poolSeen` row, state named by `poolPersistence` exactly as a present item's is, with when it last passed — and the first-clear record (`DB.poolFirstClear`) renders its one line in the same drill. One findable line, not a tracking surface, per the directive | probe `[R120.1]` |
++| R120.2 | **A SPARKED POOL CLEAR DURING THE BENCHED ERA SAYS WHERE ITS CHART CAME FROM** — *"charted from its own fetch, ahead of the archive"* rides the funded line's notes (the ruled provenance copy, trace 2), read from `serSrc` — the chain's own resolution, stamped once in `candidateFor`, never a re-resolve. A pin's line never carries it; at maturity nothing does (guarded on `!chartReady()`). Presence and absence asserted | probe `[R120.2]` |
++| **§121 The display batch (queue item 2i, ruled 2026-08-21 — F2 F6 F7 F8 F9 F11 F12 F13 F14 F15 F16)** | | |
++| R121.1 | **THE ⏳ CHARTS-LOADING COUNT READS THE FULL FAIL SET** (F6) — an item failing ROI first AND chartless counts, because the count claims how many verdicts improve when charts land, a membership question over the whole fail set; first-fail attribution undercounted it by exactly the chain position | probe `[R121.1]` |
++| R121.2 | **THE SELL-SIDE NET HAS ONE OWNER** (F7) — `posSellNet` (the price that matters × post-tax net); the sell-mode lines and the positions table's Unrealized column both read it, so the two renders cannot disagree by a respelling | probe `[R121.2]` |
++| R121.3 | **THE OVERNIGHT-SPREAD VERDICT HAS ONE OWNER** (F13) — `overnightSpreadVerdict` holds the 1.1×/0.9× bands; the hours panel and the review one-liner WORD its verdict and neither re-derives the thresholds. Asserted in the 1.0–1.1× buffer band, where a re-derived bare comparison would disagree. Stated limit (cold review): the assertion's subject is the TERM; the two consumers' wording-from-the-term is a read | probe `[R121.3]` |
++| R121.4 | **ONE ENTRY POINT FOR THE BANK** (F16) — the equity curve's daily dot and the bank stamp were two hand-entries of one physical number, never reconciled. The dot stays a MEASUREMENT (auto-deriving it from `stack()` would destroy the independent check the curve exists for — dots tracking the line is what says the log is honest); it records from the SAME entry the stamp does — but only a POSITIVE figure records, because `recordSnap` treats 0 as clear-today and a stamp of nothing must not silently delete a measured dot (cold review, 2026-08-21 — asserted: the press with an empty bank leaves the dot intact). Both handlers re-render the checklist and equity surfaces so the step's own flow cannot show "not recorded" after the press (cold review). The checklist's snapshot input is deleted with its dead delegate branch; its step reads state and points at the one entry | probe `[R121.4]` |
++| R121.5 | **THE ATTENTION-TIER MAP SEES THE FOUR NEWEST SUB-VIEWS** (F15) — `SURFACE_DEPTH` carries `tab:trade/paper·prospect·gates·scorer` at the same depth as the other Trade sub-tabs, so the tier check and the dormancy half read the same population | probe `[R121.5]` |
++| R121.6 | **A WAITING POOL ROW CARRIES THE BLACKLIST PRESS** (F8) — the constitutional veto, id-based so it needs no watch row; ignore stays off pool rows (day-scoped watch-row state). Before this the only route was the name box | probe `[R121.6]` |
++| R121.7 | **CLUSTER CANDIDATES HAVE ONE PRESS SURFACE** (F11) — the Home digest line carries the members and the evidence clause (`cluEvidenceLine`: corr figure, category, staleness — ONE owner for the spelling) so the ruling is made with the evidence in view. BOTH other surfaces are pointers now: the review queue's body (which keeps the coherence queue — drops, add-proposals, resurfaced adds — a different machinery) and the review audit's §3, which was a THIRD press surface with its own hand-rolled evidence spelling, already drifted in wording (cold review, 2026-08-21 — the extraction's own property, unapplied at the site that drifted first). Both asserted press-free with the pointer present | probe `[R121.7]` |
++| R121.8 | **THREE COPY CLAIMS CORRECTED, PRESENCE AND ABSENCE** — the funnel's disclosure names the NEXT-UP first-reason partition (F9: a row failing two ways files under the first, and nothing said so); the freshness T2 line stopped claiming the scorer has no surface (F12 — stale since stage 1e shipped, on the one panel whose job is freshness); the hours ledger names its LOCAL clock against the scorer's UTC bands (F14 — two clocks, no surface said so) | probe `[R121.8]` |
++| R121.9 | **THE FAMILY-DEBUG PANEL READS THE MECHANISM'S POPULATION** (F2) — `renderFamilyDebug` feeds from the pins ∪ pool MEMBERSHIP union (no gate evaluation — the grouping is a property of NAMES), matching the population `applyFamilyRule` actually runs over; a panel reading `DB.watch` alone was blind to the population where a pool item can take a family seat. Asserted on a pool-only book: zero pins, live pool, the pool items' families still render; the empty copy names the union ("No pins or pool candidates yet"), not the pass set (cold review — the first wording claimed a gated population the feeder does not read) | probe `[R121.9]` |
+ | **§6 Verification** | | |
+ | R6.1 | Probe report cross-references this file (`===REQS===` section from `[R#]` assertion tags) | the report itself |
+ | R6.2 | THE PAIRING IS CHECKED IN BOTH DIRECTIONS, and a failure either way fails the suite (user ruling, Aug 13 2026). **A tag with no requirement:** an assertion reporting `[Rxx.y]` where this file has no such row and cites it nowhere — the report printed "REQ PASS R61.1" for six ids that did not exist, and a requirement that does not exist cannot fail, so the ledger was lying in the direction it was built to prevent. **A requirement with no assertion:** a row citing `` probe `[Rxx.y]` `` that no assertion reported — §31's withdrawn rows went on claiming coverage after their assertions were deleted with the feature, and R35.4 cited one of them; that is the seasoning-gate shape, a spec claiming an implementation that is not there. Rows verified by inspection, UI or documentation cite no probe tag and are exempt by construction. Runs in `tools/probe/reqpair.sh` rather than in the page, because the check needs to read this file and the in-page suite cannot — which is precisely why the gap survived. It appends a `===PAIRING===` section and **rewrites the report header**, so `head -1` never reads PROBE-PASS while a pairing failure stands | `tools/probe/reqpair.sh`, run by `run.sh` |
